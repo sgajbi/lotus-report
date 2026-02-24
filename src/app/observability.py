@@ -4,9 +4,10 @@ import os
 import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
+from typing import Awaitable, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -54,12 +55,14 @@ def resolve_request_id(request: Request) -> str:
 
 def resolve_trace_id(request: Request) -> str:
     traceparent = request.headers.get("traceparent")
-    if traceparent:
+    if isinstance(traceparent, str) and traceparent:
         parts = traceparent.split("-")
         if len(parts) >= 4 and len(parts[1]) == 32:
             return parts[1]
     incoming = request.headers.get("X-Trace-Id")
-    return incoming if incoming else uuid4().hex
+    if isinstance(incoming, str) and incoming:
+        return incoming
+    return uuid4().hex
 
 
 def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
@@ -80,7 +83,10 @@ def setup_observability(app: FastAPI) -> None:
     Instrumentator().instrument(app).expose(app)
 
     @app.middleware("http")
-    async def _request_observability_middleware(request: Request, call_next):
+    async def _request_observability_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         logger = logging.getLogger("http.access")
         started = time.perf_counter()
 
