@@ -1,0 +1,6 @@
+services:
+  reporting-aggregation-service:
+    build: .
+    container_name: reporting-aggregation-service
+    ports:
+      - "8300:8300"
