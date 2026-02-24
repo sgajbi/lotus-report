@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from app.main import app
 from app.routers.reports import get_reporting_read_service
@@ -68,6 +69,22 @@ def test_generate_report():
     assert body["downloadUrl"] is not None
 
 
+def test_generate_report_non_pdf_has_no_download_url():
+    response = client.post(
+        "/reports",
+        json={
+            "portfolioId": "DEMO_DPM_EUR_001",
+            "asOfDate": "2026-02-24",
+            "reportType": "PORTFOLIO_SNAPSHOT",
+            "outputFormat": "JSON",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "READY"
+    assert body["downloadUrl"] is None
+
+
 class _StubReportingReadService:
     async def get_portfolio_summary(
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
@@ -91,6 +108,18 @@ class _StubReportingReadService:
         }
 
 
+class _StubReportingReadServiceFailure:
+    async def get_portfolio_summary(
+        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+    ) -> dict:
+        raise HTTPException(status_code=422, detail="Missing required request field: as_of_date")
+
+    async def get_portfolio_review(
+        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+    ) -> dict:
+        raise HTTPException(status_code=502, detail="PAS core snapshot upstream failure")
+
+
 def test_ras_portfolio_summary_endpoint():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
@@ -110,6 +139,18 @@ def test_ras_portfolio_summary_endpoint():
     assert body["wealth"]["total_market_value"] == 1_000_000.0
 
 
+def test_ras_portfolio_summary_propagates_validation_error():
+    app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadServiceFailure()
+    response = client.post(
+        "/reports/portfolios/DEMO_DPM_EUR_001/summary",
+        json={},
+    )
+    app.dependency_overrides.pop(get_reporting_read_service, None)
+
+    assert response.status_code == 422
+    assert "Missing required request field" in response.json()["detail"]
+
+
 def test_ras_portfolio_review_endpoint():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
@@ -125,3 +166,15 @@ def test_ras_portfolio_review_endpoint():
     body = response.json()
     assert body["portfolio_id"] == "DEMO_DPM_EUR_001"
     assert body["overview"]["total_market_value"] == 1_000_000.0
+
+
+def test_ras_portfolio_review_propagates_upstream_error():
+    app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadServiceFailure()
+    response = client.post(
+        "/reports/portfolios/DEMO_DPM_EUR_001/review",
+        json={"as_of_date": "2026-02-24"},
+    )
+    app.dependency_overrides.pop(get_reporting_read_service, None)
+
+    assert response.status_code == 502
+    assert "upstream failure" in response.json()["detail"]
