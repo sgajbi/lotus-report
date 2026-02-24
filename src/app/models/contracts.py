@@ -46,3 +46,14 @@ class ReportResponse(BaseModel):
     download_url: str | None = Field(default=None, alias="downloadUrl")
 
     model_config = {"populate_by_name": True}
+
+
+class IntegrationCapabilitiesResponse(BaseModel):
+    source_service: str = Field("reporting-aggregation-service", alias="sourceService")
+    contract_version: str = Field(..., alias="contractVersion")
+    policy_version: str = Field("ras-default-v1", alias="policyVersion")
+    features: list[dict[str, str | bool]]
+    workflows: list[dict[str, str | bool]]
+    supported_input_modes: list[str] = Field(alias="supportedInputModes")
+
+    model_config = {"populate_by_name": True}
