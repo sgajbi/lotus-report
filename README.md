@@ -17,6 +17,7 @@ API docs:
 - http://localhost:8300/docs
 
 Key reporting endpoints:
+- `GET /integration/capabilities`
 - `POST /reports/portfolios/{portfolio_id}/summary`
 - `POST /reports/portfolios/{portfolio_id}/review`
 
