@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
 
 install:
 	python -m pip install --upgrade pip
@@ -9,6 +9,10 @@ install:
 lint:
 	ruff check .
 	ruff format --check .
+	$(MAKE) monetary-float-guard
+
+monetary-float-guard:
+	python scripts/check_monetary_float_usage.py
 
 typecheck:
 	mypy --config-file mypy.ini
