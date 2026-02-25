@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-
 REQUIRED_DOC = Path("docs/standards/migration-contract.md")
 REQUIRED_PHRASES = (
     "no persistent schema",
