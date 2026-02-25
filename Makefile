@@ -42,7 +42,7 @@ test-coverage:
 	python -m coverage report --fail-under=99
 
 security-audit:
-	python -m pip_audit
+	python -m pip_audit -r requirements-audit.txt
 
 check: lint typecheck openapi-gate test
 
