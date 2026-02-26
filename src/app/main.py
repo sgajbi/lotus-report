@@ -3,7 +3,10 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from app.enterprise_readiness import build_enterprise_audit_middleware, validate_enterprise_runtime_config
+from app.enterprise_readiness import (
+    build_enterprise_audit_middleware,
+    validate_enterprise_runtime_config,
+)
 from app.observability import setup_observability
 from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
