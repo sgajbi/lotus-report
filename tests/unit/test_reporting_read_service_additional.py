@@ -13,6 +13,14 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
+    async def get_performance_input(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        lookback_days: int = 1200,
+    ):
+        return 200, {"unexpected": "shape"}
+
 
 class _PasSuccessMinimal:
     async def get_core_snapshot(
@@ -34,15 +42,56 @@ class _PasSuccessMinimal:
             }
         }
 
+    async def get_performance_input(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        lookback_days: int = 1200,
+    ):
+        return 200, {
+            "performanceStartDate": "2025-01-01",
+            "valuationPoints": [
+                {
+                    "day": 1,
+                    "perf_date": "2025-01-02",
+                    "begin_mv": 100.0,
+                    "end_mv": 101.0,
+                    "bod_cf": 0.0,
+                    "eod_cf": 0.0,
+                    "mgmt_fees": 0.0,
+                }
+            ],
+        }
+
 
 class _PaSuccessEmpty:
     async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
         return 200, {"resultsByPeriod": {"YTD": {"net_cumulative_return": 2.1}}}
 
+    async def calculate_twr(self, payload: dict[str, object]):
+        return 200, {
+            "results_by_period": {
+                "EXPLICIT": {
+                    "breakdowns": {
+                        "daily": [{"period": "2025-01-02", "summary": {"period_return_pct": 1.0}}]
+                    }
+                }
+            }
+        }
+
+
+class _RiskSuccess:
+    async def calculate_risk(self, payload: dict[str, object]):
+        return 200, {"results": {"YTD": {"metrics": {"VOLATILITY": {"value": 0.2}}}}}
+
 
 @pytest.mark.asyncio
 async def test_summary_requires_as_of_date():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     with pytest.raises(HTTPException) as exc:
         await service.get_portfolio_summary("P1", {}, None)
     assert exc.value.status_code == 422
@@ -51,7 +100,11 @@ async def test_summary_requires_as_of_date():
 
 @pytest.mark.asyncio
 async def test_summary_includes_default_sections_when_sections_not_list():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     response = await service.get_portfolio_summary(
         "P1",
         {"as_of_date": "2026-02-24", "sections": "WEALTH"},
@@ -65,14 +118,22 @@ async def test_summary_includes_default_sections_when_sections_not_list():
 
 @pytest.mark.asyncio
 async def test_summary_snapshot_missing_raises_502():
-    service = ReportingReadService(pas_client=_PasSnapshotMissing(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSnapshotMissing(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     with pytest.raises(HTTPException) as exc:
         await service.get_portfolio_summary("P1", {"as_of_date": "2026-02-24"}, None)
     assert exc.value.status_code == 502
 
 
 def test_requested_sections_filters_non_string_values():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     sections = service._requested_sections(
         request_payload={"sections": ["overview", 10, None, "performance"]},
         default_sections=["OVERVIEW"],
@@ -81,29 +142,38 @@ def test_requested_sections_filters_non_string_values():
 
 
 def test_map_pa_performance_handles_non_dict_rows():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     mapped = service._map_pa_performance({"resultsByPeriod": {"YTD": "bad-row"}})
     assert mapped["summary"]["YTD"]["net_cumulative_return"] is None
 
 
 @pytest.mark.asyncio
-async def test_review_default_sections_include_all_pas_payload_groups():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
-    response = await service.get_portfolio_review(
-        "P1",
-        {"as_of_date": "2026-02-24"},
-        None,
+async def test_review_default_sections_include_all_payload_groups():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
     )
+    response = await service.get_portfolio_review("P1", {"as_of_date": "2026-02-24"}, None)
     assert "overview" in response
     assert "allocation" in response
     assert "incomeAndActivity" in response
     assert "holdings" in response
     assert "transactions" in response
+    assert "riskAnalytics" in response
 
 
 @pytest.mark.asyncio
-async def test_review_without_performance_section_omits_performance_block():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+async def test_review_without_risk_section_omits_risk_block():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     response = await service.get_portfolio_review(
         "P1",
         {"as_of_date": "2026-02-24", "sections": ["overview", "holdings"]},
@@ -111,12 +181,16 @@ async def test_review_without_performance_section_omits_performance_block():
     )
     assert "overview" in response
     assert "holdings" in response
-    assert "performance" not in response
+    assert "riskAnalytics" not in response
 
 
 @pytest.mark.asyncio
 async def test_summary_with_explicit_sections_can_exclude_wealth_and_allocation():
-    service = ReportingReadService(pas_client=_PasSuccessMinimal(), pa_client=_PaSuccessEmpty())
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
     response = await service.get_portfolio_summary(
         "P1",
         {"as_of_date": "2026-02-24", "sections": ["pnl"]},
