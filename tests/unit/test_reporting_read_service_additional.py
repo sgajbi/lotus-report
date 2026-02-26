@@ -211,3 +211,138 @@ def test_to_float_accepts_numeric_values():
 
 def test_to_float_returns_zero_for_unsupported_type():
     assert ReportingReadService._to_float(object()) == 0.0
+
+
+class _PasPerfStatusError(_PasSuccessMinimal):
+    async def get_performance_input(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        lookback_days: int = 1200,
+    ):
+        return 500, {"detail": "upstream error"}
+
+
+class _PasPerfInvalidPoints(_PasSuccessMinimal):
+    async def get_performance_input(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        lookback_days: int = 1200,
+    ):
+        return 200, {"performanceStartDate": "2025-01-01", "valuationPoints": []}
+
+
+class _PasPerfInvalidStart(_PasSuccessMinimal):
+    async def get_performance_input(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        lookback_days: int = 1200,
+    ):
+        return 200, {"performanceStartDate": None, "valuationPoints": [{"perf_date": "2025-01-01"}]}
+
+
+class _PaTwrStatusError(_PaSuccessEmpty):
+    async def calculate_twr(self, payload: dict[str, object]):
+        return 500, {"detail": "twr failed"}
+
+
+class _PaTwrNoReturns(_PaSuccessEmpty):
+    async def calculate_twr(self, payload: dict[str, object]):
+        return 200, {"results_by_period": {"EXPLICIT": {"breakdowns": {"daily": []}}}}
+
+
+class _RiskStatusError(_RiskSuccess):
+    async def calculate_risk(self, payload: dict[str, object]):
+        return 500, {"detail": "risk failed"}
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_on_performance_input_failure():
+    service = ReportingReadService(
+        pas_client=_PasPerfStatusError(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_on_invalid_valuation_points():
+    service = ReportingReadService(
+        pas_client=_PasPerfInvalidPoints(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_on_invalid_performance_start_date():
+    service = ReportingReadService(
+        pas_client=_PasPerfInvalidStart(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_when_twr_call_fails():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaTwrStatusError(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaTwrNoReturns(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_when_risk_call_fails():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskStatusError(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24")
+    assert result is None
+
+
+def test_extract_daily_returns_skips_invalid_items():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    twr_payload = {
+        "results_by_period": {
+            "EXPLICIT": {
+                "breakdowns": {
+                    "daily": [
+                        "bad",
+                        {"period": "2025-01-03", "summary": {"period_return_pct": "bad"}},
+                        {"period": 123, "summary": {"period_return_pct": 1.2}},
+                        {"period": "2025-01-04", "summary": {"period_return_pct": 0.4}},
+                    ]
+                }
+            }
+        }
+    }
+    returns = service._extract_daily_returns_from_twr(twr_payload)
+    assert returns == [{"date": "2025-01-04", "value": 0.4}]
