@@ -142,6 +142,7 @@ async def test_middleware_accepts_invalid_content_length_and_sets_policy_header(
     assert response.status_code == 200
     assert response.headers["X-Enterprise-Policy-Version"] == "2.0.0"
 
+
 def test_validate_runtime_config_raises_when_enforced(monkeypatch):
     monkeypatch.setenv("ENTERPRISE_POLICY_VERSION", " ")
     monkeypatch.setenv("ENTERPRISE_ENFORCE_RUNTIME_CONFIG", "true")
@@ -151,7 +152,9 @@ def test_validate_runtime_config_raises_when_enforced(monkeypatch):
 
 def test_authorize_write_request_allows_when_rule_not_matching_path(monkeypatch):
     monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "true")
-    monkeypatch.setenv("ENTERPRISE_CAPABILITY_RULES_JSON", json.dumps({"POST /other": "reports.write"}))
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON", json.dumps({"POST /other": "reports.write"})
+    )
     headers = {
         "X-Actor-Id": "a1",
         "X-Tenant-Id": "t1",

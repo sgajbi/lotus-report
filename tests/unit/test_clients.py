@@ -2,6 +2,7 @@ import pytest
 
 from app.clients.pa_client import PaClient
 from app.clients.pas_client import PasClient
+from app.clients.risk_client import RiskClient
 from app.observability import correlation_id_var, request_id_var, trace_id_var
 
 
@@ -164,8 +165,6 @@ async def test_pas_client_get_portfolio_review_posts_expected_contract(monkeypat
     assert recorder.calls[0]["url"] == "http://pas/portfolios/P4/review"
     assert recorder.calls[0]["headers"] == {}
 
-from app.clients.risk_client import RiskClient
-
 
 @pytest.mark.asyncio
 async def test_pa_client_calculate_twr_posts_expected_contract(monkeypatch):
@@ -208,4 +207,3 @@ async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     assert status_code == 200
     assert payload == {"results": {}}
     assert kwargs["url"] == "http://risk/analytics/risk/calculate"
-
