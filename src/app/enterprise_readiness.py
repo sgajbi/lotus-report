@@ -209,4 +209,3 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         return response
 
     return middleware
-

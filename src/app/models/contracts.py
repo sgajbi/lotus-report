@@ -57,4 +57,3 @@ class IntegrationCapabilitiesResponse(BaseModel):
     supported_input_modes: list[str] = Field(alias="supportedInputModes")
 
     model_config = {"populate_by_name": True}
-
