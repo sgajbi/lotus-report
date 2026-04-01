@@ -14,7 +14,13 @@ uvicorn app.main:app --reload --port 8300
 ```
 
 API docs:
-- http://localhost:8300/docs
+- canonical local service identity: `http://report.dev.lotus`
+- direct process port for local-only debugging: `8300`
+
+Cross-app upstream defaults:
+- `PAS_BASE_URL=http://core-query.dev.lotus`
+- `PA_BASE_URL=http://performance.dev.lotus`
+- `RISK_BASE_URL=http://risk.dev.lotus`
 
 Key reporting endpoints:
 - `GET /integration/capabilities`
