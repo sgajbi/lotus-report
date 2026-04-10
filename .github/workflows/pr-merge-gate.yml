@@ -1,8 +1,6 @@
-name: Reporting Aggregation Service Pipeline
+name: Pull Request Merge Gate
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -21,14 +19,14 @@ env:
 
 jobs:
   workflow-lint:
-    name: Workflow Lint
+    name: PR Merge Gate / Workflow Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: reviewdog/action-actionlint@v1
 
   lint-typecheck-security:
-    name: Lint Typecheck Security
+    name: PR Merge Gate / Lint Typecheck Security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +50,7 @@ jobs:
         run: make security-audit
 
   test-suites:
-    name: Tests (${{ matrix.suite }})
+    name: PR Merge Gate / Tests (${{ matrix.suite }})
     needs: [lint-typecheck-security]
     runs-on: ubuntu-latest
     strategy:
@@ -88,7 +86,7 @@ jobs:
           if-no-files-found: error
 
   coverage-gate:
-    name: Coverage Gate (Combined)
+    name: PR Merge Gate / Coverage Gate (Combined)
     needs: [test-suites]
     runs-on: ubuntu-latest
     steps:
@@ -111,7 +109,7 @@ jobs:
           python -m coverage report --fail-under=99
 
   docker-build:
-    name: Validate Docker Build
+    name: PR Merge Gate / Validate Docker Build
     needs: [coverage-gate]
     runs-on: ubuntu-latest
     steps:

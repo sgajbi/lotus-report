@@ -9,4 +9,4 @@ This document provides explicit implementation evidence pointers for active RFCs
   - `tests/integration/`
   - `tests/e2e/`
   - `Makefile` (`test-pyramid`, `test-coverage`, `ci`)
-  - `.github/workflows/ci.yml`
+  - `.github/workflows/pr-merge-gate.yml`

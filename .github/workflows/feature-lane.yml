@@ -1,0 +1,64 @@
+name: Remote Feature Lane
+
+on:
+  push:
+    branches-ignore:
+      - "main"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUNBUFFERED: "1"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  workflow-lint:
+    name: Feature Lane / Workflow Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: reviewdog/action-actionlint@v1
+
+  lint-typecheck-security:
+    name: Feature Lane / Lint Typecheck Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install
+        run: make install
+      - name: Verify Dependencies
+        run: python -m pip check
+      - name: Lint
+        run: make lint
+      - name: Typecheck
+        run: make typecheck
+      - name: OpenAPI Gate
+        run: make openapi-gate
+      - name: Security Audit
+        run: make security-audit
+
+  unit-tests:
+    name: Feature Lane / Tests (unit)
+    needs: [lint-typecheck-security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+      - name: Install
+        run: make install
+      - name: Run unit tests
+        run: python -m pytest tests/unit
