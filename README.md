@@ -44,6 +44,14 @@ python -m pytest tests -q
 docker compose up -d --build
 ```
 
+Canonical local service identity:
+
+- `http://report.dev.lotus`
+
+For the shared front-office stack, `lotus-report` stays Docker-backed on port `8300` and is exposed
+through direct ingress as `report.dev.lotus`. Use the canonical URL for all cross-app probing and
+validation rather than the raw port.
+
 ## Platform Foundation Commands
 
 - `make migration-smoke`
