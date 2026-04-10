@@ -18,13 +18,13 @@ jobs:
       github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
-      - name: Enable auto-merge queue (squash)
+      - name: Enable auto-merge queue (merge commit)
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set +e
-          output=$(gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch 2>&1)
+          output=$(gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --merge --delete-branch 2>&1)
           code=$?
           set -e
           if [ "$code" -eq 0 ]; then
