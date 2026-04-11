@@ -1,5 +1,7 @@
 # Reporting & Aggregation Service
 
+Repository-local engineering context: `REPOSITORY-ENGINEERING-CONTEXT.md`
+
 Service scope:
 - build aggregated read models for reporting from lotus-core and lotus-performance data contracts
 - generate reporting artifacts metadata and download references
@@ -62,5 +64,3 @@ Standards documentation:
 
 - `docs/standards/migration-contract.md`
 - `docs/standards/data-model-ownership.md`
-
-
