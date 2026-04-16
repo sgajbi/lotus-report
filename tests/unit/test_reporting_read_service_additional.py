@@ -13,6 +13,14 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"unexpected": "shape"}
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -44,6 +52,17 @@ class _PasSuccessMinimal:
                 "cash_balance_reporting_currency": 10.0,
             },
             "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
+        }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "scope": {"portfolio_id": portfolio_id},
+            "views": [{"dimension": "asset_class", "buckets": []}],
         }
 
     async def get_core_snapshot(
@@ -149,6 +168,27 @@ async def test_summary_contract_missing_raises_502():
     with pytest.raises(HTTPException) as exc:
         await service.get_portfolio_summary("P1", {"as_of_date": "2026-02-24"}, None)
     assert exc.value.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_summary_rejects_unknown_allocation_dimension():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await service.get_portfolio_summary(
+            "P1",
+            {
+                "as_of_date": "2026-02-24",
+                "sections": ["ALLOCATION"],
+                "allocation_dimensions": ["CUSIP"],
+            },
+            None,
+        )
+    assert exc.value.status_code == 422
+    assert "Unsupported allocation dimension" in str(exc.value.detail)
 
 
 def test_requested_sections_filters_non_string_values():

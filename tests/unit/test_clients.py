@@ -148,6 +148,44 @@ async def test_pas_client_get_portfolio_summary_posts_expected_contract(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_pas_client_get_asset_allocation_posts_expected_contract(monkeypatch):
+    request_id_var.set("req-4")
+    trace_id_var.set("abcdef0123456789abcdef0123456789")
+    response = _FakeResponse(status_code=200, payload={"scope": {"portfolio_id": "P4"}})
+    recorder = _RecordingAsyncClient(response=response)
+    monkeypatch.setattr(
+        "app.clients.pas_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = PasClient(
+        base_url="http://pas",
+        timeout_seconds=5.0,
+        max_retries=4,
+        retry_backoff_seconds=0.3,
+    )
+    status_code, payload = await client.get_asset_allocation(
+        portfolio_id="P4",
+        payload={
+            "as_of_date": "2026-02-24",
+            "dimensions": ["asset_class", "region"],
+            "look_through_mode": "prefer_look_through",
+        },
+        correlation_id="corr-4",
+    )
+    assert status_code == 200
+    assert payload["scope"]["portfolio_id"] == "P4"
+    assert recorder.calls[0]["url"] == "http://pas/reporting/asset-allocation/query"
+    assert recorder.calls[0]["json"] == {
+        "as_of_date": "2026-02-24",
+        "dimensions": ["asset_class", "region"],
+        "look_through_mode": "prefer_look_through",
+        "scope": {"portfolio_id": "P4"},
+    }
+    assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-4"
+
+
+@pytest.mark.asyncio
 async def test_pas_client_get_portfolio_review_posts_expected_contract(monkeypatch):
     response = _FakeResponse(status_code=200, payload={"portfolio_id": "P4"})
     recorder = _RecordingAsyncClient(response=response)
