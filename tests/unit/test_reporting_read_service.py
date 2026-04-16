@@ -66,6 +66,49 @@ class _PasClientSuccess:
             }
         }
 
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolios": [
+                {
+                    "portfolio_id": portfolio_id,
+                    "year_to_date": {
+                        "transaction_count": 2,
+                        "gross_amount_reporting_currency": 100.0,
+                        "withholding_tax_reporting_currency": 10.0,
+                        "other_deductions_reporting_currency": 0.0,
+                        "net_amount_reporting_currency": 90.0,
+                    },
+                }
+            ],
+            "totals": {},
+        }
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "totals": {
+                "buckets": [
+                    {
+                        "bucket": "INFLOWS",
+                        "year_to_date": {
+                            "transaction_count": 1,
+                            "amount_reporting_currency": 1000.0,
+                        },
+                    }
+                ]
+            },
+            "portfolios": [{"portfolio_id": portfolio_id}],
+        }
+
     async def get_performance_input(
         self,
         portfolio_id: str,
@@ -161,6 +204,22 @@ class _PasClientNotFound:
     ):
         return 404, {"detail": "Portfolio not found"}
 
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
 
 class _PasClientFailure:
     async def get_portfolio_summary(
@@ -195,6 +254,22 @@ class _PasClientFailure:
     ):
         return 503, {"detail": "upstream unavailable"}
 
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
 
 class _PaClientFailure:
     async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
@@ -218,7 +293,10 @@ async def test_summary_uses_pas_summary_for_wealth_and_snapshot_for_details():
     )
     response = await service.get_portfolio_summary(
         "P1",
-        {"as_of_date": "2026-02-24", "sections": ["WEALTH", "ALLOCATION", "PNL"]},
+        {
+            "as_of_date": "2026-02-24",
+            "sections": ["WEALTH", "ALLOCATION", "PNL", "INCOME", "ACTIVITY"],
+        },
         "CID-1",
     )
     assert response["scope"]["portfolio_id"] == "P1"
@@ -226,6 +304,8 @@ async def test_summary_uses_pas_summary_for_wealth_and_snapshot_for_details():
     assert response["wealth"]["total_cash"] == 50_000.0
     assert response["allocation"]["byAssetClass"][0]["group"] == "Equity"
     assert response["allocation"]["byAssetClass"][0]["market_value"] == 600000.0
+    assert response["incomeSummary"]["net_amount_reporting_currency"] == 90.0
+    assert response["activitySummary"]["total_inflows"] == 1000.0
     assert response["pnlSummary"]["total_pnl"] == 1_200.0
 
 

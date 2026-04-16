@@ -29,6 +29,22 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"unexpected": "shape"}
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"unexpected": "shape"}
+
     async def get_performance_input(
         self,
         portfolio_id: str,
@@ -82,6 +98,49 @@ class _PasSuccessMinimal:
                 "holdings": {"holdingsByAssetClass": {"EQUITY": []}},
                 "transactions": {"transactionsByAssetClass": {"EQUITY": []}},
             }
+        }
+
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolios": [
+                {
+                    "portfolio_id": portfolio_id,
+                    "year_to_date": {
+                        "transaction_count": 1,
+                        "gross_amount_reporting_currency": 3.0,
+                        "withholding_tax_reporting_currency": 0.0,
+                        "other_deductions_reporting_currency": 0.0,
+                        "net_amount_reporting_currency": 3.0,
+                    },
+                }
+            ],
+            "totals": {},
+        }
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "totals": {
+                "buckets": [
+                    {
+                        "bucket": "INFLOWS",
+                        "year_to_date": {
+                            "transaction_count": 1,
+                            "amount_reporting_currency": 5.0,
+                        },
+                    }
+                ]
+            },
+            "portfolios": [{"portfolio_id": portfolio_id}],
         }
 
     async def get_performance_input(

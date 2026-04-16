@@ -101,6 +101,44 @@ class PasClient:
             backoff_seconds=self._retry_backoff_seconds,
         )
 
+    async def get_income_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        url = f"{self._base_url}/reporting/income-summary/query"
+        headers = self._headers(correlation_id)
+        request_payload = dict(payload)
+        request_payload["scope"] = {"portfolio_id": portfolio_id}
+        return await post_with_retry(
+            url=url,
+            timeout_seconds=self._timeout_seconds,
+            json_body=request_payload,
+            headers=headers,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+
+    async def get_activity_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        url = f"{self._base_url}/reporting/activity-summary/query"
+        headers = self._headers(correlation_id)
+        request_payload = dict(payload)
+        request_payload["scope"] = {"portfolio_id": portfolio_id}
+        return await post_with_retry(
+            url=url,
+            timeout_seconds=self._timeout_seconds,
+            json_body=request_payload,
+            headers=headers,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+
     async def get_portfolio_review(
         self,
         portfolio_id: str,
