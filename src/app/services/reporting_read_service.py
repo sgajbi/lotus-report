@@ -95,32 +95,17 @@ class ReportingReadService:
         if "PNL" in requested_sections:
             snapshot_sections.append("OVERVIEW")
 
-        if "INCOME" in requested_sections:
-            income_request = self._build_reporting_window_request(request_payload)
-            income_status, income_payload = await self._pas_client.get_income_summary(
+        if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
+            transaction_params = self._build_transaction_window_params(request_payload)
+            transaction_rows = await self._list_transaction_rows(
                 portfolio_id=portfolio_id,
-                payload=income_request,
                 correlation_id=correlation_id,
+                params=transaction_params,
             )
-            income_response = self._unwrap_pas_portfolio_reporting_summary(
-                status_code=income_status,
-                payload=income_payload,
-                summary_name="income summary",
-            )
-            response["incomeSummary"] = self._map_income_summary(income_response)
-
-        if "ACTIVITY" in requested_sections:
-            activity_request = self._build_reporting_window_request(request_payload)
-            activity_status, activity_payload = await self._pas_client.get_activity_summary(
-                portfolio_id=portfolio_id,
-                payload=activity_request,
-                correlation_id=correlation_id,
-            )
-            activity_response = self._unwrap_pas_activity_summary(
-                status_code=activity_status,
-                payload=activity_payload,
-            )
-            response["activitySummary"] = self._map_activity_summary(activity_response)
+            if "INCOME" in requested_sections:
+                response["incomeSummary"] = self._map_income_summary_from_rows(transaction_rows)
+            if "ACTIVITY" in requested_sections:
+                response["activitySummary"] = self._map_activity_summary_from_rows(transaction_rows)
 
         if snapshot_sections:
             snapshot_status, snapshot_payload = await self._pas_client.get_core_snapshot(
@@ -339,41 +324,6 @@ class ReportingReadService:
             detail=f"lotus-core asset allocation upstream failure: {payload}",
         )
 
-    def _unwrap_pas_portfolio_reporting_summary(
-        self,
-        *,
-        status_code: int,
-        payload: dict[str, object],
-        summary_name: str,
-    ) -> dict[str, object]:
-        if status_code < status.HTTP_400_BAD_REQUEST:
-            if isinstance(payload, dict) and "portfolios" in payload and "totals" in payload:
-                return payload
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"lotus-core {summary_name} payload missing required fields.",
-            )
-        if status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=payload.get("detail"),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"lotus-core {summary_name} upstream failure: {payload}",
-        )
-
-    def _unwrap_pas_activity_summary(
-        self, status_code: int, payload: dict[str, object]
-    ) -> dict[str, object]:
-        return self._unwrap_pas_portfolio_reporting_summary(
-            status_code=status_code,
-            payload=payload,
-            summary_name="activity summary",
-        )
-
     def _build_allocation_request(self, request_payload: dict[str, object]) -> dict[str, object]:
         dimensions = self._allocation_dimensions(request_payload)
         allocation_request: dict[str, object] = {"dimensions": dimensions}
@@ -392,22 +342,28 @@ class ReportingReadService:
             allocation_request["look_through_mode"] = look_through_mode
         return allocation_request
 
-    def _build_reporting_window_request(
+    def _build_transaction_window_params(
         self, request_payload: dict[str, object]
     ) -> dict[str, object]:
         end_date = self._required_string(request_payload, "as_of_date", "asOfDate")
-        window_request: dict[str, object] = {
-            "window": {
-                "start_date": f"{end_date[:4]}-01-01",
-                "end_date": end_date,
-            }
+        transaction_params: dict[str, object] = {
+            "start_date": f"{end_date[:4]}-01-01",
+            "end_date": end_date,
+            "sort_by": "transaction_date",
+            "sort_order": "asc",
+            "include_projected": "false",
+            "limit": 500,
+            "skip": 0,
         }
+        as_of_date = request_payload.get("as_of_date") or request_payload.get("asOfDate")
+        if isinstance(as_of_date, str) and as_of_date:
+            transaction_params["as_of_date"] = as_of_date
         reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
             "reportingCurrency"
         )
         if isinstance(reporting_currency, str) and reporting_currency:
-            window_request["reporting_currency"] = reporting_currency
-        return window_request
+            transaction_params["reporting_currency"] = reporting_currency
+        return transaction_params
 
     def _allocation_dimensions(self, request_payload: dict[str, object]) -> list[str]:
         raw_dimensions = request_payload.get("allocation_dimensions")
@@ -476,32 +432,239 @@ class ReportingReadService:
             return "views"
         return "by" + "".join(part.capitalize() for part in parts)
 
-    def _map_income_summary(self, payload: dict[str, object]) -> dict[str, object]:
-        portfolios = self._as_list(payload.get("portfolios"))
-        portfolio_payload = self._as_dict(portfolios[0]) if portfolios else {}
-        return self._as_dict(
-            portfolio_payload.get("year_to_date")
-            if portfolio_payload.get("year_to_date") is not None
-            else self._as_dict(payload.get("totals")).get("year_to_date")
-        )
+    def _map_income_summary_from_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        totals, _ = self._summarize_income_rows(rows)
+        return totals
 
-    def _map_activity_summary(self, payload: dict[str, object]) -> dict[str, object]:
-        totals = self._as_dict(payload.get("totals"))
-        buckets = self._as_list(totals.get("buckets"))
+    def _map_activity_summary_from_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        buckets = self._summarize_activity_rows(rows)
         summary: dict[str, object] = {}
-        for item in buckets:
-            bucket_payload = self._as_dict(item)
-            bucket = str(bucket_payload.get("bucket") or "").strip().lower()
-            if not bucket:
-                continue
-            year_to_date = self._as_dict(bucket_payload.get("year_to_date"))
-            summary[f"total_{bucket.lower()}"] = self._to_float(
-                year_to_date.get("amount_reporting_currency")
-            )
-            summary[f"{bucket.lower()}_transaction_count"] = self._to_int(
-                year_to_date.get("transaction_count")
+        for bucket_name, bucket in buckets.items():
+            normalized = bucket_name.lower()
+            summary[f"total_{normalized}"] = self._to_float(bucket.get("amount_reporting_currency"))
+            summary[f"{normalized}_transaction_count"] = self._to_int(
+                bucket.get("transaction_count")
             )
         return summary
+
+    async def _list_transaction_rows(
+        self,
+        *,
+        portfolio_id: str,
+        correlation_id: str | None,
+        params: dict[str, object],
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        skip = 0
+        limit = self._to_int(params.get("limit")) or 500
+
+        while True:
+            query_params = dict(params)
+            query_params["skip"] = skip
+            query_params["limit"] = limit
+            status_code, payload = await self._pas_client.get_portfolio_transactions(
+                portfolio_id=portfolio_id,
+                params=query_params,
+                correlation_id=correlation_id,
+            )
+            if status_code < status.HTTP_400_BAD_REQUEST:
+                if not isinstance(payload, dict) or "transactions" not in payload:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="lotus-core transactions payload missing required fields.",
+                    )
+                page_rows = [
+                    item
+                    for item in self._as_list(payload.get("transactions"))
+                    if isinstance(item, dict)
+                ]
+                rows.extend(page_rows)
+                total = self._to_int(payload.get("total"))
+                skip += len(page_rows)
+                if not page_rows or skip >= total:
+                    break
+                continue
+            if status_code == status.HTTP_404_NOT_FOUND:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=payload.get("detail"),
+                )
+            if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=payload.get("detail"),
+                )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"lotus-core transactions upstream failure: {payload}",
+            )
+
+        return rows
+
+    def _summarize_income_rows(
+        self,
+        rows: list[dict[str, object]],
+    ) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+        totals = self._new_income_metric()
+        by_income_type: dict[str, dict[str, object]] = {}
+        for row in rows:
+            income_type = str(row.get("transaction_type") or "").strip().upper()
+            if income_type not in {"DIVIDEND", "INTEREST"}:
+                continue
+            bucket = by_income_type.setdefault(income_type, self._new_income_metric())
+            self._accumulate_income_metric(totals, row)
+            self._accumulate_income_metric(bucket, row)
+        return totals, by_income_type
+
+    def _summarize_activity_rows(
+        self,
+        rows: list[dict[str, object]],
+    ) -> dict[str, dict[str, object]]:
+        buckets: dict[str, dict[str, object]] = {}
+        for row in rows:
+            transaction_type = str(row.get("transaction_type") or "").strip().upper()
+            bucket_name = self._activity_bucket_name(transaction_type)
+            if bucket_name is not None:
+                bucket = buckets.setdefault(bucket_name, self._new_flow_metric())
+                self._accumulate_flow_metric(
+                    bucket,
+                    reporting_amount=self._activity_reporting_amount(row),
+                )
+            withholding_reporting = self._absolute_money(
+                row.get("withholding_tax_amount_reporting_currency")
+            )
+            if withholding_reporting > 0:
+                tax_bucket = buckets.setdefault("TAXES", self._new_flow_metric())
+                self._accumulate_flow_metric(
+                    tax_bucket,
+                    reporting_amount=withholding_reporting,
+                )
+        return buckets
+
+    def _new_income_metric(self) -> dict[str, object]:
+        return {
+            "transaction_count": 0,
+            "gross_amount_reporting_currency": 0.0,
+            "withholding_tax_reporting_currency": 0.0,
+            "other_deductions_reporting_currency": 0.0,
+            "net_amount_reporting_currency": 0.0,
+        }
+
+    def _new_flow_metric(self) -> dict[str, object]:
+        return {"transaction_count": 0, "amount_reporting_currency": 0.0}
+
+    def _accumulate_income_metric(
+        self,
+        accumulator: dict[str, object],
+        row: dict[str, object],
+    ) -> None:
+        accumulator["transaction_count"] = self._to_int(accumulator["transaction_count"]) + 1
+        accumulator["gross_amount_reporting_currency"] = self._to_float(
+            accumulator["gross_amount_reporting_currency"]
+        ) + self._reporting_money(
+            row,
+            reporting_key="gross_transaction_amount_reporting_currency",
+            portfolio_key="gross_transaction_amount",
+        )
+        accumulator["withholding_tax_reporting_currency"] = self._to_float(
+            accumulator["withholding_tax_reporting_currency"]
+        ) + self._reporting_money(
+            row,
+            reporting_key="withholding_tax_amount_reporting_currency",
+            portfolio_key="withholding_tax_amount",
+        )
+        accumulator["other_deductions_reporting_currency"] = self._to_float(
+            accumulator["other_deductions_reporting_currency"]
+        ) + self._reporting_money(
+            row,
+            reporting_key="other_interest_deductions_amount_reporting_currency",
+            portfolio_key="other_interest_deductions_amount",
+        )
+        accumulator["net_amount_reporting_currency"] = self._to_float(
+            accumulator["net_amount_reporting_currency"]
+        ) + self._income_net_reporting_amount(row)
+
+    def _accumulate_flow_metric(
+        self,
+        accumulator: dict[str, object],
+        *,
+        reporting_amount: float,
+    ) -> None:
+        accumulator["transaction_count"] = self._to_int(accumulator["transaction_count"]) + 1
+        accumulator["amount_reporting_currency"] = (
+            self._to_float(accumulator["amount_reporting_currency"]) + reporting_amount
+        )
+
+    def _activity_bucket_name(self, transaction_type: str) -> str | None:
+        if transaction_type in {"DEPOSIT", "TRANSFER_IN"}:
+            return "INFLOWS"
+        if transaction_type in {"WITHDRAWAL", "TRANSFER_OUT"}:
+            return "OUTFLOWS"
+        if transaction_type == "FEE":
+            return "FEES"
+        if transaction_type == "TAX":
+            return "TAXES"
+        return None
+
+    def _activity_reporting_amount(self, row: dict[str, object]) -> float:
+        if str(row.get("transaction_type") or "").strip().upper() == "FEE":
+            return self._reporting_money(
+                row,
+                reporting_key="gross_transaction_amount_reporting_currency",
+                portfolio_key="gross_transaction_amount",
+            ) + self._reporting_money(
+                row,
+                reporting_key="trade_fee_reporting_currency",
+                portfolio_key="trade_fee",
+            )
+        return self._reporting_money(
+            row,
+            reporting_key="gross_transaction_amount_reporting_currency",
+            portfolio_key="gross_transaction_amount",
+        )
+
+    def _income_net_reporting_amount(self, row: dict[str, object]) -> float:
+        if (
+            str(row.get("transaction_type") or "").strip().upper() == "INTEREST"
+            and row.get("net_interest_amount_reporting_currency") is not None
+        ):
+            return self._absolute_money(row.get("net_interest_amount_reporting_currency"))
+        gross = self._reporting_money(
+            row,
+            reporting_key="gross_transaction_amount_reporting_currency",
+            portfolio_key="gross_transaction_amount",
+        )
+        withholding = self._reporting_money(
+            row,
+            reporting_key="withholding_tax_amount_reporting_currency",
+            portfolio_key="withholding_tax_amount",
+        )
+        other_deductions = self._reporting_money(
+            row,
+            reporting_key="other_interest_deductions_amount_reporting_currency",
+            portfolio_key="other_interest_deductions_amount",
+        )
+        trade_fee = self._reporting_money(
+            row,
+            reporting_key="trade_fee_reporting_currency",
+            portfolio_key="trade_fee",
+        )
+        return gross - withholding - other_deductions - trade_fee
+
+    def _reporting_money(
+        self,
+        row: dict[str, object],
+        *,
+        reporting_key: str,
+        portfolio_key: str,
+    ) -> float:
+        if row.get(reporting_key) is not None:
+            return self._absolute_money(row.get(reporting_key))
+        return self._absolute_money(row.get(portfolio_key))
+
+    def _absolute_money(self, value: object) -> float:
+        amount = self._to_float(value)
+        return abs(amount)
 
     def _map_pa_performance(self, payload: dict[str, object]) -> dict[str, object]:
         results_by_period = self._as_dict(payload.get("resultsByPeriod"))

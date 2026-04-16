@@ -66,47 +66,40 @@ class _PasClientSuccess:
             }
         }
 
-    async def get_income_summary(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        payload: dict[str, object],
+        params: dict[str, object],
         correlation_id: str | None = None,
     ):
         return 200, {
-            "portfolios": [
+            "portfolio_id": portfolio_id,
+            "reporting_currency": params.get("reporting_currency", "USD"),
+            "total": 3,
+            "skip": 0,
+            "limit": 500,
+            "transactions": [
                 {
-                    "portfolio_id": portfolio_id,
-                    "year_to_date": {
-                        "transaction_count": 2,
-                        "gross_amount_reporting_currency": 100.0,
-                        "withholding_tax_reporting_currency": 10.0,
-                        "other_deductions_reporting_currency": 0.0,
-                        "net_amount_reporting_currency": 90.0,
-                    },
-                }
+                    "transaction_id": "TXN-DIV-1",
+                    "transaction_date": "2026-01-10",
+                    "transaction_type": "DIVIDEND",
+                    "gross_transaction_amount_reporting_currency": 100.0,
+                    "withholding_tax_amount_reporting_currency": 10.0,
+                    "other_interest_deductions_amount_reporting_currency": 0.0,
+                },
+                {
+                    "transaction_id": "TXN-DEP-1",
+                    "transaction_date": "2026-02-01",
+                    "transaction_type": "DEPOSIT",
+                    "gross_transaction_amount_reporting_currency": 1000.0,
+                },
+                {
+                    "transaction_id": "TXN-TAX-1",
+                    "transaction_date": "2026-02-05",
+                    "transaction_type": "TAX",
+                    "withholding_tax_amount_reporting_currency": 0.0,
+                },
             ],
-            "totals": {},
-        }
-
-    async def get_activity_summary(
-        self,
-        portfolio_id: str,
-        payload: dict[str, object],
-        correlation_id: str | None = None,
-    ):
-        return 200, {
-            "totals": {
-                "buckets": [
-                    {
-                        "bucket": "INFLOWS",
-                        "year_to_date": {
-                            "transaction_count": 1,
-                            "amount_reporting_currency": 1000.0,
-                        },
-                    }
-                ]
-            },
-            "portfolios": [{"portfolio_id": portfolio_id}],
         }
 
     async def get_performance_input(
@@ -204,18 +197,10 @@ class _PasClientNotFound:
     ):
         return 404, {"detail": "Portfolio not found"}
 
-    async def get_income_summary(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        payload: dict[str, object],
-        correlation_id: str | None = None,
-    ):
-        return 404, {"detail": "Portfolio not found"}
-
-    async def get_activity_summary(
-        self,
-        portfolio_id: str,
-        payload: dict[str, object],
+        params: dict[str, object],
         correlation_id: str | None = None,
     ):
         return 404, {"detail": "Portfolio not found"}
@@ -254,18 +239,10 @@ class _PasClientFailure:
     ):
         return 503, {"detail": "upstream unavailable"}
 
-    async def get_income_summary(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        payload: dict[str, object],
-        correlation_id: str | None = None,
-    ):
-        return 503, {"detail": "upstream unavailable"}
-
-    async def get_activity_summary(
-        self,
-        portfolio_id: str,
-        payload: dict[str, object],
+        params: dict[str, object],
         correlation_id: str | None = None,
     ):
         return 503, {"detail": "upstream unavailable"}

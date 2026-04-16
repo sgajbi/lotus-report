@@ -29,18 +29,10 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
-    async def get_income_summary(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        payload: dict[str, object],
-        correlation_id: str | None = None,
-    ):
-        return 200, {"unexpected": "shape"}
-
-    async def get_activity_summary(
-        self,
-        portfolio_id: str,
-        payload: dict[str, object],
+        params: dict[str, object],
         correlation_id: str | None = None,
     ):
         return 200, {"unexpected": "shape"}
@@ -100,47 +92,33 @@ class _PasSuccessMinimal:
             }
         }
 
-    async def get_income_summary(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        payload: dict[str, object],
+        params: dict[str, object],
         correlation_id: str | None = None,
     ):
         return 200, {
-            "portfolios": [
+            "portfolio_id": portfolio_id,
+            "reporting_currency": params.get("reporting_currency", "USD"),
+            "total": 2,
+            "skip": 0,
+            "limit": 500,
+            "transactions": [
                 {
-                    "portfolio_id": portfolio_id,
-                    "year_to_date": {
-                        "transaction_count": 1,
-                        "gross_amount_reporting_currency": 3.0,
-                        "withholding_tax_reporting_currency": 0.0,
-                        "other_deductions_reporting_currency": 0.0,
-                        "net_amount_reporting_currency": 3.0,
-                    },
-                }
+                    "transaction_id": "TXN-INT-1",
+                    "transaction_date": "2026-01-15",
+                    "transaction_type": "INTEREST",
+                    "net_interest_amount_reporting_currency": 3.0,
+                    "gross_transaction_amount_reporting_currency": 3.0,
+                },
+                {
+                    "transaction_id": "TXN-DEP-1",
+                    "transaction_date": "2026-02-10",
+                    "transaction_type": "DEPOSIT",
+                    "gross_transaction_amount_reporting_currency": 5.0,
+                },
             ],
-            "totals": {},
-        }
-
-    async def get_activity_summary(
-        self,
-        portfolio_id: str,
-        payload: dict[str, object],
-        correlation_id: str | None = None,
-    ):
-        return 200, {
-            "totals": {
-                "buckets": [
-                    {
-                        "bucket": "INFLOWS",
-                        "year_to_date": {
-                            "transaction_count": 1,
-                            "amount_reporting_currency": 5.0,
-                        },
-                    }
-                ]
-            },
-            "portfolios": [{"portfolio_id": portfolio_id}],
         }
 
     async def get_performance_input(
