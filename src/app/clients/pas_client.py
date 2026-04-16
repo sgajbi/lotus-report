@@ -69,12 +69,14 @@ class PasClient:
         payload: dict[str, Any],
         correlation_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        url = f"{self._base_url}/portfolios/{portfolio_id}/summary"
+        url = f"{self._base_url}/reporting/portfolio-summary/query"
         headers = self._headers(correlation_id)
+        request_payload = dict(payload)
+        request_payload["portfolio_id"] = portfolio_id
         return await post_with_retry(
             url=url,
             timeout_seconds=self._timeout_seconds,
-            json_body=payload,
+            json_body=request_payload,
             headers=headers,
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,

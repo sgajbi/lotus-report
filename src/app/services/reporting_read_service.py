@@ -44,16 +44,19 @@ class ReportingReadService:
             default_sections=["WEALTH", "ALLOCATION", "PNL", "INCOME", "ACTIVITY"],
         )
 
-        status_code, payload = await self._pas_client.get_core_snapshot(
-            portfolio_id=portfolio_id,
-            as_of_date=as_of_date,
-            include_sections=["OVERVIEW", "ALLOCATION", "INCOME_AND_ACTIVITY"],
+        summary_request: dict[str, object] = {"as_of_date": as_of_date}
+        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
+            "reportingCurrency"
         )
-        snapshot = self._unwrap_pas_snapshot(status_code=status_code, payload=payload)
+        if isinstance(reporting_currency, str) and reporting_currency:
+            summary_request["reporting_currency"] = reporting_currency
 
-        overview = self._as_dict(snapshot.get("overview"))
-        allocation = self._as_dict(snapshot.get("allocation"))
-        income_activity = self._as_dict(snapshot.get("incomeAndActivity"))
+        status_code, payload = await self._pas_client.get_portfolio_summary(
+            portfolio_id=portfolio_id,
+            payload=summary_request,
+            correlation_id=correlation_id,
+        )
+        summary = self._unwrap_pas_summary(status_code=status_code, payload=payload)
 
         ytd_start = f"{as_of_date[:4]}-01-01"
         response: dict[str, object] = {
@@ -65,18 +68,43 @@ class ReportingReadService:
             }
         }
         if "WEALTH" in requested_sections:
+            totals = self._as_dict(summary.get("totals"))
             response["wealth"] = {
-                "total_market_value": self._to_float(overview.get("total_market_value")),
-                "total_cash": self._to_float(overview.get("total_cash")),
+                "total_market_value": self._to_float(
+                    totals.get("total_market_value_reporting_currency")
+                ),
+                "total_cash": self._to_float(totals.get("cash_balance_reporting_currency")),
             }
-        if "PNL" in requested_sections and "pnl_summary" in overview:
-            response["pnlSummary"] = overview.get("pnl_summary")
-        if "INCOME" in requested_sections:
-            response["incomeSummary"] = income_activity.get("income_summary_ytd")
-        if "ACTIVITY" in requested_sections:
-            response["activitySummary"] = income_activity.get("activity_summary_ytd")
+
+        snapshot_sections: list[str] = []
+        if "PNL" in requested_sections:
+            snapshot_sections.append("OVERVIEW")
         if "ALLOCATION" in requested_sections:
-            response["allocation"] = allocation if allocation else None
+            snapshot_sections.append("ALLOCATION")
+        if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
+            snapshot_sections.append("INCOME_AND_ACTIVITY")
+
+        if snapshot_sections:
+            snapshot_status, snapshot_payload = await self._pas_client.get_core_snapshot(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                include_sections=snapshot_sections,
+            )
+            snapshot = self._unwrap_pas_snapshot(
+                status_code=snapshot_status, payload=snapshot_payload
+            )
+            overview = self._as_dict(snapshot.get("overview"))
+            allocation = self._as_dict(snapshot.get("allocation"))
+            income_activity = self._as_dict(snapshot.get("incomeAndActivity"))
+
+            if "PNL" in requested_sections and "pnl_summary" in overview:
+                response["pnlSummary"] = overview.get("pnl_summary")
+            if "INCOME" in requested_sections:
+                response["incomeSummary"] = income_activity.get("income_summary_ytd")
+            if "ACTIVITY" in requested_sections:
+                response["activitySummary"] = income_activity.get("activity_summary_ytd")
+            if "ALLOCATION" in requested_sections:
+                response["allocation"] = allocation if allocation else None
         return response
 
     async def get_portfolio_review(
@@ -241,6 +269,25 @@ class ReportingReadService:
             detail=f"lotus-core core snapshot upstream failure: {payload}",
         )
 
+    def _unwrap_pas_summary(
+        self, status_code: int, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if status_code < status.HTTP_400_BAD_REQUEST:
+            if isinstance(payload, dict) and {"portfolio_id", "totals", "snapshot_metadata"} <= set(
+                payload
+            ):
+                return payload
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="lotus-core portfolio summary payload missing required fields.",
+            )
+        if status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"lotus-core portfolio summary upstream failure: {payload}",
+        )
+
     def _map_pa_performance(self, payload: dict[str, object]) -> dict[str, object]:
         results_by_period = self._as_dict(payload.get("resultsByPeriod"))
         summary: dict[str, object] = {}
@@ -276,7 +323,7 @@ class ReportingReadService:
             if isinstance(value, str) and value:
                 return value
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Missing required request field: {keys[0]}",
         )
 

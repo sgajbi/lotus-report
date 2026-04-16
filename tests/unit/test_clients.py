@@ -142,7 +142,8 @@ async def test_pas_client_get_portfolio_summary_posts_expected_contract(monkeypa
     )
     assert status_code == 200
     assert payload["scope"]["portfolio_id"] == "P3"
-    assert recorder.calls[0]["url"] == "http://pas/portfolios/P3/summary"
+    assert recorder.calls[0]["url"] == "http://pas/reporting/portfolio-summary/query"
+    assert recorder.calls[0]["json"] == {"as_of_date": "2026-02-24", "portfolio_id": "P3"}
     assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-3"
 
 

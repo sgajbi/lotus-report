@@ -5,6 +5,14 @@ from app.services.reporting_read_service import ReportingReadService
 
 
 class _PasSnapshotMissing:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"unexpected": "shape"}
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -23,6 +31,21 @@ class _PasSnapshotMissing:
 
 
 class _PasSuccessMinimal:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "totals": {
+                "total_market_value_reporting_currency": 100.0,
+                "cash_balance_reporting_currency": 10.0,
+            },
+            "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
+        }
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -117,7 +140,7 @@ async def test_summary_includes_default_sections_when_sections_not_list():
 
 
 @pytest.mark.asyncio
-async def test_summary_snapshot_missing_raises_502():
+async def test_summary_contract_missing_raises_502():
     service = ReportingReadService(
         pas_client=_PasSnapshotMissing(),
         pa_client=_PaSuccessEmpty(),

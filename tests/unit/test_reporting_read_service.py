@@ -5,6 +5,21 @@ from app.services.reporting_read_service import ReportingReadService
 
 
 class _PasClientSuccess:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "totals": {
+                "total_market_value_reporting_currency": 1_000_000.0,
+                "cash_balance_reporting_currency": 50_000.0,
+            },
+            "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
+        }
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -91,6 +106,14 @@ class _RiskClientSuccess:
 
 
 class _PasClientNotFound:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -109,6 +132,14 @@ class _PasClientNotFound:
 
 
 class _PasClientFailure:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
     async def get_core_snapshot(
         self,
         portfolio_id: str,
@@ -140,7 +171,7 @@ class _RiskClientFailure:
 
 
 @pytest.mark.asyncio
-async def test_summary_composed_from_pas_core_snapshot():
+async def test_summary_uses_pas_summary_for_wealth_and_snapshot_for_details():
     service = ReportingReadService(
         pas_client=_PasClientSuccess(),
         pa_client=_PaClientSuccess(),
@@ -153,6 +184,7 @@ async def test_summary_composed_from_pas_core_snapshot():
     )
     assert response["scope"]["portfolio_id"] == "P1"
     assert response["wealth"]["total_market_value"] == 1_000_000.0
+    assert response["wealth"]["total_cash"] == 50_000.0
     assert response["allocation"]["byAssetClass"][0]["group"] == "Equity"
     assert response["pnlSummary"]["total_pnl"] == 1_200.0
 
