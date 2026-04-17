@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 
-from app.clients.pa_client import PaClient
-from app.clients.pas_client import PasClient
+from app.clients.core_query_client import CoreQueryClient
+from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 
@@ -9,18 +9,18 @@ from app.config import settings
 class ReportingReadService:
     def __init__(
         self,
-        pas_client: PasClient | None = None,
-        pa_client: PaClient | None = None,
+        core_query_client: CoreQueryClient | None = None,
+        performance_client: PerformanceClient | None = None,
         risk_client: RiskClient | None = None,
     ):
-        self._pas_client = pas_client or PasClient(
-            base_url=settings.pas_base_url,
+        self._core_query_client = core_query_client or CoreQueryClient(
+            base_url=settings.core_query_base_url,
             timeout_seconds=settings.upstream_timeout_seconds,
             max_retries=settings.upstream_max_retries,
             retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
         )
-        self._pa_client = pa_client or PaClient(
-            base_url=settings.pa_base_url,
+        self._performance_client = performance_client or PerformanceClient(
+            base_url=settings.performance_base_url,
             timeout_seconds=settings.upstream_timeout_seconds,
             max_retries=settings.upstream_max_retries,
             retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
@@ -51,12 +51,12 @@ class ReportingReadService:
         if isinstance(reporting_currency, str) and reporting_currency:
             summary_request["reporting_currency"] = reporting_currency
 
-        status_code, payload = await self._pas_client.get_portfolio_summary(
+        status_code, payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
             payload=summary_request,
             correlation_id=correlation_id,
         )
-        summary = self._unwrap_pas_summary(status_code=status_code, payload=payload)
+        summary = self._unwrap_core_query_summary(status_code=status_code, payload=payload)
 
         ytd_start = f"{as_of_date[:4]}-01-01"
         response: dict[str, object] = {
@@ -78,12 +78,15 @@ class ReportingReadService:
 
         if "ALLOCATION" in requested_sections:
             allocation_request = self._build_allocation_request(request_payload)
-            allocation_status, allocation_payload = await self._pas_client.get_asset_allocation(
+            (
+                allocation_status,
+                allocation_payload,
+            ) = await self._core_query_client.get_asset_allocation(
                 portfolio_id=portfolio_id,
                 payload=allocation_request,
                 correlation_id=correlation_id,
             )
-            allocation_response = self._unwrap_pas_allocation(
+            allocation_response = self._unwrap_core_query_allocation(
                 status_code=allocation_status,
                 payload=allocation_payload,
             )
@@ -127,12 +130,14 @@ class ReportingReadService:
             ],
         )
 
-        summary_status, summary_payload = await self._pas_client.get_portfolio_summary(
+        summary_status, summary_payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date},
             correlation_id=correlation_id,
         )
-        summary = self._unwrap_pas_summary(status_code=summary_status, payload=summary_payload)
+        summary = self._unwrap_core_query_summary(
+            status_code=summary_status, payload=summary_payload
+        )
         response: dict[str, object] = {"portfolio_id": portfolio_id, "as_of_date": as_of_date}
         transaction_rows: list[dict[str, object]] | None = None
 
@@ -140,12 +145,15 @@ class ReportingReadService:
             response["overview"] = self._map_review_overview(summary)
         if "ALLOCATION" in requested_sections:
             allocation_request = self._build_allocation_request(request_payload)
-            allocation_status, allocation_payload = await self._pas_client.get_asset_allocation(
+            (
+                allocation_status,
+                allocation_payload,
+            ) = await self._core_query_client.get_asset_allocation(
                 portfolio_id=portfolio_id,
                 payload=allocation_request,
                 correlation_id=correlation_id,
             )
-            allocation_response = self._unwrap_pas_allocation(
+            allocation_response = self._unwrap_core_query_allocation(
                 status_code=allocation_status,
                 payload=allocation_payload,
             )
@@ -164,12 +172,15 @@ class ReportingReadService:
                 "activitySummary": self._map_activity_summary_from_rows(transaction_rows),
             }
         if "HOLDINGS" in requested_sections:
-            positions_status, positions_payload = await self._pas_client.get_portfolio_positions(
+            (
+                positions_status,
+                positions_payload,
+            ) = await self._core_query_client.get_portfolio_positions(
                 portfolio_id=portfolio_id,
                 params=self._build_position_params(request_payload),
                 correlation_id=correlation_id,
             )
-            response["holdings"] = self._unwrap_pas_positions(
+            response["holdings"] = self._unwrap_core_query_positions(
                 status_code=positions_status,
                 payload=positions_payload,
             )
@@ -184,7 +195,10 @@ class ReportingReadService:
 
         workspace_summary_payload: dict[str, object] | None = None
         if "PERFORMANCE" in requested_sections:
-            pa_status, pa_payload = await self._pa_client.get_workspace_summary(
+            (
+                performance_status,
+                performance_payload,
+            ) = await self._performance_client.get_workspace_summary(
                 self._build_workspace_summary_request(
                     portfolio_id=portfolio_id,
                     as_of_date=as_of_date,
@@ -192,10 +206,10 @@ class ReportingReadService:
                     periods=["MTD", "QTD", "YTD", "THREE_YEAR", "SI"],
                 )
             )
-            if pa_status < status.HTTP_400_BAD_REQUEST:
-                workspace_summary_payload = pa_payload
-            if pa_status < status.HTTP_400_BAD_REQUEST:
-                response["performance"] = self._map_workspace_performance(pa_payload)
+            if performance_status < status.HTTP_400_BAD_REQUEST:
+                workspace_summary_payload = performance_payload
+            if performance_status < status.HTTP_400_BAD_REQUEST:
+                response["performance"] = self._map_workspace_performance(performance_payload)
             else:
                 response["performance"] = None
 
@@ -217,7 +231,10 @@ class ReportingReadService:
         workspace_summary_payload: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
         if workspace_summary_payload is None:
-            summary_status, workspace_summary_payload = await self._pa_client.get_workspace_summary(
+            (
+                summary_status,
+                workspace_summary_payload,
+            ) = await self._performance_client.get_workspace_summary(
                 self._build_workspace_summary_request(
                     portfolio_id=portfolio_id,
                     as_of_date=as_of_date,
@@ -286,7 +303,7 @@ class ReportingReadService:
             returns.append({"date": return_date, "value": float(return_value)})
         return returns
 
-    def _unwrap_pas_summary(
+    def _unwrap_core_query_summary(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
         if status_code < status.HTTP_400_BAD_REQUEST:
@@ -305,7 +322,7 @@ class ReportingReadService:
             detail=f"lotus-core portfolio summary upstream failure: {payload}",
         )
 
-    def _unwrap_pas_allocation(
+    def _unwrap_core_query_allocation(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
         if status_code < status.HTTP_400_BAD_REQUEST:
@@ -326,7 +343,7 @@ class ReportingReadService:
             detail=f"lotus-core asset allocation upstream failure: {payload}",
         )
 
-    def _unwrap_pas_positions(
+    def _unwrap_core_query_positions(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
         if status_code < status.HTTP_400_BAD_REQUEST:
@@ -574,7 +591,7 @@ class ReportingReadService:
             query_params = dict(params)
             query_params["skip"] = skip
             query_params["limit"] = limit
-            status_code, payload = await self._pas_client.get_portfolio_transactions(
+            status_code, payload = await self._core_query_client.get_portfolio_transactions(
                 portfolio_id=portfolio_id,
                 params=query_params,
                 correlation_id=correlation_id,

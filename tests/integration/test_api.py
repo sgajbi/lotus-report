@@ -91,7 +91,7 @@ def test_integration_capabilities():
     assert body["sourceService"] == "lotus-report"
     assert body["contractVersion"] == "v1"
     assert body["policyVersion"] == "ras-default-v1"
-    assert body["supportedInputModes"] == ["pas_ref"]
+    assert body["supportedInputModes"] == ["portfolio_id"]
     assert len(body["features"]) >= 3
     assert len(body["workflows"]) >= 1
 

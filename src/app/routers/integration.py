@@ -45,5 +45,5 @@ def get_capabilities(
             {"workflow_key": "portfolio_reporting", "enabled": True},
             {"workflow_key": "portfolio_review_reporting", "enabled": True},
         ],
-        supportedInputModes=["pas_ref"],
+        supportedInputModes=["portfolio_id"],
     )

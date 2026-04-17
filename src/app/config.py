@@ -1,15 +1,21 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_PAS_BASE_URL = "http://core-query.dev.lotus"
-DEFAULT_PA_BASE_URL = "http://performance.dev.lotus"
+DEFAULT_LOTUS_CORE_QUERY_BASE_URL = "http://core-query.dev.lotus"
+DEFAULT_LOTUS_PERFORMANCE_BASE_URL = "http://performance.dev.lotus"
 DEFAULT_RISK_BASE_URL = "http://risk.dev.lotus"
 
 
 class Settings(BaseSettings):
     contract_version: str = Field("v1", alias="CONTRACT_VERSION")
-    pas_base_url: str = Field(DEFAULT_PAS_BASE_URL, alias="PAS_BASE_URL")
-    pa_base_url: str = Field(DEFAULT_PA_BASE_URL, alias="PA_BASE_URL")
+    core_query_base_url: str = Field(
+        DEFAULT_LOTUS_CORE_QUERY_BASE_URL,
+        alias="LOTUS_CORE_QUERY_BASE_URL",
+    )
+    performance_base_url: str = Field(
+        DEFAULT_LOTUS_PERFORMANCE_BASE_URL,
+        alias="LOTUS_PERFORMANCE_BASE_URL",
+    )
     risk_base_url: str = Field(DEFAULT_RISK_BASE_URL, alias="RISK_BASE_URL")
     upstream_timeout_seconds: float = Field(10.0, alias="UPSTREAM_TIMEOUT_SECONDS")
     upstream_max_retries: int = Field(2, alias="UPSTREAM_MAX_RETRIES")

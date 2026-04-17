@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.services.reporting_read_service import ReportingReadService
 
 
-class _PasSnapshotMissing:
+class _CoreQuerySnapshotMissing:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -38,7 +38,7 @@ class _PasSnapshotMissing:
         return 200, {"unexpected": "shape"}
 
 
-class _PasSuccessMinimal:
+class _CoreQuerySuccessMinimal:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -118,7 +118,7 @@ class _PasSuccessMinimal:
         }
 
 
-class _PaSuccessEmpty:
+class _PerformanceSuccessEmpty:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
             "results_by_period": {
@@ -157,7 +157,7 @@ class _RiskSuccess:
         return 200, {"results": {"YTD": {"metrics": {"VOLATILITY": {"value": 0.2}}}}}
 
 
-class _PasPagedTransactions(_PasSuccessMinimal):
+class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
     def __init__(self):
         self.seen_skips: list[int] = []
 
@@ -195,7 +195,7 @@ class _PasPagedTransactions(_PasSuccessMinimal):
         }
 
 
-class _PasTransactionStatus:
+class _CoreQueryTransactionStatus:
     def __init__(self, status_code: int, payload: dict[str, object]):
         self.status_code = status_code
         self.payload = payload
@@ -244,8 +244,8 @@ class _PasTransactionStatus:
 @pytest.mark.asyncio
 async def test_summary_requires_as_of_date():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -257,8 +257,8 @@ async def test_summary_requires_as_of_date():
 @pytest.mark.asyncio
 async def test_summary_includes_default_sections_when_sections_not_list():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     response = await service.get_portfolio_summary(
@@ -274,7 +274,7 @@ async def test_summary_includes_default_sections_when_sections_not_list():
 
 @pytest.mark.asyncio
 async def test_summary_forwards_reporting_currency_to_summary_and_transactions():
-    class _PasCapture(_PasSuccessMinimal):
+    class _CoreQueryCapture(_CoreQuerySuccessMinimal):
         def __init__(self):
             self.summary_payload: dict[str, object] | None = None
             self.transaction_params: dict[str, object] | None = None
@@ -297,10 +297,10 @@ async def test_summary_forwards_reporting_currency_to_summary_and_transactions()
             self.transaction_params = params
             return await super().get_portfolio_transactions(portfolio_id, params, correlation_id)
 
-    pas_client = _PasCapture()
+    core_query_client = _CoreQueryCapture()
     service = ReportingReadService(
-        pas_client=pas_client,
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=core_query_client,
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
 
@@ -315,19 +315,19 @@ async def test_summary_forwards_reporting_currency_to_summary_and_transactions()
     )
 
     assert response["wealth"]["total_market_value"] == 100.0
-    assert pas_client.summary_payload == {
+    assert core_query_client.summary_payload == {
         "as_of_date": "2026-02-24",
         "reporting_currency": "SGD",
     }
-    assert pas_client.transaction_params is not None
-    assert pas_client.transaction_params["reporting_currency"] == "SGD"
+    assert core_query_client.transaction_params is not None
+    assert core_query_client.transaction_params["reporting_currency"] == "SGD"
 
 
 @pytest.mark.asyncio
 async def test_summary_contract_missing_raises_502():
     service = ReportingReadService(
-        pas_client=_PasSnapshotMissing(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySnapshotMissing(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -338,8 +338,8 @@ async def test_summary_contract_missing_raises_502():
 @pytest.mark.asyncio
 async def test_summary_rejects_unknown_allocation_dimension():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -358,8 +358,8 @@ async def test_summary_rejects_unknown_allocation_dimension():
 
 def test_requested_sections_filters_non_string_values():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     sections = service._requested_sections(
@@ -371,8 +371,8 @@ def test_requested_sections_filters_non_string_values():
 
 def test_map_workspace_performance_handles_non_dict_rows():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     mapped = service._map_workspace_performance({"results_by_period": {"YTD": "bad-row"}})
@@ -381,8 +381,8 @@ def test_map_workspace_performance_handles_non_dict_rows():
 
 def test_allocation_and_position_param_builders_preserve_supported_options():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
 
@@ -421,8 +421,8 @@ def test_allocation_and_position_param_builders_preserve_supported_options():
 )
 def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions):
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -432,8 +432,8 @@ def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions
 
 def test_map_allocation_views_skips_non_conforming_items_and_uses_default_key():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
 
@@ -463,8 +463,8 @@ def test_map_allocation_views_skips_non_conforming_items_and_uses_default_key():
 @pytest.mark.asyncio
 async def test_review_default_sections_include_all_payload_groups():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     response = await service.get_portfolio_review("P1", {"as_of_date": "2026-02-24"}, None)
@@ -478,10 +478,10 @@ async def test_review_default_sections_include_all_payload_groups():
 
 @pytest.mark.asyncio
 async def test_review_transactions_only_fetches_transactions_without_reuse():
-    pas_client = _PasPagedTransactions()
+    core_query_client = _CoreQueryPagedTransactions()
     service = ReportingReadService(
-        pas_client=pas_client,
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=core_query_client,
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
 
@@ -498,14 +498,14 @@ async def test_review_transactions_only_fetches_transactions_without_reuse():
         "TXN-1",
         "TXN-2",
     ]
-    assert pas_client.seen_skips == [0, 1]
+    assert core_query_client.seen_skips == [0, 1]
 
 
 @pytest.mark.asyncio
 async def test_review_without_risk_section_omits_risk_block():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     response = await service.get_portfolio_review(
@@ -521,8 +521,8 @@ async def test_review_without_risk_section_omits_risk_block():
 @pytest.mark.asyncio
 async def test_summary_with_explicit_sections_can_exclude_wealth_and_allocation():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     response = await service.get_portfolio_summary(
@@ -561,8 +561,8 @@ def test_as_list_and_safe_str_fallbacks():
 
 def test_activity_and_income_amount_helpers_cover_reporting_fallbacks():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
 
@@ -589,8 +589,8 @@ def test_activity_and_income_amount_helpers_cover_reporting_fallbacks():
 @pytest.mark.asyncio
 async def test_list_transaction_rows_rejects_missing_transaction_shape():
     service = ReportingReadService(
-        pas_client=_PasTransactionStatus(200, {"total": 0}),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQueryTransactionStatus(200, {"total": 0}),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -613,8 +613,8 @@ async def test_list_transaction_rows_rejects_missing_transaction_shape():
 @pytest.mark.asyncio
 async def test_list_transaction_rows_maps_core_errors(status_code, expected_status):
     service = ReportingReadService(
-        pas_client=_PasTransactionStatus(status_code, {"detail": "bad upstream"}),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQueryTransactionStatus(status_code, {"detail": "bad upstream"}),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -629,21 +629,21 @@ async def test_list_transaction_rows_maps_core_errors(status_code, expected_stat
 @pytest.mark.parametrize(
     ("method_name", "status_code", "payload", "expected_status"),
     [
-        ("_unwrap_pas_allocation", 200, {"unexpected": "shape"}, 502),
-        ("_unwrap_pas_allocation", 404, {"detail": "missing"}, 404),
-        ("_unwrap_pas_allocation", 422, {"detail": "bad request"}, 422),
-        ("_unwrap_pas_allocation", 503, {"detail": "down"}, 502),
-        ("_unwrap_pas_positions", 200, {"unexpected": "shape"}, 502),
-        ("_unwrap_pas_positions", 404, {"detail": "missing"}, 404),
-        ("_unwrap_pas_positions", 503, {"detail": "down"}, 502),
+        ("_unwrap_core_query_allocation", 200, {"unexpected": "shape"}, 502),
+        ("_unwrap_core_query_allocation", 404, {"detail": "missing"}, 404),
+        ("_unwrap_core_query_allocation", 422, {"detail": "bad request"}, 422),
+        ("_unwrap_core_query_allocation", 503, {"detail": "down"}, 502),
+        ("_unwrap_core_query_positions", 200, {"unexpected": "shape"}, 502),
+        ("_unwrap_core_query_positions", 404, {"detail": "missing"}, 404),
+        ("_unwrap_core_query_positions", 503, {"detail": "down"}, 502),
     ],
 )
 def test_core_unwrap_helpers_map_invalid_and_error_payloads(
     method_name, status_code, payload, expected_status
 ):
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     method = getattr(service, method_name)
@@ -652,12 +652,12 @@ def test_core_unwrap_helpers_map_invalid_and_error_payloads(
     assert exc.value.status_code == expected_status
 
 
-class _PaWorkspaceStatusError(_PaSuccessEmpty):
+class _PerformanceWorkspaceStatusError(_PerformanceSuccessEmpty):
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 500, {"detail": "twr failed"}
 
 
-class _PaWorkspaceNoReturns(_PaSuccessEmpty):
+class _PerformanceWorkspaceNoReturns(_PerformanceSuccessEmpty):
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
             "results_by_period": {"YTD": {"portfolio_twr": {"net": {"breakdowns": {"daily": []}}}}}
@@ -672,8 +672,8 @@ class _RiskStatusError(_RiskSuccess):
 @pytest.mark.asyncio
 async def test_build_risk_analytics_returns_none_on_workspace_summary_failure():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaWorkspaceStatusError(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceWorkspaceStatusError(),
         risk_client=_RiskSuccess(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
@@ -683,8 +683,8 @@ async def test_build_risk_analytics_returns_none_on_workspace_summary_failure():
 @pytest.mark.asyncio
 async def test_build_risk_analytics_returns_none_when_workspace_summary_call_fails():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaWorkspaceStatusError(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceWorkspaceStatusError(),
         risk_client=_RiskSuccess(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
@@ -694,8 +694,8 @@ async def test_build_risk_analytics_returns_none_when_workspace_summary_call_fai
 @pytest.mark.asyncio
 async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaWorkspaceNoReturns(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceWorkspaceNoReturns(),
         risk_client=_RiskSuccess(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
@@ -705,8 +705,8 @@ async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
 @pytest.mark.asyncio
 async def test_build_risk_analytics_returns_none_when_risk_call_fails():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskStatusError(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
@@ -715,8 +715,8 @@ async def test_build_risk_analytics_returns_none_when_risk_call_fails():
 
 def test_extract_daily_returns_skips_invalid_items():
     service = ReportingReadService(
-        pas_client=_PasSuccessMinimal(),
-        pa_client=_PaSuccessEmpty(),
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
     workspace_payload = {

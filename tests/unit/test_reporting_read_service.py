@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from app.services.reporting_read_service import ReportingReadService
 
 
-class _PasClientSuccess:
+class _CoreQueryClientSuccess:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -112,7 +112,7 @@ class _PasClientSuccess:
         }
 
 
-class _PaClientSuccess:
+class _PerformanceClientSuccess:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
             "results_by_period": {
@@ -211,7 +211,7 @@ class _RiskClientSuccess:
         }
 
 
-class _PasClientNotFound:
+class _CoreQueryClientNotFound:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -245,7 +245,7 @@ class _PasClientNotFound:
         return 404, {"detail": "Portfolio not found"}
 
 
-class _PasClientFailure:
+class _CoreQueryClientFailure:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -279,7 +279,7 @@ class _PasClientFailure:
         return 503, {"detail": "upstream unavailable"}
 
 
-class _PaClientFailure:
+class _PerformanceClientFailure:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "upstream unavailable"}
 
@@ -290,10 +290,10 @@ class _RiskClientFailure:
 
 
 @pytest.mark.asyncio
-async def test_summary_uses_strategic_pas_routes_for_summary_details():
+async def test_summary_uses_strategic_core_query_routes_for_summary_details():
     service = ReportingReadService(
-        pas_client=_PasClientSuccess(),
-        pa_client=_PaClientSuccess(),
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
     response = await service.get_portfolio_summary(
@@ -316,7 +316,7 @@ async def test_summary_uses_strategic_pas_routes_for_summary_details():
 
 @pytest.mark.asyncio
 async def test_summary_honors_requested_allocation_dimensions():
-    class _PasClientAllocationCapture(_PasClientSuccess):
+    class _CoreQueryClientAllocationCapture(_CoreQueryClientSuccess):
         def __init__(self):
             self.last_allocation_payload: dict[str, object] | None = None
 
@@ -355,10 +355,10 @@ async def test_summary_honors_requested_allocation_dimensions():
                 ],
             }
 
-    pas_client = _PasClientAllocationCapture()
+    core_query_client = _CoreQueryClientAllocationCapture()
     service = ReportingReadService(
-        pas_client=pas_client,
-        pa_client=_PaClientSuccess(),
+        core_query_client=core_query_client,
+        performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
 
@@ -376,7 +376,7 @@ async def test_summary_honors_requested_allocation_dimensions():
     assert "wealth" not in response
     assert "byAssetClass" in response["allocation"]
     assert "byRegion" in response["allocation"]
-    assert pas_client.last_allocation_payload == {
+    assert core_query_client.last_allocation_payload == {
         "as_of_date": "2026-02-24",
         "dimensions": ["asset_class", "region"],
         "look_through_mode": "prefer_look_through",
@@ -384,10 +384,10 @@ async def test_summary_honors_requested_allocation_dimensions():
 
 
 @pytest.mark.asyncio
-async def test_review_composes_pas_pa_and_risk():
+async def test_review_composes_core_query_performance_and_risk():
     service = ReportingReadService(
-        pas_client=_PasClientSuccess(),
-        pa_client=_PaClientSuccess(),
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
     response = await service.get_portfolio_review(
@@ -406,10 +406,10 @@ async def test_review_composes_pas_pa_and_risk():
 
 
 @pytest.mark.asyncio
-async def test_review_sets_performance_none_when_pa_unavailable():
+async def test_review_sets_performance_none_when_performance_unavailable():
     service = ReportingReadService(
-        pas_client=_PasClientSuccess(),
-        pa_client=_PaClientFailure(),
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientFailure(),
         risk_client=_RiskClientSuccess(),
     )
     response = await service.get_portfolio_review(
@@ -423,8 +423,8 @@ async def test_review_sets_performance_none_when_pa_unavailable():
 @pytest.mark.asyncio
 async def test_review_sets_risk_none_when_upstreams_fail():
     service = ReportingReadService(
-        pas_client=_PasClientSuccess(),
-        pa_client=_PaClientFailure(),
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientFailure(),
         risk_client=_RiskClientFailure(),
     )
     response = await service.get_portfolio_review(
@@ -436,10 +436,10 @@ async def test_review_sets_risk_none_when_upstreams_fail():
 
 
 @pytest.mark.asyncio
-async def test_pas_not_found_maps_to_404():
+async def test_core_query_not_found_maps_to_404():
     service = ReportingReadService(
-        pas_client=_PasClientNotFound(),
-        pa_client=_PaClientSuccess(),
+        core_query_client=_CoreQueryClientNotFound(),
+        performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
     with pytest.raises(HTTPException) as exc:
@@ -448,10 +448,10 @@ async def test_pas_not_found_maps_to_404():
 
 
 @pytest.mark.asyncio
-async def test_pas_failure_maps_to_502():
+async def test_core_query_failure_maps_to_502():
     service = ReportingReadService(
-        pas_client=_PasClientFailure(),
-        pa_client=_PaClientSuccess(),
+        core_query_client=_CoreQueryClientFailure(),
+        performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
     with pytest.raises(HTTPException) as exc:

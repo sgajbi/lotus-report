@@ -6,7 +6,7 @@ from app.clients.http_resilience import post_with_retry, response_payload
 from app.observability import propagation_headers
 
 
-class PaClient:
+class PerformanceClient:
     def __init__(
         self,
         base_url: str,

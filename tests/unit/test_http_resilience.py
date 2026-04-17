@@ -57,7 +57,7 @@ async def test_post_with_retry_retries_timeout(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient", _FlakyAsyncClient)
 
     status, payload = await post_with_retry(
-        url="http://pas/portfolios/P1/review",
+        url="http://performances/portfolios/P1/review",
         timeout_seconds=1.0,
         json_body={"as_of_date": "2026-02-25"},
         headers={},
@@ -74,7 +74,7 @@ async def test_post_with_retry_retries_timeout(monkeypatch):
 async def test_post_with_retry_returns_503_after_retry_exhaustion(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient", _AlwaysTimeoutAsyncClient)
     status, payload = await post_with_retry(
-        url="http://pas/portfolios/P1/review",
+        url="http://performances/portfolios/P1/review",
         timeout_seconds=1.0,
         json_body={"as_of_date": "2026-02-25"},
         headers={},
@@ -89,7 +89,7 @@ async def test_post_with_retry_returns_503_after_retry_exhaustion(monkeypatch):
 async def test_post_with_retry_hits_exhausted_retries_fallback(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient", _AlwaysTimeoutAsyncClient)
     status, payload = await post_with_retry(
-        url="http://pas/portfolios/P1/review",
+        url="http://performances/portfolios/P1/review",
         timeout_seconds=1.0,
         json_body={"as_of_date": "2026-02-25"},
         headers={},
@@ -104,7 +104,7 @@ async def test_post_with_retry_hits_exhausted_retries_fallback(monkeypatch):
 async def test_get_with_retry_returns_503_after_retry_exhaustion(monkeypatch):
     monkeypatch.setattr("httpx.AsyncClient", _AlwaysTimeoutAsyncClient)
     status, payload = await get_with_retry(
-        url="http://pas/portfolios/P1/transactions",
+        url="http://performances/portfolios/P1/transactions",
         timeout_seconds=1.0,
         params={"limit": 500},
         headers={},

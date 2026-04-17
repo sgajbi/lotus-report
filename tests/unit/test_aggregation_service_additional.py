@@ -3,7 +3,7 @@ import pytest
 from app.services.aggregation_service import AggregationService
 
 
-class _PasOkClient:
+class _CoreQueryOkClient:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -25,7 +25,7 @@ class _PasOkClient:
         return 200, {"views": []}
 
 
-class _PaOkClient:
+class _PerformanceOkClient:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return (
             200,
@@ -39,7 +39,7 @@ class _PaOkClient:
         )
 
 
-class _PasFailClient:
+class _CoreQueryFailClient:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -57,7 +57,7 @@ class _PasFailClient:
         return 503, {"detail": "down"}
 
 
-class _PaFailClient:
+class _PerformanceFailClient:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "down"}
 
@@ -78,12 +78,16 @@ class _PaFailClient:
     ],
 )
 def test_parse_market_value_variants(position, expected):
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     assert service._parse_market_value(position) == expected
 
 
 def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     payload = {
         "allocation": {
             "views": [
@@ -110,7 +114,7 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
             ]
         }
     }
-    rows = service._build_asset_class_rows(pas_payload=payload, total_mv=100.0)
+    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=100.0)
     assert [row.bucket for row in rows] == ["BOND", "EQUITY"]
     row_map = {row.bucket: row.value for row in rows}
     assert row_map["BOND"] == 25.0
@@ -128,20 +132,26 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
     ],
 )
 def test_build_asset_class_rows_handles_non_conforming_payloads(payload, total_mv):
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
-    assert service._build_asset_class_rows(pas_payload=payload, total_mv=total_mv) == []
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
+    assert service._build_asset_class_rows(core_query_payload=payload, total_mv=total_mv) == []
 
 
 @pytest.mark.asyncio
 async def test_fetch_inputs_drops_upstream_payloads_when_services_fail():
-    service = AggregationService(pas_client=_PasFailClient(), pa_client=_PaFailClient())
-    pas_payload, pa_payload = await service._fetch_inputs("P1", "2026-02-24")
-    assert pas_payload == {"summary": {}, "allocation": {}}
-    assert pa_payload == {}
+    service = AggregationService(
+        core_query_client=_CoreQueryFailClient(), performance_client=_PerformanceFailClient()
+    )
+    core_query_payload, performance_payload = await service._fetch_inputs("P1", "2026-02-24")
+    assert core_query_payload == {"summary": {}, "allocation": {}}
+    assert performance_payload == {}
 
 
 def test_get_portfolio_aggregation_non_live_returns_deterministic_rows():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     response = service.get_portfolio_aggregation("P1", "2026-02-24")
     assert response.scope.portfolio_id == "P1"
     assert str(response.scope.as_of_date) == "2026-02-24"
@@ -150,12 +160,16 @@ def test_get_portfolio_aggregation_non_live_returns_deterministic_rows():
 
 
 def test_parse_market_value_returns_none_when_non_numeric_position_key():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     assert service._parse_market_value({"market_value_base": "n/a"}) is None
 
 
 def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positive():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     payload = {
         "allocation": {
             "views": [
@@ -172,11 +186,13 @@ def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positi
             ]
         }
     }
-    assert service._build_asset_class_rows(pas_payload=payload, total_mv=-1.0) == []
+    assert service._build_asset_class_rows(core_query_payload=payload, total_mv=-1.0) == []
 
 
 def test_build_asset_class_rows_ignores_non_dict_positions():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     payload = {
         "allocation": {
             "views": [
@@ -190,14 +206,16 @@ def test_build_asset_class_rows_ignores_non_dict_positions():
             ]
         }
     }
-    rows = service._build_asset_class_rows(pas_payload=payload, total_mv=100.0)
+    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=100.0)
     assert len(rows) == 1
     assert rows[0].bucket == "EQUITY"
     assert rows[0].value == 20.0
 
 
 def test_build_asset_class_rows_handles_invalid_bucket_fields_and_weight_fallback():
-    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    service = AggregationService(
+        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
+    )
     payload = {
         "allocation": {
             "views": [
@@ -221,14 +239,14 @@ def test_build_asset_class_rows_handles_invalid_bucket_fields_and_weight_fallbac
         }
     }
 
-    rows = service._build_asset_class_rows(pas_payload=payload, total_mv=200.0)
+    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=200.0)
 
     assert len(rows) == 1
     assert rows[0].bucket == "EQUITY"
     assert rows[0].value == 20.0
 
 
-class _PasMalformedAllocation:
+class _CoreQueryMalformedAllocation:
     def __init__(self, views):
         self._views = views
 
@@ -264,8 +282,8 @@ class _PasMalformedAllocation:
 @pytest.mark.asyncio
 async def test_live_aggregation_handles_malformed_allocation_shapes(views):
     service = AggregationService(
-        pas_client=_PasMalformedAllocation(views),
-        pa_client=_PaOkClient(),
+        core_query_client=_CoreQueryMalformedAllocation(views),
+        performance_client=_PerformanceOkClient(),
     )
     response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
     metric_map = {row.metric: row.value for row in response.rows}
@@ -273,7 +291,7 @@ async def test_live_aggregation_handles_malformed_allocation_shapes(views):
     assert metric_map["position_count"] == 0.0
 
 
-class _PasMalformedSummary:
+class _CoreQueryMalformedSummary:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -296,13 +314,13 @@ class _PasMalformedSummary:
         return 200, {"views": []}
 
 
-class _PaMissingYtd:
+class _PerformanceMissingYtd:
     async def get_workspace_summary(self, payload: dict[str, object]):
         _ = payload
         return 200, {"results_by_period": {}}
 
 
-class _PasInvalidPositionCount(_PasMalformedSummary):
+class _CoreQueryInvalidPositionCount(_CoreQueryMalformedSummary):
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -319,8 +337,8 @@ class _PasInvalidPositionCount(_PasMalformedSummary):
 @pytest.mark.asyncio
 async def test_live_aggregation_uses_defaults_for_malformed_summary_shapes():
     service = AggregationService(
-        pas_client=_PasMalformedSummary(),
-        pa_client=_PaMissingYtd(),
+        core_query_client=_CoreQueryMalformedSummary(),
+        performance_client=_PerformanceMissingYtd(),
     )
 
     response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
@@ -333,8 +351,8 @@ async def test_live_aggregation_uses_defaults_for_malformed_summary_shapes():
 @pytest.mark.asyncio
 async def test_live_aggregation_defaults_invalid_position_count():
     service = AggregationService(
-        pas_client=_PasInvalidPositionCount(),
-        pa_client=_PaOkClient(),
+        core_query_client=_CoreQueryInvalidPositionCount(),
+        performance_client=_PerformanceOkClient(),
     )
 
     response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")

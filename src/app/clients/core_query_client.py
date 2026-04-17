@@ -6,7 +6,7 @@ from app.clients.http_resilience import get_with_retry, post_with_retry, respons
 from app.observability import propagation_headers
 
 
-class PasClient:
+class CoreQueryClient:
     def __init__(
         self,
         base_url: str,

@@ -1,7 +1,7 @@
 import pytest
 
-from app.clients.pa_client import PaClient
-from app.clients.pas_client import PasClient
+from app.clients.core_query_client import CoreQueryClient
+from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.observability import correlation_id_var, request_id_var, trace_id_var
 
@@ -46,14 +46,14 @@ class _RecordingAsyncClient:
         (ValueError("bad json"), "raw-text", {"detail": "raw-text"}),
     ],
 )
-def test_pa_client_parse_payload(payload, text, expected):
-    client = PaClient(base_url="http://pa", timeout_seconds=2.0)
+def test_performance_client_parse_payload(payload, text, expected):
+    client = PerformanceClient(base_url="http://performance", timeout_seconds=2.0)
     response = _FakeResponse(status_code=200, payload=payload, text=text)
     assert client._parse_payload(response) == expected
 
 
 @pytest.mark.asyncio
-async def test_pa_client_get_workspace_summary_posts_expected_contract(monkeypatch):
+async def test_performance_client_get_workspace_summary_posts_expected_contract(monkeypatch):
     correlation_id_var.set("corr-1")
     request_id_var.set("req-1")
     trace_id_var.set("0123456789abcdef0123456789abcdef")
@@ -61,17 +61,17 @@ async def test_pa_client_get_workspace_summary_posts_expected_contract(monkeypat
     response = _FakeResponse(status_code=200, payload={"results_by_period": {}})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pa_client.httpx.AsyncClient",
+        "app.clients.performance_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
 
-    client = PaClient(base_url="http://pa/", timeout_seconds=3.0)
+    client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
     status_code, payload = await client.get_workspace_summary(
         {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
     )
     assert status_code == 200
     assert payload == {"results_by_period": {}}
-    assert recorder.calls[0]["url"] == "http://pa/performance/workspace-summary"
+    assert recorder.calls[0]["url"] == "http://performance/performance/workspace-summary"
     assert recorder.calls[0]["json"]["portfolio_id"] == "P1"
     assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-1"
 
@@ -84,37 +84,37 @@ async def test_pa_client_get_workspace_summary_posts_expected_contract(monkeypat
         (ValueError("bad json"), "raw-payload", {"detail": "raw-payload"}),
     ],
 )
-def test_pas_client_parse_payload(payload, text, expected):
-    client = PasClient(base_url="http://pas", timeout_seconds=2.0)
+def test_core_query_client_parse_payload(payload, text, expected):
+    client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
     response = _FakeResponse(status_code=200, payload=payload, text=text)
     assert client._parse_payload(response) == expected
 
 
-def test_pas_client_headers_empty_without_correlation_id():
-    client = PasClient(base_url="http://pas", timeout_seconds=2.0)
+def test_core_query_client_headers_empty_without_correlation_id():
+    client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
     assert client._headers(None) == {}
 
 
-def test_pas_client_headers_with_correlation_id_uses_propagation_context():
+def test_core_query_client_headers_with_correlation_id_uses_propagation_context():
     request_id_var.set("req-2")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
-    client = PasClient(base_url="http://pas", timeout_seconds=2.0)
+    client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
     headers = client._headers("corr-2")
     assert headers["X-Correlation-Id"] == "corr-2"
     assert headers["X-Request-Id"] == "req-2"
 
 
 @pytest.mark.asyncio
-async def test_pas_client_get_portfolio_summary_posts_expected_contract(monkeypatch):
+async def test_core_query_client_get_portfolio_summary_posts_expected_contract(monkeypatch):
     request_id_var.set("req-3")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
     response = _FakeResponse(status_code=200, payload={"scope": {"portfolio_id": "P3"}})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pas_client.httpx.AsyncClient",
+        "app.clients.core_query_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
-    client = PasClient(base_url="http://pas/", timeout_seconds=3.0)
+    client = CoreQueryClient(base_url="http://performances/", timeout_seconds=3.0)
     body = {"as_of_date": "2026-02-24"}
     status_code, payload = await client.get_portfolio_summary(
         portfolio_id="P3",
@@ -123,24 +123,24 @@ async def test_pas_client_get_portfolio_summary_posts_expected_contract(monkeypa
     )
     assert status_code == 200
     assert payload["scope"]["portfolio_id"] == "P3"
-    assert recorder.calls[0]["url"] == "http://pas/reporting/portfolio-summary/query"
+    assert recorder.calls[0]["url"] == "http://performances/reporting/portfolio-summary/query"
     assert recorder.calls[0]["json"] == {"as_of_date": "2026-02-24", "portfolio_id": "P3"}
     assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-3"
 
 
 @pytest.mark.asyncio
-async def test_pas_client_get_asset_allocation_posts_expected_contract(monkeypatch):
+async def test_core_query_client_get_asset_allocation_posts_expected_contract(monkeypatch):
     request_id_var.set("req-4")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
     response = _FakeResponse(status_code=200, payload={"scope": {"portfolio_id": "P4"}})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pas_client.httpx.AsyncClient",
+        "app.clients.core_query_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
 
-    client = PasClient(
-        base_url="http://pas",
+    client = CoreQueryClient(
+        base_url="http://performances",
         timeout_seconds=5.0,
         max_retries=4,
         retry_backoff_seconds=0.3,
@@ -156,7 +156,7 @@ async def test_pas_client_get_asset_allocation_posts_expected_contract(monkeypat
     )
     assert status_code == 200
     assert payload["scope"]["portfolio_id"] == "P4"
-    assert recorder.calls[0]["url"] == "http://pas/reporting/asset-allocation/query"
+    assert recorder.calls[0]["url"] == "http://performances/reporting/asset-allocation/query"
     assert recorder.calls[0]["json"] == {
         "as_of_date": "2026-02-24",
         "dimensions": ["asset_class", "region"],
@@ -167,17 +167,17 @@ async def test_pas_client_get_asset_allocation_posts_expected_contract(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_pas_client_get_portfolio_transactions_gets_expected_contract(monkeypatch):
+async def test_core_query_client_get_portfolio_transactions_gets_expected_contract(monkeypatch):
     request_id_var.set("req-5")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
     response = _FakeResponse(status_code=200, payload={"transactions": [], "total": 0})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pas_client.httpx.AsyncClient",
+        "app.clients.core_query_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
 
-    client = PasClient(base_url="http://pas/", timeout_seconds=3.0)
+    client = CoreQueryClient(base_url="http://performances/", timeout_seconds=3.0)
     status_code, payload = await client.get_portfolio_transactions(
         portfolio_id="P5",
         params={
@@ -190,7 +190,7 @@ async def test_pas_client_get_portfolio_transactions_gets_expected_contract(monk
     )
     assert status_code == 200
     assert payload == {"transactions": [], "total": 0}
-    assert recorder.calls[0]["url"] == "http://pas/portfolios/P5/transactions"
+    assert recorder.calls[0]["url"] == "http://performances/portfolios/P5/transactions"
     assert recorder.calls[0]["params"] == {
         "start_date": "2026-01-01",
         "end_date": "2026-02-24",
@@ -200,17 +200,17 @@ async def test_pas_client_get_portfolio_transactions_gets_expected_contract(monk
 
 
 @pytest.mark.asyncio
-async def test_pas_client_get_portfolio_positions_gets_expected_contract(monkeypatch):
+async def test_core_query_client_get_portfolio_positions_gets_expected_contract(monkeypatch):
     request_id_var.set("req-5b")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
     response = _FakeResponse(status_code=200, payload={"positions": [], "total": 0})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pas_client.httpx.AsyncClient",
+        "app.clients.core_query_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
 
-    client = PasClient(base_url="http://pas/", timeout_seconds=3.0)
+    client = CoreQueryClient(base_url="http://performances/", timeout_seconds=3.0)
     status_code, payload = await client.get_portfolio_positions(
         portfolio_id="P5",
         params={"as_of_date": "2026-02-24", "reporting_currency": "USD"},
@@ -218,7 +218,7 @@ async def test_pas_client_get_portfolio_positions_gets_expected_contract(monkeyp
     )
     assert status_code == 200
     assert payload == {"positions": [], "total": 0}
-    assert recorder.calls[0]["url"] == "http://pas/portfolios/P5/positions"
+    assert recorder.calls[0]["url"] == "http://performances/portfolios/P5/positions"
     assert recorder.calls[0]["params"] == {
         "as_of_date": "2026-02-24",
         "reporting_currency": "USD",
@@ -227,14 +227,14 @@ async def test_pas_client_get_portfolio_positions_gets_expected_contract(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_pas_client_get_portfolio_review_posts_expected_contract(monkeypatch):
+async def test_core_query_client_get_portfolio_review_posts_expected_contract(monkeypatch):
     response = _FakeResponse(status_code=200, payload={"portfolio_id": "P4"})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
-        "app.clients.pas_client.httpx.AsyncClient",
+        "app.clients.core_query_client.httpx.AsyncClient",
         lambda timeout: recorder,
     )
-    client = PasClient(base_url="http://pas/", timeout_seconds=3.0)
+    client = CoreQueryClient(base_url="http://performances/", timeout_seconds=3.0)
     status_code, payload = await client.get_portfolio_review(
         portfolio_id="P4",
         payload={"as_of_date": "2026-02-24"},
@@ -242,7 +242,7 @@ async def test_pas_client_get_portfolio_review_posts_expected_contract(monkeypat
     )
     assert status_code == 200
     assert payload["portfolio_id"] == "P4"
-    assert recorder.calls[0]["url"] == "http://pas/portfolios/P4/review"
+    assert recorder.calls[0]["url"] == "http://performances/portfolios/P4/review"
     assert recorder.calls[0]["headers"] == {}
 
 

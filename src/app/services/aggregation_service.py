@@ -1,23 +1,27 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from app.clients.pa_client import PaClient
-from app.clients.pas_client import PasClient
+from app.clients.core_query_client import CoreQueryClient
+from app.clients.performance_client import PerformanceClient
 from app.config import settings
 from app.models.contracts import AggregationRow, AggregationScope, PortfolioAggregationResponse
 from app.precision_policy import quantize_money, quantize_performance, quantize_quantity, to_decimal
 
 
 class AggregationService:
-    def __init__(self, pas_client: PasClient | None = None, pa_client: PaClient | None = None):
-        self._pas_client = pas_client or PasClient(
-            base_url=settings.pas_base_url,
+    def __init__(
+        self,
+        core_query_client: CoreQueryClient | None = None,
+        performance_client: PerformanceClient | None = None,
+    ):
+        self._core_query_client = core_query_client or CoreQueryClient(
+            base_url=settings.core_query_base_url,
             timeout_seconds=settings.upstream_timeout_seconds,
             max_retries=settings.upstream_max_retries,
             retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
         )
-        self._pa_client = pa_client or PaClient(
-            base_url=settings.pa_base_url,
+        self._performance_client = performance_client or PerformanceClient(
+            base_url=settings.performance_base_url,
             timeout_seconds=settings.upstream_timeout_seconds,
             max_retries=settings.upstream_max_retries,
             retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
@@ -26,21 +30,24 @@ class AggregationService:
     async def _fetch_inputs(
         self, portfolio_id: str, as_of_date: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        summary_status, summary_payload = await self._pas_client.get_portfolio_summary(
+        summary_status, summary_payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date},
         )
         if summary_status >= 400:
             summary_payload = {}
 
-        allocation_status, allocation_payload = await self._pas_client.get_asset_allocation(
+        allocation_status, allocation_payload = await self._core_query_client.get_asset_allocation(
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date, "dimensions": ["asset_class"]},
         )
         if allocation_status >= 400:
             allocation_payload = {}
 
-        pa_status, pa_payload = await self._pa_client.get_workspace_summary(
+        (
+            performance_status,
+            performance_payload,
+        ) = await self._performance_client.get_workspace_summary(
             {
                 "portfolio_id": portfolio_id,
                 "report_end_date": as_of_date,
@@ -49,9 +56,9 @@ class AggregationService:
                 "periods": [{"period": "YTD", "frequencies": ["daily"]}],
             }
         )
-        if pa_status >= 400:
-            pa_payload = {}
-        return {"summary": summary_payload, "allocation": allocation_payload}, pa_payload
+        if performance_status >= 400:
+            performance_payload = {}
+        return {"summary": summary_payload, "allocation": allocation_payload}, performance_payload
 
     def _parse_market_value(self, position: dict[str, Any]) -> float | None:
         valuation = position.get("valuation")
@@ -75,9 +82,9 @@ class AggregationService:
         return None
 
     def _build_asset_class_rows(
-        self, pas_payload: dict[str, Any], total_mv: float
+        self, core_query_payload: dict[str, Any], total_mv: float
     ) -> list[AggregationRow]:
-        allocation = pas_payload.get("allocation", {})
+        allocation = core_query_payload.get("allocation", {})
         if not isinstance(allocation, dict):
             return []
         views = allocation.get("views", [])
@@ -163,9 +170,9 @@ class AggregationService:
         as_of_date: str,
     ) -> PortfolioAggregationResponse:
         scope = AggregationScope(portfolioId=portfolio_id, asOfDate=as_of_date)
-        pas_payload, pa_payload = await self._fetch_inputs(portfolio_id, as_of_date)
+        core_query_payload, performance_payload = await self._fetch_inputs(portfolio_id, as_of_date)
 
-        summary_payload = pas_payload.get("summary", {})
+        summary_payload = core_query_payload.get("summary", {})
         if not isinstance(summary_payload, dict):
             summary_payload = {}
         totals = summary_payload.get("totals", {})
@@ -180,7 +187,7 @@ class AggregationService:
             total_mv = 1_250_000.0
 
         ytd_return = (
-            pa_payload.get("results_by_period", {})
+            performance_payload.get("results_by_period", {})
             .get("YTD", {})
             .get("portfolio_twr", {})
             .get("net", {})
@@ -215,7 +222,7 @@ class AggregationService:
         ]
         rows.extend(
             self._build_asset_class_rows(
-                pas_payload=pas_payload,
+                core_query_payload=core_query_payload,
                 total_mv=float(quantize_money(total_mv)),
             )
         )

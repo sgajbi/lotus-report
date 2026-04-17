@@ -20,8 +20,8 @@ API docs:
 - direct process port for local-only debugging: `8300`
 
 Cross-app upstream defaults:
-- `PAS_BASE_URL=http://core-query.dev.lotus`
-- `PA_BASE_URL=http://performance.dev.lotus`
+- `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
+- `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
 
 Key reporting endpoints:

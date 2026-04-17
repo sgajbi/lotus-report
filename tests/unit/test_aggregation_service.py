@@ -3,7 +3,7 @@ import pytest
 from app.services.aggregation_service import AggregationService
 
 
-class _StubPasClient:
+class _StubCoreQueryClient:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -55,7 +55,7 @@ class _StubPasClient:
         )
 
 
-class _StubPaClient:
+class _StubPerformanceClient:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return (
             200,
@@ -71,7 +71,9 @@ class _StubPaClient:
 
 @pytest.mark.asyncio
 async def test_live_aggregation_uses_upstream_payloads():
-    service = AggregationService(pas_client=_StubPasClient(), pa_client=_StubPaClient())
+    service = AggregationService(
+        core_query_client=_StubCoreQueryClient(), performance_client=_StubPerformanceClient()
+    )
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
         as_of_date="2026-02-24",
@@ -87,7 +89,7 @@ async def test_live_aggregation_uses_upstream_payloads():
     assert round(bucket_metric_map[("CASH", "weight_pct")], 2) == 20.0
 
 
-class _FailingPasClient:
+class _FailingCoreQueryClient:
     async def get_portfolio_summary(
         self,
         portfolio_id: str,
@@ -105,14 +107,16 @@ class _FailingPasClient:
         return 503, {"detail": "unavailable"}
 
 
-class _FailingPaClient:
+class _FailingPerformanceClient:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "unavailable"}
 
 
 @pytest.mark.asyncio
 async def test_live_aggregation_has_deterministic_fallbacks():
-    service = AggregationService(pas_client=_FailingPasClient(), pa_client=_FailingPaClient())
+    service = AggregationService(
+        core_query_client=_FailingCoreQueryClient(), performance_client=_FailingPerformanceClient()
+    )
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
         as_of_date="2026-02-24",
