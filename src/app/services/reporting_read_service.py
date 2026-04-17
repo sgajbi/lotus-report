@@ -312,7 +312,7 @@ class ReportingReadService:
             )
         if status_code == status.HTTP_404_NOT_FOUND:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+        if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=payload.get("detail")
             )
@@ -596,7 +596,7 @@ class ReportingReadService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=payload.get("detail"),
                 )
-            if status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
+            if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                     detail=payload.get("detail"),

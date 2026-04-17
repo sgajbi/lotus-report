@@ -168,6 +168,90 @@ class _RiskSuccess:
         return 200, {"results": {"YTD": {"metrics": {"VOLATILITY": {"value": 0.2}}}}}
 
 
+class _PasPagedTransactions(_PasSuccessMinimal):
+    def __init__(self):
+        self.seen_skips: list[int] = []
+
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, correlation_id
+        skip = int(params.get("skip", 0))
+        self.seen_skips.append(skip)
+        if skip == 0:
+            return 200, {
+                "total": 2,
+                "transactions": [
+                    {
+                        "transaction_id": "TXN-1",
+                        "transaction_date": "2026-01-02",
+                        "transaction_type": "DEPOSIT",
+                        "gross_transaction_amount_reporting_currency": 10.0,
+                    }
+                ],
+            }
+        return 200, {
+            "total": 2,
+            "transactions": [
+                {
+                    "transaction_id": "TXN-2",
+                    "transaction_date": "2026-01-03",
+                    "transaction_type": "WITHDRAWAL",
+                    "gross_transaction_amount_reporting_currency": 4.0,
+                }
+            ],
+        }
+
+
+class _PasTransactionStatus:
+    def __init__(self, status_code: int, payload: dict[str, object]):
+        self.status_code = status_code
+        self.payload = payload
+
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {
+            "portfolio_id": "P1",
+            "totals": {},
+            "snapshot_metadata": {},
+        }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {"views": []}
+
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, params, correlation_id
+        return self.status_code, self.payload
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, params, correlation_id
+        return 200, {"positions": []}
+
+
 @pytest.mark.asyncio
 async def test_summary_requires_as_of_date():
     service = ReportingReadService(
@@ -197,6 +281,57 @@ async def test_summary_includes_default_sections_when_sections_not_list():
     assert "allocation" in response
     assert "incomeSummary" in response
     assert "activitySummary" in response
+
+
+@pytest.mark.asyncio
+async def test_summary_forwards_reporting_currency_to_summary_and_transactions():
+    class _PasCapture(_PasSuccessMinimal):
+        def __init__(self):
+            self.summary_payload: dict[str, object] | None = None
+            self.transaction_params: dict[str, object] | None = None
+
+        async def get_portfolio_summary(
+            self,
+            portfolio_id: str,
+            payload: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            self.summary_payload = payload
+            return await super().get_portfolio_summary(portfolio_id, payload, correlation_id)
+
+        async def get_portfolio_transactions(
+            self,
+            portfolio_id: str,
+            params: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            self.transaction_params = params
+            return await super().get_portfolio_transactions(portfolio_id, params, correlation_id)
+
+    pas_client = _PasCapture()
+    service = ReportingReadService(
+        pas_client=pas_client,
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_summary(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "reporting_currency": "SGD",
+            "sections": ["WEALTH", "INCOME"],
+        },
+        None,
+    )
+
+    assert response["wealth"]["total_market_value"] == 100.0
+    assert pas_client.summary_payload == {
+        "as_of_date": "2026-02-24",
+        "reporting_currency": "SGD",
+    }
+    assert pas_client.transaction_params is not None
+    assert pas_client.transaction_params["reporting_currency"] == "SGD"
 
 
 @pytest.mark.asyncio
@@ -255,6 +390,87 @@ def test_map_pa_performance_handles_non_dict_rows():
     assert mapped["summary"]["YTD"]["net_cumulative_return"] is None
 
 
+def test_allocation_and_position_param_builders_preserve_supported_options():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    allocation = service._build_allocation_request(
+        {
+            "asOfDate": "2026-02-24",
+            "reportingCurrency": "EUR",
+            "lookThroughMode": "prefer_look_through",
+            "allocationDimensions": ["asset_class", "currency"],
+        }
+    )
+    positions = service._build_position_params(
+        {"asOfDate": "2026-02-24", "reportingCurrency": "EUR"}
+    )
+
+    assert allocation == {
+        "dimensions": ["asset_class", "currency"],
+        "as_of_date": "2026-02-24",
+        "reporting_currency": "EUR",
+        "look_through_mode": "prefer_look_through",
+    }
+    assert positions == {
+        "as_of_date": "2026-02-24",
+        "include_projected": "false",
+        "reporting_currency": "EUR",
+    }
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        "asset_class",
+        [],
+        [""],
+    ],
+)
+def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions):
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    with pytest.raises(HTTPException) as exc:
+        service._allocation_dimensions({"allocation_dimensions": dimensions})
+    assert exc.value.status_code == 422
+
+
+def test_map_allocation_views_skips_non_conforming_items_and_uses_default_key():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    mapped = service._map_allocation_views(
+        [
+            "bad-view",
+            {"dimension": "", "buckets": []},
+            {
+                "dimension": "__",
+                "buckets": [{"dimension_value": "Unclassified", "weight": "0.1"}],
+            },
+        ]
+    )
+
+    assert mapped == {
+        "views": [
+            {
+                "group": "Unclassified",
+                "weight": 0.1,
+                "market_value": 0.0,
+                "position_count": None,
+            }
+        ]
+    }
+
+
 @pytest.mark.asyncio
 async def test_review_default_sections_include_all_payload_groups():
     service = ReportingReadService(
@@ -269,6 +485,31 @@ async def test_review_default_sections_include_all_payload_groups():
     assert "holdings" in response
     assert "transactions" in response
     assert "riskAnalytics" in response
+
+
+@pytest.mark.asyncio
+async def test_review_transactions_only_fetches_transactions_without_reuse():
+    pas_client = _PasPagedTransactions()
+    service = ReportingReadService(
+        pas_client=pas_client,
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["TRANSACTIONS"]},
+        None,
+    )
+
+    assert [
+        row["transaction_id"]
+        for row in response["transactions"]["transactionsByAssetClass"]["UNKNOWN"]
+    ] == [
+        "TXN-1",
+        "TXN-2",
+    ]
+    assert pas_client.seen_skips == [0, 1]
 
 
 @pytest.mark.asyncio
@@ -315,6 +556,111 @@ def test_to_float_accepts_numeric_values():
 
 def test_to_float_returns_zero_for_unsupported_type():
     assert ReportingReadService._to_float(object()) == 0.0
+
+
+def test_to_int_accepts_float_and_string_variants():
+    assert ReportingReadService._to_int(7.9) == 7
+    assert ReportingReadService._to_int("8") == 8
+    assert ReportingReadService._to_int("bad") == 0
+    assert ReportingReadService._to_int(object()) == 0
+
+
+def test_as_list_and_safe_str_fallbacks():
+    assert ReportingReadService._as_list("bad") == []
+    assert ReportingReadService._safe_str(123) == ""
+
+
+def test_activity_and_income_amount_helpers_cover_reporting_fallbacks():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    fee_row = {
+        "transaction_type": "FEE",
+        "gross_transaction_amount": "-5.00",
+        "trade_fee": "-2.50",
+    }
+    interest_row = {
+        "transaction_type": "INTEREST",
+        "gross_transaction_amount": "10.00",
+        "withholding_tax_amount": "1.00",
+        "other_interest_deductions_amount": "2.00",
+        "trade_fee": "0.50",
+    }
+
+    assert service._activity_bucket_name("WITHDRAWAL") == "OUTFLOWS"
+    assert service._activity_bucket_name("FEE") == "FEES"
+    assert service._activity_bucket_name("TAX") == "TAXES"
+    assert service._activity_reporting_amount(fee_row) == 7.5
+    assert service._income_net_reporting_amount(interest_row) == 6.5
+
+
+@pytest.mark.asyncio
+async def test_list_transaction_rows_rejects_missing_transaction_shape():
+    service = ReportingReadService(
+        pas_client=_PasTransactionStatus(200, {"total": 0}),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await service._list_transaction_rows(
+            portfolio_id="P1",
+            correlation_id=None,
+            params={"limit": 500},
+        )
+    assert exc.value.status_code == 502
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_status"),
+    [
+        (404, 404),
+        (422, 422),
+        (503, 502),
+    ],
+)
+@pytest.mark.asyncio
+async def test_list_transaction_rows_maps_core_errors(status_code, expected_status):
+    service = ReportingReadService(
+        pas_client=_PasTransactionStatus(status_code, {"detail": "bad upstream"}),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await service._list_transaction_rows(
+            portfolio_id="P1",
+            correlation_id=None,
+            params={"limit": 500},
+        )
+    assert exc.value.status_code == expected_status
+
+
+@pytest.mark.parametrize(
+    ("method_name", "status_code", "payload", "expected_status"),
+    [
+        ("_unwrap_pas_allocation", 200, {"unexpected": "shape"}, 502),
+        ("_unwrap_pas_allocation", 404, {"detail": "missing"}, 404),
+        ("_unwrap_pas_allocation", 422, {"detail": "bad request"}, 422),
+        ("_unwrap_pas_allocation", 503, {"detail": "down"}, 502),
+        ("_unwrap_pas_positions", 200, {"unexpected": "shape"}, 502),
+        ("_unwrap_pas_positions", 404, {"detail": "missing"}, 404),
+        ("_unwrap_pas_positions", 503, {"detail": "down"}, 502),
+    ],
+)
+def test_core_unwrap_helpers_map_invalid_and_error_payloads(
+    method_name, status_code, payload, expected_status
+):
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    method = getattr(service, method_name)
+    with pytest.raises(HTTPException) as exc:
+        method(status_code=status_code, payload=payload)
+    assert exc.value.status_code == expected_status
 
 
 class _PasPerfStatusError(_PasSuccessMinimal):

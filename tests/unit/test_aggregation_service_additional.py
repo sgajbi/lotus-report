@@ -187,6 +187,38 @@ def test_build_asset_class_rows_ignores_non_dict_positions():
     assert rows[0].value == 20.0
 
 
+def test_build_asset_class_rows_handles_invalid_bucket_fields_and_weight_fallback():
+    service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
+    payload = {
+        "allocation": {
+            "views": [
+                "bad-view",
+                {
+                    "dimension": "asset_class",
+                    "buckets": [
+                        {"dimension_value": " ", "market_value_reporting_currency": 20},
+                        {
+                            "dimension_value": "BROKEN",
+                            "market_value_reporting_currency": "not-money",
+                        },
+                        {
+                            "dimension_value": "EQUITY",
+                            "weight": "not-a-weight",
+                            "market_value_reporting_currency": 40,
+                        },
+                    ],
+                },
+            ]
+        }
+    }
+
+    rows = service._build_asset_class_rows(pas_payload=payload, total_mv=200.0)
+
+    assert len(rows) == 1
+    assert rows[0].bucket == "EQUITY"
+    assert rows[0].value == 20.0
+
+
 class _PasMalformedAllocation:
     def __init__(self, views):
         self._views = views
@@ -229,4 +261,74 @@ async def test_live_aggregation_handles_malformed_allocation_shapes(views):
     response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 250.0
+    assert metric_map["position_count"] == 0.0
+
+
+class _PasMalformedSummary:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {
+            "totals": ["bad"],
+            "snapshot_metadata": "bad",
+        }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {"views": []}
+
+
+class _PaMissingYtd:
+    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
+        _ = portfolio_id, as_of_date, periods
+        return 200, {"resultsByPeriod": {}}
+
+
+class _PasInvalidPositionCount(_PasMalformedSummary):
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {
+            "totals": {"total_market_value_reporting_currency": 10.0},
+            "snapshot_metadata": {"position_count": "not-int"},
+        }
+
+
+@pytest.mark.asyncio
+async def test_live_aggregation_uses_defaults_for_malformed_summary_shapes():
+    service = AggregationService(
+        pas_client=_PasMalformedSummary(),
+        pa_client=_PaMissingYtd(),
+    )
+
+    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+
+    metric_map = {row.metric: row.value for row in response.rows}
+    assert metric_map["market_value_base"] == 1_250_000.0
+    assert metric_map["return_ytd_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_live_aggregation_defaults_invalid_position_count():
+    service = AggregationService(
+        pas_client=_PasInvalidPositionCount(),
+        pa_client=_PaOkClient(),
+    )
+
+    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+
+    metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["position_count"] == 0.0
