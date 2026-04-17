@@ -20,8 +20,8 @@ API docs:
 - direct process port for local-only debugging: `8300`
 
 Cross-app upstream defaults:
-- `PAS_BASE_URL=http://core-query.dev.lotus`
-- `PA_BASE_URL=http://performance.dev.lotus`
+- `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
+- `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
 
 Key reporting endpoints:
@@ -29,9 +29,15 @@ Key reporting endpoints:
 - `POST /reports/portfolios/{portfolio_id}/summary`
 - `POST /reports/portfolios/{portfolio_id}/review`
 
+Capability discovery query contract:
+- use canonical snake_case query parameters `consumer_system` and `tenant_id`
+
 Current orchestration model:
-- lotus-report composes summary/review responses from lotus-core core snapshot contracts.
-- lotus-report enriches review performance section from lotus-performance analytics contracts.
+- lotus-report composes summary/review responses from lotus-core portfolio summary, asset
+  allocation, positions, and transaction contracts.
+- lotus-report derives review performance and risk-ready return series from
+  `POST /performance/workspace-summary` in stateful mode and forwards the resulting daily return
+  stream into lotus-risk for risk analytics.
 
 ## Tests
 

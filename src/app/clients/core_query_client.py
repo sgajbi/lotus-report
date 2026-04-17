@@ -6,7 +6,7 @@ from app.clients.http_resilience import get_with_retry, post_with_retry, respons
 from app.observability import propagation_headers
 
 
-class PasClient:
+class CoreQueryClient:
     def __init__(
         self,
         base_url: str,
@@ -18,28 +18,6 @@ class PasClient:
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
-
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ) -> tuple[int, dict[str, Any]]:
-        url = f"{self._base_url}/integration/portfolios/{portfolio_id}/performance-input"
-        payload = {
-            "asOfDate": as_of_date,
-            "lookbackDays": lookback_days,
-            "consumerSystem": "REPORTING",
-        }
-        headers = propagation_headers()
-        return await post_with_retry(
-            url=url,
-            timeout_seconds=self._timeout_seconds,
-            json_body=payload,
-            headers=headers,
-            max_retries=self._max_retries,
-            backoff_seconds=self._retry_backoff_seconds,
-        )
 
     async def get_portfolio_summary(
         self,
