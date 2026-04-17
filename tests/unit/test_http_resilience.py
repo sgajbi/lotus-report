@@ -115,6 +115,21 @@ async def test_get_with_retry_returns_503_after_retry_exhaustion(monkeypatch):
     assert "NetworkError" in payload["detail"]
 
 
+@pytest.mark.asyncio
+async def test_get_with_retry_hits_exhausted_retries_fallback(monkeypatch):
+    monkeypatch.setattr("httpx.AsyncClient", _AlwaysTimeoutAsyncClient)
+    status, payload = await get_with_retry(
+        url="http://performances/portfolios/P1/transactions",
+        timeout_seconds=1.0,
+        params={"limit": 500},
+        headers={},
+        max_retries=-1,
+        backoff_seconds=0.0,
+    )
+    assert status == 503
+    assert payload["detail"] == "upstream communication failure: exhausted retries"
+
+
 def test_response_payload_maps_non_dict_and_text_fallback():
     non_dict = httpx.Response(
         status_code=200,

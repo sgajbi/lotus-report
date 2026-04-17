@@ -743,3 +743,124 @@ def test_extract_daily_returns_skips_invalid_items():
     }
     returns = service._extract_daily_returns_from_workspace_summary(workspace_payload)
     assert returns == [{"date": "2025-01-04", "value": 0.4}]
+
+
+def test_extract_daily_returns_falls_back_to_period_prefix():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    workspace_payload = {
+        "results_by_period": {
+            "YTD": {
+                "portfolio_twr": {
+                    "net": {
+                        "breakdowns": {
+                            "daily": [
+                                {
+                                    "period": "2025-01-03T00:00:00Z",
+                                    "period_return": {"base": 0.6},
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    returns = service._extract_daily_returns_from_workspace_summary(workspace_payload)
+
+    assert returns == [{"date": "2025-01-03", "value": 0.6}]
+
+
+def test_workspace_period_helpers_fall_back_to_money_weighted_return_dates():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    period_payload = {
+        "money_weighted_return": {
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+        }
+    }
+
+    assert service._workspace_period_start(period_payload) == "2025-01-01"
+    assert service._workspace_period_end(period_payload) == "2025-12-31"
+
+
+def test_workspace_portfolio_open_date_returns_none_when_no_supported_start_exists():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    assert service._workspace_portfolio_open_date({"results_by_period": {"YTD": {}}}) is None
+
+
+def test_return_base_handles_string_and_invalid_string_values():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    assert service._return_base({"alpha": {"base": "3.25"}}, "alpha") == 3.25
+    assert service._return_base({"alpha": {"base": "not-a-number"}}, "alpha") is None
+
+
+def test_build_workspace_summary_request_sets_reporting_currency_aliases():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    request = service._build_workspace_summary_request(
+        portfolio_id="P1",
+        as_of_date="2026-02-24",
+        request_payload={"reportingCurrency": "SGD"},
+        periods=["YTD"],
+    )
+
+    assert request["report_ccy"] == "SGD"
+    assert request["currency"] == "SGD"
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_without_portfolio_open_date():
+    class _PerformanceWorkspaceNoOpenDate:
+        async def get_workspace_summary(self, payload: dict[str, object]):
+            _ = payload
+            return 200, {
+                "results_by_period": {
+                    "YTD": {
+                        "portfolio_twr": {
+                            "net": {
+                                "breakdowns": {
+                                    "daily": [
+                                        {
+                                            "period_end": "2026-02-24",
+                                            "period_return": {"base": 0.4},
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceWorkspaceNoOpenDate(),
+        risk_client=_RiskSuccess(),
+    )
+
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+
+    assert result is None

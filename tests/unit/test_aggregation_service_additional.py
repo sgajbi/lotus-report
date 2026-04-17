@@ -359,3 +359,37 @@ async def test_live_aggregation_defaults_invalid_position_count():
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["position_count"] == 0.0
+
+
+class _CoreQueryNestedInvalidSummary:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {"summary": "invalid"}
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, payload, correlation_id
+        return 200, {"views": []}
+
+
+@pytest.mark.asyncio
+async def test_live_aggregation_defaults_when_nested_summary_is_not_a_dict():
+    service = AggregationService(
+        core_query_client=_CoreQueryNestedInvalidSummary(),
+        performance_client=_PerformanceOkClient(),
+    )
+
+    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+
+    metric_map = {row.metric: row.value for row in response.rows}
+    assert metric_map["market_value_base"] == 1_250_000.0
+    assert metric_map["position_count"] == 0.0
