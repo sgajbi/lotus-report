@@ -29,6 +29,9 @@ Key reporting endpoints:
 - `POST /reports/portfolios/{portfolio_id}/summary`
 - `POST /reports/portfolios/{portfolio_id}/review`
 
+Capability discovery query contract:
+- use canonical snake_case query parameters `consumer_system` and `tenant_id`
+
 Current orchestration model:
 - lotus-report composes summary/review responses from lotus-core core snapshot contracts.
 - lotus-report enriches review performance section from lotus-performance analytics contracts.

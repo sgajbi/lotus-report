@@ -13,12 +13,25 @@ router = APIRouter(prefix="/integration", tags=["Integration"])
     description=(
         "Returns lotus-report integration capabilities for "
         "lotus-gateway/lotus-manage contract negotiation and "
-        "feature toggling."
+        "feature toggling. Callers must use the canonical snake_case query "
+        "parameters `consumer_system` and `tenant_id`."
     ),
 )
 def get_capabilities(
-    consumer_system: str = Query("lotus-gateway", alias="consumerSystem"),
-    tenant_id: str = Query("default", alias="tenantId"),
+    consumer_system: str = Query(
+        "lotus-gateway",
+        description=(
+            "Consumer system requesting the reporting capability posture. "
+            "Send it as the canonical snake_case query parameter `consumer_system`."
+        ),
+    ),
+    tenant_id: str = Query(
+        "default",
+        description=(
+            "Tenant context used for capability publication. "
+            "Send it as the canonical snake_case query parameter `tenant_id`."
+        ),
+    ),
 ) -> IntegrationCapabilitiesResponse:
     _ = (consumer_system, tenant_id)
     return IntegrationCapabilitiesResponse(

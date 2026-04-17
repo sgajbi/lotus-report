@@ -83,7 +83,9 @@ def test_load_concurrency_metrics_requests():
 
 
 def test_integration_capabilities():
-    response = client.get("/integration/capabilities?consumerSystem=lotus-gateway&tenantId=default")
+    response = client.get(
+        "/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+    )
     assert response.status_code == 200
     body = response.json()
     assert body["sourceService"] == "lotus-report"
@@ -92,6 +94,16 @@ def test_integration_capabilities():
     assert body["supportedInputModes"] == ["pas_ref"]
     assert len(body["features"]) >= 3
     assert len(body["workflows"]) >= 1
+
+
+def test_integration_capabilities_camel_case_params_do_not_override_context():
+    response = client.get("/integration/capabilities?consumerSystem=lotus-manage&tenantId=tenant-x")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sourceService"] == "lotus-report"
+    assert body["contractVersion"] == "v1"
+    assert body["policyVersion"] == "ras-default-v1"
 
 
 def test_aggregation_endpoint():
