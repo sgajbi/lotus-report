@@ -91,10 +91,6 @@ class ReportingReadService:
                 self._as_list(allocation_response.get("views"))
             )
 
-        snapshot_sections: list[str] = []
-        if "PNL" in requested_sections:
-            snapshot_sections.append("OVERVIEW")
-
         if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
             transaction_params = self._build_transaction_window_params(request_payload)
             transaction_rows = await self._list_transaction_rows(
@@ -107,19 +103,8 @@ class ReportingReadService:
             if "ACTIVITY" in requested_sections:
                 response["activitySummary"] = self._map_activity_summary_from_rows(transaction_rows)
 
-        if snapshot_sections:
-            snapshot_status, snapshot_payload = await self._pas_client.get_core_snapshot(
-                portfolio_id=portfolio_id,
-                as_of_date=as_of_date,
-                include_sections=snapshot_sections,
-            )
-            snapshot = self._unwrap_pas_snapshot(
-                status_code=snapshot_status, payload=snapshot_payload
-            )
-            overview = self._as_dict(snapshot.get("overview"))
-
-            if "PNL" in requested_sections and "pnl_summary" in overview:
-                response["pnlSummary"] = overview.get("pnl_summary")
+        if "PNL" in requested_sections:
+            response["pnlSummary"] = self._map_pnl_summary(summary)
         return response
 
     async def get_portfolio_review(
@@ -142,30 +127,60 @@ class ReportingReadService:
             ],
         )
 
-        status_code, payload = await self._pas_client.get_core_snapshot(
+        summary_status, summary_payload = await self._pas_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
-            as_of_date=as_of_date,
-            include_sections=[
-                "OVERVIEW",
-                "ALLOCATION",
-                "INCOME_AND_ACTIVITY",
-                "HOLDINGS",
-                "TRANSACTIONS",
-            ],
+            payload={"as_of_date": as_of_date},
+            correlation_id=correlation_id,
         )
-        snapshot = self._unwrap_pas_snapshot(status_code=status_code, payload=payload)
+        summary = self._unwrap_pas_summary(status_code=summary_status, payload=summary_payload)
         response: dict[str, object] = {"portfolio_id": portfolio_id, "as_of_date": as_of_date}
+        transaction_rows: list[dict[str, object]] | None = None
 
         if "OVERVIEW" in requested_sections:
-            response["overview"] = snapshot.get("overview")
+            response["overview"] = self._map_review_overview(summary)
         if "ALLOCATION" in requested_sections:
-            response["allocation"] = snapshot.get("allocation")
+            allocation_request = self._build_allocation_request(request_payload)
+            allocation_status, allocation_payload = await self._pas_client.get_asset_allocation(
+                portfolio_id=portfolio_id,
+                payload=allocation_request,
+                correlation_id=correlation_id,
+            )
+            allocation_response = self._unwrap_pas_allocation(
+                status_code=allocation_status,
+                payload=allocation_payload,
+            )
+            response["allocation"] = self._map_allocation_views(
+                self._as_list(allocation_response.get("views"))
+            )
         if "INCOME_AND_ACTIVITY" in requested_sections:
-            response["incomeAndActivity"] = snapshot.get("incomeAndActivity")
+            if transaction_rows is None:
+                transaction_rows = await self._list_transaction_rows(
+                    portfolio_id=portfolio_id,
+                    correlation_id=correlation_id,
+                    params=self._build_transaction_window_params(request_payload),
+                )
+            response["incomeAndActivity"] = {
+                "incomeSummary": self._map_income_summary_from_rows(transaction_rows),
+                "activitySummary": self._map_activity_summary_from_rows(transaction_rows),
+            }
         if "HOLDINGS" in requested_sections:
-            response["holdings"] = snapshot.get("holdings")
+            positions_status, positions_payload = await self._pas_client.get_portfolio_positions(
+                portfolio_id=portfolio_id,
+                params=self._build_position_params(request_payload),
+                correlation_id=correlation_id,
+            )
+            response["holdings"] = self._unwrap_pas_positions(
+                status_code=positions_status,
+                payload=positions_payload,
+            )
         if "TRANSACTIONS" in requested_sections:
-            response["transactions"] = snapshot.get("transactions")
+            if transaction_rows is None:
+                transaction_rows = await self._list_transaction_rows(
+                    portfolio_id=portfolio_id,
+                    correlation_id=correlation_id,
+                    params=self._build_transaction_window_params(request_payload),
+                )
+            response["transactions"] = self._map_review_transactions(transaction_rows)
 
         if "PERFORMANCE" in requested_sections:
             pa_status, pa_payload = await self._pa_client.get_pas_input_twr(
@@ -266,24 +281,6 @@ class ReportingReadService:
             returns.append({"date": period[:10], "value": float(value)})
         return returns
 
-    def _unwrap_pas_snapshot(
-        self, status_code: int, payload: dict[str, object]
-    ) -> dict[str, object]:
-        if status_code < status.HTTP_400_BAD_REQUEST:
-            snapshot = self._as_dict(payload.get("snapshot"))
-            if snapshot:
-                return snapshot
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="lotus-core core snapshot payload missing snapshot section.",
-            )
-        if status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"lotus-core core snapshot upstream failure: {payload}",
-        )
-
     def _unwrap_pas_summary(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
@@ -323,6 +320,103 @@ class ReportingReadService:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"lotus-core asset allocation upstream failure: {payload}",
         )
+
+    def _unwrap_pas_positions(
+        self, status_code: int, payload: dict[str, object]
+    ) -> dict[str, object]:
+        if status_code < status.HTTP_400_BAD_REQUEST:
+            if isinstance(payload, dict) and "positions" in payload:
+                return self._map_holdings_from_positions(payload)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="lotus-core positions payload missing required fields.",
+            )
+        if status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"lotus-core positions upstream failure: {payload}",
+        )
+
+    def _map_review_overview(self, summary: dict[str, object]) -> dict[str, object]:
+        totals = self._as_dict(summary.get("totals"))
+        return {
+            "total_market_value": self._to_float(
+                totals.get("total_market_value_reporting_currency")
+            ),
+            "total_cash": self._to_float(totals.get("cash_balance_reporting_currency")),
+            "invested_market_value": self._to_float(
+                totals.get("invested_market_value_reporting_currency")
+            ),
+            "currency": self._safe_str(
+                summary.get("reporting_currency")
+                or self._as_dict(summary.get("snapshot_metadata")).get("reporting_currency")
+            ),
+        }
+
+    def _map_pnl_summary(self, summary: dict[str, object]) -> dict[str, object]:
+        totals = self._as_dict(summary.get("totals"))
+        total_market_value = self._to_float(totals.get("total_market_value_reporting_currency"))
+        invested_market_value = self._to_float(
+            totals.get("invested_market_value_reporting_currency")
+        )
+        total_pnl = total_market_value - invested_market_value
+        return {
+            "invested_market_value_reporting_currency": invested_market_value,
+            "unrealized_pnl_reporting_currency": total_pnl,
+            "realized_pnl_reporting_currency": 0.0,
+            "total_pnl": total_pnl,
+        }
+
+    def _map_holdings_from_positions(self, payload: dict[str, object]) -> dict[str, object]:
+        holdings_by_asset_class: dict[str, list[dict[str, object]]] = {}
+        for item in self._as_list(payload.get("positions")):
+            row = self._as_dict(item)
+            asset_class = self._safe_str(row.get("asset_class")) or "UNKNOWN"
+            holdings_by_asset_class.setdefault(asset_class, []).append(
+                {
+                    "security_id": self._safe_str(row.get("security_id")),
+                    "instrument_name": self._safe_str(
+                        row.get("instrument_name") or row.get("description")
+                    ),
+                    "quantity": self._to_float(row.get("quantity")),
+                    "market_value_reporting_currency": self._to_float(
+                        row.get("market_value_reporting_currency")
+                    ),
+                    "weight": self._to_float(row.get("weight")),
+                    "currency": self._safe_str(row.get("currency")),
+                }
+            )
+        return {
+            "holdingsByAssetClass": holdings_by_asset_class,
+            "positionCount": self._to_int(payload.get("total"))
+            or sum(len(rows) for rows in holdings_by_asset_class.values()),
+        }
+
+    def _map_review_transactions(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        transactions_by_asset_class: dict[str, list[dict[str, object]]] = {}
+        for row in rows:
+            asset_class = self._safe_str(row.get("asset_class")) or "UNKNOWN"
+            transactions_by_asset_class.setdefault(asset_class, []).append(
+                {
+                    "transaction_id": self._safe_str(row.get("transaction_id")),
+                    "transaction_date": self._safe_str(row.get("transaction_date")),
+                    "transaction_type": self._safe_str(row.get("transaction_type")),
+                    "gross_transaction_amount_reporting_currency": self._to_float(
+                        row.get("gross_transaction_amount_reporting_currency")
+                    ),
+                    "net_interest_amount_reporting_currency": self._to_float(
+                        row.get("net_interest_amount_reporting_currency")
+                    ),
+                    "withholding_tax_amount_reporting_currency": self._to_float(
+                        row.get("withholding_tax_amount_reporting_currency")
+                    ),
+                }
+            )
+        return {
+            "transactionsByAssetClass": transactions_by_asset_class,
+            "transactionCount": len(rows),
+        }
 
     def _build_allocation_request(self, request_payload: dict[str, object]) -> dict[str, object]:
         dimensions = self._allocation_dimensions(request_payload)
@@ -364,6 +458,19 @@ class ReportingReadService:
         if isinstance(reporting_currency, str) and reporting_currency:
             transaction_params["reporting_currency"] = reporting_currency
         return transaction_params
+
+    def _build_position_params(self, request_payload: dict[str, object]) -> dict[str, object]:
+        as_of_date = self._required_string(request_payload, "as_of_date", "asOfDate")
+        params: dict[str, object] = {
+            "as_of_date": as_of_date,
+            "include_projected": "false",
+        }
+        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
+            "reportingCurrency"
+        )
+        if isinstance(reporting_currency, str) and reporting_currency:
+            params["reporting_currency"] = reporting_currency
+        return params
 
     def _allocation_dimensions(self, request_payload: dict[str, object]) -> list[str]:
         raw_dimensions = request_payload.get("allocation_dimensions")
@@ -740,3 +847,9 @@ class ReportingReadService:
             except ValueError:
                 return 0
         return 0
+
+    @staticmethod
+    def _safe_str(value: object) -> str:
+        if isinstance(value, str):
+            return value
+        return ""

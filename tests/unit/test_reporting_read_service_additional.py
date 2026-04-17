@@ -21,14 +21,6 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
-    async def get_core_snapshot(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
-    ):
-        return 200, {"unexpected": "shape"}
-
     async def get_portfolio_transactions(
         self,
         portfolio_id: str,
@@ -45,6 +37,14 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"unexpected": "shape"}
+
 
 class _PasSuccessMinimal:
     async def get_portfolio_summary(
@@ -58,6 +58,7 @@ class _PasSuccessMinimal:
             "totals": {
                 "total_market_value_reporting_currency": 100.0,
                 "cash_balance_reporting_currency": 10.0,
+                "invested_market_value_reporting_currency": 90.0,
             },
             "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
         }
@@ -71,25 +72,6 @@ class _PasSuccessMinimal:
         return 200, {
             "scope": {"portfolio_id": portfolio_id},
             "views": [{"dimension": "asset_class", "buckets": []}],
-        }
-
-    async def get_core_snapshot(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
-    ):
-        return 200, {
-            "snapshot": {
-                "overview": {"total_market_value": 100.0, "total_cash": 10.0},
-                "allocation": {"byAssetClass": []},
-                "incomeAndActivity": {
-                    "income_summary_ytd": {"total_dividends": 3.0},
-                    "activity_summary_ytd": {"total_deposits": 5.0},
-                },
-                "holdings": {"holdingsByAssetClass": {"EQUITY": []}},
-                "transactions": {"transactionsByAssetClass": {"EQUITY": []}},
-            }
         }
 
     async def get_portfolio_transactions(
@@ -118,6 +100,28 @@ class _PasSuccessMinimal:
                     "transaction_type": "DEPOSIT",
                     "gross_transaction_amount_reporting_currency": 5.0,
                 },
+            ],
+        }
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "total": 1,
+            "positions": [
+                {
+                    "security_id": "EQ-1",
+                    "instrument_name": "Equity 1",
+                    "asset_class": "EQUITY",
+                    "quantity": 2,
+                    "market_value_reporting_currency": 90.0,
+                    "weight": 0.9,
+                    "currency": "USD",
+                }
             ],
         }
 
@@ -296,7 +300,7 @@ async def test_summary_with_explicit_sections_can_exclude_wealth_and_allocation(
         {"as_of_date": "2026-02-24", "sections": ["pnl"]},
         None,
     )
-    assert "pnlSummary" not in response
+    assert response["pnlSummary"]["total_pnl"] == 10.0
     assert "wealth" not in response
     assert "allocation" not in response
 
