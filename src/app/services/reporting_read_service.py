@@ -182,14 +182,20 @@ class ReportingReadService:
                 )
             response["transactions"] = self._map_review_transactions(transaction_rows)
 
+        workspace_summary_payload: dict[str, object] | None = None
         if "PERFORMANCE" in requested_sections:
-            pa_status, pa_payload = await self._pa_client.get_pas_input_twr(
-                portfolio_id=portfolio_id,
-                as_of_date=as_of_date,
-                periods=["MTD", "QTD", "YTD", "THREE_YEAR", "SI"],
+            pa_status, pa_payload = await self._pa_client.get_workspace_summary(
+                self._build_workspace_summary_request(
+                    portfolio_id=portfolio_id,
+                    as_of_date=as_of_date,
+                    request_payload=request_payload,
+                    periods=["MTD", "QTD", "YTD", "THREE_YEAR", "SI"],
+                )
             )
             if pa_status < status.HTTP_400_BAD_REQUEST:
-                response["performance"] = self._map_pa_performance(pa_payload)
+                workspace_summary_payload = pa_payload
+            if pa_status < status.HTTP_400_BAD_REQUEST:
+                response["performance"] = self._map_workspace_performance(pa_payload)
             else:
                 response["performance"] = None
 
@@ -197,6 +203,8 @@ class ReportingReadService:
             response["riskAnalytics"] = await self._build_risk_analytics(
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
+                request_payload=request_payload,
+                workspace_summary_payload=workspace_summary_payload,
             )
 
         return response
@@ -205,46 +213,33 @@ class ReportingReadService:
         self,
         portfolio_id: str,
         as_of_date: str,
+        request_payload: dict[str, object],
+        workspace_summary_payload: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
-        perf_status, perf_payload = await self._pas_client.get_performance_input(
-            portfolio_id=portfolio_id,
-            as_of_date=as_of_date,
-            lookback_days=1200,
-        )
-        if perf_status >= status.HTTP_400_BAD_REQUEST:
-            return None
+        if workspace_summary_payload is None:
+            summary_status, workspace_summary_payload = await self._pa_client.get_workspace_summary(
+                self._build_workspace_summary_request(
+                    portfolio_id=portfolio_id,
+                    as_of_date=as_of_date,
+                    request_payload=request_payload,
+                    periods=["YTD", "THREE_YEAR", "SI"],
+                )
+            )
+            if summary_status >= status.HTTP_400_BAD_REQUEST:
+                return None
 
-        valuation_points = perf_payload.get("valuationPoints")
-        performance_start_date = perf_payload.get("performanceStartDate")
-        if not isinstance(valuation_points, list) or not valuation_points:
-            return None
-        if not isinstance(performance_start_date, str):
-            return None
-
-        twr_payload = {
-            "portfolio_id": portfolio_id,
-            "performance_start_date": performance_start_date,
-            "metric_basis": "NET",
-            "report_start_date": performance_start_date,
-            "report_end_date": as_of_date,
-            "analyses": [{"period": "EXPLICIT", "frequencies": ["daily"]}],
-            "valuation_points": valuation_points,
-            "currency": perf_payload.get("baseCurrency", "USD"),
-            "output": {"include_cumulative": True, "include_timeseries": True},
-        }
-        twr_status, twr_response = await self._pa_client.calculate_twr(twr_payload)
-        if twr_status >= status.HTTP_400_BAD_REQUEST:
-            return None
-
-        returns = self._extract_daily_returns_from_twr(twr_response)
+        returns = self._extract_daily_returns_from_workspace_summary(workspace_summary_payload)
         if not returns:
+            return None
+        portfolio_open_date = self._workspace_portfolio_open_date(workspace_summary_payload)
+        if portfolio_open_date is None:
             return None
 
         risk_payload = {
             "scope": {"asOfDate": as_of_date, "netOrGross": "NET"},
             "periods": [{"type": "YTD"}, {"type": "THREE_YEAR"}],
             "metrics": ["VOLATILITY", "SHARPE", "DRAWDOWN", "VAR"],
-            "portfolioOpenDate": performance_start_date,
+            "portfolioOpenDate": portfolio_open_date,
             "returns": returns,
             "benchmarkReturns": [],
         }
@@ -255,30 +250,40 @@ class ReportingReadService:
         results = self._as_dict(risk_response.get("results"))
         return {"results": results}
 
-    def _extract_daily_returns_from_twr(
+    def _extract_daily_returns_from_workspace_summary(
         self,
-        twr_payload: dict[str, object],
+        workspace_payload: dict[str, object],
     ) -> list[dict[str, object]]:
-        results_by_period = self._as_dict(twr_payload.get("results_by_period"))
-        period_payload = next(iter(results_by_period.values()), None)
-        if not isinstance(period_payload, dict):
-            return []
-
-        breakdowns = self._as_dict(period_payload.get("breakdowns"))
-        daily_items = breakdowns.get("daily")
-        if not isinstance(daily_items, list):
+        results_by_period = self._as_dict(workspace_payload.get("results_by_period"))
+        daily_items: list[object] = []
+        for period_name in ("THREE_YEAR", "SI", "YTD", "QTD", "MTD"):
+            period_payload = self._as_dict(results_by_period.get(period_name))
+            portfolio_twr = self._as_dict(period_payload.get("portfolio_twr"))
+            net_block = self._as_dict(portfolio_twr.get("net"))
+            breakdowns = self._as_dict(net_block.get("breakdowns"))
+            candidate_items = breakdowns.get("daily")
+            if isinstance(candidate_items, list) and candidate_items:
+                daily_items = candidate_items
+                break
+        if not daily_items:
             return []
 
         returns: list[dict[str, object]] = []
         for item in daily_items:
             if not isinstance(item, dict):
                 continue
+            period_end = item.get("period_end")
             period = item.get("period")
-            summary = self._as_dict(item.get("summary"))
-            value = summary.get("period_return_pct")
-            if not isinstance(period, str) or not isinstance(value, (int, float)):
+            return_value = self._as_dict(item.get("period_return")).get("base")
+            if not isinstance(return_value, (int, float)):
                 continue
-            returns.append({"date": period[:10], "value": float(value)})
+            if isinstance(period_end, str) and period_end:
+                return_date = period_end
+            elif isinstance(period, str) and period:
+                return_date = period[:10]
+            else:
+                continue
+            returns.append({"date": return_date, "value": float(return_value)})
         return returns
 
     def _unwrap_pas_summary(
@@ -773,20 +778,93 @@ class ReportingReadService:
         amount = self._to_float(value)
         return abs(amount)
 
-    def _map_pa_performance(self, payload: dict[str, object]) -> dict[str, object]:
-        results_by_period = self._as_dict(payload.get("resultsByPeriod"))
+    def _map_workspace_performance(self, payload: dict[str, object]) -> dict[str, object]:
+        results_by_period = self._as_dict(payload.get("results_by_period"))
         summary: dict[str, object] = {}
         for period, row in results_by_period.items():
             row_dict = self._as_dict(row)
+            portfolio_twr = self._as_dict(row_dict.get("portfolio_twr"))
+            net_summary = self._as_dict(self._as_dict(portfolio_twr.get("net")).get("summary"))
+            gross_summary = self._as_dict(self._as_dict(portfolio_twr.get("gross")).get("summary"))
             summary[period] = {
-                "start_date": row_dict.get("start_date"),
-                "end_date": row_dict.get("end_date"),
-                "net_cumulative_return": row_dict.get("net_cumulative_return"),
-                "net_annualized_return": row_dict.get("net_annualized_return"),
-                "gross_cumulative_return": row_dict.get("gross_cumulative_return"),
-                "gross_annualized_return": row_dict.get("gross_annualized_return"),
+                "start_date": self._workspace_period_start(row_dict),
+                "end_date": self._workspace_period_end(row_dict),
+                "net_cumulative_return": self._return_base(net_summary, "cumulative_return"),
+                "net_annualized_return": self._return_base(net_summary, "annualized_return"),
+                "gross_cumulative_return": self._return_base(gross_summary, "cumulative_return"),
+                "gross_annualized_return": self._return_base(gross_summary, "annualized_return"),
             }
         return {"summary": summary}
+
+    def _build_workspace_summary_request(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: str,
+        request_payload: dict[str, object],
+        periods: list[str],
+    ) -> dict[str, object]:
+        request: dict[str, object] = {
+            "portfolio_id": portfolio_id,
+            "report_end_date": as_of_date,
+            "input_mode": "stateful",
+            "stateful_input": {},
+            "periods": [{"period": period, "frequencies": ["daily"]} for period in periods],
+        }
+        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
+            "reportingCurrency"
+        )
+        if isinstance(reporting_currency, str) and reporting_currency:
+            request["report_ccy"] = reporting_currency
+            request["currency"] = reporting_currency
+        return request
+
+    def _workspace_period_start(self, period_payload: dict[str, object]) -> str | None:
+        daily_breakdowns = self._workspace_daily_breakdowns(period_payload)
+        if daily_breakdowns:
+            period_start = self._as_dict(daily_breakdowns[0]).get("period_start")
+            if isinstance(period_start, str) and period_start:
+                return period_start
+        money_weighted_return = self._as_dict(period_payload.get("money_weighted_return"))
+        start_date = money_weighted_return.get("start_date")
+        return start_date if isinstance(start_date, str) and start_date else None
+
+    def _workspace_period_end(self, period_payload: dict[str, object]) -> str | None:
+        daily_breakdowns = self._workspace_daily_breakdowns(period_payload)
+        if daily_breakdowns:
+            period_end = self._as_dict(daily_breakdowns[-1]).get("period_end")
+            if isinstance(period_end, str) and period_end:
+                return period_end
+        money_weighted_return = self._as_dict(period_payload.get("money_weighted_return"))
+        end_date = money_weighted_return.get("end_date")
+        return end_date if isinstance(end_date, str) and end_date else None
+
+    def _workspace_daily_breakdowns(self, period_payload: dict[str, object]) -> list[object]:
+        portfolio_twr = self._as_dict(period_payload.get("portfolio_twr"))
+        net_block = self._as_dict(portfolio_twr.get("net"))
+        breakdowns = self._as_dict(net_block.get("breakdowns"))
+        daily = breakdowns.get("daily")
+        return daily if isinstance(daily, list) else []
+
+    def _workspace_portfolio_open_date(self, payload: dict[str, object]) -> str | None:
+        results_by_period = self._as_dict(payload.get("results_by_period"))
+        for period_name in ("SI", "THREE_YEAR", "YTD", "QTD", "MTD"):
+            period_payload = self._as_dict(results_by_period.get(period_name))
+            period_start = self._workspace_period_start(period_payload)
+            if period_start:
+                return period_start
+        return None
+
+    def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:
+        return_value = self._as_dict(summary_payload.get(key)).get("base")
+        if isinstance(return_value, (int, float)):
+            return float(return_value)
+        if isinstance(return_value, str):
+            try:
+                return float(return_value)
+            except ValueError:
+                return None
+        return None
 
     def _requested_sections(
         self,

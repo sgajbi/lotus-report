@@ -53,12 +53,12 @@ def test_pa_client_parse_payload(payload, text, expected):
 
 
 @pytest.mark.asyncio
-async def test_pa_client_get_pas_input_twr_posts_expected_contract(monkeypatch):
+async def test_pa_client_get_workspace_summary_posts_expected_contract(monkeypatch):
     correlation_id_var.set("corr-1")
     request_id_var.set("req-1")
     trace_id_var.set("0123456789abcdef0123456789abcdef")
 
-    response = _FakeResponse(status_code=200, payload={"resultsByPeriod": {}})
+    response = _FakeResponse(status_code=200, payload={"results_by_period": {}})
     recorder = _RecordingAsyncClient(response=response)
     monkeypatch.setattr(
         "app.clients.pa_client.httpx.AsyncClient",
@@ -66,15 +66,13 @@ async def test_pa_client_get_pas_input_twr_posts_expected_contract(monkeypatch):
     )
 
     client = PaClient(base_url="http://pa/", timeout_seconds=3.0)
-    status_code, payload = await client.get_pas_input_twr(
-        portfolio_id="P1",
-        as_of_date="2026-02-24",
-        periods=["YTD"],
+    status_code, payload = await client.get_workspace_summary(
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
     )
     assert status_code == 200
-    assert payload == {"resultsByPeriod": {}}
-    assert recorder.calls[0]["url"] == "http://pa/performance/twr/pas-input"
-    assert recorder.calls[0]["json"]["consumerSystem"] == "REPORTING"
+    assert payload == {"results_by_period": {}}
+    assert recorder.calls[0]["url"] == "http://pa/performance/workspace-summary"
+    assert recorder.calls[0]["json"]["portfolio_id"] == "P1"
     assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-1"
 
 
@@ -249,34 +247,6 @@ async def test_pas_client_get_portfolio_review_posts_expected_contract(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_pa_client_calculate_twr_posts_expected_contract(monkeypatch):
-    response = _FakeResponse(status_code=200, payload={"results_by_period": {}})
-    recorder = _RecordingAsyncClient(response=response)
-    monkeypatch.setattr("app.clients.pa_client.httpx.AsyncClient", lambda timeout: recorder)
-    client = PaClient(base_url="http://pa/", timeout_seconds=3.0)
-
-    status_code, payload = await client.calculate_twr({"portfolio_id": "P1"})
-    assert status_code == 200
-    assert payload == {"results_by_period": {}}
-    assert recorder.calls[0]["url"] == "http://pa/performance/twr"
-
-
-@pytest.mark.asyncio
-async def test_pas_client_get_performance_input_posts_expected_contract(monkeypatch):
-    response = _FakeResponse(status_code=200, payload={"valuationPoints": []})
-    recorder = _RecordingAsyncClient(response=response)
-    monkeypatch.setattr("app.clients.pas_client.httpx.AsyncClient", lambda timeout: recorder)
-    client = PasClient(base_url="http://pas/", timeout_seconds=3.0)
-
-    status_code, payload = await client.get_performance_input(
-        portfolio_id="P2", as_of_date="2026-02-24", lookback_days=365
-    )
-    assert status_code == 200
-    assert payload == {"valuationPoints": []}
-    assert recorder.calls[0]["url"] == "http://pas/integration/portfolios/P2/performance-input"
-    assert recorder.calls[0]["json"]["lookbackDays"] == 365
-
-
 @pytest.mark.asyncio
 async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     async def _fake_post_with_retry(**kwargs):

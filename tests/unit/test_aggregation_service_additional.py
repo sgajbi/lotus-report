@@ -26,8 +26,17 @@ class _PasOkClient:
 
 
 class _PaOkClient:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
-        return 200, {"resultsByPeriod": {"YTD": {"net_cumulative_return": 1.0}}}
+    async def get_workspace_summary(self, payload: dict[str, object]):
+        return (
+            200,
+            {
+                "results_by_period": {
+                    "YTD": {
+                        "portfolio_twr": {"net": {"summary": {"cumulative_return": {"base": 1.0}}}}
+                    }
+                }
+            },
+        )
 
 
 class _PasFailClient:
@@ -49,7 +58,7 @@ class _PasFailClient:
 
 
 class _PaFailClient:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "down"}
 
 
@@ -288,9 +297,9 @@ class _PasMalformedSummary:
 
 
 class _PaMissingYtd:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
-        _ = portfolio_id, as_of_date, periods
-        return 200, {"resultsByPeriod": {}}
+    async def get_workspace_summary(self, payload: dict[str, object]):
+        _ = payload
+        return 200, {"results_by_period": {}}
 
 
 class _PasInvalidPositionCount(_PasMalformedSummary):

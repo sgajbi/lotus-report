@@ -33,8 +33,11 @@ Capability discovery query contract:
 - use canonical snake_case query parameters `consumer_system` and `tenant_id`
 
 Current orchestration model:
-- lotus-report composes summary/review responses from lotus-core core snapshot contracts.
-- lotus-report enriches review performance section from lotus-performance analytics contracts.
+- lotus-report composes summary/review responses from lotus-core portfolio summary, asset
+  allocation, positions, and transaction contracts.
+- lotus-report derives review performance and risk-ready return series from
+  `POST /performance/workspace-summary` in stateful mode and forwards the resulting daily return
+  stream into lotus-risk for risk analytics.
 
 ## Tests
 

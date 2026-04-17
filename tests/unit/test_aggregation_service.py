@@ -56,10 +56,16 @@ class _StubPasClient:
 
 
 class _StubPaClient:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return (
             200,
-            {"resultsByPeriod": {"YTD": {"net_cumulative_return": 4.2}}},
+            {
+                "results_by_period": {
+                    "YTD": {
+                        "portfolio_twr": {"net": {"summary": {"cumulative_return": {"base": 4.2}}}}
+                    }
+                }
+            },
         )
 
 
@@ -100,7 +106,7 @@ class _FailingPasClient:
 
 
 class _FailingPaClient:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "unavailable"}
 
 

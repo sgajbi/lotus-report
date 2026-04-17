@@ -19,31 +19,8 @@ class PaClient:
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
 
-    async def get_pas_input_twr(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        periods: list[str],
-    ) -> tuple[int, dict[str, Any]]:
-        url = f"{self._base_url}/performance/twr/pas-input"
-        payload = {
-            "portfolioId": portfolio_id,
-            "asOfDate": as_of_date,
-            "periods": periods,
-            "consumerSystem": "REPORTING",
-        }
-        headers = propagation_headers()
-        return await post_with_retry(
-            url=url,
-            timeout_seconds=self._timeout_seconds,
-            json_body=payload,
-            headers=headers,
-            max_retries=self._max_retries,
-            backoff_seconds=self._retry_backoff_seconds,
-        )
-
-    async def calculate_twr(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        url = f"{self._base_url}/performance/twr"
+    async def get_workspace_summary(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        url = f"{self._base_url}/performance/workspace-summary"
         headers = propagation_headers()
         return await post_with_retry(
             url=url,

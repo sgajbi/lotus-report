@@ -111,51 +111,89 @@ class _PasClientSuccess:
             ],
         }
 
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 200, {
-            "portfolioId": portfolio_id,
-            "baseCurrency": "USD",
-            "performanceStartDate": "2025-01-01",
-            "valuationPoints": [
-                {
-                    "day": 1,
-                    "perf_date": "2025-01-02",
-                    "begin_mv": 100.0,
-                    "end_mv": 101.0,
-                    "bod_cf": 0.0,
-                    "eod_cf": 0.0,
-                    "mgmt_fees": 0.0,
-                }
-            ],
-        }
-
 
 class _PaClientSuccess:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
-        return 200, {
-            "resultsByPeriod": {
-                "YTD": {
-                    "net_cumulative_return": 4.1,
-                    "net_annualized_return": 4.1,
-                    "gross_cumulative_return": 4.3,
-                    "gross_annualized_return": 4.3,
-                }
-            }
-        }
-
-    async def calculate_twr(self, payload: dict[str, object]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
             "results_by_period": {
-                "EXPLICIT": {
-                    "breakdowns": {
-                        "daily": [{"period": "2025-01-02", "summary": {"period_return_pct": 1.0}}]
-                    }
-                }
+                "MTD": {
+                    "portfolio_twr": {
+                        "net": {
+                            "summary": {
+                                "cumulative_return": {"base": 1.1},
+                                "annualized_return": {"base": 1.1},
+                            },
+                            "breakdowns": {
+                                "daily": [
+                                    {
+                                        "period": "2026-02-24",
+                                        "period_end": "2026-02-24",
+                                        "period_return": {"base": 0.1},
+                                    }
+                                ]
+                            },
+                        },
+                        "gross": {
+                            "summary": {
+                                "cumulative_return": {"base": 1.2},
+                                "annualized_return": {"base": 1.2},
+                            }
+                        },
+                    },
+                    "money_weighted_return": {"start_date": "2026-02-01", "end_date": "2026-02-24"},
+                },
+                "YTD": {
+                    "portfolio_twr": {
+                        "net": {
+                            "summary": {
+                                "cumulative_return": {"base": 4.1},
+                                "annualized_return": {"base": 4.1},
+                            },
+                            "breakdowns": {
+                                "daily": [
+                                    {
+                                        "period": "2026-02-24",
+                                        "period_end": "2026-02-24",
+                                        "period_return": {"base": 1.0},
+                                    }
+                                ]
+                            },
+                        },
+                        "gross": {
+                            "summary": {
+                                "cumulative_return": {"base": 4.3},
+                                "annualized_return": {"base": 4.3},
+                            }
+                        },
+                    },
+                    "money_weighted_return": {"start_date": "2026-01-01", "end_date": "2026-02-24"},
+                },
+                "THREE_YEAR": {
+                    "portfolio_twr": {
+                        "net": {
+                            "summary": {
+                                "cumulative_return": {"base": 12.0},
+                                "annualized_return": {"base": 3.9},
+                            },
+                            "breakdowns": {
+                                "daily": [
+                                    {
+                                        "period": "2026-02-24",
+                                        "period_end": "2026-02-24",
+                                        "period_return": {"base": 1.0},
+                                    }
+                                ]
+                            },
+                        },
+                        "gross": {
+                            "summary": {
+                                "cumulative_return": {"base": 12.5},
+                                "annualized_return": {"base": 4.1},
+                            }
+                        },
+                    },
+                    "money_weighted_return": {"start_date": "2023-02-24", "end_date": "2026-02-24"},
+                },
             }
         }
 
@@ -187,14 +225,6 @@ class _PasClientNotFound:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
-    ):
-        return 404, {"detail": "Portfolio not found"}
-
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -232,14 +262,6 @@ class _PasClientFailure:
     ):
         return 503, {"detail": "upstream unavailable"}
 
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 503, {"detail": "upstream unavailable"}
-
     async def get_portfolio_transactions(
         self,
         portfolio_id: str,
@@ -258,10 +280,7 @@ class _PasClientFailure:
 
 
 class _PaClientFailure:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
-        return 503, {"detail": "upstream unavailable"}
-
-    async def calculate_twr(self, payload: dict[str, object]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 503, {"detail": "upstream unavailable"}
 
 

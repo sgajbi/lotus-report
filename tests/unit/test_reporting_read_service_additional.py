@@ -29,14 +29,6 @@ class _PasSnapshotMissing:
     ):
         return 200, {"unexpected": "shape"}
 
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 200, {"unexpected": "shape"}
-
     async def get_portfolio_positions(
         self,
         portfolio_id: str,
@@ -125,39 +117,36 @@ class _PasSuccessMinimal:
             ],
         }
 
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 200, {
-            "performanceStartDate": "2025-01-01",
-            "valuationPoints": [
-                {
-                    "day": 1,
-                    "perf_date": "2025-01-02",
-                    "begin_mv": 100.0,
-                    "end_mv": 101.0,
-                    "bod_cf": 0.0,
-                    "eod_cf": 0.0,
-                    "mgmt_fees": 0.0,
-                }
-            ],
-        }
-
 
 class _PaSuccessEmpty:
-    async def get_pas_input_twr(self, portfolio_id: str, as_of_date: str, periods: list[str]):
-        return 200, {"resultsByPeriod": {"YTD": {"net_cumulative_return": 2.1}}}
-
-    async def calculate_twr(self, payload: dict[str, object]):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
             "results_by_period": {
-                "EXPLICIT": {
-                    "breakdowns": {
-                        "daily": [{"period": "2025-01-02", "summary": {"period_return_pct": 1.0}}]
-                    }
+                "YTD": {
+                    "portfolio_twr": {
+                        "net": {
+                            "summary": {
+                                "cumulative_return": {"base": 2.1},
+                                "annualized_return": {"base": 2.1},
+                            },
+                            "breakdowns": {
+                                "daily": [
+                                    {
+                                        "period": "2025-01-02",
+                                        "period_end": "2025-01-02",
+                                        "period_return": {"base": 1.0},
+                                    }
+                                ]
+                            },
+                        },
+                        "gross": {
+                            "summary": {
+                                "cumulative_return": {"base": 2.3},
+                                "annualized_return": {"base": 2.3},
+                            }
+                        },
+                    },
+                    "money_weighted_return": {"start_date": "2025-01-01", "end_date": "2026-02-24"},
                 }
             }
         }
@@ -380,13 +369,13 @@ def test_requested_sections_filters_non_string_values():
     assert sections == {"OVERVIEW", "PERFORMANCE"}
 
 
-def test_map_pa_performance_handles_non_dict_rows():
+def test_map_workspace_performance_handles_non_dict_rows():
     service = ReportingReadService(
         pas_client=_PasSuccessMinimal(),
         pa_client=_PaSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    mapped = service._map_pa_performance({"resultsByPeriod": {"YTD": "bad-row"}})
+    mapped = service._map_workspace_performance({"results_by_period": {"YTD": "bad-row"}})
     assert mapped["summary"]["YTD"]["net_cumulative_return"] is None
 
 
@@ -663,44 +652,16 @@ def test_core_unwrap_helpers_map_invalid_and_error_payloads(
     assert exc.value.status_code == expected_status
 
 
-class _PasPerfStatusError(_PasSuccessMinimal):
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 500, {"detail": "upstream error"}
-
-
-class _PasPerfInvalidPoints(_PasSuccessMinimal):
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 200, {"performanceStartDate": "2025-01-01", "valuationPoints": []}
-
-
-class _PasPerfInvalidStart(_PasSuccessMinimal):
-    async def get_performance_input(
-        self,
-        portfolio_id: str,
-        as_of_date: str,
-        lookback_days: int = 1200,
-    ):
-        return 200, {"performanceStartDate": None, "valuationPoints": [{"perf_date": "2025-01-01"}]}
-
-
-class _PaTwrStatusError(_PaSuccessEmpty):
-    async def calculate_twr(self, payload: dict[str, object]):
+class _PaWorkspaceStatusError(_PaSuccessEmpty):
+    async def get_workspace_summary(self, payload: dict[str, object]):
         return 500, {"detail": "twr failed"}
 
 
-class _PaTwrNoReturns(_PaSuccessEmpty):
-    async def calculate_twr(self, payload: dict[str, object]):
-        return 200, {"results_by_period": {"EXPLICIT": {"breakdowns": {"daily": []}}}}
+class _PaWorkspaceNoReturns(_PaSuccessEmpty):
+    async def get_workspace_summary(self, payload: dict[str, object]):
+        return 200, {
+            "results_by_period": {"YTD": {"portfolio_twr": {"net": {"breakdowns": {"daily": []}}}}}
+        }
 
 
 class _RiskStatusError(_RiskSuccess):
@@ -709,46 +670,24 @@ class _RiskStatusError(_RiskSuccess):
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_on_performance_input_failure():
-    service = ReportingReadService(
-        pas_client=_PasPerfStatusError(),
-        pa_client=_PaSuccessEmpty(),
-        risk_client=_RiskSuccess(),
-    )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_on_invalid_valuation_points():
-    service = ReportingReadService(
-        pas_client=_PasPerfInvalidPoints(),
-        pa_client=_PaSuccessEmpty(),
-        risk_client=_RiskSuccess(),
-    )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_on_invalid_performance_start_date():
-    service = ReportingReadService(
-        pas_client=_PasPerfInvalidStart(),
-        pa_client=_PaSuccessEmpty(),
-        risk_client=_RiskSuccess(),
-    )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_when_twr_call_fails():
+async def test_build_risk_analytics_returns_none_on_workspace_summary_failure():
     service = ReportingReadService(
         pas_client=_PasSuccessMinimal(),
-        pa_client=_PaTwrStatusError(),
+        pa_client=_PaWorkspaceStatusError(),
         risk_client=_RiskSuccess(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_returns_none_when_workspace_summary_call_fails():
+    service = ReportingReadService(
+        pas_client=_PasSuccessMinimal(),
+        pa_client=_PaWorkspaceStatusError(),
+        risk_client=_RiskSuccess(),
+    )
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
     assert result is None
 
 
@@ -756,10 +695,10 @@ async def test_build_risk_analytics_returns_none_when_twr_call_fails():
 async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
     service = ReportingReadService(
         pas_client=_PasSuccessMinimal(),
-        pa_client=_PaTwrNoReturns(),
+        pa_client=_PaWorkspaceNoReturns(),
         risk_client=_RiskSuccess(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
     assert result is None
 
 
@@ -770,7 +709,7 @@ async def test_build_risk_analytics_returns_none_when_risk_call_fails():
         pa_client=_PaSuccessEmpty(),
         risk_client=_RiskStatusError(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24")
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
     assert result is None
 
 
@@ -780,19 +719,27 @@ def test_extract_daily_returns_skips_invalid_items():
         pa_client=_PaSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    twr_payload = {
+    workspace_payload = {
         "results_by_period": {
-            "EXPLICIT": {
-                "breakdowns": {
-                    "daily": [
-                        "bad",
-                        {"period": "2025-01-03", "summary": {"period_return_pct": "bad"}},
-                        {"period": 123, "summary": {"period_return_pct": 1.2}},
-                        {"period": "2025-01-04", "summary": {"period_return_pct": 0.4}},
-                    ]
+            "YTD": {
+                "portfolio_twr": {
+                    "net": {
+                        "breakdowns": {
+                            "daily": [
+                                "bad",
+                                {"period": "2025-01-03", "period_return": {"base": "bad"}},
+                                {"period": 123, "period_return": {"base": 1.2}},
+                                {
+                                    "period": "2025-01-04",
+                                    "period_end": "2025-01-04",
+                                    "period_return": {"base": 0.4},
+                                },
+                            ]
+                        }
+                    }
                 }
             }
         }
     }
-    returns = service._extract_daily_returns_from_twr(twr_payload)
+    returns = service._extract_daily_returns_from_workspace_summary(workspace_payload)
     assert returns == [{"date": "2025-01-04", "value": 0.4}]

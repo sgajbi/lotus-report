@@ -40,10 +40,14 @@ class AggregationService:
         if allocation_status >= 400:
             allocation_payload = {}
 
-        pa_status, pa_payload = await self._pa_client.get_pas_input_twr(
-            portfolio_id=portfolio_id,
-            as_of_date=as_of_date,
-            periods=["YTD"],
+        pa_status, pa_payload = await self._pa_client.get_workspace_summary(
+            {
+                "portfolio_id": portfolio_id,
+                "report_end_date": as_of_date,
+                "input_mode": "stateful",
+                "stateful_input": {},
+                "periods": [{"period": "YTD", "frequencies": ["daily"]}],
+            }
         )
         if pa_status >= 400:
             pa_payload = {}
@@ -176,7 +180,13 @@ class AggregationService:
             total_mv = 1_250_000.0
 
         ytd_return = (
-            pa_payload.get("resultsByPeriod", {}).get("YTD", {}).get("net_cumulative_return")
+            pa_payload.get("results_by_period", {})
+            .get("YTD", {})
+            .get("portfolio_twr", {})
+            .get("net", {})
+            .get("summary", {})
+            .get("cumulative_return", {})
+            .get("base")
         )
         if ytd_return is None:
             ytd_return = 0.0
