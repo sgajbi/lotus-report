@@ -26,13 +26,19 @@ class AggregationService:
     async def _fetch_inputs(
         self, portfolio_id: str, as_of_date: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        pas_status, pas_payload = await self._pas_client.get_core_snapshot(
+        summary_status, summary_payload = await self._pas_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
-            as_of_date=as_of_date,
-            include_sections=["OVERVIEW", "HOLDINGS"],
+            payload={"as_of_date": as_of_date},
         )
-        if pas_status >= 400:
-            pas_payload = {}
+        if summary_status >= 400:
+            summary_payload = {}
+
+        allocation_status, allocation_payload = await self._pas_client.get_asset_allocation(
+            portfolio_id=portfolio_id,
+            payload={"as_of_date": as_of_date, "dimensions": ["asset_class"]},
+        )
+        if allocation_status >= 400:
+            allocation_payload = {}
 
         pa_status, pa_payload = await self._pa_client.get_pas_input_twr(
             portfolio_id=portfolio_id,
@@ -41,7 +47,7 @@ class AggregationService:
         )
         if pa_status >= 400:
             pa_payload = {}
-        return pas_payload, pa_payload
+        return {"summary": summary_payload, "allocation": allocation_payload}, pa_payload
 
     def _parse_market_value(self, position: dict[str, Any]) -> float | None:
         valuation = position.get("valuation")
@@ -67,38 +73,61 @@ class AggregationService:
     def _build_asset_class_rows(
         self, pas_payload: dict[str, Any], total_mv: float
     ) -> list[AggregationRow]:
-        snapshot = pas_payload.get("snapshot", {})
-        if not isinstance(snapshot, dict):
+        allocation = pas_payload.get("allocation", {})
+        if not isinstance(allocation, dict):
             return []
-        holdings = snapshot.get("holdings", {})
-        if not isinstance(holdings, dict):
+        views = allocation.get("views", [])
+        if not isinstance(views, list):
             return []
-        by_asset_class = holdings.get("holdingsByAssetClass", {})
-        if not isinstance(by_asset_class, dict):
+        asset_class_view = None
+        for view in views:
+            if not isinstance(view, dict):
+                continue
+            if str(view.get("dimension", "")).lower() == "asset_class":
+                asset_class_view = view
+                break
+        if not isinstance(asset_class_view, dict):
+            return []
+        buckets = asset_class_view.get("buckets", [])
+        if not isinstance(buckets, list):
             return []
 
         rows: list[AggregationRow] = []
-        for asset_class, positions in by_asset_class.items():
-            if not isinstance(positions, list):
+        for bucket in buckets:
+            if not isinstance(bucket, dict):
                 continue
-            asset_market_value = 0.0
-            for position in positions:
-                if not isinstance(position, dict):
-                    continue
-                parsed_mv = self._parse_market_value(position)
-                if parsed_mv is not None:
-                    asset_market_value += parsed_mv
+            asset_class = bucket.get("dimension_value")
+            if not isinstance(asset_class, str) or not asset_class.strip():
+                continue
+            try:
+                asset_market_value = float(
+                    quantize_money(bucket.get("market_value_reporting_currency"))
+                )
+            except (TypeError, ValueError):
+                continue
             if asset_market_value <= 0 or total_mv <= 0:
                 continue
+            weight = bucket.get("weight")
+            if weight is None:
+                weight_pct = float(
+                    quantize_performance(
+                        (to_decimal(asset_market_value) / to_decimal(total_mv)) * 100
+                    )
+                )
+            else:
+                try:
+                    weight_pct = float(quantize_performance(to_decimal(weight) * 100))
+                except (TypeError, ValueError):
+                    weight_pct = float(
+                        quantize_performance(
+                            (to_decimal(asset_market_value) / to_decimal(total_mv)) * 100
+                        )
+                    )
             rows.append(
                 AggregationRow(
                     bucket=str(asset_class).upper(),
                     metric="weight_pct",
-                    value=float(
-                        quantize_performance(
-                            (to_decimal(asset_market_value) / to_decimal(total_mv)) * 100
-                        )
-                    ),
+                    value=weight_pct,
                 )
             )
 
@@ -132,7 +161,17 @@ class AggregationService:
         scope = AggregationScope(portfolioId=portfolio_id, asOfDate=as_of_date)
         pas_payload, pa_payload = await self._fetch_inputs(portfolio_id, as_of_date)
 
-        total_mv = pas_payload.get("snapshot", {}).get("overview", {}).get("total_market_value")
+        summary_payload = pas_payload.get("summary", {})
+        if not isinstance(summary_payload, dict):
+            summary_payload = {}
+        totals = summary_payload.get("totals", {})
+        if not isinstance(totals, dict):
+            totals = {}
+        snapshot_metadata = summary_payload.get("snapshot_metadata", {})
+        if not isinstance(snapshot_metadata, dict):
+            snapshot_metadata = {}
+
+        total_mv = totals.get("total_market_value_reporting_currency")
         if total_mv is None:
             total_mv = 1_250_000.0
 
@@ -142,14 +181,10 @@ class AggregationService:
         if ytd_return is None:
             ytd_return = 0.0
 
-        position_count = 0
-        holdings = pas_payload.get("snapshot", {}).get("holdings", {})
-        if isinstance(holdings, dict):
-            by_asset_class = holdings.get("holdingsByAssetClass", {})
-            if isinstance(by_asset_class, dict):
-                for items in by_asset_class.values():
-                    if isinstance(items, list):
-                        position_count += len(items)
+        try:
+            position_count = int(snapshot_metadata.get("position_count", 0))
+        except (TypeError, ValueError):
+            position_count = 0
 
         rows = [
             AggregationRow(

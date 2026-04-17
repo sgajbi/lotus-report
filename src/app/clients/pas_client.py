@@ -27,9 +27,9 @@ class PasClient:
     ) -> tuple[int, dict[str, Any]]:
         url = f"{self._base_url}/integration/portfolios/{portfolio_id}/core-snapshot"
         payload = {
-            "asOfDate": as_of_date,
-            "includeSections": include_sections,
-            "consumerSystem": "REPORTING",
+            "as_of_date": as_of_date,
+            "sections": include_sections,
+            "consumer_system": "lotus-report",
         }
         headers = propagation_headers()
         return await post_with_retry(

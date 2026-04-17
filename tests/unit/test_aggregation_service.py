@@ -4,37 +4,53 @@ from app.services.aggregation_service import AggregationService
 
 
 class _StubPasClient:
-    async def get_core_snapshot(
-        self, portfolio_id: str, as_of_date: str, include_sections: list[str]
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return (
             200,
             {
-                "snapshot": {
-                    "overview": {"total_market_value": 999_999.0},
-                    "holdings": {
-                        "holdingsByAssetClass": {
-                            "EQUITY": [
-                                {
-                                    "instrument_id": "EQ1",
-                                    "valuation": {"market_value_base": 499_999.5},
-                                },
-                            ],
-                            "FIXED_INCOME": [
-                                {
-                                    "instrument_id": "FI1",
-                                    "valuation": {"market_value_base": 300_000.0},
-                                },
-                            ],
-                            "CASH": [
-                                {
-                                    "instrument_id": "CASH1",
-                                    "valuation": {"market_value_base": 200_000.0},
-                                },
-                            ],
-                        }
-                    },
-                }
+                "portfolio_id": portfolio_id,
+                "totals": {"total_market_value_reporting_currency": 999_999.0},
+                "snapshot_metadata": {"position_count": 3},
+            },
+        )
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return (
+            200,
+            {
+                "scope": {"portfolio_id": portfolio_id},
+                "views": [
+                    {
+                        "dimension": "asset_class",
+                        "buckets": [
+                            {
+                                "dimension_value": "EQUITY",
+                                "weight": 0.5,
+                                "market_value_reporting_currency": 499_999.5,
+                            },
+                            {
+                                "dimension_value": "FIXED_INCOME",
+                                "weight": 0.3000003000003,
+                                "market_value_reporting_currency": 300_000.0,
+                            },
+                            {
+                                "dimension_value": "CASH",
+                                "weight": 0.2000002000002,
+                                "market_value_reporting_currency": 200_000.0,
+                            },
+                        ],
+                    }
+                ],
             },
         )
 
@@ -66,8 +82,19 @@ async def test_live_aggregation_uses_upstream_payloads():
 
 
 class _FailingPasClient:
-    async def get_core_snapshot(
-        self, portfolio_id: str, as_of_date: str, include_sections: list[str]
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "unavailable"}
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 503, {"detail": "unavailable"}
 

@@ -124,7 +124,11 @@ async def test_pas_client_get_core_snapshot_posts_expected_contract(monkeypatch)
     assert status_code == 200
     assert payload["snapshot"] == {"overview": {}}
     assert recorder.calls[0]["url"] == "http://pas/integration/portfolios/P2/core-snapshot"
-    assert recorder.calls[0]["json"]["includeSections"] == ["OVERVIEW"]
+    assert recorder.calls[0]["json"] == {
+        "as_of_date": "2026-02-24",
+        "sections": ["OVERVIEW"],
+        "consumer_system": "lotus-report",
+    }
 
 
 @pytest.mark.asyncio

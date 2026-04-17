@@ -4,13 +4,25 @@ from app.services.aggregation_service import AggregationService
 
 
 class _PasOkClient:
-    async def get_core_snapshot(
+    async def get_portfolio_summary(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
-        return 200, {"snapshot": {"overview": {"total_market_value": 1000.0}}}
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "totals": {"total_market_value_reporting_currency": 1000.0},
+            "snapshot_metadata": {"position_count": 0},
+        }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"views": []}
 
 
 class _PaOkClient:
@@ -19,11 +31,19 @@ class _PaOkClient:
 
 
 class _PasFailClient:
-    async def get_core_snapshot(
+    async def get_portfolio_summary(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "down"}
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 503, {"detail": "down"}
 
@@ -56,14 +76,29 @@ def test_parse_market_value_variants(position, expected):
 def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
     service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
     payload = {
-        "snapshot": {
-            "holdings": {
-                "holdingsByAssetClass": {
-                    "BOND": [{"valuation": {"market_value_base": 25}}],
-                    "EQUITY": [{"valuation": {"market_value_base": 75}}],
-                    "CASH": [{"valuation": {"market_value_base": -5}}],
+        "allocation": {
+            "views": [
+                {
+                    "dimension": "asset_class",
+                    "buckets": [
+                        {
+                            "dimension_value": "BOND",
+                            "weight": 0.25,
+                            "market_value_reporting_currency": 25,
+                        },
+                        {
+                            "dimension_value": "EQUITY",
+                            "weight": 0.75,
+                            "market_value_reporting_currency": 75,
+                        },
+                        {
+                            "dimension_value": "CASH",
+                            "weight": -0.05,
+                            "market_value_reporting_currency": -5,
+                        },
+                    ],
                 }
-            }
+            ]
         }
     }
     rows = service._build_asset_class_rows(pas_payload=payload, total_mv=100.0)
@@ -76,11 +111,11 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
 @pytest.mark.parametrize(
     ("payload", "total_mv"),
     [
-        ({"snapshot": []}, 100.0),
-        ({"snapshot": {"holdings": []}}, 100.0),
-        ({"snapshot": {"holdings": {"holdingsByAssetClass": []}}}, 100.0),
-        ({"snapshot": {"holdings": {"holdingsByAssetClass": {"EQ": "bad"}}}}, 100.0),
-        ({"snapshot": {"holdings": {"holdingsByAssetClass": {"EQ": []}}}}, 0.0),
+        ({}, 100.0),
+        ({"allocation": []}, 100.0),
+        ({"allocation": {"views": []}}, 100.0),
+        ({"allocation": {"views": [{"dimension": "asset_class", "buckets": "bad"}]}}, 100.0),
+        ({"allocation": {"views": [{"dimension": "asset_class", "buckets": []}]}}, 0.0),
     ],
 )
 def test_build_asset_class_rows_handles_non_conforming_payloads(payload, total_mv):
@@ -92,7 +127,7 @@ def test_build_asset_class_rows_handles_non_conforming_payloads(payload, total_m
 async def test_fetch_inputs_drops_upstream_payloads_when_services_fail():
     service = AggregationService(pas_client=_PasFailClient(), pa_client=_PaFailClient())
     pas_payload, pa_payload = await service._fetch_inputs("P1", "2026-02-24")
-    assert pas_payload == {}
+    assert pas_payload == {"summary": {}, "allocation": {}}
     assert pa_payload == {}
 
 
@@ -113,10 +148,19 @@ def test_parse_market_value_returns_none_when_non_numeric_position_key():
 def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positive():
     service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
     payload = {
-        "snapshot": {
-            "holdings": {
-                "holdingsByAssetClass": {"EQUITY": [{"valuation": {"market_value_base": 30}}]}
-            }
+        "allocation": {
+            "views": [
+                {
+                    "dimension": "asset_class",
+                    "buckets": [
+                        {
+                            "dimension_value": "EQUITY",
+                            "weight": 0.3,
+                            "market_value_reporting_currency": 30,
+                        }
+                    ],
+                }
+            ]
         }
     }
     assert service._build_asset_class_rows(pas_payload=payload, total_mv=-1.0) == []
@@ -125,8 +169,16 @@ def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positi
 def test_build_asset_class_rows_ignores_non_dict_positions():
     service = AggregationService(pas_client=_PasOkClient(), pa_client=_PaOkClient())
     payload = {
-        "snapshot": {
-            "holdings": {"holdingsByAssetClass": {"EQUITY": ["bad", {"market_value_base": 20}]}}
+        "allocation": {
+            "views": [
+                {
+                    "dimension": "asset_class",
+                    "buckets": [
+                        "bad",
+                        {"dimension_value": "EQUITY", "market_value_reporting_currency": 20},
+                    ],
+                }
+            ]
         }
     }
     rows = service._build_asset_class_rows(pas_payload=payload, total_mv=100.0)
@@ -135,36 +187,43 @@ def test_build_asset_class_rows_ignores_non_dict_positions():
     assert rows[0].value == 20.0
 
 
-class _PasMalformedHoldings:
-    def __init__(self, holdings):
-        self._holdings = holdings
+class _PasMalformedAllocation:
+    def __init__(self, views):
+        self._views = views
 
-    async def get_core_snapshot(
+    async def get_portfolio_summary(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 200, {
-            "snapshot": {
-                "overview": {"total_market_value": 250.0},
-                "holdings": self._holdings,
-            }
+            "portfolio_id": portfolio_id,
+            "totals": {"total_market_value_reporting_currency": 250.0},
+            "snapshot_metadata": {"position_count": 0},
         }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {"views": self._views}
 
 
 @pytest.mark.parametrize(
-    "holdings",
+    "views",
     [
-        "bad-holdings",
-        {"holdingsByAssetClass": "bad-map"},
-        {"holdingsByAssetClass": {"EQUITY": "bad-list"}},
+        "bad-views",
+        [{"dimension": "asset_class", "buckets": "bad-map"}],
+        [{"dimension": "asset_class", "buckets": ["bad-list"]}],
     ],
 )
 @pytest.mark.asyncio
-async def test_live_aggregation_handles_malformed_holdings_shapes(holdings):
+async def test_live_aggregation_handles_malformed_allocation_shapes(views):
     service = AggregationService(
-        pas_client=_PasMalformedHoldings(holdings),
+        pas_client=_PasMalformedAllocation(views),
         pa_client=_PaOkClient(),
     )
     response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
