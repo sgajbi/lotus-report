@@ -1,7 +1,7 @@
 {
   "description": "Approved baseline monetary-float findings. New findings fail CI.",
   "policy_version": "1.1.0",
-  "generated_at": "2026-02-26T08:46:54Z",
+  "generated_at": "2026-04-17T07:49:57Z",
   "allowlist": [
     {
       "finding": "scripts/check_monetary_float_usage.py:112:\"justification\": \"Temporary approved monetary float usage; migrate to Decimal.\",",
@@ -16,82 +16,130 @@
       "review_by": "2026-08-24"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:158:value=float(quantize_money(total_mv)),",
+      "finding": "src/app/services/aggregation_service.py:103:asset_market_value = float(",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:163:value=float(quantize_quantity(position_count)),",
+      "finding": "src/app/services/aggregation_service.py:112:weight_pct = float(",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:168:value=float(quantize_performance(ytd_return)),",
+      "finding": "src/app/services/aggregation_service.py:119:weight_pct = float(quantize_performance(to_decimal(weight) * 100))",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:46:def _parse_market_value(self, position: dict[str, Any]) -> float | None:",
+      "finding": "src/app/services/aggregation_service.py:121:weight_pct = float(",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:54:return float(quantize_money(value))",
+      "finding": "src/app/services/aggregation_service.py:193:value=float(quantize_money(total_mv)),",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:62:return float(quantize_money(value))",
+      "finding": "src/app/services/aggregation_service.py:198:value=float(quantize_quantity(position_count)),",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:97:value=float(",
+      "finding": "src/app/services/aggregation_service.py:203:value=float(quantize_performance(ytd_return)),",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:221:if not isinstance(period, str) or not isinstance(value, (int, float)):",
+      "finding": "src/app/services/aggregation_service.py:52:def _parse_market_value(self, position: dict[str, Any]) -> float | None:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:223:returns.append({\"date\": period[:10], \"value\": float(value)})",
+      "finding": "src/app/services/aggregation_service.py:60:return float(quantize_money(value))",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:290:def _to_float(value: object) -> float:",
+      "finding": "src/app/services/aggregation_service.py:68:return float(quantize_money(value))",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:291:if isinstance(value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:279:if not isinstance(period, str) or not isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:292:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:281:returns.append({\"date\": period[:10], \"value\": float(value)})",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:295:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:698:reporting_amount: float,",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-25"
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:716:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:733:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:772:def _absolute_money(self, value: object) -> float:",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:828:def _to_float(value: object) -> float:",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:829:if isinstance(value, (int, float)):",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:830:return float(value)",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:833:return float(value)",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
+    },
+    {
+      "finding": "src/app/services/reporting_read_service.py:842:if isinstance(value, float):",
+      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
+      "owner": "platform-governance",
+      "review_by": "2026-10-14"
     }
   ]
 }

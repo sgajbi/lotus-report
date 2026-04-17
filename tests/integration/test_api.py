@@ -168,7 +168,7 @@ class _StubReportingReadServiceFailure:
     async def get_portfolio_review(
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
     ) -> dict:
-        raise HTTPException(status_code=502, detail="lotus-core core snapshot upstream failure")
+        raise HTTPException(status_code=502, detail="lotus-core upstream failure")
 
 
 def test_ras_portfolio_summary_endpoint():

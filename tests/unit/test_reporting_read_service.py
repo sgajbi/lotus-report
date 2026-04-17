@@ -5,27 +5,110 @@ from app.services.reporting_read_service import ReportingReadService
 
 
 class _PasClientSuccess:
-    async def get_core_snapshot(
+    async def get_portfolio_summary(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 200, {
-            "snapshot": {
-                "overview": {
-                    "total_market_value": 1_000_000.0,
-                    "total_cash": 50_000.0,
-                    "pnl_summary": {"total_pnl": 1_200.0},
+            "portfolio_id": portfolio_id,
+            "totals": {
+                "total_market_value_reporting_currency": 1_000_000.0,
+                "cash_balance_reporting_currency": 50_000.0,
+                "invested_market_value_reporting_currency": 998_800.0,
+            },
+            "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
+        }
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "scope": {"portfolio_id": portfolio_id},
+            "views": [
+                {
+                    "dimension": "asset_class",
+                    "buckets": [
+                        {
+                            "dimension_value": "Equity",
+                            "weight": 0.6,
+                            "market_value_reporting_currency": 600000.0,
+                            "position_count": 3,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "reporting_currency": params.get("reporting_currency", "USD"),
+            "total": 3,
+            "skip": 0,
+            "limit": 500,
+            "transactions": [
+                {
+                    "transaction_id": "TXN-DIV-1",
+                    "transaction_date": "2026-01-10",
+                    "transaction_type": "DIVIDEND",
+                    "gross_transaction_amount_reporting_currency": 100.0,
+                    "withholding_tax_amount_reporting_currency": 10.0,
+                    "other_interest_deductions_amount_reporting_currency": 0.0,
                 },
-                "allocation": {"byAssetClass": [{"group": "Equity", "weight": 0.6}]},
-                "incomeAndActivity": {
-                    "income_summary_ytd": {"total_dividends": 100.0},
-                    "activity_summary_ytd": {"total_deposits": 1_000.0},
+                {
+                    "transaction_id": "TXN-DEP-1",
+                    "transaction_date": "2026-02-01",
+                    "transaction_type": "DEPOSIT",
+                    "gross_transaction_amount_reporting_currency": 1000.0,
                 },
-                "holdings": {"holdingsByAssetClass": {"Equity": []}},
-                "transactions": {"transactionsByAssetClass": {"Equity": []}},
-            }
+                {
+                    "transaction_id": "TXN-TAX-1",
+                    "transaction_date": "2026-02-05",
+                    "transaction_type": "TAX",
+                    "withholding_tax_amount_reporting_currency": 0.0,
+                },
+            ],
+        }
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "total": 2,
+            "positions": [
+                {
+                    "security_id": "EQ-1",
+                    "instrument_name": "Equity 1",
+                    "asset_class": "Equity",
+                    "quantity": 10,
+                    "market_value_reporting_currency": 600000.0,
+                    "weight": 0.6,
+                    "currency": "USD",
+                },
+                {
+                    "security_id": "CASH-1",
+                    "instrument_name": "Cash",
+                    "asset_class": "Cash",
+                    "quantity": 1,
+                    "market_value_reporting_currency": 50000.0,
+                    "weight": 0.05,
+                    "currency": "USD",
+                },
+            ],
         }
 
     async def get_performance_input(
@@ -91,11 +174,19 @@ class _RiskClientSuccess:
 
 
 class _PasClientNotFound:
-    async def get_core_snapshot(
+    async def get_portfolio_summary(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -107,13 +198,37 @@ class _PasClientNotFound:
     ):
         return 404, {"detail": "Portfolio not found"}
 
-
-class _PasClientFailure:
-    async def get_core_snapshot(
+    async def get_portfolio_transactions(
         self,
         portfolio_id: str,
-        as_of_date: str,
-        include_sections: list[str],
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
+
+class _PasClientFailure:
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_asset_allocation(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -122,6 +237,22 @@ class _PasClientFailure:
         portfolio_id: str,
         as_of_date: str,
         lookback_days: int = 1200,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -140,7 +271,7 @@ class _RiskClientFailure:
 
 
 @pytest.mark.asyncio
-async def test_summary_composed_from_pas_core_snapshot():
+async def test_summary_uses_strategic_pas_routes_for_summary_details():
     service = ReportingReadService(
         pas_client=_PasClientSuccess(),
         pa_client=_PaClientSuccess(),
@@ -148,13 +279,89 @@ async def test_summary_composed_from_pas_core_snapshot():
     )
     response = await service.get_portfolio_summary(
         "P1",
-        {"as_of_date": "2026-02-24", "sections": ["WEALTH", "ALLOCATION", "PNL"]},
+        {
+            "as_of_date": "2026-02-24",
+            "sections": ["WEALTH", "ALLOCATION", "PNL", "INCOME", "ACTIVITY"],
+        },
         "CID-1",
     )
     assert response["scope"]["portfolio_id"] == "P1"
     assert response["wealth"]["total_market_value"] == 1_000_000.0
+    assert response["wealth"]["total_cash"] == 50_000.0
     assert response["allocation"]["byAssetClass"][0]["group"] == "Equity"
+    assert response["allocation"]["byAssetClass"][0]["market_value"] == 600000.0
+    assert response["incomeSummary"]["net_amount_reporting_currency"] == 90.0
+    assert response["activitySummary"]["total_inflows"] == 1000.0
     assert response["pnlSummary"]["total_pnl"] == 1_200.0
+
+
+@pytest.mark.asyncio
+async def test_summary_honors_requested_allocation_dimensions():
+    class _PasClientAllocationCapture(_PasClientSuccess):
+        def __init__(self):
+            self.last_allocation_payload: dict[str, object] | None = None
+
+        async def get_asset_allocation(
+            self,
+            portfolio_id: str,
+            payload: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            self.last_allocation_payload = payload
+            return 200, {
+                "scope": {"portfolio_id": portfolio_id},
+                "views": [
+                    {
+                        "dimension": "asset_class",
+                        "buckets": [
+                            {
+                                "dimension_value": "Equity",
+                                "weight": 0.6,
+                                "market_value_reporting_currency": 600000.0,
+                                "position_count": 3,
+                            }
+                        ],
+                    },
+                    {
+                        "dimension": "region",
+                        "buckets": [
+                            {
+                                "dimension_value": "North America",
+                                "weight": 0.6,
+                                "market_value_reporting_currency": 600000.0,
+                                "position_count": 3,
+                            }
+                        ],
+                    },
+                ],
+            }
+
+    pas_client = _PasClientAllocationCapture()
+    service = ReportingReadService(
+        pas_client=pas_client,
+        pa_client=_PaClientSuccess(),
+        risk_client=_RiskClientSuccess(),
+    )
+
+    response = await service.get_portfolio_summary(
+        portfolio_id="P1",
+        request_payload={
+            "as_of_date": "2026-02-24",
+            "sections": ["ALLOCATION"],
+            "allocation_dimensions": ["ASSET_CLASS", "REGION"],
+            "look_through_mode": "prefer_look_through",
+        },
+        correlation_id="corr-6",
+    )
+
+    assert "wealth" not in response
+    assert "byAssetClass" in response["allocation"]
+    assert "byRegion" in response["allocation"]
+    assert pas_client.last_allocation_payload == {
+        "as_of_date": "2026-02-24",
+        "dimensions": ["asset_class", "region"],
+        "look_through_mode": "prefer_look_through",
+    }
 
 
 @pytest.mark.asyncio
@@ -176,7 +383,7 @@ async def test_review_composes_pas_pa_and_risk():
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert "YTD" in response["riskAnalytics"]["results"]
-    assert response["holdings"]["holdingsByAssetClass"] is not None
+    assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
 
 
 @pytest.mark.asyncio

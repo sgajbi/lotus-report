@@ -3,7 +3,7 @@ import json as jsonlib
 import httpx
 import pytest
 
-from app.clients.http_resilience import post_with_retry, response_payload
+from app.clients.http_resilience import get_with_retry, post_with_retry, response_payload
 
 
 class _FlakyAsyncClient:
@@ -45,6 +45,10 @@ class _AlwaysTimeoutAsyncClient:
     async def post(self, url: str, json=None, headers=None):
         _ = url, json, headers
         raise httpx.TimeoutException("timeout")
+
+    async def get(self, url: str, params=None, headers=None):
+        _ = url, params, headers
+        raise httpx.NetworkError("network")
 
 
 @pytest.mark.asyncio
@@ -94,6 +98,21 @@ async def test_post_with_retry_hits_exhausted_retries_fallback(monkeypatch):
     )
     assert status == 503
     assert payload["detail"] == "upstream communication failure: exhausted retries"
+
+
+@pytest.mark.asyncio
+async def test_get_with_retry_returns_503_after_retry_exhaustion(monkeypatch):
+    monkeypatch.setattr("httpx.AsyncClient", _AlwaysTimeoutAsyncClient)
+    status, payload = await get_with_retry(
+        url="http://pas/portfolios/P1/transactions",
+        timeout_seconds=1.0,
+        params={"limit": 500},
+        headers={},
+        max_retries=1,
+        backoff_seconds=0.0,
+    )
+    assert status == 503
+    assert "NetworkError" in payload["detail"]
 
 
 def test_response_payload_maps_non_dict_and_text_fallback():
