@@ -33,3 +33,38 @@
 - aggregation query currently uses camelCase alias `asOfDate`
 - report summary/review query currently use camelCase alias `sectionLimit`
 - summary/review service logic currently accepts both `as_of_date` and `asOfDate` request-body keys
+
+## Request examples
+
+Integration capabilities:
+
+```bash
+curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+```
+
+Aggregations:
+
+```bash
+curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=2026-02-24&live=false"
+```
+
+Portfolio summary:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/summary?sectionLimit=10" \
+  -H "Content-Type: application/json" \
+  -H "X-Correlation-ID: local-doc-probe" \
+  -d "{\"asOfDate\":\"2026-02-24\",\"reportingCurrency\":\"EUR\"}"
+```
+
+Portfolio review:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/review?sectionLimit=10" \
+  -H "Content-Type: application/json" \
+  -H "X-Correlation-ID: local-doc-probe" \
+  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\"}"
+```
+
+Use these examples to keep the mixed query and request-body conventions visible until the public
+surface is intentionally standardized.

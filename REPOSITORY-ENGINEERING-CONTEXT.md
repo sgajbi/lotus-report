@@ -93,7 +93,10 @@ Important validation expectations:
 3. reporting orchestration changes should be evaluated for cross-app impact,
 4. README and wiki changes should preserve truthful explanation of mixed current request conventions,
    especially snake_case integration capability query parameters versus camelCase aliases like
-   `asOfDate` and `sectionLimit`.
+   `asOfDate` and `sectionLimit`,
+5. when the public surface exposes mixed query or request-body conventions, wiki or onboarding docs
+   should include at least one executable request example so operators and future agents do not
+   normalize the wrong parameter shape by accident.
 
 ## Standards And RFCs That Govern This Repository
 

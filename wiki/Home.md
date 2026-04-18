@@ -9,6 +9,19 @@
 - Local ownership guidance:
   [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
 
+## Current phase
+
+- active reporting orchestration service in the canonical front-office stack
+- contract surface is live, but request conventions remain mixed across several endpoints
+- documentation must stay explicit about those compatibility shapes until the API is standardized
+
+## Most important commands
+
+- `make install`
+- `make check`
+- `make ci`
+- `make docker-build`
+
 ## Repo role
 
 This repo owns:
