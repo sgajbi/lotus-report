@@ -45,6 +45,8 @@ Primary areas:
    unit, integration, and e2e validation.
 4. `docs/standards/`
    local standards and ownership guidance.
+5. `wiki/`
+   canonical authored source for repository wiki publication and reporting operator onboarding summaries.
 
 ## Runtime And Integration Boundaries
 
@@ -88,7 +90,10 @@ Important validation expectations:
 
 1. OpenAPI, typecheck, migration smoke, and security audit are active,
 2. split unit, integration, e2e, and coverage validation are part of the merge gate,
-3. reporting orchestration changes should be evaluated for cross-app impact.
+3. reporting orchestration changes should be evaluated for cross-app impact,
+4. README and wiki changes should preserve truthful explanation of mixed current request conventions,
+   especially snake_case integration capability query parameters versus camelCase aliases like
+   `asOfDate` and `sectionLimit`.
 
 ## Standards And RFCs That Govern This Repository
 
@@ -106,7 +111,9 @@ Most relevant current governance:
 1. reporting quality depends on upstream contract fidelity; drift here can misstate portfolio or analytics reality,
 2. the service is orchestration-heavy, so naming and payload clarity matter,
 3. canonical `report.dev.lotus` identity should be used for real cross-app validation,
-4. reporting work should update both code and orchestration docs when contracts change materially.
+4. reporting work should update both code and orchestration docs when contracts change materially,
+5. repo-local `wiki/` content should stay concise, operator-focused, and derived from repo truth
+   rather than duplicating the full `docs/` tree.
 
 ## Context Maintenance Rule
 
@@ -116,7 +123,8 @@ Update this document when:
 2. repo-native commands or CI expectations change,
 3. upstream dependency posture changes materially,
 4. canonical runtime identity or front-office integration role changes,
-5. current-state rollout posture changes.
+5. current request-convention compatibility or canonical parameter naming changes,
+6. current-state rollout posture changes.
 
 ## Cross-Links
 
