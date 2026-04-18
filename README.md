@@ -83,6 +83,23 @@ Key code areas:
 - `docs/standards/`
   ownership, readiness, migration, precision, and scalability guidance
 
+## Repository Layout
+
+- `src/app/main.py`
+  FastAPI entrypoint and router registration
+- `src/app/routers/`
+  public HTTP surfaces for health, integration, aggregations, and reports
+- `src/app/services/`
+  reporting composition and aggregation orchestration logic
+- `src/app/clients/`
+  upstream lotus-core, lotus-performance, and lotus-risk clients
+- `tests/`
+  unit, integration, and e2e coverage for reporting behavior
+- `scripts/`
+  OpenAPI, migration, and monetary-float governance checks
+- `wiki/`
+  canonical authored source for the GitHub wiki page set
+
 ## Quick Start
 
 Install dependencies:
@@ -102,6 +119,26 @@ Canonical local service identity:
 
 - cross-app validation: `http://report.dev.lotus`
 - direct process debugging: `http://127.0.0.1:8300`
+
+Quick health probes:
+
+```bash
+curl http://127.0.0.1:8300/health
+curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+```
+
+## Common Commands
+
+- `make install`
+  install dependencies and pre-commit hooks
+- `make check`
+  fast local gate: lint, typecheck, OpenAPI gate, and unit tests
+- `make ci`
+  PR-grade local proof: migration smoke, integration, e2e, coverage, and security audit
+- `make ci-local`
+  local alias for the repo CI contract
+- `make docker-build`
+  container build validation
 
 ## Validation And CI Lanes
 
@@ -137,6 +174,8 @@ Important current request conventions:
 
 Keep those differences explicit in documentation until the repo intentionally standardizes them.
 
+Copy-paste request examples live in [wiki/API-Surface.md](wiki/API-Surface.md).
+
 ## Upstream Defaults
 
 Cross-app upstream defaults in local runtime:
@@ -153,6 +192,25 @@ Current orchestration model:
 3. review risk analytics derive from the resulting daily return stream and are then forwarded into
    lotus-risk
 
+## Integration Boundaries
+
+- primary downstream consumer:
+  `lotus-gateway` for front-office reporting workflows
+- upstream dependencies:
+  `lotus-core`, `lotus-performance`, `lotus-risk`
+- contract rule:
+  reporting payloads may reshape and aggregate upstream data, but they must not reinterpret domain
+  ownership or invent unsupported business truth
+
+## Operations And Runtime Posture
+
+- use `report.dev.lotus` for canonical cross-app validation and ingress-aware checks
+- use `127.0.0.1:8300` only for direct local debugging
+- treat reporting errors as orchestration issues first: verify upstream responses and request-shape
+  compatibility before changing response formatting
+- preserve observability and correlation behavior on reporting endpoints, especially when debugging
+  summary or review flows
+
 ## Documentation Map
 
 - local ownership guidance:
@@ -161,6 +219,10 @@ Current orchestration model:
   [docs/operations/development-workflow-and-ci-strategy.md](docs/operations/development-workflow-and-ci-strategy.md)
 - local standards:
   [docs/standards](docs/standards)
+- wiki home:
+  [wiki/Home.md](wiki/Home.md)
+- API request examples:
+  [wiki/API-Surface.md](wiki/API-Surface.md)
 
 ## Wiki Source
 

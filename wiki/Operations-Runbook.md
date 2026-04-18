@@ -7,12 +7,30 @@
 - verify correlation and observability headers on reporting endpoints
 - use repo-native gates before inventing ad hoc checks
 
+## Health and readiness surfaces
+
+- `/health`
+  broad service-health probe
+- `/health/live`
+  liveness probe
+- `/health/ready`
+  readiness probe for traffic acceptance
+- `/metrics`
+  observability surface for runtime monitoring
+
 ## Operational truths
 
 - `lotus-report` composes from lotus-core, lotus-performance, and lotus-risk
 - reporting payload quality depends on upstream fidelity and contract handling
 - direct process port `8300` is useful for local debugging, but canonical cross-app validation
   should use `report.dev.lotus`
+
+## Practical probes
+
+```powershell
+curl http://127.0.0.1:8300/health/ready
+curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=2026-02-24&live=false"
+```
 
 ## Key references
 
