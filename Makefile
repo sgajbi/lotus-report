@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck monetary-float-guard openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
 
 install:
 	python -m pip install --upgrade pip
@@ -7,15 +7,18 @@ install:
 	pre-commit install
 
 lint:
-	ruff check .
-	ruff format --check .
+	python -m ruff check .
+	python -m ruff format --check .
 	$(MAKE) monetary-float-guard
 
 monetary-float-guard:
 	python scripts/check_monetary_float_usage.py
 
+domain-product-validate:
+	python scripts/validate_domain_data_product_contracts.py
+
 typecheck:
-	mypy --config-file mypy.ini
+	python -m mypy --config-file mypy.ini
 
 openapi-gate:
 	python scripts/openapi_quality_gate.py
@@ -59,4 +62,3 @@ docker-build:
 
 clean:
 	python -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in ['.pytest_cache', '.ruff_cache', '.mypy_cache']]; [pathlib.Path(p).unlink(missing_ok=True) for p in ['.coverage', '.coverage.unit', '.coverage.integration', '.coverage.e2e']]"
-

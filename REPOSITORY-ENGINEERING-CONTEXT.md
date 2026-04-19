@@ -30,8 +30,10 @@ Current repository posture:
 
 1. `lotus-report` composes summary and review payloads from `lotus-core`, `lotus-performance`, and `lotus-risk`,
 2. it is part of the canonical front-office stack and is exposed through `report.dev.lotus`,
-3. CI is standardized but still lighter than some core domain services,
-4. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+3. it carries repo-native RFC-0084 consumer declarations for governed core domain data products
+   used by reporting payloads,
+4. CI is standardized but still lighter than some core domain services,
+5. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -47,6 +49,8 @@ Primary areas:
    local standards and ownership guidance.
 5. `wiki/`
    canonical authored source for repository wiki publication and reporting operator onboarding summaries.
+6. `contracts/domain-data-products/`
+   repo-native consumer declarations for governed upstream domain data products.
 
 ## Runtime And Integration Boundaries
 
@@ -77,6 +81,8 @@ Use these commands as the primary local contract:
    `make ci-local`
 5. Docker build
    `make docker-build`
+6. domain-data-product contract validation
+   `make domain-product-validate`
 
 ## Validation And CI Expectations
 
@@ -116,7 +122,11 @@ Most relevant current governance:
 3. canonical `report.dev.lotus` identity should be used for real cross-app validation,
 4. reporting work should update both code and orchestration docs when contracts change materially,
 5. repo-local `wiki/` content should stay concise, operator-focused, and derived from repo truth
-   rather than duplicating the full `docs/` tree.
+   rather than duplicating the full `docs/` tree,
+6. the current repo-native domain-data-product declaration intentionally records only governed
+   `lotus-core` dependencies approved for `lotus-report`; `lotus-performance` and `lotus-risk`
+   reporting dependencies remain on the watchlist until their producer declarations explicitly
+   approve `lotus-report` as a governed consumer.
 
 ## Context Maintenance Rule
 
