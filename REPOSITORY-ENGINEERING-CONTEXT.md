@@ -32,8 +32,10 @@ Current repository posture:
 2. it is part of the canonical front-office stack and is exposed through `report.dev.lotus`,
 3. it carries repo-native RFC-0084 consumer declarations for governed core domain data products
    used by reporting payloads,
-4. CI is standardized but still lighter than some core domain services,
-5. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+4. it carries the RFC-0091 repo-native producer declaration and telemetry fixture for
+   `ClientReportEvidencePack`,
+5. CI is standardized but still lighter than some core domain services,
+6. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -50,7 +52,10 @@ Primary areas:
 5. `wiki/`
    canonical authored source for repository wiki publication and reporting operator onboarding summaries.
 6. `contracts/domain-data-products/`
-   repo-native consumer declarations for governed upstream domain data products.
+   repo-native producer and consumer declarations for governed upstream domain data products and
+   reporting evidence products.
+7. `contracts/trust-telemetry/`
+   repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
 
 ## Runtime And Integration Boundaries
 

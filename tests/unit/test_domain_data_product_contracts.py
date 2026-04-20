@@ -15,12 +15,19 @@ ROOT = Path(__file__).resolve().parents[2]
 CONSUMER_DECLARATION_PATH = (
     ROOT / "contracts" / "domain-data-products" / "lotus-report-consumers.v1.json"
 )
+PRODUCT_DECLARATION_PATH = (
+    ROOT / "contracts" / "domain-data-products" / "lotus-report-products.v1.json"
+)
 REPORTING_READ_SERVICE_PATH = ROOT / "src" / "app" / "services" / "reporting_read_service.py"
 DECLARATION_README_PATH = ROOT / "contracts" / "domain-data-products" / "README.md"
 
 
 def _load_consumer_declaration() -> dict:
     return json.loads(CONSUMER_DECLARATION_PATH.read_text(encoding="utf-8"))
+
+
+def _load_product_declaration() -> dict:
+    return json.loads(PRODUCT_DECLARATION_PATH.read_text(encoding="utf-8"))
 
 
 def test_repo_native_domain_data_product_validation_passes_when_platform_is_available() -> None:
@@ -75,7 +82,25 @@ def test_report_declaration_keeps_unapproved_analytics_dependencies_on_the_watch
     assert "approve `lotus-report` as a governed consumer" in readme
 
 
-def test_report_declaration_directory_is_consumer_only_until_report_owns_a_product() -> None:
+def test_report_declaration_directory_contains_consumer_and_owned_product_contracts() -> None:
     declaration_paths = sorted(path.name for path in LOCAL_DECLARATION_DIR.glob("*.json"))
 
-    assert declaration_paths == ["lotus-report-consumers.v1.json"]
+    assert declaration_paths == [
+        "lotus-report-consumers.v1.json",
+        "lotus-report-products.v1.json",
+    ]
+
+
+def test_report_product_declaration_publishes_client_report_evidence_pack() -> None:
+    payload = _load_product_declaration()
+    products = payload["products"]
+
+    assert payload["producer_repository"] == "lotus-report"
+    assert [product["product_name"] for product in products] == ["ClientReportEvidencePack"]
+
+    product = products[0]
+    assert product["product_version"] == "v1"
+    assert product["lifecycle_status"] == "active"
+    assert product["approved_consumers"] == ["lotus-gateway"]
+    assert product["lineage_policy"]["lineage_required"] is True
+    assert product["lineage_policy"]["lineage_bundle_class_ref"] == "customer_lineage_summary"

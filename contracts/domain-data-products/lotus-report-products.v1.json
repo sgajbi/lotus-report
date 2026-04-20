@@ -1,0 +1,70 @@
+{
+  "contract_id": "domain-data-products",
+  "contract_version": "1.0.0",
+  "governed_by_rfc": "RFC-0084",
+  "producer_repository": "lotus-report",
+  "authoritative_domain": "client_reporting",
+  "products": [
+    {
+      "product_name": "ClientReportEvidencePack",
+      "product_version": "v1",
+      "owner_repository": "lotus-report",
+      "product_family": "client_reporting_evidence",
+      "authoritative_domain": "client_reporting",
+      "lifecycle_status": "active",
+      "request_scope": {
+        "scope_level": "portfolio",
+        "supports_bulk": false
+      },
+      "temporal_scope": {
+        "primary_time_field": "as_of_date",
+        "freshness_basis": "as_of_date",
+        "supports_restatement": true
+      },
+      "required_trust_metadata": [
+        "product_name",
+        "product_version",
+        "tenant_id",
+        "generated_at",
+        "as_of_date",
+        "reconciliation_status",
+        "data_quality_status",
+        "source_batch_fingerprint",
+        "lineage_bundle_id",
+        "correlation_id"
+      ],
+      "serving_plane": "reporting_service",
+      "current_routes": [
+        "/reports/client-evidence-packs/{portfolio_id}"
+      ],
+      "freshness_policy": {
+        "freshness_class": "daily",
+        "max_allowed_age_description": "Client report evidence packs are generated from the latest certified upstream portfolio, performance, and risk evidence for the reporting as-of date."
+      },
+      "completeness_policy": {
+        "default_status": "complete",
+        "partial_allowed": false
+      },
+      "lineage_policy": {
+        "lineage_required": true,
+        "evidence_bundle_required": true,
+        "lineage_bundle_class_ref": "customer_lineage_summary",
+        "evidence_access_class_ref": "customer_consumable"
+      },
+      "security_profile_ref": "business_consumer_access:client_confidential:retain_for_client_record:audit_read_and_export",
+      "approved_consumers": [
+        "lotus-gateway"
+      ],
+      "deprecation_policy": {
+        "state": "not_deprecated",
+        "successor_product": null
+      },
+      "identifier_refs": [
+        "portfolio_id",
+        "tenant_id",
+        "correlation_id"
+      ],
+      "temporal_semantics_ref": "as_of_date"
+    }
+  ]
+}
