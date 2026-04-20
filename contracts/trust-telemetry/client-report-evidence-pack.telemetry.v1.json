@@ -1,0 +1,62 @@
+{
+  "contract_id": "lotus-domain-product-trust-telemetry-snapshot",
+  "contract_version": "1.0.0",
+  "governed_by_rfcs": [
+    "RFC-0087",
+    "RFC-0091"
+  ],
+  "emitted_at_utc": "2026-04-20T00:00:00Z",
+  "product_id": "lotus-report:ClientReportEvidencePack:v1",
+  "producer_repository": "lotus-report",
+  "product_name": "ClientReportEvidencePack",
+  "product_version": "v1",
+  "source_repository": "lotus-report",
+  "runtime_source": {
+    "emission_mode": "deterministic_local_reporting_fixture",
+    "service_version": "rfc-0091",
+    "environment": "local"
+  },
+  "freshness": {
+    "freshness_class": "daily",
+    "freshness_state": "current",
+    "evaluated_at_utc": "2026-04-20T00:00:00Z",
+    "observed_at_utc": "2026-04-20T00:00:00Z",
+    "age_seconds": 0,
+    "max_allowed_age_seconds": 86400
+  },
+  "completeness_status": "complete",
+  "reconciliation_status": "reconciled",
+  "data_quality_status": "quality_passed",
+  "lineage": {
+    "lineage_materialized": true,
+    "lineage_bundle_id": "lineage:lotus-report:client-report-evidence-pack:2026-04-20",
+    "evidence_access_class": "customer_consumable",
+    "evidence_uris": [
+      "lotus-report://evidence/client-report-evidence-pack/PB_SG_GLOBAL_BAL_001/2026-04-20"
+    ]
+  },
+  "blocking": {
+    "blocked": false
+  },
+  "observed_trust_metadata": {
+    "product_name": "ClientReportEvidencePack",
+    "product_version": "v1",
+    "tenant_id": "TENANT_PRIVATE_BANKING_DEMO",
+    "generated_at": "2026-04-20T00:00:00Z",
+    "as_of_date": "2026-04-20",
+    "reconciliation_status": "reconciled",
+    "data_quality_status": "quality_passed",
+    "source_batch_fingerprint": "sha256:client-report-evidence-pack-demo",
+    "lineage_bundle_id": "lineage:lotus-report:client-report-evidence-pack:2026-04-20",
+    "correlation_id": "rfc-0091-lotus-report-client-report-evidence-pack"
+  },
+  "evidence": {
+    "correlation_id": "rfc-0091-lotus-report-client-report-evidence-pack",
+    "validation_lanes": [
+      "feature",
+      "pr-merge"
+    ],
+    "source_event_id": "source-event:lotus-report:client-report-evidence-pack:2026-04-20",
+    "source_artifact_uri": "lotus-report://contracts/trust-telemetry/client-report-evidence-pack.telemetry.v1.json"
+  }
+}
