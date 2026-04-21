@@ -66,6 +66,14 @@ identifiers exactly, including repository, branch, PR number, commit SHA, check 
 path, endpoint, contract name, portfolio id, `engineering_task_id`, and task status. Treat
 `output/background-runs.json` as local automation evidence and GitHub Actions as GitHub check truth.
 
+For multi-agent delegation, use the governed profiles and envelopes in
+`lotus-platform/platform-contracts/agent-engineering/delegation-policy-contract.v1.json`.
+Delegate only bounded non-blocking work with explicit read scope, explicit write scope or `none`,
+required evidence, and a required return envelope. Keep the main agent accountable for diff review,
+integration, tests, PR posture, wiki publication, and final communication. Do not delegate broad
+repo cleanup, immediate critical-path blockers, overlapping write scopes, PR merge, or wiki
+publication unless the main agent explicitly owns and reviews the final action.
+
 ## Wiki Publication Rule
 
 When documentation, RFC, context, runbook, or operator-facing truth changes:
