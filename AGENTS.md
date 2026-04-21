@@ -60,6 +60,12 @@ Prefer:
 4. GitHub-backed heavy execution for expensive full validation,
 5. async monitoring and fix-forward work rather than blocking on long reruns.
 
+For long-running, delegated, async, or context-compacted work, use
+`lotus-platform/context/playbooks/AGENT-CONTEXT-AND-TASK-LEDGER.md`. Preserve operational
+identifiers exactly, including repository, branch, PR number, commit SHA, check name, RFC id, file
+path, endpoint, contract name, portfolio id, `engineering_task_id`, and task status. Treat
+`output/background-runs.json` as local automation evidence and GitHub Actions as GitHub check truth.
+
 When a task is explicitly about canonical populated Workbench surfaces, demo screenshots, or
 `PB_SG_GLOBAL_BAL_001`, choose `lotus-front-office-runtime` first and use broader QA or delivery
 skills only as supporting guidance.
