@@ -66,6 +66,20 @@ identifiers exactly, including repository, branch, PR number, commit SHA, check 
 path, endpoint, contract name, portfolio id, `engineering_task_id`, and task status. Treat
 `output/background-runs.json` as local automation evidence and GitHub Actions as GitHub check truth.
 
+## Wiki Publication Rule
+
+When documentation, RFC, context, runbook, or operator-facing truth changes:
+
+1. update the repo-local `wiki/` source in the same PR when wiki truth changed,
+2. record an explicit no-wiki-change decision when no wiki update is needed,
+3. run `lotus-platform/automation/Sync-RepoWikis.ps1 -CheckOnly -Repository <repo-name>` before merge,
+4. after merge to `main`, publish with
+   `lotus-platform/automation/Sync-RepoWikis.ps1 -Publish -Repository <repo-name>`,
+5. use `-AllRepositories` only for platform-wide audits or coordinated publication sweeps.
+
+Repo-local `wiki/` is the authored source of truth. The separate GitHub `*.wiki.git` repository is
+only the publication target and must not receive hand-edited truth that is absent from repo source.
+
 When a task is explicitly about canonical populated Workbench surfaces, demo screenshots, or
 `PB_SG_GLOBAL_BAL_001`, choose `lotus-front-office-runtime` first and use broader QA or delivery
 skills only as supporting guidance.
