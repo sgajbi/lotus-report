@@ -513,14 +513,14 @@ def test_allocation_and_position_param_builders_preserve_supported_options():
 
     allocation = service._build_allocation_request(
         {
-            "asOfDate": "2026-02-24",
-            "reportingCurrency": "EUR",
-            "lookThroughMode": "prefer_look_through",
-            "allocationDimensions": ["asset_class", "currency"],
+            "as_of_date": "2026-02-24",
+            "reporting_currency": "EUR",
+            "look_through_mode": "prefer_look_through",
+            "allocation_dimensions": ["asset_class", "currency"],
         }
     )
     positions = service._build_position_params(
-        {"asOfDate": "2026-02-24", "reportingCurrency": "EUR"}
+        {"as_of_date": "2026-02-24", "reporting_currency": "EUR"}
     )
 
     assert allocation == {
@@ -1402,7 +1402,7 @@ def test_return_base_handles_string_and_invalid_string_values():
     assert service._return_base({"alpha": {"base": "not-a-number"}}, "alpha") is None
 
 
-def test_build_workspace_summary_request_sets_reporting_currency_aliases():
+def test_build_workspace_summary_request_sets_reporting_currency():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceSuccessEmpty(),
@@ -1412,7 +1412,7 @@ def test_build_workspace_summary_request_sets_reporting_currency_aliases():
     request = service._build_workspace_summary_request(
         portfolio_id="P1",
         as_of_date="2026-02-24",
-        request_payload={"reportingCurrency": "SGD"},
+        request_payload={"reporting_currency": "SGD"},
         periods=["YTD"],
     )
 

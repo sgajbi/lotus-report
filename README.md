@@ -56,9 +56,9 @@ Boundary rules that matter:
    metadata.
 4. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
-5. Request conventions are mixed by surface: integration capabilities use snake_case query
-   parameters, while several reporting and aggregation request shapes still expose camelCase aliases
-   such as `asOfDate` and `sectionLimit`.
+5. Request conventions are governed by the Lotus API vocabulary standard. The first-class
+   portfolio review endpoint uses canonical snake_case fields and does not publish camelCase
+   compatibility aliases.
 
 ## First-Class Portfolio Review
 
@@ -69,10 +69,10 @@ sourced.
 
 The response includes:
 
-- `clientProfile`
+- `client_profile`
   source-backed client, advisor, booking-center, mandate, objective, risk exposure, horizon,
   leverage, status, and cost-basis context from `lotus-core`
-- `keyFigures`
+- `key_figures`
   normalized portfolio value, allocation, performance, risk, income/activity, holdings,
   unrealized P&L, position contribution, and client-profile figures
 - `client_sections`
@@ -80,12 +80,12 @@ The response includes:
 - `advisor_sections`
   advisor-only deterministic prompts and route targets that must not be rendered as client report
   content without an explicit product decision
-- `reportCoverage` and `reviewObservations`
+- `report_coverage`, `upstream_capability_audit`, and `review_observations`
   sourced, partial, and missing coverage so unsupported gold-standard material is visible instead
   of silently omitted
-- `reportStructure` and `advisorBriefing`
+- `report_structure` and `advisor_briefing`
   deterministic meeting-pack organization and advisor-useful talking points
-- `aiReadiness`
+- `ai_readiness`
   guarded metadata for grounded AI assistance, with trade recommendations, suitability
   determinations, and inferred client profiles explicitly blocked
 - `evidence`
@@ -95,7 +95,7 @@ Current live-proof portfolio:
 
 - governed portfolio id: `PB_SG_GLOBAL_BAL_001`
 - governed local endpoint:
-  `POST http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20`
+  `POST http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20`
 - full example and operating guidance:
   [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
 
@@ -222,12 +222,13 @@ Important current request conventions:
 1. `GET /integration/capabilities` expects canonical snake_case query parameters
    `consumer_system` and `tenant_id`
 2. `GET /aggregations/portfolios/{portfolio_id}` currently uses camelCase query alias `asOfDate`
-3. `POST /reports/portfolios/{portfolio_id}/summary` and `/review` use camelCase query alias
-   `sectionLimit`
-4. reporting read request bodies currently accept both `as_of_date` and `asOfDate` compatibility
-   forms in service logic
+3. `POST /reports/portfolios/{portfolio_id}/summary` and `/review` use canonical snake_case
+   `section_limit`
+4. `POST /reports/portfolios/{portfolio_id}/review` publishes snake_case request and response
+   fields only; camelCase aliases are rejected by the typed request model
 
-Keep those differences explicit in documentation until the repo intentionally standardizes them.
+Keep any remaining non-standard surfaces explicit in documentation until the repo intentionally
+standardizes them.
 
 Copy-paste request examples live in [wiki/API-Surface.md](wiki/API-Surface.md).
 The portfolio review contract is explained in

@@ -32,8 +32,8 @@
 
 - integration capability query parameters are canonical snake_case: `consumer_system`, `tenant_id`
 - aggregation query currently uses camelCase alias `asOfDate`
-- report summary/review query currently use camelCase alias `sectionLimit`
-- summary/review service logic currently accepts both `as_of_date` and `asOfDate` request-body keys
+- report summary/review query parameters use canonical `section_limit`
+- portfolio review request bodies use canonical snake_case fields only
 
 ## Request examples
 
@@ -52,28 +52,28 @@ curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=20
 Portfolio summary:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/summary?sectionLimit=10" \
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/summary?section_limit=10" \
   -H "Content-Type: application/json" \
   -H "X-Correlation-ID: local-doc-probe" \
-  -d "{\"asOfDate\":\"2026-02-24\",\"reportingCurrency\":\"EUR\"}"
+  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\"}"
 ```
 
 Portfolio review:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/review?sectionLimit=10" \
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/review?section_limit=10" \
   -H "Content-Type: application/json" \
   -H "X-Correlation-ID: local-doc-probe" \
-  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\",\"benchmarkCode\":\"MSCI_ACWI\"}"
+  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\",\"benchmark_code\":\"MSCI_ACWI\"}"
 ```
 
 Canonical front-office portfolio review:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20" \
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" \
   -H "Content-Type: application/json" \
   -H "X-Correlation-ID: rfc-0002-local-proof" \
-  -d "{\"asOfDate\":\"2026-04-22\",\"reportingCurrency\":\"USD\",\"benchmarkCode\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 The review response is a typed report contract. It separates client-ready `client_sections` from
@@ -81,8 +81,9 @@ advisor-only `advisor_sections`, carries explicit section readiness states inclu
 `not_applicable` for requested supporting sections with no applicable activity, includes
 report-level `evidence`, exposes source-backed client/mandate profile context from lotus-core,
 position cost/unrealized P&L, and YTD contribution where upstream services provide them. It also
-includes deterministic `reportStructure`, `advisorBriefing`, and guarded `aiReadiness` metadata so
-front-office consumers can organize a review meeting without treating report gaps as advice.
+includes deterministic `report_structure`, `advisor_briefing`, guarded `ai_readiness`, and
+`upstream_capability_audit` metadata so front-office consumers can organize a review meeting without
+treating report gaps as advice or silently losing upstream dependency gaps.
 RFC-0002 capability keys are published through `GET /integration/capabilities`.
 
 Detailed response-family guidance lives in [Portfolio Review Report](Portfolio-Review-Report).

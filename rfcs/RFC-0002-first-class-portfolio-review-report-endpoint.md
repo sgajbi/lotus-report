@@ -246,16 +246,17 @@ Required contract properties:
 
 ### Request Compatibility
 
-Canonical new contract fields should use snake_case. Existing compatibility aliases may remain only
-when they are tested and documented.
+Canonical contract fields use snake_case. Compatibility aliases must not be part of the public
+portfolio review contract unless a future migration RFC explicitly approves them.
 
 Compatibility expectations:
 
-1. preserve existing `as_of_date` and `asOfDate` behavior during the transition,
-2. explicitly decide whether `sectionLimit` remains as a compatibility alias or is superseded by
-   `section_limit`,
-3. document the canonical field names in the API examples,
-4. avoid adding new aliases without vocabulary review.
+1. use `as_of_date`, `reporting_currency`, `benchmark_code`, `allocation_dimensions`, and
+   `look_through_mode` in request bodies,
+2. use `section_limit` as the public query parameter,
+3. reject camelCase aliases such as `asOfDate`, `reportingCurrency`, `benchmarkCode`, and
+   `sectionLimit`,
+4. avoid adding new aliases without platform vocabulary review and explicit migration approval.
 
 ### Data Mesh And Evidence
 
@@ -562,16 +563,16 @@ Required work:
 1. add Pydantic request/response models for `PortfolioReviewReportRequest` and
    `PortfolioReviewReportResponse`,
 2. replace `response_model=dict[str, Any]` on the review route,
-3. preserve compatibility with current `as_of_date` and `asOfDate` aliases during transition,
-4. make `section_limit`/`sectionLimit` behavior explicit,
+3. publish canonical snake_case request and response fields,
+4. reject camelCase aliases such as `asOfDate`, `benchmarkCode`, and `sectionLimit`,
 5. add contract examples for ready, partial, and unavailable report states,
-6. add contract tests for schema, required fields, section states, and alias behavior.
+6. add contract tests for schema, required fields, section states, and no-alias behavior.
 
 Exit criteria:
 
 1. OpenAPI exposes the typed response,
 2. contract tests fail if section state, evidence, methodology, or audience fields disappear,
-3. compatibility behavior is covered by tests and docs.
+3. no-alias behavior is covered by tests and docs.
 
 ### Slice 3: Meeting-Oriented Section Model
 
@@ -778,8 +779,11 @@ Closure decisions:
 9. A private-banking quality review identified additional report-value gaps: the report needed a
    proper client and mandate frame, clearer meeting organization, explicit advisor checks, and
    governed AI posture. The hardening pass now sources client/advisor/mandate fields from
-   `lotus-core /portfolios/{portfolio_id}`, adds deterministic `reportStructure` and
-   `advisorBriefing`, and exposes `aiReadiness` as guardrail metadata rather than generated advice.
+   `lotus-core /portfolios/{portfolio_id}`, adds deterministic `report_structure` and
+   `advisor_briefing`, and exposes `ai_readiness` as guardrail metadata rather than generated advice.
+10. A later API-governance tightening removed portfolio review camelCase public contract aliases.
+    The endpoint now uses snake_case request, query, response, OpenAPI, README, and wiki wording
+    for portfolio review fields and rejects camelCase request aliases.
 
 Exit criteria:
 
@@ -905,7 +909,7 @@ Resolved during implementation:
    must not invent target allocation truth.
 4. Slice 7: Advisor discussion prompts are deterministic, rule-based, source-backed, and
    advisor-only. AI-generated wording remains outside `lotus-report`; the report now publishes
-   deterministic `aiReadiness` metadata that names supported grounded-assistance use cases and
+   deterministic `ai_readiness` metadata that names supported grounded-assistance use cases and
    blocks trade recommendations, suitability determinations, and client-profile inference until
    governed `lotus-ai` integration exists.
 5. Slice 4/Slice 5: The first implementation publishes methodology and supportability metadata but

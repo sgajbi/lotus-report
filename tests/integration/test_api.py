@@ -103,6 +103,7 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.client_profile.v1",
         "lotus-report.reporting.portfolio_review.advisor_briefing.v1",
         "lotus-report.reporting.portfolio_review.ai_readiness.v1",
+        "lotus-report.reporting.portfolio_review.upstream_capability_audit.v1",
         "lotus-report.reporting.portfolio_review.advisor_sections.v1",
         "lotus-report.reporting.portfolio_review.workbench_ready.v1",
     } <= feature_keys
@@ -254,7 +255,7 @@ def test_ras_portfolio_review_endpoint():
     assert body["overview"]["total_market_value"] == 1_000_000.0
 
 
-def test_ras_portfolio_review_accepts_camel_case_request_alias():
+def test_ras_portfolio_review_rejects_camel_case_request_alias():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
         "/reports/portfolios/DEMO_DPM_EUR_001/review",
@@ -265,9 +266,7 @@ def test_ras_portfolio_review_accepts_camel_case_request_alias():
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["as_of_date"] == "2026-02-24"
+    assert response.status_code == 422
 
 
 def test_openapi_uses_typed_portfolio_review_contract():
@@ -286,26 +285,29 @@ def test_openapi_uses_typed_portfolio_review_contract():
     assert response_schema["$ref"].endswith("/PortfolioReviewReportResponse")
     assert request_schema["$ref"].endswith("/PortfolioReviewReportRequest")
     request_contract = schema["components"]["schemas"]["PortfolioReviewReportRequest"]
-    assert "benchmarkCode" in request_contract["properties"]
-    assert request_contract["properties"]["benchmarkCode"]["description"]
+    assert "benchmark_code" in request_contract["properties"]
+    assert "benchmarkCode" not in request_contract["properties"]
+    assert request_contract["properties"]["benchmark_code"]["description"]
 
     response_contract = schema["components"]["schemas"]["PortfolioReviewReportResponse"]
     for property_name in [
-        "clientProfile",
-        "keyFigures",
-        "reportCoverage",
-        "advisorBriefing",
-        "aiReadiness",
+        "client_profile",
+        "key_figures",
+        "report_coverage",
+        "upstream_capability_audit",
+        "advisor_briefing",
+        "ai_readiness",
     ]:
         assert response_contract["properties"][property_name]["description"]
 
     examples = response_contract["examples"]
-    assert examples[0]["clientProfile"]["status"] == "present"
+    assert examples[0]["client_profile"]["status"] == "present"
     assert (
-        examples[0]["reportCoverage"]["targets_guidelines_and_suitability"]["status"]
+        examples[0]["report_coverage"]["targets_guidelines_and_suitability"]["status"]
         == "not_sourced"
     )
-    assert "trade_recommendation" in examples[0]["aiReadiness"]["blocked_features"]
+    assert examples[0]["upstream_capability_audit"]["status"] == "action_required"
+    assert "trade_recommendation" in examples[0]["ai_readiness"]["blocked_features"]
 
 
 def test_ras_portfolio_review_propagates_upstream_error():
@@ -343,7 +345,7 @@ def test_ras_portfolio_summary_includes_correlation_headers():
 def test_ras_portfolio_summary_rejects_invalid_section_limit():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
-        "/reports/portfolios/DEMO_DPM_EUR_001/summary?sectionLimit=0",
+        "/reports/portfolios/DEMO_DPM_EUR_001/summary?section_limit=0",
         json={"as_of_date": "2026-02-24", "sections": ["WEALTH"]},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)

@@ -40,21 +40,21 @@ curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=20
 Portfolio review proof:
 
 ```powershell
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20" `
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" `
   -H "Content-Type: application/json" `
   -H "X-Correlation-ID: rfc-0002-local-proof" `
-  -d "{\"asOfDate\":\"2026-04-22\",\"reportingCurrency\":\"USD\",\"benchmarkCode\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 Expected posture:
 
-1. `clientProfile.status` should show sourced profile state or explicit missing fields.
-2. `keyFigures` should include portfolio, allocation, performance, contribution, risk,
+1. `client_profile.status` should show sourced profile state or explicit missing fields.
+2. `key_figures` should include portfolio, allocation, performance, contribution, risk,
    holdings/P&L, activity, and client-profile families where sourced.
-3. `reportCoverage` should mark unsupported enterprise-grade families as `not_sourced` instead of
+3. `report_coverage` should mark unsupported enterprise-grade families as `not_sourced` instead of
    silently omitting them.
-4. `advisorBriefing` should stay deterministic and advisor-only.
-5. `aiReadiness` should describe guarded assistance and blocked advice/suitability use cases.
+4. `advisor_briefing` should stay deterministic and advisor-only.
+5. `ai_readiness` should describe guarded assistance and blocked advice/suitability use cases.
 
 ## Key references
 

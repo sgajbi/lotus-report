@@ -94,7 +94,7 @@ def test_e2e_health_live_contract():
 def test_e2e_summary_section_limit_rejects_out_of_range():
     app.dependency_overrides[get_reporting_read_service] = lambda: _WorkflowReportingReadService()
     response = client.post(
-        "/reports/portfolios/DEMO_CA_USD_001/summary?sectionLimit=21",
+        "/reports/portfolios/DEMO_CA_USD_001/summary?section_limit=21",
         headers={"X-Correlation-ID": "cid-e2e-limit"},
         json={"as_of_date": "2026-02-24", "sections": ["WEALTH"]},
     )

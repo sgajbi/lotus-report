@@ -52,9 +52,7 @@ def generate_report(request: ReportRequest) -> ReportResponse:
 async def get_portfolio_summary(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
     request: dict[str, Any],
-    section_limit: Annotated[
-        int, Query(alias="sectionLimit", ge=1, le=20, description="pagination")
-    ] = 10,
+    section_limit: Annotated[int, Query(ge=1, le=20, description="pagination")] = 10,
     service: ReportingReadService = Depends(get_reporting_read_service),
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
 ) -> dict[str, Any]:
@@ -94,12 +92,11 @@ async def get_portfolio_review(
     section_limit: Annotated[
         int,
         Query(
-            alias="sectionLimit",
             ge=1,
             le=20,
             description=(
                 "Maximum number of requested section keys to honor from the request body. This "
-                "is a compatibility guard, not result-row pagination."
+                "is a guardrail, not result-row pagination."
             ),
         ),
     ] = 10,
