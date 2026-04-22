@@ -2,22 +2,22 @@
 
 ## Status
 
-Proposed.
+Implementation in progress.
 
-This RFC is the execution guide for the first-class portfolio review report work. Implementation
-of the RFC-specific contract must not begin until this document is sharp enough to govern scope,
-architecture, validation, delivery sequencing, and closure.
+Slices 1 through 9 are implemented and validated. Slice 10 hardening/review and Slice 11 closure
+remain before the RFC can be marked implemented.
 
 ## Implementation Classification
 
 Enhancement of an existing route.
 
 `lotus-report` already exposes `POST /reports/portfolios/{portfolio_id}/review` and composes useful
-upstream material. That current route is an implementation-backed legacy aggregation capability. It
-is not yet the stable, typed, evidence-backed advisor/client meeting contract defined by this RFC.
+upstream material. Before RFC-0002, that route was an implementation-backed legacy aggregation
+capability rather than the stable, typed, evidence-backed advisor/client meeting contract defined by
+this RFC.
 
-The RFC implementation must preserve truthful compatibility for existing consumers while introducing
-a versioned first-class report contract.
+The implementation preserves truthful compatibility for existing consumers while introducing a
+versioned first-class report contract.
 
 ## Date
 
@@ -38,11 +38,11 @@ advisory proposals, or management actions.
 
 ## Problem Statement
 
-`lotus-report` already exposes a portfolio review route, but the current payload is a general
-aggregation response rather than a first-class advisor/client meeting artifact. It does not yet
-define a stable report contract, evidence posture, presentation order, client-ready versus
-advisor-only sections, supportability states, or the discussion structure expected in a private-bank
-portfolio review.
+`lotus-report` already exposed a portfolio review route, but the pre-RFC payload was a general
+aggregation response rather than a first-class advisor/client meeting artifact. It did not define a
+stable report contract, evidence posture, presentation order, client-ready versus advisor-only
+sections, supportability states, or the discussion structure expected in a private-bank portfolio
+review.
 
 The enterprise product need is a portfolio review endpoint that a client advisor can confidently use
 before and during a portfolio review meeting. The report must be concise enough for a client
@@ -51,11 +51,11 @@ supportability, downstream Workbench presentation, and future PDF/report renderi
 
 ## Current Lotus Implementation Reality
 
-Existing implementation evidence:
+Current implementation evidence after Slice 9:
 
 1. `src/app/routers/reports.py` exposes
    `POST /reports/portfolios/{portfolio_id}/review`.
-2. `src/app/services/reporting_read_service.py` composes the current review payload from:
+2. `src/app/services/reporting_read_service.py` composes the review payload from:
    - `lotus-core` portfolio summary, allocation, positions, and transaction data,
    - `lotus-performance` workspace summary data,
    - `lotus-risk` risk analytics when enough return history is available.
@@ -63,26 +63,29 @@ Existing implementation evidence:
    `tests/unit/test_reporting_read_service_additional.py`,
    `tests/integration/test_api.py`, and `tests/e2e/test_reporting_workflows.py` cover the current
    route and service behavior.
-4. `GET /integration/capabilities` currently publishes
-   `lotus-report.reporting.portfolio_review` as enabled. That key describes the current legacy
-   portfolio review aggregation surface, not the first-class RFC-0002 meeting-pack contract.
+4. `GET /integration/capabilities` publishes the legacy compatibility key and the
+   implementation-backed RFC-0002 feature keys.
 5. `contracts/domain-data-products/lotus-report-products.v1.json` declares
-   `lotus-report:ClientReportEvidencePack:v1`, but the current portfolio review route is not yet
-   a complete implementation-backed client report evidence-pack contract.
+   `lotus-report:ClientReportEvidencePack:v1` for the portfolio review route, including partial
+   completeness policy.
+6. Companion gateway PR `sgajbi/lotus-gateway#145` proves the Workbench-facing gateway boundary
+   preserves partial/unavailable section states and advisor-only separation.
 
-Current gaps:
+Original gaps addressed by Slices 1 through 9:
 
-1. the route returns an untyped reporting payload rather than a versioned review-report contract,
-2. section readiness is implicit or represented as `None` rather than explicit report posture,
-3. performance and risk figures do not yet carry enough report-level methodology, benchmark, fee
+1. the route returned an untyped reporting payload rather than a versioned review-report contract,
+2. section readiness was implicit or represented as `None` rather than explicit report posture,
+3. performance and risk figures did not carry enough report-level methodology, benchmark, fee
    basis, annualization, and source-provenance metadata for a client meeting artifact,
-4. advisor-only preparation material is not separated from client-ready report material,
-5. partial upstream failure is not yet presented as a first-class meeting-report state,
-6. Workbench and gateway do not yet have a stable first-class portfolio review pack contract to
+4. advisor-only preparation material was not separated from client-ready report material,
+5. partial upstream failure was not presented as a first-class meeting-report state,
+6. Workbench and gateway did not have a stable first-class portfolio review pack contract to
    consume,
-7. supported-feature truth does not yet distinguish current legacy review aggregation from the
+7. supported-feature truth did not distinguish current legacy review aggregation from the
    future RFC-0002 first-class review report,
-8. wiki/operator material does not yet explain target client/advisor review-report semantics.
+8. wiki/operator material did not explain target client/advisor review-report semantics.
+
+Remaining work is limited to Slice 10 hardening/review and Slice 11 closure.
 
 ## Research Basis
 
@@ -299,7 +302,7 @@ Rules:
 5. in the final RFC closure slice, confirm every delivered feature has implementation-backed
    wording and evidence pointers.
 
-Initial RFC-0002 feature candidates:
+RFC-0002 feature keys:
 
 1. `lotus-report.reporting.portfolio_review.first_class.v1`
 2. `lotus-report.reporting.portfolio_review.section_readiness.v1`
@@ -307,7 +310,9 @@ Initial RFC-0002 feature candidates:
 4. `lotus-report.reporting.portfolio_review.advisor_sections.v1`
 5. `lotus-report.reporting.portfolio_review.workbench_ready.v1`
 
-These candidates remain `planned` until implementation evidence exists.
+These keys were promoted to implementation-backed in Slice 9 after code, tests, API contract
+evidence, supported-features updates, and GitHub validation existed. Future extensions must start as
+planned rows in `docs/supported-features.md`.
 
 ## Target Review Report Structure
 
@@ -841,23 +846,24 @@ feature/rfc-0002-portfolio-review-report
    Mitigation: keep RFC decisions in `rfcs/`, implementation evidence in `docs/` and tests, and
    concise operator usage in `wiki/`.
 
-## Open Questions
+## Open Questions And Slice Decisions
 
-These questions must be answered before or during the indicated slices:
+Resolved during implementation:
 
-1. Slice 2: Should the canonical request use `review_period` or continue deriving YTD from
-   `as_of_date` by default?
-2. Slice 6: Should `ClientReportEvidencePack` be returned inline, by reference, or through a
-   dedicated `/reports/client-evidence-packs/{portfolio_id}` route?
-3. Slice 3 or 7: Which upstream service should own target/model allocation references for
-   mandate-fit reporting?
-4. Slice 7: Should advisor discussion prompts remain deterministic rule-based text in
-   `lotus-report`, or should any AI-generated wording remain a `lotus-ai` workflow-pack artifact
-   referenced by the report?
-5. Slice 4 and Slice 5: Which disclosure pack is required for the first target jurisdiction and
-   client segment?
-6. Slice 8: Which Workbench surface is the first consumer: a report preview panel, an advisor
-   meeting pack view, or an export preparation flow?
+1. Slice 2: The canonical first implementation continues deriving standard review periods from
+   `as_of_date`; no `review_period` request field is introduced yet.
+2. Slice 6: `ClientReportEvidencePack` evidence is returned inline in the review response for the
+   first implementation. A dedicated evidence-pack route remains out of scope until a consumer needs
+   independent evidence retrieval.
+3. Slice 3/Slice 7: Target/model allocation references remain outside `lotus-report` until an
+   upstream owner publishes a governed source. The report may link to proposal/action surfaces but
+   must not invent target allocation truth.
+4. Slice 7: Advisor discussion prompts are deterministic, rule-based, source-backed, and
+   advisor-only. AI-generated wording remains outside `lotus-report`.
+5. Slice 4/Slice 5: The first implementation publishes methodology and supportability metadata but
+   does not ship jurisdiction-specific disclosure packs.
+6. Slice 8: Gateway preservation is the first consumer readiness proof. Workbench report preview is
+   intentionally deferred until product rendering scope is explicitly accepted.
 
 ## Success Criteria
 
