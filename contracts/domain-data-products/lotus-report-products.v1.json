@@ -35,7 +35,8 @@
       ],
       "serving_plane": "reporting_service",
       "current_routes": [
-        "/reports/client-evidence-packs/{portfolio_id}"
+        "/reports/client-evidence-packs/{portfolio_id}",
+        "/reports/portfolios/{portfolio_id}/review"
       ],
       "freshness_policy": {
         "freshness_class": "daily",
@@ -43,7 +44,7 @@
       },
       "completeness_policy": {
         "default_status": "complete",
-        "partial_allowed": false
+        "partial_allowed": true
       },
       "lineage_policy": {
         "lineage_required": true,

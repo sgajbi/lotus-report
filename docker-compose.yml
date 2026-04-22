@@ -2,7 +2,11 @@ services:
   lotus-report:
     build: .
     container_name: lotus-report
+    environment:
+      LOTUS_CORE_QUERY_BASE_URL: http://host.docker.internal:8201
+      LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002
+      RISK_BASE_URL: http://host.docker.internal:8130
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8300:8300"
-
-

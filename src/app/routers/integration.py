@@ -39,6 +39,41 @@ def get_capabilities(
         features=[
             {"key": "lotus-report.reporting.portfolio_summary", "enabled": True},
             {"key": "lotus-report.reporting.portfolio_review", "enabled": True},
+            {"key": "lotus-report.reporting.portfolio_review.first_class.v1", "enabled": True},
+            {
+                "key": "lotus-report.reporting.portfolio_review.section_readiness.v1",
+                "enabled": True,
+            },
+            {"key": "lotus-report.reporting.portfolio_review.evidence_pack.v1", "enabled": True},
+            {
+                "key": "lotus-report.reporting.portfolio_review.key_figures.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.position_pnl.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.performance_contribution.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.client_profile.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.advisor_briefing.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.ai_readiness.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.advisor_sections.v1",
+                "enabled": True,
+            },
+            {"key": "lotus-report.reporting.portfolio_review.workbench_ready.v1", "enabled": True},
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},
         ],
         workflows=[

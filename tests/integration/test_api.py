@@ -92,7 +92,20 @@ def test_integration_capabilities():
     assert body["contractVersion"] == "v1"
     assert body["policyVersion"] == "ras-default-v1"
     assert body["supportedInputModes"] == ["portfolio_id"]
-    assert len(body["features"]) >= 3
+    feature_keys = {feature["key"] for feature in body["features"] if feature["enabled"]}
+    assert {
+        "lotus-report.reporting.portfolio_review.first_class.v1",
+        "lotus-report.reporting.portfolio_review.section_readiness.v1",
+        "lotus-report.reporting.portfolio_review.evidence_pack.v1",
+        "lotus-report.reporting.portfolio_review.key_figures.v1",
+        "lotus-report.reporting.portfolio_review.position_pnl.v1",
+        "lotus-report.reporting.portfolio_review.performance_contribution.v1",
+        "lotus-report.reporting.portfolio_review.client_profile.v1",
+        "lotus-report.reporting.portfolio_review.advisor_briefing.v1",
+        "lotus-report.reporting.portfolio_review.ai_readiness.v1",
+        "lotus-report.reporting.portfolio_review.advisor_sections.v1",
+        "lotus-report.reporting.portfolio_review.workbench_ready.v1",
+    } <= feature_keys
     assert len(body["workflows"]) >= 1
 
 
@@ -165,8 +178,12 @@ class _StubReportingReadService:
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
     ) -> dict:
         return {
+            "contract_version": "v1",
+            "report_id": f"portfolio-review:{portfolio_id}:{request_payload.get('as_of_date')}",
             "portfolio_id": portfolio_id,
             "as_of_date": request_payload.get("as_of_date"),
+            "generated_at": "2026-04-22T09:00:00Z",
+            "readiness": {"status": "ready"},
             "overview": {"total_market_value": 1_000_000.0, "total_cash": 50_000.0},
         }
 
@@ -229,8 +246,66 @@ def test_ras_portfolio_review_endpoint():
 
     assert response.status_code == 200
     body = response.json()
+    assert body["contract_version"] == "v1"
+    assert body["report_id"] == "portfolio-review:DEMO_DPM_EUR_001:2026-02-24"
     assert body["portfolio_id"] == "DEMO_DPM_EUR_001"
+    assert body["as_of_date"] == "2026-02-24"
+    assert body["readiness"] == {"status": "ready", "reason": None}
     assert body["overview"]["total_market_value"] == 1_000_000.0
+
+
+def test_ras_portfolio_review_accepts_camel_case_request_alias():
+    app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
+    response = client.post(
+        "/reports/portfolios/DEMO_DPM_EUR_001/review",
+        json={
+            "asOfDate": "2026-02-24",
+            "sections": ["OVERVIEW"],
+        },
+    )
+    app.dependency_overrides.pop(get_reporting_read_service, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["as_of_date"] == "2026-02-24"
+
+
+def test_openapi_uses_typed_portfolio_review_contract():
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+    review_post = schema["paths"]["/reports/portfolios/{portfolio_id}/review"]["post"]
+    response_schema = review_post["responses"]["200"]["content"]["application/json"]["schema"]
+    request_schema = review_post["requestBody"]["content"]["application/json"]["schema"]
+
+    assert review_post["summary"] == "Get first-class portfolio review report"
+    assert "machine-readable JSON" in review_post["description"]
+    assert "not sourced" in review_post["description"]
+
+    assert response_schema["$ref"].endswith("/PortfolioReviewReportResponse")
+    assert request_schema["$ref"].endswith("/PortfolioReviewReportRequest")
+    request_contract = schema["components"]["schemas"]["PortfolioReviewReportRequest"]
+    assert "benchmarkCode" in request_contract["properties"]
+    assert request_contract["properties"]["benchmarkCode"]["description"]
+
+    response_contract = schema["components"]["schemas"]["PortfolioReviewReportResponse"]
+    for property_name in [
+        "clientProfile",
+        "keyFigures",
+        "reportCoverage",
+        "advisorBriefing",
+        "aiReadiness",
+    ]:
+        assert response_contract["properties"][property_name]["description"]
+
+    examples = response_contract["examples"]
+    assert examples[0]["clientProfile"]["status"] == "present"
+    assert (
+        examples[0]["reportCoverage"]["targets_guidelines_and_suitability"]["status"]
+        == "not_sourced"
+    )
+    assert "trade_recommendation" in examples[0]["aiReadiness"]["blocked_features"]
 
 
 def test_ras_portfolio_review_propagates_upstream_error():

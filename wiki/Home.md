@@ -12,6 +12,8 @@
 ## Current phase
 
 - active reporting orchestration service in the canonical front-office stack
+- RFC-0002 first-class portfolio review report is live as a machine-readable client/advisor
+  meeting-pack contract
 - contract surface is live, but request conventions remain mixed across several endpoints
 - documentation must stay explicit about those compatibility shapes until the API is standardized
 
@@ -43,6 +45,7 @@ This repo does not own:
 - [Overview](Overview)
 - [Architecture](Architecture)
 - [API Surface](API-Surface)
+- [Portfolio Review Report](Portfolio-Review-Report)
 - [Getting Started](Getting-Started)
 - [Development Workflow](Development-Workflow)
 - [Validation and CI](Validation-and-CI)

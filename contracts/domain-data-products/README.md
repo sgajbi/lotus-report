@@ -11,6 +11,9 @@ Current declarations:
 
 1. `lotus-report-consumers.v1.json`
    Consumer declaration for the governed `lotus-core` products used by reporting payloads.
+2. `lotus-report-products.v1.json`
+   Producer declaration for `ClientReportEvidencePack`, including the first-class portfolio review
+   report route once it carries report-level lineage and customer-consumable evidence metadata.
 
 Local validation:
 
@@ -30,3 +33,6 @@ Current watchlist:
    their current producer declarations do not yet approve `lotus-report` as a governed consumer.
 2. Those dependencies should be added only after the upstream producer declarations explicitly
    approve the reporting use case and required trust metadata.
+3. Portfolio review responses still identify `lotus-performance` and `lotus-risk` in report-level
+   `evidence.source_refs` when those services are used, without upgrading the repo-native consumer
+   declaration ahead of producer approval.

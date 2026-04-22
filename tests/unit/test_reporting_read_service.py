@@ -3,6 +3,20 @@ from fastapi import HTTPException
 
 from app.services.reporting_read_service import ReportingReadService
 
+FORBIDDEN_ADVISOR_PROMPT_WORDS = {"create", "creates", "approve", "approves", "mutate", "mutates"}
+
+
+def _advisor_prompt_items(response: dict[str, object]) -> list[dict[str, object]]:
+    advisor_sections = response["advisor_sections"]
+    assert isinstance(advisor_sections, list)
+    assert len(advisor_sections) == 1
+    advisor_section = advisor_sections[0]
+    assert advisor_section["section_id"] == "advisor_discussion"
+    assert advisor_section["status"] == "ready"
+    items = advisor_section["items"]
+    assert isinstance(items, list)
+    return items
+
 
 class _CoreQueryClientSuccess:
     async def get_portfolio_summary(
@@ -19,6 +33,27 @@ class _CoreQueryClientSuccess:
                 "invested_market_value_reporting_currency": 998_800.0,
             },
             "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
+        }
+
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "base_currency": "USD",
+            "open_date": "2025-01-06",
+            "risk_exposure": "balanced",
+            "investment_time_horizon": "long_term",
+            "portfolio_type": "discretionary",
+            "objective": "Long-term real wealth growth with controlled income and liquidity.",
+            "booking_center_code": "Singapore",
+            "client_id": "CIF_SG_000184",
+            "is_leverage_allowed": False,
+            "advisor_id": "RM_SG_001",
+            "status": "active",
+            "cost_basis_method": "FIFO",
         }
 
     async def get_asset_allocation(
@@ -94,8 +129,21 @@ class _CoreQueryClientSuccess:
                     "security_id": "EQ-1",
                     "instrument_name": "Equity 1",
                     "asset_class": "Equity",
+                    "isin": "US0000000001",
+                    "sector": "Technology",
+                    "country_of_risk": "United States",
+                    "product_type": "Equity",
+                    "liquidity_tier": "L1",
+                    "held_since_date": "2025-01-15",
                     "quantity": 10,
-                    "market_value_reporting_currency": 600000.0,
+                    "cost_basis": "500000.0",
+                    "valuation": {
+                        "market_price": "60.0",
+                        "market_value": "600000.0",
+                        "unrealized_gain_loss": "100000.0",
+                        "market_value_local": "600000.0",
+                        "unrealized_gain_loss_local": "100000.0",
+                    },
                     "weight": 0.6,
                     "currency": "USD",
                 },
@@ -103,8 +151,13 @@ class _CoreQueryClientSuccess:
                     "security_id": "CASH-1",
                     "instrument_name": "Cash",
                     "asset_class": "Cash",
+                    "isin": "CASH-USD",
+                    "product_type": "Cash",
+                    "liquidity_tier": "L1",
                     "quantity": 1,
+                    "cost_basis": 50000.0,
                     "market_value_reporting_currency": 50000.0,
+                    "valuation": {"unrealized_gain_loss": 0.0},
                     "weight": 0.05,
                     "currency": "USD",
                 },
@@ -113,10 +166,14 @@ class _CoreQueryClientSuccess:
 
 
 class _PerformanceClientSuccess:
+    def __init__(self):
+        self.seen_payloads: list[dict[str, object]] = []
+
     async def get_workspace_summary(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
         return 200, {
             "results_by_period": {
-                "MTD": {
+                "1M": {
                     "portfolio_twr": {
                         "net": {
                             "summary": {
@@ -168,7 +225,7 @@ class _PerformanceClientSuccess:
                     },
                     "money_weighted_return": {"start_date": "2026-01-01", "end_date": "2026-02-24"},
                 },
-                "THREE_YEAR": {
+                "5Y": {
                     "portfolio_twr": {
                         "net": {
                             "summary": {
@@ -197,17 +254,80 @@ class _PerformanceClientSuccess:
             }
         }
 
+    async def get_contribution(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
+        return 200, {
+            "results_by_period": {
+                "YTD": {
+                    "total_portfolio_return": 4.1,
+                    "total_contribution": 4.1,
+                    "position_contributions": [
+                        {
+                            "position_id": "P1:EQ-1",
+                            "total_contribution": 3.5,
+                            "average_weight": 60.0,
+                            "total_return": 5.8,
+                        },
+                        {
+                            "position_id": "P1:CASH-1",
+                            "total_contribution": 0.0,
+                            "average_weight": 5.0,
+                            "total_return": 0.0,
+                        },
+                    ],
+                    "summary": {
+                        "portfolio_contribution": 4.1,
+                        "coverage_mv_pct": 100.0,
+                        "weighting_scheme": "BOD",
+                    },
+                    "levels": [
+                        {
+                            "level": 1,
+                            "name": "asset_class",
+                            "rows": [
+                                {
+                                    "key": {"asset_class": "Equity"},
+                                    "contribution": 3.5,
+                                    "weight_avg": 60.0,
+                                    "is_other": False,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+            "diagnostics": {"notes": []},
+            "audit": {"counts": {"input_positions": 2}},
+        }
+
 
 class _RiskClientSuccess:
+    def __init__(self):
+        self.seen_payloads: list[dict[str, object]] = []
+
     async def calculate_risk(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
         return 200, {
             "results": {
                 "YTD": {
-                    "startDate": "2025-01-01",
-                    "endDate": "2025-02-24",
-                    "metrics": {"VOLATILITY": {"value": 0.12}},
+                    "start_date": "2025-01-01",
+                    "end_date": "2025-02-24",
+                    "metrics": {
+                        "VOLATILITY": {"value": 0.12},
+                        "SHARPE": {"value": 1.05},
+                        "DRAWDOWN": {"value": -0.08},
+                        "VAR": {"value": -0.02},
+                    },
                 }
-            }
+            },
+            "metadata": {
+                "risk_free_context": {
+                    "requested": True,
+                    "applied": True,
+                    "reason": "ANNUAL_RATE_APPLIED",
+                    "periodic_rate": 0.0001,
+                }
+            },
         }
 
 
@@ -216,6 +336,13 @@ class _CoreQueryClientNotFound:
         self,
         portfolio_id: str,
         payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
         correlation_id: str | None = None,
     ):
         return 404, {"detail": "Portfolio not found"}
@@ -254,6 +381,13 @@ class _CoreQueryClientFailure:
     ):
         return 503, {"detail": "upstream unavailable"}
 
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
     async def get_asset_allocation(
         self,
         portfolio_id: str,
@@ -281,6 +415,9 @@ class _CoreQueryClientFailure:
 
 class _PerformanceClientFailure:
     async def get_workspace_summary(self, payload: dict[str, object]):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_contribution(self, payload: dict[str, object]):
         return 503, {"detail": "upstream unavailable"}
 
 
@@ -385,24 +522,262 @@ async def test_summary_honors_requested_allocation_dimensions():
 
 @pytest.mark.asyncio
 async def test_review_composes_core_query_performance_and_risk():
+    performance_client = _PerformanceClientSuccess()
+    risk_client = _RiskClientSuccess()
     service = ReportingReadService(
         core_query_client=_CoreQueryClientSuccess(),
-        performance_client=_PerformanceClientSuccess(),
-        risk_client=_RiskClientSuccess(),
+        performance_client=performance_client,
+        risk_client=risk_client,
     )
     response = await service.get_portfolio_review(
         "P1",
         {
             "as_of_date": "2026-02-24",
-            "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
+            "reporting_currency": "USD",
+            "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+            "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
         },
         "CID-1",
     )
+    assert response["contract_version"] == "v1"
+    assert response["report_id"] == "portfolio-review:P1:2026-02-24"
     assert response["portfolio_id"] == "P1"
+    assert response["as_of_date"] == "2026-02-24"
+    assert response["reviewPeriod"] == {
+        "label": "YTD",
+        "start_date": "2026-01-01",
+        "end_date": "2026-02-24",
+    }
+    assert response["reportingCurrency"] == "USD"
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Partial sections for the selected request: Performance Review, Risk Review",
+    }
+    assert response["audience"]["primary"] == "client_advisor"
+    assert response["audience"]["client_ready"] is False
+    assert response["disclosures"][-1]["disclosure_id"] == "partial_supportability"
+    assert response["keyFigures"]["conventions"] == {
+        "currency": "USD",
+        "monetary_fields": "reporting currency amounts use *_reporting_currency names",
+        "percentage_fields": "normalized key figure percentages use *_pct names",
+        "legacy_weight_fields": "section allocation and holding weights remain decimal ratios",
+    }
+    assert response["clientProfile"]["status"] == "present"
+    assert response["clientProfile"]["identity"] == {
+        "client_id": "CIF_SG_000184",
+        "advisor_id": "RM_SG_001",
+        "booking_center_code": "Singapore",
+    }
+    assert response["clientProfile"]["mandate_profile"]["risk_exposure"] == "balanced"
+    assert response["keyFigures"]["client_profile"]["objective"] == (
+        "Long-term real wealth growth with controlled income and liquidity."
+    )
+    assert response["keyFigures"]["portfolio_value"] == {
+        "total_market_value_reporting_currency": 1_000_000.0,
+        "invested_market_value_reporting_currency": 998_800.0,
+        "cash_balance_reporting_currency": 50_000.0,
+        "cash_weight_pct": 5.0,
+    }
+    assert response["keyFigures"]["allocation"]["largest_asset_class"] == {
+        "name": "Equity",
+        "weight_pct": 60.0,
+        "market_value_reporting_currency": 600000.0,
+        "position_count": 3,
+    }
+    assert response["keyFigures"]["performance"]["ytd_net_return_pct"] == 4.1
+    assert response["keyFigures"]["performance"]["benchmark_comparison_status"] == "unavailable"
+    assert response["keyFigures"]["performance"]["contribution_status"] == "present"
+    assert response["keyFigures"]["performance"]["largest_positive_contributor"] == {
+        "security_id": "EQ-1",
+        "position_id": "P1:EQ-1",
+        "total_contribution_pct": 3.5,
+        "average_weight_pct": 60.0,
+        "total_return_pct": 5.8,
+    }
+    assert response["keyFigures"]["risk"]["ytd_volatility_pct"] == 0.12
+    assert response["keyFigures"]["holdings"]["top_holding"]["security_id"] == "EQ-1"
+    assert response["keyFigures"]["holdings"]["unrealized_pnl_coverage"] == "present"
+    assert response["keyFigures"]["holdings"]["total_unrealized_pnl_reporting_currency"] == 100000.0
+    assert response["keyFigures"]["holdings"]["top_five_positive_exposure_pct"] == 100.0
+    coverage = {
+        group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
+    }
+    assert coverage["client_profile"] == "present"
+    assert coverage["portfolio_value"] == "present"
+    assert coverage["benchmark_comparison"] == "partial"
+    assert coverage["position_pnl_and_cost_basis"] == "present"
+    assert coverage["performance_contribution"] == "present"
+    assert coverage["instrument_reference_data"] == "present"
+    assert coverage["targets_guidelines_and_suitability"] == "not_sourced"
+    assert coverage["advisor_ai_assistance"] == "guarded_ready"
+    observation_ids = {item["observation_id"] for item in response["reviewObservations"]}
+    assert "suitability_and_mandate_controls_not_sourced" in observation_ids
+    assert "benchmark_comparison_not_sourced" in observation_ids
+    assert response["reportStructure"]["presentation_sequence"][0]["section_key"] == (
+        "client_and_mandate_context"
+    )
+    assert response["advisorBriefing"]["required_advisor_checks"][1]["status"] == "not_sourced"
+    assert response["aiReadiness"]["status"] == "guarded_ready"
+    assert response["aiReadiness"]["blocked_ai_features"][0]["feature_id"] == (
+        "trade_recommendation"
+    )
+    assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
+    assert response["methodology"]["return_methodology"] == "time_weighted_return"
+    requested_periods = [
+        period["period"] for period in performance_client.seen_payloads[0]["periods"]
+    ]
+    assert requested_periods == ["1M", "3M", "YTD", "5Y", "SI"]
+    assert risk_client.seen_payloads == [
+        {
+            "input_mode": "stateless",
+            "stateless_input": {
+                "scope": {
+                    "as_of_date": "2026-02-24",
+                    "reporting_currency": "USD",
+                    "net_or_gross": "NET",
+                },
+                "periods": [
+                    {"type": "YTD", "name": "YTD"},
+                    {"type": "THREE_YEAR", "name": "THREE_YEAR"},
+                ],
+                "metrics": ["VOLATILITY", "SHARPE", "DRAWDOWN", "VAR"],
+                "portfolio_open_date": "2023-02-24",
+                "returns": [{"date": "2026-02-24", "value": 1.0}],
+                "benchmark_returns": [],
+            },
+        }
+    ]
+    assert response["evidence"]["product_id"] == "lotus-report:ClientReportEvidencePack:v1"
+    assert response["evidence"]["lineage_bundle_id"] == (
+        "lineage:lotus-report:portfolio-review:P1:2026-02-24"
+    )
+    assert response["evidence"]["correlation_id"] == "CID-1"
+    assert response["evidence"]["source_services"] == [
+        "lotus-core",
+        "lotus-performance",
+        "lotus-risk",
+    ]
+    source_refs = {
+        source_ref["section_id"]: source_ref for source_ref in response["evidence"]["source_refs"]
+    }
+    assert source_refs["executive_summary"]["source_service"] == "lotus-core"
+    assert source_refs["client_profile"]["source_endpoint"] == "/portfolios/P1"
+    assert source_refs["performance_review"]["source_service"] == "lotus-performance"
+    assert source_refs["risk_review"]["source_service"] == "lotus-risk"
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
+    assert [section["section_id"] for section in response["client_sections"]] == [
+        "executive_summary",
+        "asset_allocation",
+        "performance_review",
+        "risk_review",
+        "income_cash_activity",
+        "holdings_appendix",
+        "transactions_appendix",
+    ]
+    section_statuses = {
+        section["section_id"]: section["status"] for section in response["client_sections"]
+    }
+    assert section_statuses["executive_summary"] == "ready"
+    assert section_statuses["asset_allocation"] == "ready"
+    assert section_statuses["performance_review"] == "partial"
+    assert section_statuses["risk_review"] == "partial"
+    advisor_items = _advisor_prompt_items(response)
+    assert {item["prompt_id"] for item in advisor_items} == {
+        "review_readiness",
+        "portfolio_construction_review",
+        "performance_discussion",
+        "risk_discussion",
+    }
+    for item in advisor_items:
+        assert item["advisor_only"] is True
+        assert item["source_section_ids"]
+        assert item["source_refs"]
+        assert FORBIDDEN_ADVISOR_PROMPT_WORDS.isdisjoint(
+            item["prompt"].lower().replace(".", "").replace(",", "").split()
+        )
+        for route_target in item["route_targets"]:
+            assert route_target["portfolio_id"] == "P1"
+            assert route_target["as_of_date"] == "2026-02-24"
+            assert route_target["mutation_allowed"] is False
+    advisor_surfaces = {
+        route_target["surface"] for item in advisor_items for route_target in item["route_targets"]
+    }
+    assert {
+        "lotus-workbench",
+        "lotus-performance",
+        "lotus-risk",
+        "lotus-advise",
+        "lotus-manage",
+    } <= advisor_surfaces
+    for client_section in response["client_sections"]:
+        assert client_section["section_id"] != "advisor_discussion"
+        assert "advisor_only" not in client_section
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
+    assert response["performance"]["benchmark"] == {
+        "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+        "comparison_status": "unavailable",
+        "reason_code": "benchmark_return_series_not_sourced",
+    }
+    assert response["performance"]["supportability"]["status"] == "partial"
+    assert response["performance"]["supportability"]["notes"][0]["code"] == (
+        "benchmark_comparison_unavailable"
+    )
+    assert response["performance"]["summary"]["1M"]["net_annualized_return"] is None
+    assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
+    assert response["performance"]["summary"]["5Y"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
+    assert response["riskAnalytics"]["source"]["service"] == "lotus-risk"
+    assert response["riskAnalytics"]["supportability"]["status"] == "partial"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == "missing_benchmark"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["severity"] == "warning"
+    assert response["riskAnalytics"]["summary"]["YTD"] == {
+        "volatility": 0.12,
+        "risk_adjusted_return": 1.05,
+        "drawdown": -0.08,
+        "value_at_risk": -0.02,
+    }
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
+    client_sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert client_sections["executive_summary"]["items"][0] == {
+        "item_type": "measure",
+        "metric": "total_market_value",
+        "label": "Total market value",
+        "value": 1_000_000.0,
+        "unit": "money",
+        "currency": "",
+    }
+    assert client_sections["performance_review"]["items"][0]["item_type"] == ("performance_period")
+    assert client_sections["performance_review"]["items"][0]["period"] == "1M"
+    assert (
+        client_sections["performance_review"]["items"][0]["benchmark_comparison_status"]
+        == "unavailable"
+    )
+    assert client_sections["risk_review"]["items"] == [
+        {
+            "item_type": "risk_period",
+            "period": "YTD",
+            "volatility": 0.12,
+            "risk_adjusted_return": 1.05,
+            "drawdown": -0.08,
+            "value_at_risk": -0.02,
+        }
+    ]
+    assert client_sections["holdings_appendix"]["items"][0] == {
+        "item_type": "holdings_summary",
+        "position_count": 2,
+    }
+    assert client_sections["holdings_appendix"]["items"][1]["item_type"] == "holding"
+    assert (
+        client_sections["holdings_appendix"]["items"][1]["market_value_reporting_currency"]
+        == 600000.0
+    )
+    assert (
+        client_sections["holdings_appendix"]["items"][1]["unrealized_pnl_reporting_currency"]
+        == 100000.0
+    )
+    assert client_sections["holdings_appendix"]["items"][1]["ytd_contribution_pct"] == 3.5
 
 
 @pytest.mark.asyncio
@@ -418,10 +793,21 @@ async def test_review_sets_performance_none_when_performance_unavailable():
         None,
     )
     assert response["performance"] is None
+    performance_section = next(
+        section
+        for section in response["client_sections"]
+        if section["section_id"] == "performance_review"
+    )
+    assert performance_section["status"] == "unavailable"
+    assert performance_section["reason_code"] == "source_unavailable"
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Unavailable sections for the selected request: Performance Review",
+    }
 
 
 @pytest.mark.asyncio
-async def test_review_sets_risk_none_when_upstreams_fail():
+async def test_review_sets_risk_unavailable_when_upstreams_fail():
     service = ReportingReadService(
         core_query_client=_CoreQueryClientSuccess(),
         performance_client=_PerformanceClientFailure(),
@@ -432,7 +818,21 @@ async def test_review_sets_risk_none_when_upstreams_fail():
         {"as_of_date": "2026-02-24", "sections": ["RISK_ANALYTICS"]},
         None,
     )
-    assert response["riskAnalytics"] is None
+    assert response["riskAnalytics"]["supportability"]["status"] == "unavailable"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == (
+        "risk_return_history_unavailable"
+    )
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
+    risk_section = next(
+        section for section in response["client_sections"] if section["section_id"] == "risk_review"
+    )
+    assert risk_section["status"] == "unavailable"
+    assert risk_section["reason_code"] == "risk_return_history_unavailable"
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Unavailable sections for the selected request: Risk Review",
+    }
 
 
 @pytest.mark.asyncio

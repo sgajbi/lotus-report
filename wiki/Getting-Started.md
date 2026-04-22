@@ -28,9 +28,25 @@ curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gatew
 If the process is up but reporting calls still fail, check upstream base URLs in `src/app/config.py`
 before debugging payload formatting.
 
+## First portfolio review probe
+
+Use the governed front-office portfolio when validating the first-class review report:
+
+```powershell
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20" `
+  -H "Content-Type: application/json" `
+  -H "X-Correlation-ID: rfc-0002-local-proof" `
+  -d "{\"asOfDate\":\"2026-04-22\",\"reportingCurrency\":\"USD\",\"benchmarkCode\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+```
+
+Read [Portfolio Review Report](Portfolio-Review-Report) before changing this endpoint. The endpoint
+is a governed meeting-pack contract, so response shape, sourced figures, missing-data behavior,
+advisor-only separation, and AI guardrails all matter.
+
 ## First docs to read
 
 - [README.md](../README.md)
 - [REPOSITORY-ENGINEERING-CONTEXT.md](../REPOSITORY-ENGINEERING-CONTEXT.md)
 - [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
 - [docs/operations/development-workflow-and-ci-strategy.md](../docs/operations/development-workflow-and-ci-strategy.md)
+- [Portfolio Review Report](Portfolio-Review-Report)
