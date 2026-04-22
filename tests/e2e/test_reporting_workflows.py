@@ -23,8 +23,12 @@ class _WorkflowReportingReadService:
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
     ) -> dict:
         return {
+            "contract_version": "v1",
+            "report_id": f"portfolio-review:{portfolio_id}:{request_payload.get('as_of_date')}",
             "portfolio_id": portfolio_id,
             "as_of_date": request_payload.get("as_of_date"),
+            "generated_at": "2026-04-22T09:00:00Z",
+            "readiness": {"status": "ready"},
             "overview": {"total_market_value": 250000.0},
             "performance": {"summary": {"YTD": {"net_cumulative_return": 3.2}}},
         }
@@ -56,7 +60,10 @@ def test_e2e_reporting_review_flow():
 
     assert response.status_code == 200
     body = response.json()
+    assert body["contract_version"] == "v1"
+    assert body["report_id"] == "portfolio-review:DEMO_CA_USD_001:2026-02-24"
     assert body["portfolio_id"] == "DEMO_CA_USD_001"
+    assert body["readiness"] == {"status": "ready", "reason": None}
     assert body["performance"]["summary"]["YTD"]["net_cumulative_return"] == 3.2
 
 
