@@ -2,10 +2,12 @@
 
 ## Status
 
-Implementation in progress.
+Implemented.
 
-Slices 1 through 9 are implemented and validated. Slice 10 hardening/review and Slice 11 closure
-remain before the RFC can be marked implemented.
+Slices 1 through 11 are implemented. The first-class review contract is shipped in `lotus-report`,
+the Workbench-facing gateway contract boundary is validated in companion gateway PR
+`sgajbi/lotus-gateway#145`, and remaining post-merge work is limited to wiki publication and normal
+branch cleanup.
 
 ## Implementation Classification
 
@@ -51,7 +53,7 @@ supportability, downstream Workbench presentation, and future PDF/report renderi
 
 ## Current Lotus Implementation Reality
 
-Current implementation evidence after Slice 9:
+Current implementation evidence after Slice 11:
 
 1. `src/app/routers/reports.py` exposes
    `POST /reports/portfolios/{portfolio_id}/review`.
@@ -71,7 +73,7 @@ Current implementation evidence after Slice 9:
 6. Companion gateway PR `sgajbi/lotus-gateway#145` proves the Workbench-facing gateway boundary
    preserves partial/unavailable section states and advisor-only separation.
 
-Original gaps addressed by Slices 1 through 9:
+Original gaps addressed by Slices 1 through 11:
 
 1. the route returned an untyped reporting payload rather than a versioned review-report contract,
 2. section readiness was implicit or represented as `None` rather than explicit report posture,
@@ -82,10 +84,11 @@ Original gaps addressed by Slices 1 through 9:
 6. Workbench and gateway did not have a stable first-class portfolio review pack contract to
    consume,
 7. supported-feature truth did not distinguish current legacy review aggregation from the
-   future RFC-0002 first-class review report,
+   RFC-0002 first-class review report,
 8. wiki/operator material did not explain target client/advisor review-report semantics.
 
-Remaining work is limited to Slice 10 hardening/review and Slice 11 closure.
+No RFC-0002 product behavior remains in planned state. Future portfolio review extensions must be
+opened as new planned feature rows before they are promoted to implementation-backed product truth.
 
 ## Research Basis
 
@@ -735,6 +738,22 @@ Required work:
    improved for better future work, faster ramp-up, and stronger agent effectiveness,
 8. identify what should be added, removed, tightened, or clarified; if no changes are needed, state
    that explicitly as a deliberate outcome.
+
+Closure decisions:
+
+1. Repository documentation and context are updated to describe the shipped first-class review
+   contract rather than the pre-RFC generic aggregation posture.
+2. `docs/supported-features.md` remains the durable supported-features source and already contains
+   only implementation-backed RFC-0002 feature rows; no aspirational RFC-0002 rows remain.
+3. Repo-local wiki source is updated only with concise operator-facing semantics and request
+   examples; the full implementation plan remains in this RFC to avoid duplicate documentation.
+4. Repository agent context is updated because the first-class review contract changes
+   `lotus-report` current-state truth and future ramp-up expectations.
+5. Central platform context and skills do not require changes from this RFC. The existing backend
+   delivery, endpoint certification, PR pre-merge, and wiki publication guidance already covered
+   the workflow; no new repeatable cross-repo pattern emerged that should be promoted into a skill.
+6. Post-merge wiki publication remains an explicit operational step:
+   `lotus-platform/automation/Sync-RepoWikis.ps1 -Publish -Repository lotus-report`.
 
 Exit criteria:
 

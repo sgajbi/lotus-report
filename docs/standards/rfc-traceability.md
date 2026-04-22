@@ -32,3 +32,4 @@ This document provides explicit implementation evidence pointers for active RFCs
   - supported-features rows promoted from `planned` to `implementation-backed` only after
     implementation evidence exists
   - repo-local wiki usage examples
+  - closure context updates in `REPOSITORY-ENGINEERING-CONTEXT.md`, `README.md`, and `wiki/`

@@ -24,5 +24,8 @@ This repo does not own:
 
 - orchestration-heavy service in the canonical front-office stack
 - exposed through `report.dev.lotus`
+- `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class review report
+  contract with typed request/response models, client/advisor section separation, readiness states,
+  and evidence lineage
 - lighter CI than some core domain services, but still under the Lotus lane model
 - mixed request-convention surface that must be documented carefully

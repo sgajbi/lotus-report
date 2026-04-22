@@ -19,8 +19,9 @@ It builds reporting-oriented read models and reporting payloads from authoritati
 This repository owns:
 
 1. reporting read-model aggregation,
-2. report summary and portfolio-review payloads,
-3. reporting metadata and download-reference contracts.
+2. report summary payloads,
+3. first-class portfolio review report payloads for client/advisor review meetings,
+4. reporting metadata and download-reference contracts.
 
 It is not the domain authority for core portfolio or analytics truth; it composes them for reporting use.
 
@@ -34,8 +35,13 @@ Current repository posture:
    used by reporting payloads,
 4. it carries the RFC-0091 repo-native producer declaration and telemetry fixture for
    `ClientReportEvidencePack`,
-5. CI is standardized but still lighter than some core domain services,
-6. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+5. `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
+   report contract with typed request/response models, explicit client section readiness,
+   advisor-only discussion sections, evidence lineage, and implementation-backed capability keys,
+6. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+   boundary preserves partial/unavailable section states and advisor-only separation,
+7. CI is standardized but still lighter than some core domain services,
+8. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -70,7 +76,8 @@ Boundary rules:
 1. upstream domain truth stays in the authoritative services,
 2. this service owns reporting aggregation and reporting contract shape,
 3. canonical service identity should be used for cross-app validation,
-4. report-ready payloads must remain faithful to upstream evidence.
+4. report-ready payloads must remain faithful to upstream evidence,
+5. advisor-only review material must remain separated from client-ready report sections.
 
 ## Repo-Native Commands
 

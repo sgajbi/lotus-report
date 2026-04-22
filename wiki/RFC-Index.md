@@ -20,6 +20,7 @@
 
 - [RFC-0001: Test Pyramid Rebalance and Meaningful Coverage Hardening](../rfcs/RFC-0001-test-pyramid-rebalance-and-meaningful-coverage-hardening.md)
 - [RFC-0002: First-Class Portfolio Review Report Endpoint](../rfcs/RFC-0002-first-class-portfolio-review-report-endpoint.md)
+  implemented first-class portfolio review report contract for advisor/client meeting workflows
 
 ## Current emphasis
 
@@ -28,3 +29,5 @@
 - CI and migration discipline still apply even though the repo is orchestration-heavy
 - supported-feature wording must stay implementation-backed; planned RFC behavior should not be
   presented as shipped product capability
+- repo-local wiki pages should stay concise and operator-facing; RFC implementation detail belongs
+  in `rfcs/` and implementation-backed feature truth belongs in `docs/supported-features.md`

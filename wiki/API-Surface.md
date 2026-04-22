@@ -17,7 +17,7 @@
 - `POST /reports/portfolios/{portfolio_id}/summary`
   lotus-report-owned portfolio summary payload
 - `POST /reports/portfolios/{portfolio_id}/review`
-  lotus-report-owned portfolio review payload
+  RFC-0002 first-class portfolio review report payload for client/advisor meetings
 
 ## Platform surfaces
 
@@ -63,8 +63,12 @@ Portfolio review:
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/review?sectionLimit=10" \
   -H "Content-Type: application/json" \
   -H "X-Correlation-ID: local-doc-probe" \
-  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\"}"
+  -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\",\"benchmarkCode\":\"MSCI_ACWI\"}"
 ```
+
+The review response is a typed report contract. It separates client-ready `client_sections` from
+advisor-only `advisor_sections`, carries explicit section readiness states, includes report-level
+`evidence`, and publishes RFC-0002 capability keys through `GET /integration/capabilities`.
 
 Use these examples to keep the mixed query and request-body conventions visible until the public
 surface is intentionally standardized.

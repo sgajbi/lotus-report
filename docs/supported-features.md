@@ -32,9 +32,9 @@ exist.
 
 ## Planned RFC-0002 Feature Candidates
 
-No RFC-0002 feature candidates remain in planned state after Slice 9. Future portfolio review
-extensions must start as planned rows here and move to implementation-backed only after code, tests,
-API contract evidence, and operational validation exist.
+No RFC-0002 feature candidates remain in planned state after RFC-0002 implementation. Future
+portfolio review extensions must start as planned rows here and move to implementation-backed only
+after code, tests, API contract evidence, and operational validation exist.
 
 ## Maintenance Rules
 
