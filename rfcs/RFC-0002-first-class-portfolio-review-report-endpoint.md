@@ -58,7 +58,7 @@ Current implementation evidence after Slice 11:
 1. `src/app/routers/reports.py` exposes
    `POST /reports/portfolios/{portfolio_id}/review`.
 2. `src/app/services/reporting_read_service.py` composes the review payload from:
-   - `lotus-core` portfolio summary, allocation, positions, and transaction data,
+   - `lotus-core` portfolio detail, portfolio summary, allocation, positions, and transaction data,
    - `lotus-performance` workspace summary data,
    - `lotus-risk` risk analytics when enough return history is available.
 3. `tests/unit/test_reporting_read_service.py`,
@@ -86,6 +86,9 @@ Original gaps addressed by Slices 1 through 11:
 7. supported-feature truth did not distinguish current legacy review aggregation from the
    RFC-0002 first-class review report,
 8. wiki/operator material did not explain target client/advisor review-report semantics.
+9. portfolio-level client/advisor/mandate context, meeting structure, advisor briefing, and
+   governed AI-readiness metadata were not explicit enough for a high-end private banking review
+   pack.
 
 No RFC-0002 product behavior remains in planned state. Future portfolio review extensions must be
 opened as new planned feature rows before they are promoted to implementation-backed product truth.
@@ -314,10 +317,17 @@ RFC-0002 feature keys:
 3. `lotus-report.reporting.portfolio_review.evidence_pack.v1`
 4. `lotus-report.reporting.portfolio_review.advisor_sections.v1`
 5. `lotus-report.reporting.portfolio_review.workbench_ready.v1`
+6. `lotus-report.reporting.portfolio_review.position_pnl.v1`
+7. `lotus-report.reporting.portfolio_review.performance_contribution.v1`
+8. `lotus-report.reporting.portfolio_review.client_profile.v1`
+9. `lotus-report.reporting.portfolio_review.advisor_briefing.v1`
+10. `lotus-report.reporting.portfolio_review.ai_readiness.v1`
 
 These keys were promoted to implementation-backed in Slice 9 after code, tests, API contract
-evidence, supported-features updates, and GitHub validation existed. Future extensions must start as
-planned rows in `docs/supported-features.md`.
+evidence, supported-features updates, and GitHub validation existed. Later hardening passes promoted
+source-backed P&L/contribution, client profile, advisor briefing, and AI-readiness metadata only
+after implementation and tests existed. Future extensions must start as planned rows in
+`docs/supported-features.md`.
 
 ## Target Review Report Structure
 
@@ -765,6 +775,11 @@ Closure decisions:
    canonical upstream ports. The closure hardening pass now configures Compose with explicit
    host-reachable upstream URLs and a regression test so canonical front-office proof does not
    require ad hoc container replacement.
+9. A private-banking quality review identified additional report-value gaps: the report needed a
+   proper client and mandate frame, clearer meeting organization, explicit advisor checks, and
+   governed AI posture. The hardening pass now sources client/advisor/mandate fields from
+   `lotus-core /portfolios/{portfolio_id}`, adds deterministic `reportStructure` and
+   `advisorBriefing`, and exposes `aiReadiness` as guardrail metadata rather than generated advice.
 
 Exit criteria:
 
@@ -889,7 +904,10 @@ Resolved during implementation:
    upstream owner publishes a governed source. The report may link to proposal/action surfaces but
    must not invent target allocation truth.
 4. Slice 7: Advisor discussion prompts are deterministic, rule-based, source-backed, and
-   advisor-only. AI-generated wording remains outside `lotus-report`.
+   advisor-only. AI-generated wording remains outside `lotus-report`; the report now publishes
+   deterministic `aiReadiness` metadata that names supported grounded-assistance use cases and
+   blocks trade recommendations, suitability determinations, and client-profile inference until
+   governed `lotus-ai` integration exists.
 5. Slice 4/Slice 5: The first implementation publishes methodology and supportability metadata but
    does not ship jurisdiction-specific disclosure packs.
 6. Slice 8: Gateway preservation is the first consumer readiness proof. Workbench report preview is

@@ -35,6 +35,27 @@ class _CoreQueryClientSuccess:
             "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
         }
 
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "base_currency": "USD",
+            "open_date": "2025-01-06",
+            "risk_exposure": "balanced",
+            "investment_time_horizon": "long_term",
+            "portfolio_type": "discretionary",
+            "objective": "Long-term real wealth growth with controlled income and liquidity.",
+            "booking_center_code": "Singapore",
+            "client_id": "CIF_SG_000184",
+            "is_leverage_allowed": False,
+            "advisor_id": "RM_SG_001",
+            "status": "active",
+            "cost_basis_method": "FIFO",
+        }
+
     async def get_asset_allocation(
         self,
         portfolio_id: str,
@@ -319,6 +340,13 @@ class _CoreQueryClientNotFound:
     ):
         return 404, {"detail": "Portfolio not found"}
 
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 404, {"detail": "Portfolio not found"}
+
     async def get_asset_allocation(
         self,
         portfolio_id: str,
@@ -349,6 +377,13 @@ class _CoreQueryClientFailure:
         self,
         portfolio_id: str,
         payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
         correlation_id: str | None = None,
     ):
         return 503, {"detail": "upstream unavailable"}
@@ -527,6 +562,16 @@ async def test_review_composes_core_query_performance_and_risk():
         "percentage_fields": "normalized key figure percentages use *_pct names",
         "legacy_weight_fields": "section allocation and holding weights remain decimal ratios",
     }
+    assert response["clientProfile"]["status"] == "present"
+    assert response["clientProfile"]["identity"] == {
+        "client_id": "CIF_SG_000184",
+        "advisor_id": "RM_SG_001",
+        "booking_center_code": "Singapore",
+    }
+    assert response["clientProfile"]["mandate_profile"]["risk_exposure"] == "balanced"
+    assert response["keyFigures"]["client_profile"]["objective"] == (
+        "Long-term real wealth growth with controlled income and liquidity."
+    )
     assert response["keyFigures"]["portfolio_value"] == {
         "total_market_value_reporting_currency": 1_000_000.0,
         "invested_market_value_reporting_currency": 998_800.0,
@@ -557,14 +602,24 @@ async def test_review_composes_core_query_performance_and_risk():
     coverage = {
         group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
     }
+    assert coverage["client_profile"] == "present"
     assert coverage["portfolio_value"] == "present"
     assert coverage["benchmark_comparison"] == "partial"
     assert coverage["position_pnl_and_cost_basis"] == "present"
     assert coverage["performance_contribution"] == "present"
     assert coverage["instrument_reference_data"] == "present"
     assert coverage["targets_guidelines_and_suitability"] == "not_sourced"
-    assert response["reviewObservations"][0]["observation_id"] == (
-        "benchmark_comparison_not_sourced"
+    assert coverage["advisor_ai_assistance"] == "guarded_ready"
+    observation_ids = {item["observation_id"] for item in response["reviewObservations"]}
+    assert "suitability_and_mandate_controls_not_sourced" in observation_ids
+    assert "benchmark_comparison_not_sourced" in observation_ids
+    assert response["reportStructure"]["presentation_sequence"][0]["section_key"] == (
+        "client_and_mandate_context"
+    )
+    assert response["advisorBriefing"]["required_advisor_checks"][1]["status"] == "not_sourced"
+    assert response["aiReadiness"]["status"] == "guarded_ready"
+    assert response["aiReadiness"]["blocked_ai_features"][0]["feature_id"] == (
+        "trade_recommendation"
     )
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
@@ -606,6 +661,7 @@ async def test_review_composes_core_query_performance_and_risk():
         source_ref["section_id"]: source_ref for source_ref in response["evidence"]["source_refs"]
     }
     assert source_refs["executive_summary"]["source_service"] == "lotus-core"
+    assert source_refs["client_profile"]["source_endpoint"] == "/portfolios/P1"
     assert source_refs["performance_review"]["source_service"] == "lotus-performance"
     assert source_refs["risk_review"]["source_service"] == "lotus-risk"
     assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"

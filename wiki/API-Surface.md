@@ -69,9 +69,11 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/review?s
 The review response is a typed report contract. It separates client-ready `client_sections` from
 advisor-only `advisor_sections`, carries explicit section readiness states including
 `not_applicable` for requested supporting sections with no applicable activity, includes
-report-level `evidence`, exposes source-backed position cost/unrealized P&L and YTD contribution
-where upstream services provide them, and publishes RFC-0002 capability keys through
-`GET /integration/capabilities`.
+report-level `evidence`, exposes source-backed client/mandate profile context from lotus-core,
+position cost/unrealized P&L, and YTD contribution where upstream services provide them. It also
+includes deterministic `reportStructure`, `advisorBriefing`, and guarded `aiReadiness` metadata so
+front-office consumers can organize a review meeting without treating report gaps as advice.
+RFC-0002 capability keys are published through `GET /integration/capabilities`.
 
 Use these examples to keep the mixed query and request-body conventions visible until the public
 surface is intentionally standardized.

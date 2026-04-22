@@ -121,6 +121,10 @@ class PortfolioReviewReportResponse(BaseModel):
     review_observations: list[dict[str, Any]] = Field(
         default_factory=list, alias="reviewObservations"
     )
+    client_profile: dict[str, Any] = Field(default_factory=dict, alias="clientProfile")
+    report_structure: dict[str, Any] = Field(default_factory=dict, alias="reportStructure")
+    advisor_briefing: dict[str, Any] = Field(default_factory=dict, alias="advisorBriefing")
+    ai_readiness: dict[str, Any] = Field(default_factory=dict, alias="aiReadiness")
     disclosures: list[dict[str, Any]] = Field(default_factory=list)
     client_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     advisor_sections: list[PortfolioReviewSection] = Field(default_factory=list)

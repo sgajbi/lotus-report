@@ -170,6 +170,10 @@ class ReportingReadService:
         response["reviewPeriod"] = self._review_period(as_of_date)
         response["reportingCurrency"] = self._reporting_currency(request_payload, summary)
         response["methodology"] = self._review_methodology(request_payload)
+        response["clientProfile"] = await self._portfolio_client_profile(
+            portfolio_id=portfolio_id,
+            correlation_id=correlation_id,
+        )
         transaction_rows: list[dict[str, object]] | None = None
 
         if "OVERVIEW" in requested_sections:
@@ -284,6 +288,9 @@ class ReportingReadService:
         response["keyFigures"] = self._review_key_figures(response)
         response["reviewObservations"] = self._review_observations(response)
         response["reportCoverage"] = self._review_report_coverage(response)
+        response["reportStructure"] = self._report_structure(response, client_sections)
+        response["advisorBriefing"] = self._advisor_briefing(response)
+        response["aiReadiness"] = self._ai_readiness(response)
         response["evidence"] = self._review_evidence(
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
@@ -317,8 +324,116 @@ class ReportingReadService:
             "keyFigures": {},
             "reportCoverage": {},
             "reviewObservations": [],
+            "clientProfile": {},
+            "reportStructure": {},
+            "advisorBriefing": {},
+            "aiReadiness": {},
             "disclosures": [],
         }
+
+    async def _portfolio_client_profile(
+        self,
+        *,
+        portfolio_id: str,
+        correlation_id: str | None,
+    ) -> dict[str, object]:
+        get_detail = getattr(self._core_query_client, "get_portfolio_detail", None)
+        if get_detail is None:
+            return self._client_profile_unavailable(
+                portfolio_id=portfolio_id,
+                reason_code="source_client_does_not_support_portfolio_detail",
+            )
+        status_code, payload = await get_detail(
+            portfolio_id=portfolio_id,
+            correlation_id=correlation_id,
+        )
+        if status_code >= status.HTTP_400_BAD_REQUEST:
+            return self._client_profile_unavailable(
+                portfolio_id=portfolio_id,
+                reason_code="source_unavailable",
+            )
+        profile_payload = self._as_dict(payload)
+        if not profile_payload:
+            return self._client_profile_unavailable(
+                portfolio_id=portfolio_id,
+                reason_code="source_payload_missing",
+            )
+        required_fields = (
+            "client_id",
+            "advisor_id",
+            "booking_center_code",
+            "portfolio_type",
+            "objective",
+            "risk_exposure",
+            "investment_time_horizon",
+        )
+        missing_fields = [
+            field
+            for field in required_fields
+            if not self._profile_field_present(profile_payload, field)
+        ]
+        return {
+            "status": "partial" if missing_fields else "present",
+            "identity": {
+                "client_id": self._safe_str(profile_payload.get("client_id")),
+                "advisor_id": self._safe_str(profile_payload.get("advisor_id")),
+                "booking_center_code": self._safe_str(profile_payload.get("booking_center_code")),
+            },
+            "portfolio_profile": {
+                "portfolio_id": self._safe_str(profile_payload.get("portfolio_id")) or portfolio_id,
+                "base_currency": self._safe_str(profile_payload.get("base_currency")),
+                "open_date": self._safe_str(profile_payload.get("open_date")),
+                "status": self._safe_str(profile_payload.get("status")),
+            },
+            "mandate_profile": {
+                "portfolio_type": self._safe_str(profile_payload.get("portfolio_type")),
+                "objective": self._safe_str(profile_payload.get("objective")),
+                "risk_exposure": self._safe_str(profile_payload.get("risk_exposure")),
+                "investment_time_horizon": self._safe_str(
+                    profile_payload.get("investment_time_horizon")
+                ),
+                "is_leverage_allowed": bool(profile_payload.get("is_leverage_allowed")),
+                "cost_basis_method": self._safe_str(profile_payload.get("cost_basis_method")),
+            },
+            "missing_fields": missing_fields,
+            "source": {
+                "service": "lotus-core",
+                "endpoint": f"/portfolios/{portfolio_id}",
+            },
+        }
+
+    def _client_profile_unavailable(
+        self,
+        *,
+        portfolio_id: str,
+        reason_code: str,
+    ) -> dict[str, object]:
+        return {
+            "status": "unavailable",
+            "reason_code": reason_code,
+            "identity": {},
+            "portfolio_profile": {"portfolio_id": portfolio_id},
+            "mandate_profile": {},
+            "missing_fields": [
+                "client_id",
+                "advisor_id",
+                "booking_center_code",
+                "portfolio_type",
+                "objective",
+                "risk_exposure",
+                "investment_time_horizon",
+            ],
+            "source": {
+                "service": "lotus-core",
+                "endpoint": f"/portfolios/{portfolio_id}",
+            },
+        }
+
+    def _profile_field_present(self, payload: dict[str, object], field: str) -> bool:
+        value = payload.get(field)
+        if isinstance(value, bool):
+            return True
+        return value not in (None, "", {}, [])
 
     def _review_readiness(
         self,
@@ -717,6 +832,15 @@ class ReportingReadService:
         self, *, portfolio_id: str, response: dict[str, object]
     ) -> list[dict[str, object]]:
         refs: list[dict[str, object]] = []
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="clientProfile",
+            section_id="client_profile",
+            source_service="lotus-core",
+            source_endpoint=f"/portfolios/{portfolio_id}",
+            source_entity_id=portfolio_id,
+        )
         self._append_source_ref(
             refs,
             response=response,
@@ -1814,6 +1938,7 @@ class ReportingReadService:
         income_activity = self._as_dict(response.get("incomeAndActivity"))
         holdings = self._as_dict(response.get("holdings"))
         transactions = self._as_dict(response.get("transactions"))
+        client_profile = self._as_dict(response.get("clientProfile"))
         currency = self._safe_str(response.get("reportingCurrency") or overview.get("currency"))
         total_market_value = self._to_float(overview.get("total_market_value"))
         total_cash = self._to_float(overview.get("total_cash"))
@@ -1828,6 +1953,7 @@ class ReportingReadService:
                     "section allocation and holding weights remain decimal ratios"
                 ),
             },
+            "client_profile": self._client_profile_key_figures(client_profile),
             "portfolio_value": {
                 "total_market_value_reporting_currency": total_market_value,
                 "invested_market_value_reporting_currency": self._to_float(
@@ -1847,6 +1973,25 @@ class ReportingReadService:
             "income_and_activity": self._income_activity_key_figures(income_activity),
             "holdings": self._holdings_key_figures(holdings),
             "transactions": self._transaction_key_figures(transactions),
+        }
+
+    def _client_profile_key_figures(self, client_profile: dict[str, object]) -> dict[str, object]:
+        identity = self._as_dict(client_profile.get("identity"))
+        mandate = self._as_dict(client_profile.get("mandate_profile"))
+        portfolio_profile = self._as_dict(client_profile.get("portfolio_profile"))
+        return {
+            "profile_status": client_profile.get("status", "unavailable"),
+            "client_id": identity.get("client_id"),
+            "advisor_id": identity.get("advisor_id"),
+            "booking_center_code": identity.get("booking_center_code"),
+            "portfolio_type": mandate.get("portfolio_type"),
+            "objective": mandate.get("objective"),
+            "risk_exposure": mandate.get("risk_exposure"),
+            "investment_time_horizon": mandate.get("investment_time_horizon"),
+            "base_currency": portfolio_profile.get("base_currency"),
+            "open_date": portfolio_profile.get("open_date"),
+            "is_leverage_allowed": mandate.get("is_leverage_allowed"),
+            "cost_basis_method": mandate.get("cost_basis_method"),
         }
 
     def _performance_key_figures(self, performance: dict[str, object]) -> dict[str, object]:
@@ -2021,6 +2166,35 @@ class ReportingReadService:
         performance = self._as_dict(key_figures.get("performance"))
         holdings = self._as_dict(key_figures.get("holdings"))
         risk = self._as_dict(response.get("riskAnalytics"))
+        client_profile = self._as_dict(response.get("clientProfile"))
+        missing_profile_fields = [
+            self._safe_str(field) for field in self._as_list(client_profile.get("missing_fields"))
+        ]
+        if missing_profile_fields:
+            observations.append(
+                {
+                    "observation_id": "client_profile_incomplete",
+                    "severity": "gap",
+                    "message": (
+                        "Client and mandate profile is incomplete for review preparation: "
+                        + ", ".join(missing_profile_fields)
+                        + "."
+                    ),
+                    "source_section_ids": ["client_profile"],
+                }
+            )
+        observations.append(
+            {
+                "observation_id": "suitability_and_mandate_controls_not_sourced",
+                "severity": "gap",
+                "message": (
+                    "Suitability assessment, target allocation, mandate guidelines, liquidity "
+                    "needs, and regulatory product disclosure controls are not sourced in this "
+                    "report response and require advisory or management-domain integration."
+                ),
+                "source_section_ids": ["client_profile", "asset_allocation", "holdings_appendix"],
+            }
+        )
         if performance.get("benchmark_comparison_status") == "unavailable":
             observations.append(
                 {
@@ -2107,11 +2281,251 @@ class ReportingReadService:
             )
         return observations
 
+    def _report_structure(
+        self,
+        response: dict[str, object],
+        client_sections: list[dict[str, object]],
+    ) -> dict[str, object]:
+        section_statuses = {
+            self._safe_str(section.get("section_id")): self._safe_str(section.get("status"))
+            for section in client_sections
+        }
+        return {
+            "status": "ready",
+            "presentation_sequence": [
+                {
+                    "sequence": 1,
+                    "section_key": "client_and_mandate_context",
+                    "title": "Client, Mandate, And Meeting Context",
+                    "source_section_ids": ["client_profile", "executive_summary"],
+                },
+                {
+                    "sequence": 2,
+                    "section_key": "portfolio_snapshot",
+                    "title": "Portfolio Snapshot And Allocation",
+                    "source_section_ids": ["executive_summary", "asset_allocation"],
+                },
+                {
+                    "sequence": 3,
+                    "section_key": "performance_drivers",
+                    "title": "Performance, Contribution, And P&L Drivers",
+                    "source_section_ids": ["performance_review", "holdings_appendix"],
+                },
+                {
+                    "sequence": 4,
+                    "section_key": "risk_and_suitability_controls",
+                    "title": "Risk, Concentration, Suitability, And Mandate Controls",
+                    "source_section_ids": [
+                        "risk_review",
+                        "asset_allocation",
+                        "holdings_appendix",
+                    ],
+                },
+                {
+                    "sequence": 5,
+                    "section_key": "income_cash_and_activity",
+                    "title": "Income, Cash, Fees, Taxes, And Activity",
+                    "source_section_ids": ["income_cash_activity", "transactions_appendix"],
+                },
+                {
+                    "sequence": 6,
+                    "section_key": "appendices_and_evidence",
+                    "title": "Holdings, Transactions, Methodology, And Evidence",
+                    "source_section_ids": [
+                        "holdings_appendix",
+                        "transactions_appendix",
+                        "evidence",
+                    ],
+                },
+            ],
+            "client_section_statuses": section_statuses,
+            "advisor_only_sections": ["advisor_discussion", "advisorBriefing", "aiReadiness"],
+            "machine_readable_payloads": [
+                "clientProfile",
+                "keyFigures",
+                "reviewObservations",
+                "reportCoverage",
+                "evidence",
+            ],
+        }
+
+    def _advisor_briefing(self, response: dict[str, object]) -> dict[str, object]:
+        profile = self._as_dict(response.get("clientProfile"))
+        identity = self._as_dict(profile.get("identity"))
+        mandate = self._as_dict(profile.get("mandate_profile"))
+        key_figures = self._as_dict(response.get("keyFigures"))
+        performance = self._as_dict(key_figures.get("performance"))
+        holdings = self._as_dict(key_figures.get("holdings"))
+        risk = self._as_dict(key_figures.get("risk"))
+        currency = self._safe_str(response.get("reportingCurrency")) or self._safe_str(
+            self._as_dict(key_figures.get("conventions")).get("currency")
+        )
+        briefing_items: list[dict[str, object]] = [
+            {
+                "briefing_id": "client_context",
+                "title": "Confirm client context before discussion",
+                "talking_points": [
+                    f"Client {identity.get('client_id') or 'unknown client'} is covered by advisor "
+                    f"{identity.get('advisor_id') or 'unknown advisor'}.",
+                    f"Mandate type is {mandate.get('portfolio_type') or 'not sourced'} with "
+                    f"{mandate.get('risk_exposure') or 'not sourced'} risk exposure.",
+                    self._briefing_sentence(
+                        "Objective",
+                        self._safe_str(mandate.get("objective")) or "not sourced",
+                    ),
+                ],
+                "source_section_ids": ["client_profile"],
+            },
+            {
+                "briefing_id": "performance_drivers",
+                "title": "Explain performance using contribution and P&L",
+                "talking_points": [
+                    "YTD net return is "
+                    + self._display_pct(performance.get("ytd_net_return_pct"))
+                    + ".",
+                    "Use largest positive and negative contributors to explain return drivers.",
+                    "Total unrealized P&L is "
+                    + self._display_money(
+                        holdings.get("total_unrealized_pnl_reporting_currency"),
+                        currency=currency,
+                    )
+                    + ".",
+                ],
+                "source_section_ids": ["performance_review", "holdings_appendix"],
+            },
+            {
+                "briefing_id": "risk_controls",
+                "title": "Review risk, concentration, and suitability gaps",
+                "talking_points": [
+                    "YTD volatility is " + self._display_pct(risk.get("ytd_volatility_pct")) + ".",
+                    "Top five positive exposure is "
+                    + self._display_pct(holdings.get("top_five_positive_exposure_pct"))
+                    + ".",
+                    "Suitability, mandate guideline, and liquidity-need controls are not sourced "
+                    "in this report and must be checked in the advisory or management workflow.",
+                ],
+                "source_section_ids": ["risk_review", "holdings_appendix", "client_profile"],
+            },
+        ]
+        return {
+            "status": "ready",
+            "audience": "advisor_only",
+            "briefing_items": briefing_items,
+            "required_advisor_checks": [
+                {
+                    "check_id": "confirm_client_profile_current",
+                    "status": profile.get("status", "unavailable"),
+                    "required": True,
+                    "source_section_ids": ["client_profile"],
+                },
+                {
+                    "check_id": "review_suitability_and_mandate_controls",
+                    "status": "not_sourced",
+                    "required": True,
+                    "source_section_ids": ["client_profile", "asset_allocation"],
+                },
+                {
+                    "check_id": "confirm_benchmark_and_risk_supportability",
+                    "status": self._benchmark_comparison_coverage(response),
+                    "required": True,
+                    "source_section_ids": ["performance_review", "risk_review"],
+                },
+            ],
+        }
+
+    def _briefing_sentence(self, label: str, value: str) -> str:
+        cleaned = value.strip()
+        if cleaned.endswith("."):
+            return f"{label}: {cleaned}"
+        return f"{label}: {cleaned}."
+
+    def _display_pct(self, value: object) -> str:
+        parsed = self._optional_number_raw(value)
+        if parsed is None:
+            return "not sourced"
+        return f"{parsed:.2f}%"
+
+    def _display_money(self, value: object, *, currency: str) -> str:
+        parsed = self._optional_number_raw(value)
+        if parsed is None:
+            return "not sourced"
+        prefix = f"{currency} " if currency else ""
+        return f"{prefix}{parsed:,.2f}"
+
+    def _ai_readiness(self, response: dict[str, object]) -> dict[str, object]:
+        ai_status = self._ai_assistance_coverage(response)
+        return {
+            "status": ai_status,
+            "mode": "grounded_assistance_metadata_only",
+            "supported_ai_features": [
+                {
+                    "feature_id": "meeting_question_suggestions",
+                    "status": "ready" if ai_status == "guarded_ready" else "partial",
+                    "requires_human_approval": True,
+                },
+                {
+                    "feature_id": "plain_language_section_summary_draft",
+                    "status": "ready" if ai_status == "guarded_ready" else "partial",
+                    "requires_human_approval": True,
+                },
+                {
+                    "feature_id": "exception_explanation_draft",
+                    "status": "ready" if response.get("reviewObservations") else "not_applicable",
+                    "requires_human_approval": True,
+                },
+            ],
+            "blocked_ai_features": [
+                {
+                    "feature_id": "trade_recommendation",
+                    "reason": (
+                        "Requires governed advisory workflow, suitability evidence, "
+                        "and advisor approval."
+                    ),
+                },
+                {
+                    "feature_id": "suitability_determination",
+                    "reason": (
+                        "Suitability is not sourced by this report and must remain in "
+                        "governed advisory controls."
+                    ),
+                },
+                {
+                    "feature_id": "client_profile_inference",
+                    "reason": (
+                        "Client profile must come from an authoritative source, not "
+                        "model inference."
+                    ),
+                },
+            ],
+            "required_grounding_payloads": [
+                "clientProfile",
+                "keyFigures",
+                "reviewObservations",
+                "reportCoverage",
+                "evidence",
+            ],
+            "control_requirements": [
+                "Use only report evidence and cited source sections for generated text.",
+                "Preserve advisor-only separation for prompts, follow-ups, and limitations.",
+                "Do not turn report gaps into advice or product recommendations.",
+            ],
+        }
+
     def _review_report_coverage(self, response: dict[str, object]) -> dict[str, object]:
         key_figures = self._as_dict(response.get("keyFigures"))
         return {
             "status": self._as_dict(response.get("readiness")).get("status", "ready"),
             "figure_groups": [
+                {
+                    "group_id": "client_profile",
+                    "status": self._client_profile_coverage(response),
+                    "required": True,
+                    "message": (
+                        "Client id, advisor id, booking center, objective, risk exposure, "
+                        "investment horizon, mandate type, leverage permission, and cost basis "
+                        "method are sourced from lotus-core portfolio detail."
+                    ),
+                },
                 self._figure_group("portfolio_value", key_figures, required=True),
                 self._figure_group("allocation", key_figures, required=True),
                 self._figure_group("performance", key_figures, required=True),
@@ -2158,11 +2572,22 @@ class ReportingReadService:
                 {
                     "group_id": "targets_guidelines_and_suitability",
                     "status": "not_sourced",
+                    "required": True,
+                    "message": (
+                        "Risk profile and objective are sourced from lotus-core client profile "
+                        "where available. Target allocation, mandate guidelines, liquidity "
+                        "needs, product restrictions, and suitability posture are owned by "
+                        "advisory or management domains and are not invented by lotus-report."
+                    ),
+                },
+                {
+                    "group_id": "advisor_ai_assistance",
+                    "status": self._ai_assistance_coverage(response),
                     "required": False,
                     "message": (
-                        "Target allocation, mandate guidelines, risk profile, objectives, "
-                        "liquidity needs, and suitability posture are owned by advisory or "
-                        "management domains and are not invented by lotus-report."
+                        "AI assistance is represented as guarded readiness metadata only. "
+                        "LLM-generated advice, trade recommendations, and suitability decisions "
+                        "require governed lotus-ai integration and human advisor approval."
                     ),
                 },
                 {
@@ -2177,6 +2602,13 @@ class ReportingReadService:
             ],
         }
 
+    def _client_profile_coverage(self, response: dict[str, object]) -> str:
+        profile = self._as_dict(response.get("clientProfile"))
+        profile_status = self._safe_str(profile.get("status"))
+        if profile_status in {"present", "partial", "unavailable"}:
+            return profile_status
+        return "unavailable"
+
     def _figure_group(
         self, group_id: str, key_figures: dict[str, object], *, required: bool
     ) -> dict[str, object]:
@@ -2187,6 +2619,14 @@ class ReportingReadService:
             "status": "present" if populated else "missing",
             "required": required,
         }
+
+    def _ai_assistance_coverage(self, response: dict[str, object]) -> str:
+        client_profile = self._as_dict(response.get("clientProfile"))
+        if client_profile.get("status") == "present" and response.get("keyFigures"):
+            return "guarded_ready"
+        if response.get("keyFigures"):
+            return "partial"
+        return "not_ready"
 
     def _benchmark_comparison_coverage(self, response: dict[str, object]) -> str:
         performance = self._as_dict(response.get("performance"))

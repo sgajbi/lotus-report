@@ -100,6 +100,9 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.key_figures.v1",
         "lotus-report.reporting.portfolio_review.position_pnl.v1",
         "lotus-report.reporting.portfolio_review.performance_contribution.v1",
+        "lotus-report.reporting.portfolio_review.client_profile.v1",
+        "lotus-report.reporting.portfolio_review.advisor_briefing.v1",
+        "lotus-report.reporting.portfolio_review.ai_readiness.v1",
         "lotus-report.reporting.portfolio_review.advisor_sections.v1",
         "lotus-report.reporting.portfolio_review.workbench_ready.v1",
     } <= feature_keys

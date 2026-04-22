@@ -55,6 +55,27 @@ class _CoreQuerySuccessMinimal:
             "snapshot_metadata": {"snapshot_date": payload.get("as_of_date")},
         }
 
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "base_currency": "USD",
+            "open_date": "2025-01-06",
+            "risk_exposure": "balanced",
+            "investment_time_horizon": "long_term",
+            "portfolio_type": "discretionary",
+            "objective": "Long-term real wealth growth with controlled income and liquidity.",
+            "booking_center_code": "Singapore",
+            "client_id": "CIF_SG_000184",
+            "is_leverage_allowed": False,
+            "advisor_id": "RM_SG_001",
+            "status": "active",
+            "cost_basis_method": "FIFO",
+        }
+
     async def get_asset_allocation(
         self,
         portfolio_id: str,
@@ -144,6 +165,43 @@ class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
             "portfolio_id": portfolio_id,
             "total": 0,
             "positions": [],
+        }
+
+
+class _CoreQueryWithoutPortfolioDetail:
+    pass
+
+
+class _CoreQueryProfileUnavailable(_CoreQuerySuccessMinimal):
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 503, {"detail": "core down"}
+
+
+class _CoreQueryProfileEmpty(_CoreQuerySuccessMinimal):
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 200, {}
+
+
+class _CoreQueryProfilePartial(_CoreQuerySuccessMinimal):
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "client_id": "CIF-1",
+            "advisor_id": "RM-1",
+            "portfolio_type": "advisory",
+            "is_leverage_allowed": True,
         }
 
 
@@ -478,6 +536,175 @@ def test_allocation_and_position_param_builders_preserve_supported_options():
     }
 
 
+@pytest.mark.asyncio
+async def test_client_profile_mapping_marks_missing_source_capability_unavailable():
+    service = ReportingReadService(
+        core_query_client=_CoreQueryWithoutPortfolioDetail(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id="CID")
+
+    assert profile["status"] == "unavailable"
+    assert profile["reason_code"] == "source_client_does_not_support_portfolio_detail"
+    assert "risk_exposure" in profile["missing_fields"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("core_client", "reason_code"),
+    [
+        (_CoreQueryProfileUnavailable(), "source_unavailable"),
+        (_CoreQueryProfileEmpty(), "source_payload_missing"),
+    ],
+)
+async def test_client_profile_mapping_marks_upstream_detail_gaps_unavailable(
+    core_client,
+    reason_code,
+):
+    service = ReportingReadService(
+        core_query_client=core_client,
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id=None)
+
+    assert profile["status"] == "unavailable"
+    assert profile["reason_code"] == reason_code
+    assert profile["source"]["endpoint"] == "/portfolios/P1"
+
+
+@pytest.mark.asyncio
+async def test_client_profile_mapping_keeps_partial_profile_source_backed():
+    service = ReportingReadService(
+        core_query_client=_CoreQueryProfilePartial(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id=None)
+
+    assert profile["status"] == "partial"
+    assert profile["identity"]["client_id"] == "CIF-1"
+    assert profile["mandate_profile"]["is_leverage_allowed"] is True
+    assert set(profile["missing_fields"]) == {
+        "booking_center_code",
+        "objective",
+        "risk_exposure",
+        "investment_time_horizon",
+    }
+
+
+def test_ai_readiness_downgrades_when_profile_or_key_figures_are_missing():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    no_key_figures = service._ai_readiness({"clientProfile": {"status": "present"}})
+    partial_profile = service._ai_readiness(
+        {
+            "clientProfile": {"status": "partial"},
+            "keyFigures": {"portfolio_value": {"total_market_value_reporting_currency": 100}},
+            "reviewObservations": [],
+        }
+    )
+
+    assert no_key_figures["status"] == "not_ready"
+    assert no_key_figures["supported_ai_features"][2]["status"] == "not_applicable"
+    assert partial_profile["status"] == "partial"
+    assert partial_profile["supported_ai_features"][0]["status"] == "partial"
+
+
+def test_review_helper_branches_for_gold_standard_fields():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    assert service._profile_field_present({"is_leverage_allowed": False}, "is_leverage_allowed")
+    assert service._security_id_from_position_id("SEC-1") == "SEC-1"
+    assert (
+        service._workspace_period_start(
+            {"portfolio_twr": {"net": {"breakdowns": {"daily": [{"period_start": "2026-01-01"}]}}}}
+        )
+        == "2026-01-01"
+    )
+    assert (
+        service._workspace_period_end(
+            {"portfolio_twr": {"net": {"breakdowns": {"daily": [{"period_end": "2026-02-24"}]}}}}
+        )
+        == "2026-02-24"
+    )
+    assert service._optional_number_raw("not-a-number") is None
+    assert service._optional_number_raw({"bad": "shape"}) is None
+    assert service._position_unrealized_pnl_pct({"unrealized_pnl_pct": 12.3}) == 12.3
+
+    contribution = service._map_performance_contribution(
+        status_code=503,
+        payload={"detail": "down"},
+    )
+    assert contribution["status"] == "unavailable"
+
+    response = {"holdings": {"holdingsByAssetClass": {"Equity": [{"security_id": "EQ-1"}]}}}
+    service._enrich_holdings_with_contribution(response=response, contribution=contribution)
+    assert "ytd_contribution_pct" not in response["holdings"]["holdingsByAssetClass"]["Equity"][0]
+
+    assert service._coverage_status(1, 2) == "partial"
+    assert (
+        service._benchmark_comparison_coverage(
+            {
+                "performance": {
+                    "benchmark": {"benchmark_code": "BMK", "comparison_status": "available"}
+                }
+            }
+        )
+        == "present"
+    )
+
+
+def test_section_item_mappers_include_contribution_and_income_branches():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    performance_items = service._performance_items(
+        {
+            "summary": {"YTD": {"net_cumulative_return": 1.2}},
+            "contribution": {
+                "status": "present",
+                "period": "YTD",
+                "total_portfolio_return_pct": 1.2,
+                "total_contribution_pct": 1.2,
+                "top_position_contributors": [{"security_id": "EQ-1"}],
+                "hierarchy": [{"level": "asset_class", "name": "Asset Class", "rows": []}],
+            },
+        }
+    )
+    income_items = service._income_activity_items(
+        {
+            "incomeSummary": {"net_amount_reporting_currency": 10},
+            "activitySummary": {"ignored": 1, "total_fees": 2},
+        }
+    )
+    allocation_items = service._allocation_items({1: [{"group": "bad"}], "byAssetClass": []})
+
+    assert {item["item_type"] for item in performance_items} >= {
+        "performance_period",
+        "contribution_summary",
+        "position_contribution",
+    }
+    assert income_items[0]["item_type"] == "income_summary"
+    assert income_items[1]["bucket"] == "FEES"
+    assert allocation_items == []
+
+
 @pytest.mark.parametrize(
     "dimensions",
     [
@@ -782,8 +1009,10 @@ def test_review_key_figures_capture_missing_gold_standard_figures():
         "negative_cash_position",
         "top_five_positive_exposure",
         "missing_benchmark",
+        "suitability_and_mandate_controls_not_sourced",
     }
     coverage_by_group = {group["group_id"]: group["status"] for group in coverage["figure_groups"]}
+    assert coverage_by_group["client_profile"] == "unavailable"
     assert coverage_by_group["benchmark_comparison"] == "partial"
     assert coverage_by_group["position_pnl_and_cost_basis"] == "not_sourced"
     assert coverage_by_group["performance_contribution"] == "unavailable"

@@ -58,6 +58,18 @@ def get_capabilities(
                 "enabled": True,
             },
             {
+                "key": "lotus-report.reporting.portfolio_review.client_profile.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.advisor_briefing.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.ai_readiness.v1",
+                "enabled": True,
+            },
+            {
                 "key": "lotus-report.reporting.portfolio_review.advisor_sections.v1",
                 "enabled": True,
             },
