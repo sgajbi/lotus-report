@@ -2,12 +2,12 @@
 
 ## Status
 
-Implemented.
+Done.
 
-Slices 1 through 11 are implemented. The first-class review contract is shipped in `lotus-report`,
-the Workbench-facing gateway contract boundary is validated in companion gateway PR
-`sgajbi/lotus-gateway#145`, and remaining post-merge work is limited to wiki publication and normal
-branch cleanup.
+Slices 1 through 11 and the final hardening passes are complete. The first-class review contract is
+shipped in `lotus-report`, the Workbench-facing gateway contract boundary is validated in companion
+gateway PR `sgajbi/lotus-gateway#145`, and RFC-0002 is ready for merge. Remaining work after merge
+is limited to publishing the repo-authored wiki source and normal branch cleanup.
 
 ## Implementation Classification
 

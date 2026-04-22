@@ -20,7 +20,7 @@
 
 - [RFC-0001: Test Pyramid Rebalance and Meaningful Coverage Hardening](../rfcs/RFC-0001-test-pyramid-rebalance-and-meaningful-coverage-hardening.md)
 - [RFC-0002: First-Class Portfolio Review Report Endpoint](../rfcs/RFC-0002-first-class-portfolio-review-report-endpoint.md)
-  implemented first-class portfolio review report contract for advisor/client meeting workflows
+  done; shipped first-class portfolio review report contract for advisor/client meeting workflows
 
 ## Current emphasis
 
