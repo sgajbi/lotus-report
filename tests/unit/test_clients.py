@@ -146,6 +146,81 @@ async def test_performance_client_polls_async_workspace_summary_result(monkeypat
     )
 
 
+@pytest.mark.asyncio
+async def test_performance_client_returns_pending_workspace_summary_without_result_path(
+    monkeypatch,
+):
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[_FakeResponse(status_code=200, payload={"calculation_id": "calc-1"})]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_workspace_summary(
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+    )
+
+    assert status_code == 200
+    assert payload == {"calculation_id": "calc-1"}
+    assert [call["method"] for call in recorder.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_performance_client_returns_last_pending_result_after_polling_budget(
+    monkeypatch,
+):
+    pending_result = {
+        "calculation_id": "calc-1",
+        "result_path": "/performance/workspace-summary/results/calc-1",
+    }
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+            _FakeResponse(status_code=200, payload=pending_result),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _no_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_workspace_summary(
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+    )
+
+    assert status_code == 200
+    assert payload == pending_result
+    assert [call["method"] for call in recorder.calls] == ["POST", *["GET"] * 8]
+
+
 @pytest.mark.parametrize(
     ("payload", "text", "expected"),
     [
