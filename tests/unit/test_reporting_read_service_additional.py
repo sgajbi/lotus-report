@@ -566,7 +566,21 @@ async def test_review_section_envelope_marks_unrequested_sections_explicitly():
         "message": "Asset Allocation And Portfolio Construction was not requested.",
         "items": [],
     }
-    assert response["advisor_sections"] == []
+    advisor_sections = response["advisor_sections"]
+    assert len(advisor_sections) == 1
+    assert advisor_sections[0]["section_id"] == "advisor_discussion"
+    advisor_items = advisor_sections[0]["items"]
+    assert {item["prompt_id"] for item in advisor_items} == {
+        "review_readiness",
+        "portfolio_construction_review",
+    }
+    assert all(item["advisor_only"] is True for item in advisor_items)
+    assert all(
+        route_target["mutation_allowed"] is False
+        for item in advisor_items
+        for route_target in item["route_targets"]
+    )
+    assert all("advisor_only" not in section for section in response["client_sections"])
 
 
 @pytest.mark.asyncio

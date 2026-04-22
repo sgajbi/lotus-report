@@ -3,6 +3,20 @@ from fastapi import HTTPException
 
 from app.services.reporting_read_service import ReportingReadService
 
+FORBIDDEN_ADVISOR_PROMPT_WORDS = {"create", "creates", "approve", "approves", "mutate", "mutates"}
+
+
+def _advisor_prompt_items(response: dict[str, object]) -> list[dict[str, object]]:
+    advisor_sections = response["advisor_sections"]
+    assert isinstance(advisor_sections, list)
+    assert len(advisor_sections) == 1
+    advisor_section = advisor_sections[0]
+    assert advisor_section["section_id"] == "advisor_discussion"
+    assert advisor_section["status"] == "ready"
+    items = advisor_section["items"]
+    assert isinstance(items, list)
+    return items
+
 
 class _CoreQueryClientSuccess:
     async def get_portfolio_summary(
@@ -453,7 +467,37 @@ async def test_review_composes_core_query_performance_and_risk():
     assert section_statuses["asset_allocation"] == "omitted_by_request"
     assert section_statuses["performance_review"] == "ready"
     assert section_statuses["risk_review"] == "ready"
-    assert response["advisor_sections"] == []
+    advisor_items = _advisor_prompt_items(response)
+    assert {item["prompt_id"] for item in advisor_items} == {
+        "review_readiness",
+        "portfolio_construction_review",
+        "performance_discussion",
+        "risk_discussion",
+    }
+    for item in advisor_items:
+        assert item["advisor_only"] is True
+        assert item["source_section_ids"]
+        assert item["source_refs"]
+        assert FORBIDDEN_ADVISOR_PROMPT_WORDS.isdisjoint(
+            item["prompt"].lower().replace(".", "").replace(",", "").split()
+        )
+        for route_target in item["route_targets"]:
+            assert route_target["portfolio_id"] == "P1"
+            assert route_target["as_of_date"] == "2026-02-24"
+            assert route_target["mutation_allowed"] is False
+    advisor_surfaces = {
+        route_target["surface"] for item in advisor_items for route_target in item["route_targets"]
+    }
+    assert {
+        "lotus-workbench",
+        "lotus-performance",
+        "lotus-risk",
+        "lotus-advise",
+        "lotus-manage",
+    } <= advisor_surfaces
+    for client_section in response["client_sections"]:
+        assert client_section["section_id"] != "advisor_discussion"
+        assert "advisor_only" not in client_section
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert response["performance"]["benchmark"] == {"benchmark_code": "BMK_GLOBAL_BALANCED_60_40"}

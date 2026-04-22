@@ -22,6 +22,7 @@ exist.
 | --- | --- | --- | --- |
 | `lotus-report.reporting.portfolio_summary` | `POST /reports/portfolios/{portfolio_id}/summary` | `src/app/routers/reports.py`, `src/app/services/reporting_read_service.py`, `tests/integration/test_api.py` | Current reporting summary aggregation capability. |
 | `lotus-report.reporting.portfolio_review` | `POST /reports/portfolios/{portfolio_id}/review` | `src/app/routers/reports.py`, `src/app/services/reporting_read_service.py`, `tests/unit/test_reporting_read_service.py`, `tests/integration/test_api.py`, `tests/e2e/test_reporting_workflows.py` | Current legacy portfolio review aggregation capability. This is not yet the RFC-0002 first-class meeting-pack contract. |
+| `lotus-report.reporting.portfolio_review.advisor_sections.v1` | `POST /reports/portfolios/{portfolio_id}/review` response `advisor_sections` | `src/app/services/portfolio_review_advisor.py`, `src/app/services/reporting_read_service.py`, `src/app/models/contracts.py`, `tests/unit/test_reporting_read_service.py`, `tests/unit/test_reporting_read_service_additional.py` | Advisor-only deterministic discussion prompts and non-mutating Workbench, performance, risk, proposal, and action-register route targets. |
 | `lotus-report.aggregation.portfolio_snapshot` | `GET /aggregations/portfolios/{portfolio_id}` | `src/app/routers/aggregations.py`, `src/app/services/aggregation_service.py`, `tests/unit/test_aggregation_service.py`, `tests/integration/test_api.py` | Current reporting aggregation snapshot capability. |
 | `lotus-report.integration.capabilities` | `GET /integration/capabilities` | `src/app/routers/integration.py`, `src/app/models/contracts.py`, `tests/integration/test_api.py` | Publishes current feature and workflow posture for downstream consumers. |
 
@@ -35,7 +36,6 @@ enabled features until implementation evidence exists.
 | `lotus-report.reporting.portfolio_review.first_class.v1` | `POST /reports/portfolios/{portfolio_id}/review` | Typed `PortfolioReviewReportResponse`, OpenAPI examples, contract tests, integration tests, docs. |
 | `lotus-report.reporting.portfolio_review.section_readiness.v1` | Portfolio review report response | Ready, partial, unavailable, omitted-by-request, and not-applicable states with reason codes and tests. |
 | `lotus-report.reporting.portfolio_review.evidence_pack.v1` | Portfolio review report response and/or evidence-pack route | Source refs, lineage bundle id, trust metadata, data product declaration alignment, `make domain-product-validate`. |
-| `lotus-report.reporting.portfolio_review.advisor_sections.v1` | Portfolio review report response | Client-ready/advisor-only separation, deterministic prompts, tests preventing cross-audience leakage. |
 | `lotus-report.reporting.portfolio_review.workbench_ready.v1` | Gateway and Workbench consumption | Stable gateway contract, Workbench-ready route targets, cross-repo validation evidence where touched. |
 
 ## Maintenance Rules

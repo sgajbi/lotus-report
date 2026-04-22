@@ -153,7 +153,35 @@ class PortfolioReviewReportResponse(BaseModel):
                             "items": [{"total_market_value": 1000000.0}],
                         }
                     ],
-                    "advisor_sections": [],
+                    "advisor_sections": [
+                        {
+                            "section_id": "advisor_discussion",
+                            "title": "Advisor Discussion And Follow-Up",
+                            "status": "ready",
+                            "items": [
+                                {
+                                    "prompt_id": "review_readiness",
+                                    "advisor_only": True,
+                                    "prompt": (
+                                        "Confirm report readiness is ready for "
+                                        "PB_SG_GLOBAL_BAL_001 as of 2026-04-22 with no "
+                                        "unavailable client sections."
+                                    ),
+                                    "source_section_ids": ["executive_summary"],
+                                    "route_targets": [
+                                        {
+                                            "target_id": "workbench_review",
+                                            "surface": "lotus-workbench",
+                                            "route_key": "portfolio_review",
+                                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                                            "as_of_date": "2026-04-22",
+                                            "mutation_allowed": False,
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
                     "overview": {
                         "total_market_value": 1000000.0,
                         "total_cash": 50000.0,
@@ -190,7 +218,35 @@ class PortfolioReviewReportResponse(BaseModel):
                             "message": "Performance Review is unavailable for this request.",
                         }
                     ],
-                    "advisor_sections": [],
+                    "advisor_sections": [
+                        {
+                            "section_id": "advisor_discussion",
+                            "title": "Advisor Discussion And Follow-Up",
+                            "status": "ready",
+                            "items": [
+                                {
+                                    "prompt_id": "review_readiness",
+                                    "advisor_only": True,
+                                    "prompt": (
+                                        "Confirm report readiness is partial for "
+                                        "PB_SG_GLOBAL_BAL_001 as of 2026-04-22 with unavailable "
+                                        "client sections: Performance Review."
+                                    ),
+                                    "source_section_ids": ["performance_review"],
+                                    "route_targets": [
+                                        {
+                                            "target_id": "workbench_review",
+                                            "surface": "lotus-workbench",
+                                            "route_key": "portfolio_review",
+                                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                                            "as_of_date": "2026-04-22",
+                                            "mutation_allowed": False,
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
                     "performance": None,
                 },
             ]

@@ -6,6 +6,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.services.portfolio_review_advisor import build_advisor_sections
 
 AS_OF_DATE_KEYS = ("as_of_date", "asOfDate")
 REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
@@ -264,7 +265,12 @@ class ReportingReadService:
             response=response,
         )
         response["client_sections"] = client_sections
-        response["advisor_sections"] = []
+        response["advisor_sections"] = build_advisor_sections(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+            response=response,
+            client_sections=client_sections,
+        )
         return response
 
     def _new_review_response(self, *, portfolio_id: str, as_of_date: str) -> dict[str, object]:
