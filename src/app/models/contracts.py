@@ -65,6 +65,7 @@ class PortfolioReviewReportRequest(BaseModel):
     reporting_currency: str | None = Field(default=None, alias="reportingCurrency")
     allocation_dimensions: list[str] | None = Field(default=None, alias="allocationDimensions")
     look_through_mode: str | None = Field(default=None, alias="lookThroughMode")
+    benchmark_code: str | None = Field(default=None, alias="benchmarkCode")
 
     model_config = {
         "extra": "allow",
@@ -76,11 +77,13 @@ class PortfolioReviewReportRequest(BaseModel):
                     "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE"],
                     "reporting_currency": "USD",
                     "allocation_dimensions": ["asset_class", "currency"],
+                    "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
                 },
                 {
                     "asOfDate": "2026-04-22",
                     "sections": ["OVERVIEW", "HOLDINGS"],
                     "reportingCurrency": "SGD",
+                    "benchmarkCode": "BMK_APAC_BALANCED",
                 },
             ]
         },
@@ -108,6 +111,7 @@ class PortfolioReviewReportResponse(BaseModel):
     as_of_date: date
     generated_at: datetime
     readiness: PortfolioReviewReadiness
+    methodology: dict[str, Any] = Field(default_factory=dict)
     client_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     advisor_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     overview: dict[str, Any] | None = None
@@ -129,6 +133,10 @@ class PortfolioReviewReportResponse(BaseModel):
                     "as_of_date": "2026-04-22",
                     "generated_at": "2026-04-22T09:00:00Z",
                     "readiness": {"status": "ready"},
+                    "methodology": {
+                        "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
+                        "return_methodology": "time_weighted_return",
+                    },
                     "client_sections": [
                         {
                             "section_id": "executive_summary",
@@ -153,6 +161,10 @@ class PortfolioReviewReportResponse(BaseModel):
                     "readiness": {
                         "status": "partial",
                         "reason": "Performance section is unavailable for the selected request.",
+                    },
+                    "methodology": {
+                        "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
+                        "return_methodology": "time_weighted_return",
                     },
                     "client_sections": [
                         {

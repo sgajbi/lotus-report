@@ -11,6 +11,7 @@ AS_OF_DATE_KEYS = ("as_of_date", "asOfDate")
 REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
 LOOK_THROUGH_MODE_KEYS = ("look_through_mode", "lookThroughMode")
 ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions", "allocationDimensions")
+BENCHMARK_CODE_KEYS = ("benchmark_code", "benchmarkCode")
 REVIEW_SECTION_DEFINITIONS = (
     ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
     ("ALLOCATION", "asset_allocation", "Asset Allocation And Portfolio Construction", "allocation"),
@@ -164,6 +165,7 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
         )
+        response["methodology"] = self._review_methodology(request_payload)
         transaction_rows: list[dict[str, object]] | None = None
 
         if "OVERVIEW" in requested_sections:
@@ -234,7 +236,10 @@ class ReportingReadService:
             if performance_status < status.HTTP_400_BAD_REQUEST:
                 workspace_summary_payload = performance_payload
             if performance_status < status.HTTP_400_BAD_REQUEST:
-                response["performance"] = self._map_workspace_performance(performance_payload)
+                response["performance"] = self._map_workspace_performance(
+                    performance_payload,
+                    request_payload=request_payload,
+                )
             else:
                 response["performance"] = None
 
@@ -263,6 +268,7 @@ class ReportingReadService:
             "as_of_date": as_of_date,
             "generated_at": datetime.now(timezone.utc),
             "readiness": {"status": "ready"},
+            "methodology": self._review_methodology({}),
         }
 
     def _review_readiness(
@@ -921,7 +927,12 @@ class ReportingReadService:
         amount = self._to_float(value)
         return abs(amount)
 
-    def _map_workspace_performance(self, payload: dict[str, object]) -> dict[str, object]:
+    def _map_workspace_performance(
+        self,
+        payload: dict[str, object],
+        request_payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        request_payload = request_payload or {}
         results_by_period = self._as_dict(payload.get("results_by_period"))
         summary: dict[str, object] = {}
         for period, row in results_by_period.items():
@@ -929,15 +940,45 @@ class ReportingReadService:
             portfolio_twr = self._as_dict(row_dict.get("portfolio_twr"))
             net_summary = self._as_dict(self._as_dict(portfolio_twr.get("net")).get("summary"))
             gross_summary = self._as_dict(self._as_dict(portfolio_twr.get("gross")).get("summary"))
+            annualized_supported = self._annualized_return_supported(period)
             summary[period] = {
                 "start_date": self._workspace_period_start(row_dict),
                 "end_date": self._workspace_period_end(row_dict),
                 "net_cumulative_return": self._return_base(net_summary, "cumulative_return"),
-                "net_annualized_return": self._return_base(net_summary, "annualized_return"),
+                "net_annualized_return": (
+                    self._return_base(net_summary, "annualized_return")
+                    if annualized_supported
+                    else None
+                ),
                 "gross_cumulative_return": self._return_base(gross_summary, "cumulative_return"),
-                "gross_annualized_return": self._return_base(gross_summary, "annualized_return"),
+                "gross_annualized_return": (
+                    self._return_base(gross_summary, "annualized_return")
+                    if annualized_supported
+                    else None
+                ),
+                "annualized_return_supported": annualized_supported,
             }
-        return {"summary": summary}
+        return {
+            "summary": summary,
+            "benchmark": {
+                "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+            },
+            "methodology": self._review_methodology(request_payload),
+        }
+
+    def _annualized_return_supported(self, period: object) -> bool:
+        return isinstance(period, str) and period.upper() in {"THREE_YEAR", "FIVE_YEAR", "SI"}
+
+    def _review_methodology(self, request_payload: dict[str, object]) -> dict[str, object]:
+        return {
+            "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
+            "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
+            "fee_treatment": "source_provided",
+            "return_methodology": "time_weighted_return",
+            "annualization_policy": (
+                "Sub-year annualized returns are suppressed unless source support is explicit."
+            ),
+        }
 
     def _build_workspace_summary_request(
         self,

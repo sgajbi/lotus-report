@@ -268,6 +268,8 @@ def test_openapi_uses_typed_portfolio_review_contract():
 
     assert response_schema["$ref"].endswith("/PortfolioReviewReportResponse")
     assert request_schema["$ref"].endswith("/PortfolioReviewReportRequest")
+    request_contract = schema["components"]["schemas"]["PortfolioReviewReportRequest"]
+    assert "benchmarkCode" in request_contract["properties"]
 
 
 def test_ras_portfolio_review_propagates_upstream_error():

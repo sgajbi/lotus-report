@@ -394,6 +394,7 @@ async def test_review_composes_core_query_performance_and_risk():
         "P1",
         {
             "as_of_date": "2026-02-24",
+            "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
             "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
         },
         "CID-1",
@@ -403,6 +404,8 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["portfolio_id"] == "P1"
     assert response["as_of_date"] == "2026-02-24"
     assert response["readiness"] == {"status": "ready"}
+    assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
+    assert response["methodology"]["return_methodology"] == "time_weighted_return"
     assert [section["section_id"] for section in response["client_sections"]] == [
         "executive_summary",
         "asset_allocation",
@@ -422,6 +425,10 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["advisor_sections"] == []
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
+    assert response["performance"]["benchmark"] == {"benchmark_code": "BMK_GLOBAL_BALANCED_60_40"}
+    assert response["performance"]["summary"]["MTD"]["net_annualized_return"] is None
+    assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
+    assert response["performance"]["summary"]["THREE_YEAR"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
 
