@@ -24,6 +24,8 @@
 - reporting payload quality depends on upstream fidelity and contract handling
 - direct process port `8300` is useful for local debugging, but canonical cross-app validation
   should use `report.dev.lotus`
+- Docker Compose uses `host.docker.internal` upstream URLs so the container can reach the
+  host-published canonical upstream ports while callers continue to use `report.dev.lotus`
 
 ## Practical probes
 

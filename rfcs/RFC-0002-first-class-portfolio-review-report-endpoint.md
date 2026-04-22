@@ -758,6 +758,11 @@ Closure decisions:
    allowed `not_applicable` section states but the service did not emit them. The closure hardening
    pass now marks requested supporting sections with no applicable income/activity, holdings, or
    transactions as `not_applicable` with source-backed evidence.
+8. A follow-up runtime proof review identified an operational gap in local Docker Compose: the
+   container could expose `report.dev.lotus` to callers while failing to reach host-published
+   canonical upstream ports. The closure hardening pass now configures Compose with explicit
+   host-reachable upstream URLs and a regression test so canonical front-office proof does not
+   require ad hoc container replacement.
 
 Exit criteria:
 

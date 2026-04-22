@@ -193,6 +193,16 @@ Cross-app upstream defaults in local runtime:
 - `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
 
+When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
+container uses host-reachable upstream URLs instead:
+
+- `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
+- `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
+- `RISK_BASE_URL=http://host.docker.internal:8130`
+
+This keeps `report.dev.lotus` stable for callers while allowing the containerized report service to
+reach the host-published canonical upstream ports.
+
 Current orchestration model:
 
 1. summary/reporting views use lotus-core portfolio summary, asset allocation, positions, and
