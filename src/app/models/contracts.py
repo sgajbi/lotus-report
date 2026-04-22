@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,3 +57,85 @@ class IntegrationCapabilitiesResponse(BaseModel):
     supported_input_modes: list[str] = Field(alias="supportedInputModes")
 
     model_config = {"populate_by_name": True}
+
+
+class PortfolioReviewReportRequest(BaseModel):
+    as_of_date: date = Field(..., alias="asOfDate")
+    sections: list[str] | None = None
+    reporting_currency: str | None = Field(default=None, alias="reportingCurrency")
+    allocation_dimensions: list[str] | None = Field(default=None, alias="allocationDimensions")
+    look_through_mode: str | None = Field(default=None, alias="lookThroughMode")
+
+    model_config = {
+        "extra": "allow",
+        "populate_by_name": True,
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "as_of_date": "2026-04-22",
+                    "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE"],
+                    "reporting_currency": "USD",
+                    "allocation_dimensions": ["asset_class", "currency"],
+                },
+                {
+                    "asOfDate": "2026-04-22",
+                    "sections": ["OVERVIEW", "HOLDINGS"],
+                    "reportingCurrency": "SGD",
+                },
+            ]
+        },
+    }
+
+
+class PortfolioReviewReadiness(BaseModel):
+    status: Literal["ready", "partial", "unavailable"]
+    reason: str | None = None
+
+
+class PortfolioReviewReportResponse(BaseModel):
+    contract_version: str = "v1"
+    report_id: str
+    portfolio_id: str
+    as_of_date: date
+    generated_at: datetime
+    readiness: PortfolioReviewReadiness
+    overview: dict[str, Any] | None = None
+    allocation: dict[str, Any] | None = None
+    performance: dict[str, Any] | None = None
+    risk_analytics: dict[str, Any] | None = Field(default=None, alias="riskAnalytics")
+    income_and_activity: dict[str, Any] | None = Field(default=None, alias="incomeAndActivity")
+    holdings: dict[str, Any] | None = None
+    transactions: dict[str, Any] | None = None
+
+    model_config = {
+        "populate_by_name": True,
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "contract_version": "v1",
+                    "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "as_of_date": "2026-04-22",
+                    "generated_at": "2026-04-22T09:00:00Z",
+                    "readiness": {"status": "ready"},
+                    "overview": {
+                        "total_market_value": 1000000.0,
+                        "total_cash": 50000.0,
+                        "currency": "USD",
+                    },
+                },
+                {
+                    "contract_version": "v1",
+                    "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "as_of_date": "2026-04-22",
+                    "generated_at": "2026-04-22T09:00:00Z",
+                    "readiness": {
+                        "status": "partial",
+                        "reason": "Performance section is unavailable for the selected request.",
+                    },
+                    "performance": None,
+                },
+            ]
+        },
+    }

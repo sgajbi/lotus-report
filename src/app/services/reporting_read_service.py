@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 
 from app.clients.core_query_client import CoreQueryClient
@@ -144,7 +146,10 @@ class ReportingReadService:
         summary = self._unwrap_core_query_summary(
             status_code=summary_status, payload=summary_payload
         )
-        response: dict[str, object] = {"portfolio_id": portfolio_id, "as_of_date": as_of_date}
+        response: dict[str, object] = self._new_review_response(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+        )
         transaction_rows: list[dict[str, object]] | None = None
 
         if "OVERVIEW" in requested_sections:
@@ -227,7 +232,42 @@ class ReportingReadService:
                 workspace_summary_payload=workspace_summary_payload,
             )
 
+        response["readiness"] = self._review_readiness(
+            response=response,
+            requested_sections=requested_sections,
+        )
         return response
+
+    def _new_review_response(self, *, portfolio_id: str, as_of_date: str) -> dict[str, object]:
+        return {
+            "contract_version": settings.contract_version,
+            "report_id": f"portfolio-review:{portfolio_id}:{as_of_date}",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of_date,
+            "generated_at": datetime.now(timezone.utc),
+            "readiness": {"status": "ready"},
+        }
+
+    def _review_readiness(
+        self,
+        *,
+        response: dict[str, object],
+        requested_sections: set[str],
+    ) -> dict[str, object]:
+        unavailable_sections: list[str] = []
+        if "PERFORMANCE" in requested_sections and response.get("performance") is None:
+            unavailable_sections.append("PERFORMANCE")
+        if "RISK_ANALYTICS" in requested_sections and response.get("riskAnalytics") is None:
+            unavailable_sections.append("RISK_ANALYTICS")
+
+        if not unavailable_sections:
+            return {"status": "ready"}
+        return {
+            "status": "partial",
+            "reason": (
+                "Unavailable sections for the selected request: " + ", ".join(unavailable_sections)
+            ),
+        }
 
     async def _build_risk_analytics(
         self,

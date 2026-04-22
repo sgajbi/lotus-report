@@ -398,7 +398,11 @@ async def test_review_composes_core_query_performance_and_risk():
         },
         "CID-1",
     )
+    assert response["contract_version"] == "v1"
+    assert response["report_id"] == "portfolio-review:P1:2026-02-24"
     assert response["portfolio_id"] == "P1"
+    assert response["as_of_date"] == "2026-02-24"
+    assert response["readiness"] == {"status": "ready"}
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert "YTD" in response["riskAnalytics"]["results"]
@@ -418,6 +422,10 @@ async def test_review_sets_performance_none_when_performance_unavailable():
         None,
     )
     assert response["performance"] is None
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Unavailable sections for the selected request: PERFORMANCE",
+    }
 
 
 @pytest.mark.asyncio
@@ -433,6 +441,10 @@ async def test_review_sets_risk_none_when_upstreams_fail():
         None,
     )
     assert response["riskAnalytics"] is None
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Unavailable sections for the selected request: RISK_ANALYTICS",
+    }
 
 
 @pytest.mark.asyncio

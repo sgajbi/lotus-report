@@ -2,7 +2,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Path, Query
 
-from app.models.contracts import ReportRequest, ReportResponse
+from app.models.contracts import (
+    PortfolioReviewReportRequest,
+    PortfolioReviewReportResponse,
+    ReportRequest,
+    ReportResponse,
+)
 from app.services.report_service import ReportService
 from app.services.reporting_read_service import ReportingReadService
 
@@ -62,16 +67,17 @@ async def get_portfolio_summary(
 
 @router.post(
     "/portfolios/{portfolio_id}/review",
-    response_model=dict[str, Any],
+    response_model=PortfolioReviewReportResponse,
     summary="Get portfolio review report (lotus-report-owned)",
     description=(
         "lotus-report-owned reporting endpoint for portfolio review report payload. "
-        "Phase-1 source is lotus-core upstream while ownership moves to lotus-report."
+        "Returns the typed RFC-0002 portfolio review report contract while preserving "
+        "current legacy report groups during rollout."
     ),
 )
 async def get_portfolio_review(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
-    request: dict[str, Any],
+    request: PortfolioReviewReportRequest,
     section_limit: Annotated[
         int, Query(alias="sectionLimit", ge=1, le=20, description="pagination")
     ] = 10,
@@ -80,6 +86,8 @@ async def get_portfolio_review(
 ) -> dict[str, Any]:
     return await service.get_portfolio_review(
         portfolio_id=portfolio_id,
-        request_payload=_apply_requested_section_limit(request, section_limit),
+        request_payload=_apply_requested_section_limit(
+            request.model_dump(exclude_none=True, mode="json"), section_limit
+        ),
         correlation_id=correlation_id,
     )
