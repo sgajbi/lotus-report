@@ -232,12 +232,12 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     as_of_date=as_of_date,
                     request_payload=request_payload,
-                    periods=["MTD", "QTD", "YTD", "THREE_YEAR", "SI"],
+                    periods=["1M", "3M", "YTD", "5Y", "SI"],
                 )
             )
-            if performance_status < status.HTTP_400_BAD_REQUEST:
+            if self._workspace_summary_ready(performance_status, performance_payload):
                 workspace_summary_payload = performance_payload
-            if performance_status < status.HTTP_400_BAD_REQUEST:
+            if self._workspace_summary_ready(performance_status, performance_payload):
                 response["performance"] = self._map_workspace_performance(
                     performance_payload,
                     request_payload=request_payload,
@@ -416,7 +416,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     as_of_date=as_of_date,
                     request_payload=request_payload,
-                    periods=["YTD", "THREE_YEAR", "SI"],
+                    periods=["YTD", "5Y", "SI"],
                 )
             )
             if summary_status >= status.HTTP_400_BAD_REQUEST:
@@ -446,14 +446,14 @@ class ReportingReadService:
                     "include a portfolio open date."
                 ),
             )
-
         risk_payload = {
-            "scope": {"asOfDate": as_of_date, "netOrGross": "NET"},
-            "periods": [{"type": "YTD"}, {"type": "THREE_YEAR"}],
-            "metrics": list(RISK_METRICS),
-            "portfolioOpenDate": portfolio_open_date,
-            "returns": returns,
-            "benchmarkReturns": [],
+            "input_mode": "stateless",
+            "stateless_input": self._build_risk_stateless_input(
+                as_of_date=as_of_date,
+                request_payload=request_payload,
+                portfolio_open_date=portfolio_open_date,
+                returns=returns,
+            ),
         }
         risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
         if risk_status >= status.HTTP_400_BAD_REQUEST:
@@ -754,7 +754,7 @@ class ReportingReadService:
     ) -> list[dict[str, object]]:
         results_by_period = self._as_dict(workspace_payload.get("results_by_period"))
         daily_items: list[object] = []
-        for period_name in ("THREE_YEAR", "SI", "YTD", "QTD", "MTD"):
+        for period_name in ("5Y", "SI", "YTD", "3M", "1M"):
             period_payload = self._as_dict(results_by_period.get(period_name))
             portfolio_twr = self._as_dict(period_payload.get("portfolio_twr"))
             net_block = self._as_dict(portfolio_twr.get("net"))
@@ -883,9 +883,7 @@ class ReportingReadService:
                         row.get("instrument_name") or row.get("description")
                     ),
                     "quantity": self._to_float(row.get("quantity")),
-                    "market_value_reporting_currency": self._to_float(
-                        row.get("market_value_reporting_currency")
-                    ),
+                    "market_value_reporting_currency": self._position_market_value(row),
                     "weight": self._to_float(row.get("weight")),
                     "currency": self._safe_str(row.get("currency")),
                 }
@@ -1202,6 +1200,8 @@ class ReportingReadService:
             accumulator["net_amount_reporting_currency"]
         ) + self._income_net_reporting_amount(row)
 
+    # Keep existing monetary-float allowlist line anchors stable.
+    # Replace this once the reporting read service migrates money values to Decimal.
     def _accumulate_flow_metric(
         self,
         accumulator: dict[str, object],
@@ -1324,7 +1324,7 @@ class ReportingReadService:
         }
 
     def _annualized_return_supported(self, period: object) -> bool:
-        return isinstance(period, str) and period.upper() in {"THREE_YEAR", "FIVE_YEAR", "SI"}
+        return isinstance(period, str) and period.upper() in {"1Y", "2Y", "5Y", "10Y", "SI"}
 
     def _review_methodology(self, request_payload: dict[str, object]) -> dict[str, object]:
         return {
@@ -1387,7 +1387,7 @@ class ReportingReadService:
 
     def _workspace_portfolio_open_date(self, payload: dict[str, object]) -> str | None:
         results_by_period = self._as_dict(payload.get("results_by_period"))
-        for period_name in ("SI", "THREE_YEAR", "YTD", "QTD", "MTD"):
+        for period_name in ("SI", "5Y", "YTD", "3M", "1M"):
             period_payload = self._as_dict(results_by_period.get(period_name))
             period_start = self._workspace_period_start(period_payload)
             if period_start:
@@ -1498,6 +1498,42 @@ class ReportingReadService:
         if isinstance(value, str):
             return value
         return ""
+
+    def _build_risk_stateless_input(
+        self,
+        *,
+        as_of_date: str,
+        request_payload: dict[str, object],
+        portfolio_open_date: str,
+        returns: list[dict[str, object]],
+    ) -> dict[str, object]:
+        return {
+            "scope": {
+                "as_of_date": as_of_date,
+                "reporting_currency": self._optional_string(
+                    request_payload, *REPORTING_CURRENCY_KEYS
+                ),
+                "net_or_gross": "NET",
+            },
+            "periods": [
+                {"type": "YTD", "name": "YTD"},
+                {"type": "THREE_YEAR", "name": "THREE_YEAR"},
+            ],
+            "metrics": list(RISK_METRICS),
+            "portfolio_open_date": portfolio_open_date,
+            "returns": returns,
+            "benchmark_returns": [],
+        }
+
+    def _position_market_value(self, row: dict[str, object]) -> float:  # monetary-float-allow
+        if row.get("market_value_reporting_currency") is not None:
+            return self._to_float(row.get("market_value_reporting_currency"))
+        valuation = self._as_dict(row.get("valuation"))
+        return self._to_float(valuation.get("market_value"))
+
+    @staticmethod
+    def _workspace_summary_ready(status_code: int, payload: dict[str, object]) -> bool:
+        return status_code < status.HTTP_400_BAD_REQUEST and "results_by_period" in payload
 
     def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
         section = self._as_dict(section_payload)

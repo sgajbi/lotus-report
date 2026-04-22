@@ -109,7 +109,7 @@ class _CoreQueryClientSuccess:
                     "instrument_name": "Equity 1",
                     "asset_class": "Equity",
                     "quantity": 10,
-                    "market_value_reporting_currency": 600000.0,
+                    "valuation": {"market_value": "600000.0"},
                     "weight": 0.6,
                     "currency": "USD",
                 },
@@ -127,10 +127,14 @@ class _CoreQueryClientSuccess:
 
 
 class _PerformanceClientSuccess:
+    def __init__(self):
+        self.seen_payloads: list[dict[str, object]] = []
+
     async def get_workspace_summary(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
         return 200, {
             "results_by_period": {
-                "MTD": {
+                "1M": {
                     "portfolio_twr": {
                         "net": {
                             "summary": {
@@ -182,7 +186,7 @@ class _PerformanceClientSuccess:
                     },
                     "money_weighted_return": {"start_date": "2026-01-01", "end_date": "2026-02-24"},
                 },
-                "THREE_YEAR": {
+                "5Y": {
                     "portfolio_twr": {
                         "net": {
                             "summary": {
@@ -213,12 +217,16 @@ class _PerformanceClientSuccess:
 
 
 class _RiskClientSuccess:
+    def __init__(self):
+        self.seen_payloads: list[dict[str, object]] = []
+
     async def calculate_risk(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
         return 200, {
             "results": {
                 "YTD": {
-                    "startDate": "2025-01-01",
-                    "endDate": "2025-02-24",
+                    "start_date": "2025-01-01",
+                    "end_date": "2025-02-24",
                     "metrics": {
                         "VOLATILITY": {"value": 0.12},
                         "SHARPE": {"value": 1.05},
@@ -412,15 +420,18 @@ async def test_summary_honors_requested_allocation_dimensions():
 
 @pytest.mark.asyncio
 async def test_review_composes_core_query_performance_and_risk():
+    performance_client = _PerformanceClientSuccess()
+    risk_client = _RiskClientSuccess()
     service = ReportingReadService(
         core_query_client=_CoreQueryClientSuccess(),
-        performance_client=_PerformanceClientSuccess(),
-        risk_client=_RiskClientSuccess(),
+        performance_client=performance_client,
+        risk_client=risk_client,
     )
     response = await service.get_portfolio_review(
         "P1",
         {
             "as_of_date": "2026-02-24",
+            "reporting_currency": "USD",
             "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
             "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
         },
@@ -433,6 +444,30 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["readiness"] == {"status": "ready"}
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
+    requested_periods = [
+        period["period"] for period in performance_client.seen_payloads[0]["periods"]
+    ]
+    assert requested_periods == ["1M", "3M", "YTD", "5Y", "SI"]
+    assert risk_client.seen_payloads == [
+        {
+            "input_mode": "stateless",
+            "stateless_input": {
+                "scope": {
+                    "as_of_date": "2026-02-24",
+                    "reporting_currency": "USD",
+                    "net_or_gross": "NET",
+                },
+                "periods": [
+                    {"type": "YTD", "name": "YTD"},
+                    {"type": "THREE_YEAR", "name": "THREE_YEAR"},
+                ],
+                "metrics": ["VOLATILITY", "SHARPE", "DRAWDOWN", "VAR"],
+                "portfolio_open_date": "2023-02-24",
+                "returns": [{"date": "2026-02-24", "value": 1.0}],
+                "benchmark_returns": [],
+            },
+        }
+    ]
     assert response["evidence"]["product_id"] == "lotus-report:ClientReportEvidencePack:v1"
     assert response["evidence"]["lineage_bundle_id"] == (
         "lineage:lotus-report:portfolio-review:P1:2026-02-24"
@@ -501,9 +536,9 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert response["performance"]["benchmark"] == {"benchmark_code": "BMK_GLOBAL_BALANCED_60_40"}
-    assert response["performance"]["summary"]["MTD"]["net_annualized_return"] is None
+    assert response["performance"]["summary"]["1M"]["net_annualized_return"] is None
     assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
-    assert response["performance"]["summary"]["THREE_YEAR"]["net_annualized_return"] == 3.9
+    assert response["performance"]["summary"]["5Y"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
     assert response["riskAnalytics"]["source"]["service"] == "lotus-risk"
     assert response["riskAnalytics"]["supportability"]["status"] == "ready"
@@ -525,7 +560,7 @@ async def test_review_composes_core_query_performance_and_risk():
         "currency": "",
     }
     assert client_sections["performance_review"]["items"][0]["item_type"] == ("performance_period")
-    assert client_sections["performance_review"]["items"][0]["period"] == "MTD"
+    assert client_sections["performance_review"]["items"][0]["period"] == "1M"
     assert client_sections["risk_review"]["items"] == [
         {
             "item_type": "risk_period",
@@ -541,6 +576,10 @@ async def test_review_composes_core_query_performance_and_risk():
         "position_count": 2,
     }
     assert client_sections["holdings_appendix"]["items"][1]["item_type"] == "holding"
+    assert (
+        client_sections["holdings_appendix"]["items"][1]["market_value_reporting_currency"]
+        == 600000.0
+    )
 
 
 @pytest.mark.asyncio

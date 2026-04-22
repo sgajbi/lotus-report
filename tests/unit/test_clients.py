@@ -38,6 +38,26 @@ class _RecordingAsyncClient:
         return self.response
 
 
+class _SequencedRecordingAsyncClient:
+    def __init__(self, responses: list[_FakeResponse]):
+        self.responses = responses
+        self.calls: list[dict] = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url: str, json: dict, headers: dict):
+        self.calls.append({"method": "POST", "url": url, "json": json, "headers": headers})
+        return self.responses.pop(0)
+
+    async def get(self, url: str, params: dict, headers: dict):
+        self.calls.append({"method": "GET", "url": url, "params": params, "headers": headers})
+        return self.responses.pop(0)
+
+
 @pytest.mark.parametrize(
     ("payload", "text", "expected"),
     [
@@ -74,6 +94,56 @@ async def test_performance_client_get_workspace_summary_posts_expected_contract(
     assert recorder.calls[0]["url"] == "http://performance/performance/workspace-summary"
     assert recorder.calls[0]["json"]["portfolio_id"] == "P1"
     assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-1"
+
+
+@pytest.mark.asyncio
+async def test_performance_client_polls_async_workspace_summary_result(monkeypatch):
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=200,
+                payload={
+                    "calculation_id": "calc-1",
+                    "result_path": "/performance/workspace-summary/results/calc-1",
+                },
+            ),
+            _FakeResponse(
+                status_code=200,
+                payload={
+                    "calculation_id": "calc-1",
+                    "result_path": "/performance/workspace-summary/results/calc-1",
+                },
+            ),
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _no_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_workspace_summary(
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+    )
+
+    assert status_code == 200
+    assert payload == {"results_by_period": {"YTD": {}}}
+    assert [call["method"] for call in recorder.calls] == ["POST", "GET", "GET"]
+    assert recorder.calls[1]["url"] == (
+        "http://performance/performance/workspace-summary/results/calc-1"
+    )
 
 
 @pytest.mark.parametrize(
