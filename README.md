@@ -1,6 +1,7 @@
 # lotus-report
 
-Reporting and aggregation service for Lotus portfolio summary and portfolio review payloads.
+Reporting and aggregation service for Lotus portfolio summary, portfolio review, and evidence
+payloads.
 
 Repository-local engineering context:
 [REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md)
@@ -49,13 +50,58 @@ Boundary rules that matter:
    `lotus-performance`, and `lotus-risk`.
 2. It is part of the canonical front-office stack and is exposed through `report.dev.lotus`.
 3. `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
-   report contract with typed request/response models, normalized machine-readable JSON section
-   items, explicit section readiness, evidence lineage, and advisor-only discussion sections.
+   report contract with typed request/response models, normalized machine-readable JSON,
+   client/advisor section separation, explicit section readiness, evidence lineage, source-backed
+   key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
+   metadata.
 4. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 5. Request conventions are mixed by surface: integration capabilities use snake_case query
    parameters, while several reporting and aggregation request shapes still expose camelCase aliases
    such as `asOfDate` and `sectionLimit`.
+
+## First-Class Portfolio Review
+
+The portfolio review endpoint is the main front-office reporting capability in this repository. It
+is designed for client advisor review meetings where the output must be useful to a human advisor,
+machine-readable for Workbench/gateway consumers, and honest about what is sourced versus not
+sourced.
+
+The response includes:
+
+- `clientProfile`
+  source-backed client, advisor, booking-center, mandate, objective, risk exposure, horizon,
+  leverage, status, and cost-basis context from `lotus-core`
+- `keyFigures`
+  normalized portfolio value, allocation, performance, risk, income/activity, holdings,
+  unrealized P&L, position contribution, and client-profile figures
+- `client_sections`
+  ordered client-ready report sections with explicit readiness states
+- `advisor_sections`
+  advisor-only deterministic prompts and route targets that must not be rendered as client report
+  content without an explicit product decision
+- `reportCoverage` and `reviewObservations`
+  sourced, partial, and missing coverage so unsupported gold-standard material is visible instead
+  of silently omitted
+- `reportStructure` and `advisorBriefing`
+  deterministic meeting-pack organization and advisor-useful talking points
+- `aiReadiness`
+  guarded metadata for grounded AI assistance, with trade recommendations, suitability
+  determinations, and inferred client profiles explicitly blocked
+- `evidence`
+  lineage and trust metadata for downstream governance and auditability
+
+Current live-proof portfolio:
+
+- governed portfolio id: `PB_SG_GLOBAL_BAL_001`
+- governed local endpoint:
+  `POST http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20`
+- full example and operating guidance:
+  [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
+
+Important limitation: `lotus-report` does not invent suitability, target allocation, product
+restriction, liquidity-need, tax-lot, or realized-gain/loss facts. Those must come from the
+authoritative upstream owner before they become report-backed product features.
 
 ## Architecture At A Glance
 
@@ -184,6 +230,8 @@ Important current request conventions:
 Keep those differences explicit in documentation until the repo intentionally standardizes them.
 
 Copy-paste request examples live in [wiki/API-Surface.md](wiki/API-Surface.md).
+The portfolio review contract is explained in
+[wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md).
 
 ## Upstream Defaults
 
@@ -238,6 +286,8 @@ Current orchestration model:
   [docs/operations/development-workflow-and-ci-strategy.md](docs/operations/development-workflow-and-ci-strategy.md)
 - supported features:
   [docs/supported-features.md](docs/supported-features.md)
+- portfolio review report guide:
+  [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
 - local standards:
   [docs/standards](docs/standards)
 - wiki home:

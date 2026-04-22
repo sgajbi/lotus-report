@@ -19,9 +19,16 @@
 - typecheck is part of the fast gate
 - migration smoke and security audit are part of PR-grade validation
 - enterprise readiness and observability behavior are covered by unit tests
+- portfolio review responses preserve source refs, readiness state, report coverage, and
+  advisor/client separation so downstream consumers can distinguish sourced facts from missing
+  evidence
+- AI readiness is metadata only; the report endpoint does not issue trade recommendations,
+  suitability determinations, or inferred client-profile facts
 
 ## Operational discipline
 
 - keep reporting contract ownership separate from upstream domain truth
 - use canonical service identity for cross-app validation
 - keep request-convention documentation explicit while the surface is mixed
+- expose suitability, mandate-control, tax, and realized-gain/loss gaps explicitly until governed
+  upstream sources provide them
