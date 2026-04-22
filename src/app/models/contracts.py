@@ -112,6 +112,7 @@ class PortfolioReviewReportResponse(BaseModel):
     generated_at: datetime
     readiness: PortfolioReviewReadiness
     methodology: dict[str, Any] = Field(default_factory=dict)
+    evidence: dict[str, Any] = Field(default_factory=dict)
     client_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     advisor_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     overview: dict[str, Any] | None = None
@@ -136,6 +137,13 @@ class PortfolioReviewReportResponse(BaseModel):
                     "methodology": {
                         "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
                         "return_methodology": "time_weighted_return",
+                    },
+                    "evidence": {
+                        "product_id": "lotus-report:ClientReportEvidencePack:v1",
+                        "lineage_bundle_id": (
+                            "lineage:lotus-report:portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22"
+                        ),
+                        "source_services": ["lotus-core"],
                     },
                     "client_sections": [
                         {
@@ -165,6 +173,13 @@ class PortfolioReviewReportResponse(BaseModel):
                     "methodology": {
                         "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
                         "return_methodology": "time_weighted_return",
+                    },
+                    "evidence": {
+                        "product_id": "lotus-report:ClientReportEvidencePack:v1",
+                        "lineage_bundle_id": (
+                            "lineage:lotus-report:portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22"
+                        ),
+                        "source_services": ["lotus-performance"],
                     },
                     "client_sections": [
                         {

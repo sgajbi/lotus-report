@@ -419,6 +419,24 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["readiness"] == {"status": "ready"}
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
+    assert response["evidence"]["product_id"] == "lotus-report:ClientReportEvidencePack:v1"
+    assert response["evidence"]["lineage_bundle_id"] == (
+        "lineage:lotus-report:portfolio-review:P1:2026-02-24"
+    )
+    assert response["evidence"]["correlation_id"] == "CID-1"
+    assert response["evidence"]["source_services"] == [
+        "lotus-core",
+        "lotus-performance",
+        "lotus-risk",
+    ]
+    source_refs = {
+        source_ref["section_id"]: source_ref for source_ref in response["evidence"]["source_refs"]
+    }
+    assert source_refs["executive_summary"]["source_service"] == "lotus-core"
+    assert source_refs["performance_review"]["source_service"] == "lotus-performance"
+    assert source_refs["risk_review"]["source_service"] == "lotus-risk"
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "complete"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_passed"
     assert [section["section_id"] for section in response["client_sections"]] == [
         "executive_summary",
         "asset_allocation",
@@ -497,6 +515,8 @@ async def test_review_sets_risk_unavailable_when_upstreams_fail():
     assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == (
         "risk_return_history_unavailable"
     )
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
     risk_section = next(
         section for section in response["client_sections"] if section["section_id"] == "risk_review"
     )

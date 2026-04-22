@@ -19,10 +19,12 @@ This document provides explicit implementation evidence pointers for active RFCs
   - `src/app/routers/reports.py` (`/reports/portfolios/{portfolio_id}/review`)
   - `src/app/services/reporting_read_service.py`
   - `contracts/domain-data-products/lotus-report-products.v1.json`
-- Implementation evidence to add during rollout:
-  - typed report request/response contracts
-  - review route contract tests
-  - evidence-pack and lineage tests
+- Implementation evidence added during rollout:
+  - typed report request/response contracts in `src/app/models/contracts.py`
+  - review route contract tests in `tests/integration/test_api.py`
+  - section, performance, risk, evidence, and lineage tests in
+    `tests/unit/test_reporting_read_service.py` and
+    `tests/unit/test_reporting_read_service_additional.py`
   - OpenAPI/vocabulary validation output
-  - supported-features rows promoted from `planned` to `implementation-backed`
+  - supported-features rows promoted from `planned` to `implementation-backed` only after closure
   - repo-local wiki usage examples

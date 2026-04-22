@@ -257,6 +257,12 @@ class ReportingReadService:
             requested_sections=requested_sections,
         )
         response["readiness"] = self._review_readiness(client_sections=client_sections)
+        response["evidence"] = self._review_evidence(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+            correlation_id=correlation_id,
+            response=response,
+        )
         response["client_sections"] = client_sections
         response["advisor_sections"] = []
         return response
@@ -270,6 +276,7 @@ class ReportingReadService:
             "generated_at": datetime.now(timezone.utc),
             "readiness": {"status": "ready"},
             "methodology": self._review_methodology({}),
+            "evidence": {},
         }
 
     def _review_readiness(
@@ -561,6 +568,151 @@ class ReportingReadService:
             if isinstance(message, str) and message:
                 return message
         return f"{title} is unavailable for this request."
+
+    def _review_evidence(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: str,
+        correlation_id: str | None,
+        response: dict[str, object],
+    ) -> dict[str, object]:
+        source_refs = self._review_source_refs(portfolio_id=portfolio_id, response=response)
+        source_services = sorted(
+            {
+                self._safe_str(source_ref.get("source_service"))
+                for source_ref in source_refs
+                if self._safe_str(source_ref.get("source_service"))
+            }
+        )
+        lineage_bundle_id = f"lineage:lotus-report:portfolio-review:{portfolio_id}:{as_of_date}"
+        evidence_bundle_id = f"evidence:lotus-report:portfolio-review:{portfolio_id}:{as_of_date}"
+        readiness_status = self._as_dict(response.get("readiness")).get("status", "ready")
+        completeness_status = "partial" if readiness_status == "partial" else "complete"
+        data_quality_status = (
+            "quality_warning" if readiness_status == "partial" else "quality_passed"
+        )
+        return {
+            "product_id": "lotus-report:ClientReportEvidencePack:v1",
+            "product_name": "ClientReportEvidencePack",
+            "product_version": "v1",
+            "lineage_bundle_id": lineage_bundle_id,
+            "evidence_bundle_id": evidence_bundle_id,
+            "evidence_access_class": "customer_consumable",
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of_date,
+            "correlation_id": correlation_id,
+            "source_services": source_services,
+            "source_refs": source_refs,
+            "trust_metadata": {
+                "product_name": "ClientReportEvidencePack",
+                "product_version": "v1",
+                "tenant_id": "default",
+                "generated_at": response.get("generated_at"),
+                "as_of_date": as_of_date,
+                "completeness_status": completeness_status,
+                "reconciliation_status": "reconciled",
+                "data_quality_status": data_quality_status,
+                "source_batch_fingerprint": f"portfolio-review:{portfolio_id}:{as_of_date}",
+                "lineage_bundle_id": lineage_bundle_id,
+                "correlation_id": correlation_id,
+            },
+        }
+
+    def _review_source_refs(
+        self, *, portfolio_id: str, response: dict[str, object]
+    ) -> list[dict[str, object]]:
+        refs: list[dict[str, object]] = []
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="overview",
+            section_id="executive_summary",
+            source_service="lotus-core",
+            source_endpoint="/reporting/portfolio-summary/query",
+            source_entity_id=portfolio_id,
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="allocation",
+            section_id="asset_allocation",
+            source_service="lotus-core",
+            source_endpoint="/reporting/asset-allocation/query",
+            source_entity_id=portfolio_id,
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="performance",
+            section_id="performance_review",
+            source_service="lotus-performance",
+            source_endpoint="/performance/workspace-summary",
+            source_entity_id=portfolio_id,
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="riskAnalytics",
+            section_id="risk_review",
+            source_service="lotus-risk",
+            source_endpoint="/analytics/risk/calculate",
+            source_entity_id=portfolio_id,
+            input_services=["lotus-performance"],
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="incomeAndActivity",
+            section_id="income_cash_activity",
+            source_service="lotus-core",
+            source_endpoint=f"/portfolios/{portfolio_id}/transactions",
+            source_entity_id=portfolio_id,
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="holdings",
+            section_id="holdings_appendix",
+            source_service="lotus-core",
+            source_endpoint=f"/portfolios/{portfolio_id}/positions",
+            source_entity_id=portfolio_id,
+        )
+        self._append_source_ref(
+            refs,
+            response=response,
+            response_key="transactions",
+            section_id="transactions_appendix",
+            source_service="lotus-core",
+            source_endpoint=f"/portfolios/{portfolio_id}/transactions",
+            source_entity_id=portfolio_id,
+        )
+        return refs
+
+    def _append_source_ref(
+        self,
+        refs: list[dict[str, object]],
+        *,
+        response: dict[str, object],
+        response_key: str,
+        section_id: str,
+        source_service: str,
+        source_endpoint: str,
+        source_entity_id: str,
+        input_services: list[str] | None = None,
+    ) -> None:
+        if response_key not in response:
+            return
+        source_ref: dict[str, object] = {
+            "section_id": section_id,
+            "response_key": response_key,
+            "source_service": source_service,
+            "source_endpoint": source_endpoint,
+            "source_entity_id": source_entity_id,
+        }
+        if input_services:
+            source_ref["input_services"] = input_services
+        refs.append(source_ref)
 
     def _extract_daily_returns_from_workspace_summary(
         self,
