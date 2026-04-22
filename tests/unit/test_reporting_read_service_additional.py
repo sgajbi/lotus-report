@@ -118,6 +118,35 @@ class _CoreQuerySuccessMinimal:
         }
 
 
+class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "reporting_currency": params.get("reporting_currency", "USD"),
+            "total": 0,
+            "skip": 0,
+            "limit": 500,
+            "transactions": [],
+        }
+
+    async def get_portfolio_positions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "total": 0,
+            "positions": [],
+        }
+
+
 class _PerformanceSuccessEmpty:
     async def get_workspace_summary(self, payload: dict[str, object]):
         return 200, {
@@ -581,6 +610,39 @@ async def test_review_section_envelope_marks_unrequested_sections_explicitly():
         for route_target in item["route_targets"]
     )
     assert all("advisor_only" not in section for section in response["client_sections"])
+
+
+@pytest.mark.asyncio
+async def test_review_marks_empty_supporting_sections_not_applicable():
+    service = ReportingReadService(
+        core_query_client=_CoreQueryNoActivity(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "sections": ["INCOME_AND_ACTIVITY", "HOLDINGS", "TRANSACTIONS"],
+        },
+        None,
+    )
+
+    sections = {section["section_id"]: section for section in response["client_sections"]}
+    for section_id in ("income_cash_activity", "holdings_appendix", "transactions_appendix"):
+        assert sections[section_id]["status"] == "not_applicable"
+        assert sections[section_id]["reason_code"] == "no_applicable_activity"
+        assert sections[section_id]["items"]
+    assert response["readiness"] == {"status": "ready"}
+    source_ref_ids = {
+        source_ref["section_id"] for source_ref in response["evidence"]["source_refs"]
+    }
+    assert {
+        "income_cash_activity",
+        "holdings_appendix",
+        "transactions_appendix",
+    } <= source_ref_ids
 
 
 @pytest.mark.asyncio

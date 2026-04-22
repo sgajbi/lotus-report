@@ -365,12 +365,40 @@ class ReportingReadService:
                 "items": [self._as_dict(section_payload)],
             }
 
+        if self._section_not_applicable(section_id=section_id, section_payload=section_payload):
+            return {
+                "section_id": section_id,
+                "title": title,
+                "status": "not_applicable",
+                "reason_code": "no_applicable_activity",
+                "message": f"{title} has no applicable activity for this request.",
+                "items": [self._as_dict(section_payload)],
+            }
+
         return {
             "section_id": section_id,
             "title": title,
             "status": "ready",
             "items": [self._as_dict(section_payload)],
         }
+
+    def _section_not_applicable(self, *, section_id: str, section_payload: object) -> bool:
+        section = self._as_dict(section_payload)
+        if section_id == "holdings_appendix":
+            return self._to_int(section.get("positionCount")) == 0
+        if section_id == "transactions_appendix":
+            return self._to_int(section.get("transactionCount")) == 0
+        if section_id == "income_cash_activity":
+            income_summary = self._as_dict(section.get("incomeSummary"))
+            activity_summary = self._as_dict(section.get("activitySummary"))
+            income_count = self._to_int(income_summary.get("transaction_count"))
+            activity_count = sum(
+                self._to_int(value)
+                for key, value in activity_summary.items()
+                if key.endswith("_transaction_count")
+            )
+            return income_count + activity_count == 0
+        return False
 
     async def _build_risk_analytics(
         self,

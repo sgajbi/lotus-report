@@ -216,7 +216,16 @@ class PortfolioReviewReportResponse(BaseModel):
                             "status": "unavailable",
                             "reason_code": "source_unavailable",
                             "message": "Performance Review is unavailable for this request.",
-                        }
+                        },
+                        {
+                            "section_id": "transactions_appendix",
+                            "title": "Transactions Appendix",
+                            "status": "not_applicable",
+                            "reason_code": "no_applicable_activity",
+                            "message": (
+                                "Transactions Appendix has no applicable activity for this request."
+                            ),
+                        },
                     ],
                     "advisor_sections": [
                         {

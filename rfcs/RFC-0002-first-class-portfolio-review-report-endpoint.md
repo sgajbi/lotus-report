@@ -754,6 +754,10 @@ Closure decisions:
    the workflow; no new repeatable cross-repo pattern emerged that should be promoted into a skill.
 6. Post-merge wiki publication remains an explicit operational step:
    `lotus-platform/automation/Sync-RepoWikis.ps1 -Publish -Repository lotus-report`.
+7. Final gold-standard review after Slice 11 identified one implementation gap: the contract
+   allowed `not_applicable` section states but the service did not emit them. The closure hardening
+   pass now marks requested supporting sections with no applicable income/activity, holdings, or
+   transactions as `not_applicable` with source-backed evidence.
 
 Exit criteria:
 
