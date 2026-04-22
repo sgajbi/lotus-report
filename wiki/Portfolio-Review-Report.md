@@ -32,9 +32,9 @@ The response separates audiences:
   client-ready report material
 - `advisor_sections`
   advisor-only prompts, checks, and route targets
-- `advisorBriefing`
+- `advisor_briefing`
   deterministic advisor meeting notes derived from sourced data and explicit gaps
-- `aiReadiness`
+- `ai_readiness`
   metadata for guarded AI assistance, not AI-generated advice
 
 Advisor-only material must not be rendered into client-facing output unless a future product slice
@@ -56,18 +56,18 @@ explicitly changes that rule and adds the right approval controls.
 Canonical local probe for the governed front-office portfolio:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20" \
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" \
   -H "Content-Type: application/json" \
   -H "X-Correlation-ID: rfc-0002-local-proof" \
-  -d "{\"asOfDate\":\"2026-04-22\",\"reportingCurrency\":\"USD\",\"benchmarkCode\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 Request convention notes:
 
-- `sectionLimit` is currently a camelCase query alias.
-- request bodies accept current compatibility keys such as `asOfDate`, `reportingCurrency`, and
-  `benchmarkCode`.
-- keep the exact request shape visible until the API surface is intentionally standardized.
+- Portfolio review uses canonical snake_case request fields and query parameters.
+- `section_limit`, `as_of_date`, `reporting_currency`, and `benchmark_code` are the supported
+  public names for this endpoint.
+- CamelCase request aliases are not part of the governed portfolio review contract.
 
 ## Response Shape
 
@@ -77,15 +77,16 @@ Top-level response families:
 | --- | --- |
 | `reportMetadata` | report id, portfolio id, as-of date, currency, audience posture, generated timestamp |
 | `readiness` | overall readiness status and report-level reasons |
-| `clientProfile` | source-backed client, advisor, booking center, mandate, objective, risk exposure, horizon, leverage, status, open date, base currency, and cost-basis method |
-| `keyFigures` | normalized front-office figures for portfolio value, allocation, performance, contribution, risk, income/activity, holdings, P&L, transactions, and profile state |
+| `client_profile` | source-backed client, advisor, booking center, mandate, objective, risk exposure, horizon, leverage, status, open date, base currency, and cost-basis method |
+| `key_figures` | normalized front-office figures for portfolio value, allocation, performance, contribution, risk, income/activity, holdings, P&L, transactions, and profile state |
 | `client_sections` | ordered client-ready sections with readiness states and machine-readable items |
 | `advisor_sections` | advisor-only deterministic checks, discussion prompts, and route targets |
-| `reportCoverage` | coverage map showing present, partial, unavailable, and not-sourced report families |
-| `reviewObservations` | review issues and advisor attention points derived from sourced figures and missing coverage |
-| `reportStructure` | recommended meeting-pack order for UI, document, or presentation consumers |
-| `advisorBriefing` | deterministic advisor talking points and required checks |
-| `aiReadiness` | guarded AI feature metadata and blocked AI use cases |
+| `report_coverage` | coverage map showing present, partial, unavailable, and not-sourced report families |
+| `upstream_capability_audit` | machine-readable certification audit separating source-backed capabilities from upstream gaps |
+| `review_observations` | review issues and advisor attention points derived from sourced figures and missing coverage |
+| `report_structure` | recommended meeting-pack order for UI, document, or presentation consumers |
+| `advisor_briefing` | deterministic advisor talking points and required checks |
+| `ai_readiness` | guarded AI feature metadata and blocked AI use cases |
 | `evidence` | source refs, lineage bundle, trust metadata, and domain-product context |
 
 ## Gold-Standard Figure Coverage
@@ -115,8 +116,8 @@ Current explicit gaps:
 - trade recommendations
 - AI-generated client advice
 
-These gaps are intentionally visible through `reportCoverage`, `reviewObservations`, and
-`aiReadiness`.
+These gaps are intentionally visible through `report_coverage`, `upstream_capability_audit`,
+`review_observations`, and `ai_readiness`.
 
 ## AI Assistance Posture
 
@@ -182,10 +183,10 @@ For live local proof:
 
 ```powershell
 docker compose up -d --build
-curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?sectionLimit=20" `
+curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" `
   -H "Content-Type: application/json" `
   -H "X-Correlation-ID: rfc-0002-local-proof" `
-  -d "{\"asOfDate\":\"2026-04-22\",\"reportingCurrency\":\"USD\",\"benchmarkCode\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 Do not treat a visually pleasant output as sufficient proof. A review report is only acceptable

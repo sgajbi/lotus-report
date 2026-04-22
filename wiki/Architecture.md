@@ -27,5 +27,5 @@
 1. upstream source truth stays upstream
 2. `lotus-report` owns reporting response shape and orchestration behavior
 3. capability publication uses snake_case query parameters today
-4. several reporting surfaces still expose camelCase request aliases such as `asOfDate` and
-   `sectionLimit`
+4. the first-class portfolio review endpoint publishes snake_case request, query, and response
+   fields only; remaining legacy aliases on other surfaces should be handled as cleanup debt
