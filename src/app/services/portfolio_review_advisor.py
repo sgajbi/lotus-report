@@ -161,6 +161,11 @@ def _performance_prompt(
         facts.append(f"YTD net cumulative return {_format_percent(net_cumulative_return)}")
     if benchmark_code:
         facts.append(f"benchmark {benchmark_code}")
+        comparison_status = _safe_str(
+            _as_dict(performance.get("benchmark")).get("comparison_status")
+        )
+        if comparison_status == "unavailable":
+            facts.append("benchmark comparison is not source-backed in this report")
     facts.append("sub-year annualized returns are suppressed unless source support is explicit")
     return _advisor_prompt(
         prompt_id="performance_discussion",
@@ -184,16 +189,36 @@ def _risk_prompt(
         return None
     supportability = _as_dict(risk.get("supportability"))
     notes = [_as_dict(note) for note in _as_list(supportability.get("notes"))]
-    if notes:
-        note_codes = ", ".join(
-            _safe_str(note.get("code")) for note in notes if _safe_str(note.get("code"))
+    ytd_summary = _as_dict(_as_dict(risk.get("summary")).get("YTD"))
+    facts = []
+    volatility = _optional_number(ytd_summary.get("volatility"))
+    drawdown = _optional_number(ytd_summary.get("drawdown"))
+    value_at_risk = _optional_number(ytd_summary.get("value_at_risk"))
+    if volatility is not None:
+        facts.append(f"volatility {_format_percent(volatility)}")
+    if drawdown is not None:
+        facts.append(f"drawdown {_format_percent(drawdown)}")
+    if value_at_risk is not None:
+        facts.append(f"value at risk {_format_percent(value_at_risk)}")
+    limitation_messages = [
+        _safe_str(note.get("message"))
+        for note in notes
+        if _safe_str(note.get("severity")) in {"warning", "blocking"}
+        and _safe_str(note.get("message"))
+    ]
+    if limitation_messages:
+        prompt = (
+            "Discuss YTD risk posture using "
+            + (", ".join(facts) if facts else "available sourced risk metrics")
+            + ". Supportability limitation: "
+            + " ".join(limitation_messages)
         )
-        prompt = f"Discuss risk supportability note codes: {note_codes}."
     else:
-        ytd_summary = _as_dict(_as_dict(risk.get("summary")).get("YTD"))
-        volatility = _format_percent(_to_decimal(ytd_summary.get("volatility")) * Decimal("100"))
-        drawdown = _format_percent(_to_decimal(ytd_summary.get("drawdown")) * Decimal("100"))
-        prompt = f"Discuss YTD risk posture using volatility {volatility} and drawdown {drawdown}."
+        prompt = (
+            "Discuss YTD risk posture using "
+            + (", ".join(facts) if facts else "available sourced risk metrics")
+            + "."
+        )
     return _advisor_prompt(
         prompt_id="risk_discussion",
         prompt=prompt,

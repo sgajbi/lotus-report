@@ -49,11 +49,14 @@ def test_advisor_sections_include_fact_backed_prompts_and_readiness_detail():
         "holdings": {"positionCount": "12"},
         "performance": {
             "summary": {"YTD": {"net_cumulative_return": "4.2"}},
-            "benchmark": {"benchmark_code": "BMK_GLOBAL_BALANCED_60_40"},
+            "benchmark": {
+                "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+                "comparison_status": "unavailable",
+            },
         },
         "riskAnalytics": {
             "supportability": {"notes": []},
-            "summary": {"YTD": {"volatility": "0.12", "drawdown": "-0.08"}},
+            "summary": {"YTD": {"volatility": "12", "drawdown": "-8", "value_at_risk": "-2"}},
         },
     }
     client_sections = [
@@ -83,11 +86,11 @@ def test_advisor_sections_include_fact_backed_prompts_and_readiness_detail():
     assert "12 sourced positions" in construction_prompt
     assert prompts["performance_discussion"]["prompt"] == (
         "Discuss performance using YTD net cumulative return 4.20%, benchmark "
-        "BMK_GLOBAL_BALANCED_60_40, sub-year annualized returns are suppressed unless source "
-        "support is explicit."
+        "BMK_GLOBAL_BALANCED_60_40, benchmark comparison is not source-backed in this report, "
+        "sub-year annualized returns are suppressed unless source support is explicit."
     )
     assert prompts["risk_discussion"]["prompt"] == (
-        "Discuss YTD risk posture using volatility 12.00% and drawdown -8.00%."
+        "Discuss YTD risk posture using volatility 12.00%, drawdown -8.00%, value at risk -2.00%."
     )
     assert all(item["source_refs"] for item in section["items"])
 
@@ -156,3 +159,40 @@ def test_advisor_sections_handle_decimal_values_and_benchmark_only_performance()
         "unless source support is explicit."
     )
     assert prompts["performance_discussion"]["source_refs"] == []
+
+
+def test_advisor_risk_prompt_explains_supportability_limitations_with_metrics():
+    response = {
+        "readiness": {"status": "partial"},
+        "evidence": {"source_refs": []},
+        "riskAnalytics": {
+            "supportability": {
+                "notes": [
+                    {
+                        "code": "missing_benchmark",
+                        "severity": "warning",
+                        "message": (
+                            "Benchmark-relative risk posture is unavailable because benchmark "
+                            "return series is not sourced for the risk calculation."
+                        ),
+                    }
+                ]
+            },
+            "summary": {"YTD": {"volatility": "2.5", "drawdown": "-1.2", "value_at_risk": "-0.4"}},
+        },
+    }
+    client_sections = [{"section_id": "risk_review", "title": "Risk Review", "status": "partial"}]
+
+    section = build_advisor_sections(
+        portfolio_id="P1",
+        as_of_date="2026-02-24",
+        response=response,
+        client_sections=client_sections,
+    )[0]
+
+    prompts = {item["prompt_id"]: item for item in section["items"]}
+    assert prompts["risk_discussion"]["prompt"] == (
+        "Discuss YTD risk posture using volatility 2.50%, drawdown -1.20%, value at risk "
+        "-0.40%. Supportability limitation: Benchmark-relative risk posture is unavailable "
+        "because benchmark return series is not sourced for the risk calculation."
+    )

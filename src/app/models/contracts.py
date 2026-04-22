@@ -110,9 +110,13 @@ class PortfolioReviewReportResponse(BaseModel):
     portfolio_id: str
     as_of_date: date
     generated_at: datetime
+    review_period: dict[str, Any] | None = Field(default=None, alias="reviewPeriod")
+    reporting_currency: str | None = Field(default=None, alias="reportingCurrency")
+    audience: dict[str, Any] = Field(default_factory=dict)
     readiness: PortfolioReviewReadiness
     methodology: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
+    disclosures: list[dict[str, Any]] = Field(default_factory=list)
     client_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     advisor_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     overview: dict[str, Any] | None = None

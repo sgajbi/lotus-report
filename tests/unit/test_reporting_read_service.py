@@ -441,7 +441,19 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["report_id"] == "portfolio-review:P1:2026-02-24"
     assert response["portfolio_id"] == "P1"
     assert response["as_of_date"] == "2026-02-24"
-    assert response["readiness"] == {"status": "ready"}
+    assert response["reviewPeriod"] == {
+        "label": "YTD",
+        "start_date": "2026-01-01",
+        "end_date": "2026-02-24",
+    }
+    assert response["reportingCurrency"] == "USD"
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": "Partial sections for the selected request: Performance Review, Risk Review",
+    }
+    assert response["audience"]["primary"] == "client_advisor"
+    assert response["audience"]["client_ready"] is False
+    assert response["disclosures"][-1]["disclosure_id"] == "partial_supportability"
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
     requested_periods = [
@@ -484,8 +496,8 @@ async def test_review_composes_core_query_performance_and_risk():
     assert source_refs["executive_summary"]["source_service"] == "lotus-core"
     assert source_refs["performance_review"]["source_service"] == "lotus-performance"
     assert source_refs["risk_review"]["source_service"] == "lotus-risk"
-    assert response["evidence"]["trust_metadata"]["completeness_status"] == "complete"
-    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_passed"
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
     assert [section["section_id"] for section in response["client_sections"]] == [
         "executive_summary",
         "asset_allocation",
@@ -500,8 +512,8 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert section_statuses["executive_summary"] == "ready"
     assert section_statuses["asset_allocation"] == "omitted_by_request"
-    assert section_statuses["performance_review"] == "ready"
-    assert section_statuses["risk_review"] == "ready"
+    assert section_statuses["performance_review"] == "partial"
+    assert section_statuses["risk_review"] == "partial"
     advisor_items = _advisor_prompt_items(response)
     assert {item["prompt_id"] for item in advisor_items} == {
         "review_readiness",
@@ -535,14 +547,23 @@ async def test_review_composes_core_query_performance_and_risk():
         assert "advisor_only" not in client_section
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
-    assert response["performance"]["benchmark"] == {"benchmark_code": "BMK_GLOBAL_BALANCED_60_40"}
+    assert response["performance"]["benchmark"] == {
+        "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+        "comparison_status": "unavailable",
+        "reason_code": "benchmark_return_series_not_sourced",
+    }
+    assert response["performance"]["supportability"]["status"] == "partial"
+    assert response["performance"]["supportability"]["notes"][0]["code"] == (
+        "benchmark_comparison_unavailable"
+    )
     assert response["performance"]["summary"]["1M"]["net_annualized_return"] is None
     assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
     assert response["performance"]["summary"]["5Y"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
     assert response["riskAnalytics"]["source"]["service"] == "lotus-risk"
-    assert response["riskAnalytics"]["supportability"]["status"] == "ready"
+    assert response["riskAnalytics"]["supportability"]["status"] == "partial"
     assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == "missing_benchmark"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["severity"] == "warning"
     assert response["riskAnalytics"]["summary"]["YTD"] == {
         "volatility": 0.12,
         "risk_adjusted_return": 1.05,
@@ -561,6 +582,10 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert client_sections["performance_review"]["items"][0]["item_type"] == ("performance_period")
     assert client_sections["performance_review"]["items"][0]["period"] == "1M"
+    assert (
+        client_sections["performance_review"]["items"][0]["benchmark_comparison_status"]
+        == "unavailable"
+    )
     assert client_sections["risk_review"]["items"] == [
         {
             "item_type": "risk_period",

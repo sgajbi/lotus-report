@@ -546,7 +546,120 @@ async def test_review_transactions_only_fetches_transactions_without_reuse():
         "TXN-1",
         "TXN-2",
     ]
+    assert [
+        row["transaction_id"]
+        for row in response["transactions"]["transactionsByCategory"]["Cash Flow"]
+    ] == ["TXN-1", "TXN-2"]
     assert core_query_client.seen_skips == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_review_transactions_are_grouped_for_advisor_review():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    transactions = service._map_review_transactions(
+        [
+            {
+                "transaction_id": "TXN-BUY-1",
+                "transaction_date": "2026-01-02",
+                "transaction_type": "BUY",
+                "asset_class": "Equity",
+                "gross_transaction_amount_reporting_currency": -1000,
+            },
+            {
+                "transaction_id": "TXN-CASH-BUY-1",
+                "transaction_date": "2026-01-02",
+                "transaction_type": "BUY",
+                "gross_transaction_amount_reporting_currency": 1000,
+            },
+            {
+                "transaction_id": "TXN-DIV-1",
+                "transaction_date": "2026-01-05",
+                "transaction_type": "DIVIDEND",
+                "net_interest_amount_reporting_currency": 100,
+                "withholding_tax_amount_reporting_currency": 15,
+            },
+        ]
+    )
+
+    assert [row["transaction_id"] for row in transactions["transactionsByCategory"]["Trading"]] == [
+        "TXN-BUY-1"
+    ]
+    assert transactions["transactionsByCategory"]["Cash Ledger"][0]["cash_leg"] is True
+    assert transactions["transactionsByCategory"]["Cash Ledger"][0]["display_label"] == (
+        "Cash ledger leg for Buy"
+    )
+    income = transactions["transactionsByCategory"]["Income"][0]
+    assert income["amount_reporting_currency"] == 100
+    assert income["income_or_tax_reporting_currency"] == 85
+
+
+def test_review_helper_edges_remain_meeting_safe():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    unavailable = service._risk_supportability(results={}, metadata={}, request_payload={})
+    assert unavailable["status"] == "unavailable"
+    assert unavailable["notes"][0]["code"] == "missing_return_history"
+
+    ready = service._risk_supportability(
+        results={"YTD": {"metrics": {}}},
+        metadata={"benchmark_context": {"requested": True}},
+        request_payload={"benchmark_code": "BMK"},
+    )
+    assert ready == {"status": "ready", "notes": []}
+
+    supportability = {
+        "notes": [
+            {"severity": "informational", "code": "info", "message": "Informational note."},
+            {"severity": "warning", "code": "warning", "message": "Warning note."},
+        ]
+    }
+    assert service._supportability_reason_code(supportability) == "warning"
+    assert service._supportability_message(supportability, "Risk Review") == "Warning note."
+    assert service._supportability_reason_code({"notes": [{"severity": "warning"}]}) == (
+        "source_unavailable"
+    )
+    assert service._supportability_message({"notes": [{"severity": "warning"}]}, "Risk Review") == (
+        "Risk Review is unavailable for this request."
+    )
+
+    assert (
+        service._workspace_period_start({"money_weighted_return": {"start_date": "2026-01-01"}})
+        == "2026-01-01"
+    )
+    assert (
+        service._workspace_period_end({"money_weighted_return": {"end_date": "2026-02-24"}})
+        == "2026-02-24"
+    )
+
+    assert (
+        service._transaction_review_category(transaction_type="FEE", cash_leg=False, asset_class="")
+        == "Fees And Taxes"
+    )
+    assert (
+        service._transaction_review_category(
+            transaction_type="TRANSFER_OUT", cash_leg=False, asset_class=""
+        )
+        == "Cash Flow"
+    )
+    assert (
+        service._transaction_review_category(
+            transaction_type="UNKNOWN", cash_leg=False, asset_class="Alternatives"
+        )
+        == "Alternatives"
+    )
+    assert service._transaction_display_label("", cash_leg=False) == "Transaction"
+    assert service._section_items("custom_section", {"key": "value"}) == [
+        {"item_type": "section_payload", "payload": {"key": "value"}}
+    ]
 
 
 @pytest.mark.asyncio

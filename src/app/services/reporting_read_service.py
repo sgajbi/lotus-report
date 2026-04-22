@@ -167,6 +167,8 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
         )
+        response["reviewPeriod"] = self._review_period(as_of_date)
+        response["reportingCurrency"] = self._reporting_currency(request_payload, summary)
         response["methodology"] = self._review_methodology(request_payload)
         transaction_rows: list[dict[str, object]] | None = None
 
@@ -265,6 +267,8 @@ class ReportingReadService:
             response=response,
         )
         response["client_sections"] = client_sections
+        response["audience"] = self._review_audience(client_sections)
+        response["disclosures"] = self._review_disclosures(response)
         response["advisor_sections"] = build_advisor_sections(
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
@@ -280,9 +284,13 @@ class ReportingReadService:
             "portfolio_id": portfolio_id,
             "as_of_date": as_of_date,
             "generated_at": datetime.now(timezone.utc),
+            "reviewPeriod": self._review_period(as_of_date),
+            "reportingCurrency": None,
+            "audience": {},
             "readiness": {"status": "ready"},
             "methodology": self._review_methodology({}),
             "evidence": {},
+            "disclosures": [],
         }
 
     def _review_readiness(
@@ -295,14 +303,25 @@ class ReportingReadService:
             for section in client_sections
             if section.get("status") == "unavailable"
         ]
+        partial_sections = [
+            self._safe_str(section.get("title"))
+            for section in client_sections
+            if section.get("status") == "partial"
+        ]
 
-        if not unavailable_sections:
+        if not unavailable_sections and not partial_sections:
             return {"status": "ready"}
+        if unavailable_sections:
+            return {
+                "status": "partial",
+                "reason": (
+                    "Unavailable sections for the selected request: "
+                    + ", ".join(unavailable_sections)
+                ),
+            }
         return {
             "status": "partial",
-            "reason": (
-                "Unavailable sections for the selected request: " + ", ".join(unavailable_sections)
-            ),
+            "reason": ("Partial sections for the selected request: " + ", ".join(partial_sections)),
         }
 
     def _build_client_sections(
@@ -557,7 +576,7 @@ class ReportingReadService:
             notes.append(
                 {
                     "code": "missing_benchmark",
-                    "severity": "informational",
+                    "severity": "warning",
                     "message": (
                         "Benchmark-relative risk posture is unavailable because benchmark "
                         "return series is not sourced for the risk calculation."
@@ -565,9 +584,13 @@ class ReportingReadService:
                 }
             )
 
-        status_value = (
-            "unavailable" if any(note.get("severity") == "blocking" for note in notes) else "ready"
-        )
+        severities = {note.get("severity") for note in notes}
+        if "blocking" in severities:
+            status_value = "unavailable"
+        elif "warning" in severities:
+            status_value = "partial"
+        else:
+            status_value = "ready"
         return {"status": status_value, "notes": notes}
 
     def _risk_metric_summary(self, results: dict[str, object]) -> dict[str, object]:
@@ -588,20 +611,30 @@ class ReportingReadService:
         return metric.get("value")
 
     def _supportability_reason_code(self, supportability: dict[str, object]) -> str:
-        for note in self._as_list(supportability.get("notes")):
-            note_payload = self._as_dict(note)
+        prioritized_notes = self._supportability_prioritized_notes(supportability)
+        for note_payload in prioritized_notes:
             code = note_payload.get("code")
             if isinstance(code, str) and code:
                 return code
         return "source_unavailable"
 
     def _supportability_message(self, supportability: dict[str, object], title: str) -> str:
-        for note in self._as_list(supportability.get("notes")):
-            note_payload = self._as_dict(note)
+        prioritized_notes = self._supportability_prioritized_notes(supportability)
+        for note_payload in prioritized_notes:
             message = note_payload.get("message")
             if isinstance(message, str) and message:
                 return message
         return f"{title} is unavailable for this request."
+
+    def _supportability_prioritized_notes(
+        self, supportability: dict[str, object]
+    ) -> list[dict[str, object]]:
+        notes = [self._as_dict(note) for note in self._as_list(supportability.get("notes"))]
+        priority = {"blocking": 0, "warning": 1, "informational": 2}
+        return sorted(
+            notes,
+            key=lambda note: priority.get(self._safe_str(note.get("severity")), 99),
+        )
 
     def _review_evidence(
         self,
@@ -896,26 +929,16 @@ class ReportingReadService:
 
     def _map_review_transactions(self, rows: list[dict[str, object]]) -> dict[str, object]:
         transactions_by_asset_class: dict[str, list[dict[str, object]]] = {}
+        transactions_by_category: dict[str, list[dict[str, object]]] = {}
         for row in rows:
             asset_class = self._safe_str(row.get("asset_class")) or "UNKNOWN"
-            transactions_by_asset_class.setdefault(asset_class, []).append(
-                {
-                    "transaction_id": self._safe_str(row.get("transaction_id")),
-                    "transaction_date": self._safe_str(row.get("transaction_date")),
-                    "transaction_type": self._safe_str(row.get("transaction_type")),
-                    "gross_transaction_amount_reporting_currency": self._to_float(
-                        row.get("gross_transaction_amount_reporting_currency")
-                    ),
-                    "net_interest_amount_reporting_currency": self._to_float(
-                        row.get("net_interest_amount_reporting_currency")
-                    ),
-                    "withholding_tax_amount_reporting_currency": self._to_float(
-                        row.get("withholding_tax_amount_reporting_currency")
-                    ),
-                }
-            )
+            transaction = self._map_review_transaction_row(row)
+            transactions_by_asset_class.setdefault(asset_class, []).append(transaction)
+            category = self._safe_str(transaction.get("transaction_category")) or "Other"
+            transactions_by_category.setdefault(category, []).append(transaction)
         return {
             "transactionsByAssetClass": transactions_by_asset_class,
+            "transactionsByCategory": transactions_by_category,
             "transactionCount": len(rows),
         }
 
@@ -1317,9 +1340,8 @@ class ReportingReadService:
             }
         return {
             "summary": summary,
-            "benchmark": {
-                "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
-            },
+            "benchmark": self._performance_benchmark_context(request_payload),
+            "supportability": self._performance_supportability(request_payload),
             "methodology": self._review_methodology(request_payload),
         }
 
@@ -1499,6 +1521,153 @@ class ReportingReadService:
             return value
         return ""
 
+    def _review_period(self, as_of_date: str) -> dict[str, object]:
+        return {
+            "label": "YTD",
+            "start_date": f"{as_of_date[:4]}-01-01",
+            "end_date": as_of_date,
+        }
+
+    def _reporting_currency(
+        self, request_payload: dict[str, object], summary: dict[str, object]
+    ) -> str | None:
+        requested = self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS)
+        if requested:
+            return requested
+        metadata = self._as_dict(summary.get("snapshot_metadata"))
+        return self._safe_str(summary.get("reporting_currency") or metadata.get("currency")) or None
+
+    def _review_audience(self, client_sections: list[dict[str, object]]) -> dict[str, object]:
+        section_statuses = {
+            self._safe_str(section.get("section_id")): self._safe_str(section.get("status"))
+            for section in client_sections
+        }
+        return {
+            "primary": "client_advisor",
+            "client_ready": all(
+                status in {"ready", "not_applicable", "omitted_by_request"}
+                for status in section_statuses.values()
+            ),
+            "advisor_only_sections_present": True,
+            "section_statuses": section_statuses,
+        }
+
+    def _review_disclosures(self, response: dict[str, object]) -> list[dict[str, object]]:
+        disclosures: list[dict[str, object]] = [
+            {
+                "disclosure_id": "performance_methodology",
+                "severity": "standard",
+                "text": (
+                    "Performance figures use source-provided net and gross time-weighted "
+                    "returns where available; sub-year annualized returns are suppressed unless "
+                    "source support is explicit."
+                ),
+            },
+            {
+                "disclosure_id": "risk_methodology",
+                "severity": "standard",
+                "text": (
+                    "Risk figures are calculated from sourced net daily return history and "
+                    "should be reviewed with section supportability notes before client use."
+                ),
+            },
+            {
+                "disclosure_id": "reporting_view",
+                "severity": "standard",
+                "text": (
+                    "Holdings and transactions are reporting views for portfolio review and "
+                    "may differ from official custody statements."
+                ),
+            },
+        ]
+        if self._safe_str(self._as_dict(response.get("readiness")).get("status")) != "ready":
+            disclosures.append(
+                {
+                    "disclosure_id": "partial_supportability",
+                    "severity": "supportability",
+                    "text": (
+                        "One or more requested sections are partial or unavailable and require "
+                        "advisor review before client presentation."
+                    ),
+                }
+            )
+        return disclosures
+
+    def _performance_benchmark_context(
+        self, request_payload: dict[str, object]
+    ) -> dict[str, object]:
+        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        return {
+            "benchmark_code": benchmark_code,
+            "comparison_status": "unavailable" if benchmark_code else "not_requested",
+            "reason_code": "benchmark_return_series_not_sourced" if benchmark_code else None,
+        }
+
+    def _performance_supportability(self, request_payload: dict[str, object]) -> dict[str, object]:
+        if not self._optional_string(request_payload, *BENCHMARK_CODE_KEYS):
+            return {"status": "ready", "notes": []}
+        return {
+            "status": "partial",
+            "notes": [
+                {
+                    "code": "benchmark_comparison_unavailable",
+                    "severity": "warning",
+                    "message": (
+                        "Benchmark comparison is unavailable because benchmark return series "
+                        "is not sourced in this report response."
+                    ),
+                }
+            ],
+        }
+
+    def _map_review_transaction_row(self, row: dict[str, object]) -> dict[str, object]:
+        transaction_id = self._safe_str(row.get("transaction_id"))
+        transaction_type = self._safe_str(row.get("transaction_type")).upper()
+        cash_leg = transaction_id.startswith("TXN-CASH-")
+        category = self._transaction_review_category(
+            transaction_type=transaction_type,
+            cash_leg=cash_leg,
+            asset_class=self._safe_str(row.get("asset_class")),
+        )
+        gross_amount = self._to_float(row.get("gross_transaction_amount_reporting_currency"))
+        interest_amount = self._to_float(row.get("net_interest_amount_reporting_currency"))
+        tax_amount = self._to_float(row.get("withholding_tax_amount_reporting_currency"))
+        amount = interest_amount if transaction_type in {"DIVIDEND", "INTEREST"} else gross_amount
+        return {
+            "transaction_id": transaction_id,
+            "transaction_date": self._safe_str(row.get("transaction_date")),
+            "transaction_type": transaction_type,
+            "transaction_category": category,
+            "display_label": self._transaction_display_label(transaction_type, cash_leg),
+            "cash_leg": cash_leg,
+            "asset_class": self._safe_str(row.get("asset_class")) or None,
+            "amount_reporting_currency": amount,
+            "gross_transaction_amount_reporting_currency": gross_amount,
+            "net_interest_amount_reporting_currency": interest_amount,
+            "withholding_tax_amount_reporting_currency": tax_amount,
+            "income_or_tax_reporting_currency": interest_amount - tax_amount,
+        }
+
+    def _transaction_review_category(
+        self, *, transaction_type: str, cash_leg: bool, asset_class: str
+    ) -> str:
+        if cash_leg:
+            return "Cash Ledger"
+        if transaction_type in {"DIVIDEND", "INTEREST", "COUPON"}:
+            return "Income"
+        if transaction_type in {"DEPOSIT", "TRANSFER_IN", "WITHDRAWAL", "TRANSFER_OUT"}:
+            return "Cash Flow"
+        if transaction_type in {"BUY", "SELL"}:
+            return "Trading"
+        if transaction_type in {"FEE", "TAX"}:
+            return "Fees And Taxes"
+        return asset_class or "Other"
+
+    def _transaction_display_label(self, transaction_type: str, cash_leg: bool) -> str:
+        if cash_leg:
+            return f"Cash ledger leg for {transaction_type.title()}"
+        return transaction_type.replace("_", " ").title() or "Transaction"
+
     def _build_risk_stateless_input(
         self,
         *,
@@ -1608,6 +1777,7 @@ class ReportingReadService:
                 "gross_annualized_return": row.get("gross_annualized_return"),
                 "annualized_return_supported": row.get("annualized_return_supported"),
                 "benchmark_code": benchmark.get("benchmark_code"),
+                "benchmark_comparison_status": benchmark.get("comparison_status"),
             }
             for period, period_payload in summary.items()
             for row in [self._as_dict(period_payload)]
@@ -1687,17 +1857,24 @@ class ReportingReadService:
                 "transaction_count": self._to_int(transactions.get("transactionCount")),
             }
         ]
-        transactions_by_asset_class = self._as_dict(transactions.get("transactionsByAssetClass"))
-        for asset_class, rows in transactions_by_asset_class.items():
+        transactions_by_category = self._as_dict(transactions.get("transactionsByCategory"))
+        if not transactions_by_category:
+            transactions_by_category = self._as_dict(transactions.get("transactionsByAssetClass"))
+        for category, rows in transactions_by_category.items():
             for row_payload in self._as_list(rows):
                 row = self._as_dict(row_payload)
                 items.append(
                     {
                         "item_type": "transaction",
-                        "asset_class": asset_class,
+                        "category": category,
+                        "asset_class": row.get("asset_class"),
+                        "transaction_category": row.get("transaction_category"),
+                        "display_label": row.get("display_label"),
+                        "cash_leg": row.get("cash_leg"),
                         "transaction_id": row.get("transaction_id"),
                         "transaction_date": row.get("transaction_date"),
                         "transaction_type": row.get("transaction_type"),
+                        "amount_reporting_currency": row.get("amount_reporting_currency"),
                         "gross_transaction_amount_reporting_currency": row.get(
                             "gross_transaction_amount_reporting_currency"
                         ),
