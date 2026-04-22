@@ -260,6 +260,9 @@ class ReportingReadService:
             requested_sections=requested_sections,
         )
         response["readiness"] = self._review_readiness(client_sections=client_sections)
+        response["keyFigures"] = self._review_key_figures(response)
+        response["reviewObservations"] = self._review_observations(response)
+        response["reportCoverage"] = self._review_report_coverage(response)
         response["evidence"] = self._review_evidence(
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
@@ -290,6 +293,9 @@ class ReportingReadService:
             "readiness": {"status": "ready"},
             "methodology": self._review_methodology({}),
             "evidence": {},
+            "keyFigures": {},
+            "reportCoverage": {},
+            "reviewObservations": [],
             "disclosures": [],
         }
 
@@ -1592,6 +1598,375 @@ class ReportingReadService:
                 }
             )
         return disclosures
+
+    def _review_key_figures(self, response: dict[str, object]) -> dict[str, object]:
+        overview = self._as_dict(response.get("overview"))
+        allocation = self._as_dict(response.get("allocation"))
+        performance = self._as_dict(response.get("performance"))
+        risk = self._as_dict(response.get("riskAnalytics"))
+        income_activity = self._as_dict(response.get("incomeAndActivity"))
+        holdings = self._as_dict(response.get("holdings"))
+        transactions = self._as_dict(response.get("transactions"))
+        currency = self._safe_str(response.get("reportingCurrency") or overview.get("currency"))
+        total_market_value = self._to_float(overview.get("total_market_value"))
+        total_cash = self._to_float(overview.get("total_cash"))
+        top_asset_class = self._top_bucket(self._as_list(allocation.get("byAssetClass")))
+        top_currency = self._top_bucket(self._as_list(allocation.get("byCurrency")))
+        return {
+            "conventions": {
+                "currency": currency,
+                "monetary_fields": "reporting currency amounts use *_reporting_currency names",
+                "percentage_fields": "normalized key figure percentages use *_pct names",
+                "legacy_weight_fields": (
+                    "section allocation and holding weights remain decimal ratios"
+                ),
+            },
+            "portfolio_value": {
+                "total_market_value_reporting_currency": total_market_value,
+                "invested_market_value_reporting_currency": self._to_float(
+                    overview.get("invested_market_value")
+                ),
+                "cash_balance_reporting_currency": total_cash,
+                "cash_weight_pct": self._safe_pct(total_cash, total_market_value),
+            },
+            "allocation": {
+                "largest_asset_class": self._bucket_key_figure(top_asset_class),
+                "largest_currency": self._bucket_key_figure(top_currency),
+                "asset_class_count": len(self._as_list(allocation.get("byAssetClass"))),
+                "currency_count": len(self._as_list(allocation.get("byCurrency"))),
+            },
+            "performance": self._performance_key_figures(performance),
+            "risk": self._risk_key_figures(risk),
+            "income_and_activity": self._income_activity_key_figures(income_activity),
+            "holdings": self._holdings_key_figures(holdings),
+            "transactions": self._transaction_key_figures(transactions),
+        }
+
+    def _performance_key_figures(self, performance: dict[str, object]) -> dict[str, object]:
+        summary = self._as_dict(performance.get("summary"))
+        benchmark = self._as_dict(performance.get("benchmark"))
+        return {
+            "one_month_net_return_pct": self._period_return(summary, "1M", "net_cumulative_return"),
+            "three_month_net_return_pct": self._period_return(
+                summary, "3M", "net_cumulative_return"
+            ),
+            "ytd_net_return_pct": self._period_return(summary, "YTD", "net_cumulative_return"),
+            "five_year_net_annualized_return_pct": self._period_return(
+                summary, "5Y", "net_annualized_return"
+            ),
+            "since_inception_net_return_pct": self._period_return(
+                summary, "SI", "net_cumulative_return"
+            ),
+            "benchmark_code": benchmark.get("benchmark_code"),
+            "benchmark_comparison_status": benchmark.get("comparison_status"),
+        }
+
+    def _risk_key_figures(self, risk: dict[str, object]) -> dict[str, object]:
+        summary = self._as_dict(risk.get("summary"))
+        ytd = self._as_dict(summary.get("YTD"))
+        three_year = self._as_dict(summary.get("THREE_YEAR"))
+        return {
+            "ytd_volatility_pct": ytd.get("volatility"),
+            "ytd_drawdown_pct": ytd.get("drawdown"),
+            "ytd_value_at_risk_pct": ytd.get("value_at_risk"),
+            "ytd_expected_shortfall_pct": self._expected_shortfall(risk, "YTD"),
+            "ytd_risk_adjusted_return": ytd.get("risk_adjusted_return"),
+            "three_year_volatility_pct": three_year.get("volatility"),
+            "three_year_drawdown_pct": three_year.get("drawdown"),
+            "three_year_value_at_risk_pct": three_year.get("value_at_risk"),
+            "three_year_expected_shortfall_pct": self._expected_shortfall(risk, "THREE_YEAR"),
+            "benchmark_relative_status": self._risk_benchmark_status(risk),
+        }
+
+    def _income_activity_key_figures(self, income_activity: dict[str, object]) -> dict[str, object]:
+        income = self._as_dict(income_activity.get("incomeSummary"))
+        activity = self._as_dict(income_activity.get("activitySummary"))
+        return {
+            "gross_income_reporting_currency": self._to_float(
+                income.get("gross_amount_reporting_currency")
+            ),
+            "net_income_reporting_currency": self._to_float(
+                income.get("net_amount_reporting_currency")
+            ),
+            "withholding_tax_reporting_currency": self._to_float(
+                income.get("withholding_tax_reporting_currency")
+            ),
+            "income_transaction_count": self._to_int(income.get("transaction_count")),
+            "total_inflows_reporting_currency": self._to_float(activity.get("total_inflows")),
+            "total_outflows_reporting_currency": self._to_float(activity.get("total_outflows")),
+            "total_fees_reporting_currency": self._to_float(activity.get("total_fees")),
+            "total_taxes_reporting_currency": self._to_float(activity.get("total_taxes")),
+        }
+
+    def _holdings_key_figures(self, holdings: dict[str, object]) -> dict[str, object]:
+        rows = self._holding_rows(holdings)
+        positive_rows = [
+            row for row in rows if self._to_float(row.get("market_value_reporting_currency")) > 0
+        ]
+        sorted_rows = sorted(
+            positive_rows,
+            key=lambda row: self._to_float(row.get("market_value_reporting_currency")),
+            reverse=True,
+        )
+        positive_exposure = sum(
+            self._to_float(row.get("market_value_reporting_currency")) for row in sorted_rows
+        )
+        negative_cash_rows = [
+            row
+            for row in rows
+            if self._safe_str(row.get("asset_class")) == "Cash"
+            and self._to_float(row.get("market_value_reporting_currency")) < 0
+        ]
+        return {
+            "position_count": self._to_int(holdings.get("positionCount")),
+            "positive_exposure_reporting_currency": positive_exposure,
+            "top_holding": self._holding_key_figure(sorted_rows[0]) if sorted_rows else None,
+            "top_five_positive_exposure_pct": self._safe_pct(
+                sum(
+                    self._to_float(row.get("market_value_reporting_currency"))
+                    for row in sorted_rows[:5]
+                ),
+                positive_exposure,
+            ),
+            "top_ten_positive_exposure_pct": self._safe_pct(
+                sum(
+                    self._to_float(row.get("market_value_reporting_currency"))
+                    for row in sorted_rows[:10]
+                ),
+                positive_exposure,
+            ),
+            "negative_cash_position_count": len(negative_cash_rows),
+            "largest_negative_cash": (
+                self._holding_key_figure(
+                    min(
+                        negative_cash_rows,
+                        key=lambda row: self._to_float(row.get("market_value_reporting_currency")),
+                    )
+                )
+                if negative_cash_rows
+                else None
+            ),
+        }
+
+    def _transaction_key_figures(self, transactions: dict[str, object]) -> dict[str, object]:
+        by_category = self._as_dict(transactions.get("transactionsByCategory"))
+        counts = {
+            category: len(self._as_list(rows))
+            for category, rows in by_category.items()
+            if isinstance(category, str)
+        }
+        return {
+            "transaction_count": self._to_int(transactions.get("transactionCount")),
+            "transaction_count_by_category": counts,
+        }
+
+    def _review_observations(self, response: dict[str, object]) -> list[dict[str, object]]:
+        observations: list[dict[str, object]] = []
+        key_figures = self._as_dict(response.get("keyFigures"))
+        performance = self._as_dict(key_figures.get("performance"))
+        holdings = self._as_dict(key_figures.get("holdings"))
+        risk = self._as_dict(response.get("riskAnalytics"))
+        if performance.get("benchmark_comparison_status") == "unavailable":
+            observations.append(
+                {
+                    "observation_id": "benchmark_comparison_not_sourced",
+                    "severity": "watch",
+                    "message": (
+                        "Benchmark code was supplied but benchmark return series is not sourced, "
+                        "so excess return and benchmark-relative risk are not available."
+                    ),
+                    "source_section_ids": ["performance_review", "risk_review"],
+                }
+            )
+        ytd_return = self._optional_number_raw(performance.get("ytd_net_return_pct"))
+        if ytd_return is not None and ytd_return < 0:
+            observations.append(
+                {
+                    "observation_id": "negative_ytd_performance",
+                    "severity": "watch",
+                    "message": f"YTD net return is negative at {ytd_return:.2f}%.",
+                    "source_section_ids": ["performance_review"],
+                }
+            )
+        negative_cash_count = self._to_int(holdings.get("negative_cash_position_count"))
+        if negative_cash_count:
+            observations.append(
+                {
+                    "observation_id": "negative_cash_position",
+                    "severity": "watch",
+                    "message": (
+                        f"{negative_cash_count} cash position(s) have negative market value."
+                    ),
+                    "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        top_five_concentration = self._optional_number_raw(
+            holdings.get("top_five_positive_exposure_pct")
+        )
+        if top_five_concentration is not None and top_five_concentration >= 50:
+            observations.append(
+                {
+                    "observation_id": "top_five_positive_exposure",
+                    "severity": "watch",
+                    "message": (
+                        f"Top five positive positions represent {top_five_concentration:.2f}% "
+                        "of positive portfolio exposure."
+                    ),
+                    "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        for note in self._as_list(self._as_dict(risk.get("supportability")).get("notes")):
+            note_payload = self._as_dict(note)
+            if self._safe_str(note_payload.get("severity")) != "warning":
+                continue
+            observations.append(
+                {
+                    "observation_id": self._safe_str(note_payload.get("code")),
+                    "severity": "watch",
+                    "message": self._safe_str(note_payload.get("message")),
+                    "source_section_ids": ["risk_review"],
+                }
+            )
+        return observations
+
+    def _review_report_coverage(self, response: dict[str, object]) -> dict[str, object]:
+        key_figures = self._as_dict(response.get("keyFigures"))
+        return {
+            "status": self._as_dict(response.get("readiness")).get("status", "ready"),
+            "figure_groups": [
+                self._figure_group("portfolio_value", key_figures, required=True),
+                self._figure_group("allocation", key_figures, required=True),
+                self._figure_group("performance", key_figures, required=True),
+                self._figure_group("risk", key_figures, required=True),
+                self._figure_group("income_and_activity", key_figures, required=False),
+                self._figure_group("holdings", key_figures, required=True),
+                self._figure_group("transactions", key_figures, required=False),
+                {
+                    "group_id": "benchmark_comparison",
+                    "status": self._benchmark_comparison_coverage(response),
+                    "required": True,
+                    "message": (
+                        "Benchmark excess return, tracking error, information ratio, beta, "
+                        "and benchmark-relative risk require sourced benchmark return series."
+                    ),
+                },
+                {
+                    "group_id": "targets_guidelines_and_suitability",
+                    "status": "not_sourced",
+                    "required": False,
+                    "message": (
+                        "Target allocation, mandate guidelines, risk profile, objectives, "
+                        "liquidity needs, and suitability posture are owned by advisory or "
+                        "management domains and are not invented by lotus-report."
+                    ),
+                },
+                {
+                    "group_id": "tax_lot_and_realized_gain_loss",
+                    "status": "not_sourced",
+                    "required": False,
+                    "message": (
+                        "Tax-lot-level realized gain/loss, cost basis, and jurisdiction-specific "
+                        "tax treatment are not sourced in the current report response."
+                    ),
+                },
+            ],
+        }
+
+    def _figure_group(
+        self, group_id: str, key_figures: dict[str, object], *, required: bool
+    ) -> dict[str, object]:
+        group = self._as_dict(key_figures.get(group_id))
+        populated = any(value not in (None, "", {}, []) for value in group.values())
+        return {
+            "group_id": group_id,
+            "status": "present" if populated else "missing",
+            "required": required,
+        }
+
+    def _benchmark_comparison_coverage(self, response: dict[str, object]) -> str:
+        performance = self._as_dict(response.get("performance"))
+        benchmark = self._as_dict(performance.get("benchmark"))
+        if not benchmark.get("benchmark_code"):
+            return "not_requested"
+        if benchmark.get("comparison_status") == "available":
+            return "present"
+        return "partial"
+
+    def _period_return(self, summary: dict[str, object], period: str, key: str) -> object | None:
+        return self._as_dict(summary.get(period)).get(key)
+
+    def _expected_shortfall(self, risk: dict[str, object], period: str) -> object | None:
+        results = self._as_dict(risk.get("results"))
+        period_result = self._as_dict(results.get(period))
+        metrics = self._as_dict(period_result.get("metrics"))
+        var_metric = self._as_dict(metrics.get("VAR"))
+        details = self._as_dict(var_metric.get("details"))
+        return details.get("expected_shortfall")
+
+    def _risk_benchmark_status(self, risk: dict[str, object]) -> str:
+        supportability = self._as_dict(risk.get("supportability"))
+        for note in self._as_list(supportability.get("notes")):
+            note_payload = self._as_dict(note)
+            if note_payload.get("code") == "missing_benchmark":
+                return "unavailable"
+        return "available"
+
+    def _holding_rows(self, holdings: dict[str, object]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for asset_class, asset_rows in self._as_dict(holdings.get("holdingsByAssetClass")).items():
+            for row_payload in self._as_list(asset_rows):
+                row = self._as_dict(row_payload).copy()
+                row["asset_class"] = self._safe_str(asset_class)
+                rows.append(row)
+        return rows
+
+    def _top_bucket(self, buckets: list[object]) -> dict[str, object] | None:
+        rows = [self._as_dict(bucket) for bucket in buckets]
+        rows = [row for row in rows if row]
+        if not rows:
+            return None
+        return max(rows, key=lambda row: self._to_float(row.get("weight")))
+
+    def _bucket_key_figure(self, bucket: dict[str, object] | None) -> dict[str, object] | None:
+        if bucket is None:
+            return None
+        return {
+            "name": bucket.get("group"),
+            "weight_pct": self._to_float(bucket.get("weight")) * 100,
+            "market_value_reporting_currency": self._to_float(bucket.get("market_value")),
+            "position_count": self._to_int(bucket.get("position_count")),
+        }
+
+    def _holding_key_figure(self, row: dict[str, object]) -> dict[str, object]:
+        return {
+            "security_id": row.get("security_id"),
+            "instrument_name": row.get("instrument_name"),
+            "asset_class": row.get("asset_class"),
+            "market_value_reporting_currency": self._to_float(
+                row.get("market_value_reporting_currency")
+            ),
+            "weight_pct": self._to_float(row.get("weight")) * 100,
+            "currency": row.get("currency"),
+        }
+
+    def _safe_pct(self, numerator: float, denominator: float) -> float | None:
+        if denominator == 0:
+            return None
+        return (numerator / denominator) * 100
+
+    def _optional_number_raw(self, raw: object) -> float | None:
+        if raw is None:
+            return None
+        if isinstance(raw, (int, float)):
+            parsed = float(raw)
+            return parsed
+        if isinstance(raw, str):
+            try:
+                parsed = float(raw)
+                return parsed
+            except ValueError:
+                return None
+        return None
 
     def _performance_benchmark_context(
         self, request_payload: dict[str, object]

@@ -433,7 +433,7 @@ async def test_review_composes_core_query_performance_and_risk():
             "as_of_date": "2026-02-24",
             "reporting_currency": "USD",
             "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
-            "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
+            "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
         },
         "CID-1",
     )
@@ -454,6 +454,38 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["audience"]["primary"] == "client_advisor"
     assert response["audience"]["client_ready"] is False
     assert response["disclosures"][-1]["disclosure_id"] == "partial_supportability"
+    assert response["keyFigures"]["conventions"] == {
+        "currency": "USD",
+        "monetary_fields": "reporting currency amounts use *_reporting_currency names",
+        "percentage_fields": "normalized key figure percentages use *_pct names",
+        "legacy_weight_fields": "section allocation and holding weights remain decimal ratios",
+    }
+    assert response["keyFigures"]["portfolio_value"] == {
+        "total_market_value_reporting_currency": 1_000_000.0,
+        "invested_market_value_reporting_currency": 998_800.0,
+        "cash_balance_reporting_currency": 50_000.0,
+        "cash_weight_pct": 5.0,
+    }
+    assert response["keyFigures"]["allocation"]["largest_asset_class"] == {
+        "name": "Equity",
+        "weight_pct": 60.0,
+        "market_value_reporting_currency": 600000.0,
+        "position_count": 3,
+    }
+    assert response["keyFigures"]["performance"]["ytd_net_return_pct"] == 4.1
+    assert response["keyFigures"]["performance"]["benchmark_comparison_status"] == "unavailable"
+    assert response["keyFigures"]["risk"]["ytd_volatility_pct"] == 0.12
+    assert response["keyFigures"]["holdings"]["top_holding"]["security_id"] == "EQ-1"
+    assert response["keyFigures"]["holdings"]["top_five_positive_exposure_pct"] == 100.0
+    coverage = {
+        group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
+    }
+    assert coverage["portfolio_value"] == "present"
+    assert coverage["benchmark_comparison"] == "partial"
+    assert coverage["targets_guidelines_and_suitability"] == "not_sourced"
+    assert response["reviewObservations"][0]["observation_id"] == (
+        "benchmark_comparison_not_sourced"
+    )
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
     requested_periods = [
@@ -511,7 +543,7 @@ async def test_review_composes_core_query_performance_and_risk():
         section["section_id"]: section["status"] for section in response["client_sections"]
     }
     assert section_statuses["executive_summary"] == "ready"
-    assert section_statuses["asset_allocation"] == "omitted_by_request"
+    assert section_statuses["asset_allocation"] == "ready"
     assert section_statuses["performance_review"] == "partial"
     assert section_statuses["risk_review"] == "partial"
     advisor_items = _advisor_prompt_items(response)

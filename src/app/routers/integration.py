@@ -46,6 +46,10 @@ def get_capabilities(
             },
             {"key": "lotus-report.reporting.portfolio_review.evidence_pack.v1", "enabled": True},
             {
+                "key": "lotus-report.reporting.portfolio_review.key_figures.v1",
+                "enabled": True,
+            },
+            {
                 "key": "lotus-report.reporting.portfolio_review.advisor_sections.v1",
                 "enabled": True,
             },

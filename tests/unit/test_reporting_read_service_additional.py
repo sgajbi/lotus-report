@@ -662,6 +662,112 @@ def test_review_helper_edges_remain_meeting_safe():
     ]
 
 
+def test_review_key_figures_capture_missing_gold_standard_figures():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    response = {
+        "reportingCurrency": "USD",
+        "readiness": {"status": "partial"},
+        "overview": {
+            "total_market_value": 1000,
+            "total_cash": 100,
+            "invested_market_value": 900,
+            "currency": "USD",
+        },
+        "allocation": {
+            "byAssetClass": [{"group": "Equity", "weight": 0.6, "market_value": 600}],
+            "byCurrency": [{"group": "USD", "weight": 1.0, "market_value": 1000}],
+        },
+        "performance": {
+            "summary": {
+                "YTD": {"net_cumulative_return": -2.5},
+                "SI": {"net_cumulative_return": 8.5},
+            },
+            "benchmark": {
+                "benchmark_code": "BMK",
+                "comparison_status": "unavailable",
+            },
+        },
+        "riskAnalytics": {
+            "summary": {"YTD": {"volatility": 3, "drawdown": -4, "value_at_risk": -1}},
+            "results": {
+                "YTD": {
+                    "metrics": {
+                        "VAR": {
+                            "details": {
+                                "expected_shortfall": -2,
+                            }
+                        }
+                    }
+                }
+            },
+            "supportability": {
+                "notes": [
+                    {
+                        "code": "missing_benchmark",
+                        "severity": "warning",
+                        "message": "Benchmark-relative risk is unavailable.",
+                    }
+                ]
+            },
+        },
+        "holdings": {
+            "positionCount": 2,
+            "holdingsByAssetClass": {
+                "Equity": [
+                    {
+                        "security_id": "EQ-1",
+                        "instrument_name": "Equity",
+                        "market_value_reporting_currency": 600,
+                        "weight": 0.6,
+                        "currency": "USD",
+                    }
+                ],
+                "Cash": [
+                    {
+                        "security_id": "CASH-NEG",
+                        "instrument_name": "Negative Cash",
+                        "market_value_reporting_currency": -50,
+                        "weight": -0.05,
+                        "currency": "USD",
+                    }
+                ],
+            },
+        },
+        "transactions": {
+            "transactionCount": 2,
+            "transactionsByCategory": {
+                "Trading": [{"transaction_id": "T1"}],
+                "Cash Ledger": [{"transaction_id": "T2"}],
+            },
+        },
+    }
+
+    response["keyFigures"] = service._review_key_figures(response)
+    observations = service._review_observations(response)
+    coverage = service._review_report_coverage(response)
+
+    assert response["keyFigures"]["risk"]["ytd_expected_shortfall_pct"] == -2
+    assert response["keyFigures"]["holdings"]["negative_cash_position_count"] == 1
+    assert response["keyFigures"]["transactions"]["transaction_count_by_category"] == {
+        "Trading": 1,
+        "Cash Ledger": 1,
+    }
+    assert {item["observation_id"] for item in observations} == {
+        "benchmark_comparison_not_sourced",
+        "negative_ytd_performance",
+        "negative_cash_position",
+        "top_five_positive_exposure",
+        "missing_benchmark",
+    }
+    coverage_by_group = {group["group_id"]: group["status"] for group in coverage["figure_groups"]}
+    assert coverage_by_group["benchmark_comparison"] == "partial"
+    assert coverage_by_group["tax_lot_and_realized_gain_loss"] == "not_sourced"
+
+
 @pytest.mark.asyncio
 async def test_review_without_risk_section_omits_risk_block():
     service = ReportingReadService(

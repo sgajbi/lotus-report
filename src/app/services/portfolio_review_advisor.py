@@ -307,8 +307,13 @@ def _ready_or_requested_section_ids(client_sections: list[dict[str, object]]) ->
 
 def _top_allocation_bucket(allocation: dict[str, object]) -> dict[str, object] | None:
     buckets: list[dict[str, object]] = []
-    for value in allocation.values():
-        buckets.extend(_as_dict(item) for item in _as_list(value))
+    asset_class_buckets = _as_list(allocation.get("byAssetClass"))
+    source_buckets = asset_class_buckets if asset_class_buckets else list(allocation.values())
+    for value in source_buckets:
+        if isinstance(value, list):
+            buckets.extend(_as_dict(item) for item in _as_list(value))
+        else:
+            buckets.append(_as_dict(value))
     if not buckets:
         return None
     return max(buckets, key=lambda bucket: _to_decimal(bucket.get("weight")))

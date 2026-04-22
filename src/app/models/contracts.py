@@ -116,6 +116,11 @@ class PortfolioReviewReportResponse(BaseModel):
     readiness: PortfolioReviewReadiness
     methodology: dict[str, Any] = Field(default_factory=dict)
     evidence: dict[str, Any] = Field(default_factory=dict)
+    key_figures: dict[str, Any] = Field(default_factory=dict, alias="keyFigures")
+    report_coverage: dict[str, Any] = Field(default_factory=dict, alias="reportCoverage")
+    review_observations: list[dict[str, Any]] = Field(
+        default_factory=list, alias="reviewObservations"
+    )
     disclosures: list[dict[str, Any]] = Field(default_factory=list)
     client_sections: list[PortfolioReviewSection] = Field(default_factory=list)
     advisor_sections: list[PortfolioReviewSection] = Field(default_factory=list)
