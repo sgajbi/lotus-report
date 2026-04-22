@@ -1,7 +1,7 @@
 {
   "description": "Approved baseline monetary-float findings. New findings fail CI.",
   "policy_version": "1.1.0",
-  "generated_at": "2026-04-22T13:44:45Z",
+  "generated_at": "2026-04-22T23:47:41Z",
   "allowlist": [
     {
       "finding": "scripts/check_monetary_float_usage.py:112:\"justification\": \"Temporary approved monetary float usage; migrate to Decimal.\",",
@@ -76,91 +76,91 @@
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1419:reporting_amount: float,",
+      "finding": "src/app/services/reporting_read_service.py:1424:reporting_amount: float,",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1437:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1442:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1454:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1459:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1493:def _absolute_money(self, value: object) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1498:def _absolute_money(self, value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1756:def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:",
+      "finding": "src/app/services/reporting_read_service.py:1761:def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1758:if isinstance(return_value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:1763:if isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1759:return float(return_value)",
+      "finding": "src/app/services/reporting_read_service.py:1764:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1762:return float(return_value)",
+      "finding": "src/app/services/reporting_read_service.py:1767:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1832:def _to_float(value: object) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1837:def _to_float(value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1833:if isinstance(value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:1838:if isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1834:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:1839:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1837:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:1842:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1846:if isinstance(value, float):",
+      "finding": "src/app/services/reporting_read_service.py:1851:if isinstance(value, float):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:960:if not isinstance(return_value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:965:if not isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:968:returns.append({\"date\": return_date, \"value\": float(return_value)})",
+      "finding": "src/app/services/reporting_read_service.py:973:returns.append({\"date\": return_date, \"value\": float(return_value)})",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-14"

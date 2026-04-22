@@ -62,7 +62,6 @@ class IntegrationCapabilitiesResponse(BaseModel):
 class PortfolioReviewReportRequest(BaseModel):
     as_of_date: date = Field(
         ...,
-        alias="asOfDate",
         description="Report as-of date for portfolio holdings, transactions, and analytics.",
         examples=["2026-04-22"],
     )
@@ -86,7 +85,6 @@ class PortfolioReviewReportRequest(BaseModel):
     )
     reporting_currency: str | None = Field(
         default=None,
-        alias="reportingCurrency",
         description=(
             "Preferred reporting currency for the review. When omitted, lotus-report uses the "
             "currency available from upstream portfolio context."
@@ -95,7 +93,6 @@ class PortfolioReviewReportRequest(BaseModel):
     )
     allocation_dimensions: list[str] | None = Field(
         default=None,
-        alias="allocationDimensions",
         description=(
             "Optional allocation dimensions requested by the caller, such as asset_class, "
             "currency, sector, or geography where supported by upstream data."
@@ -104,7 +101,6 @@ class PortfolioReviewReportRequest(BaseModel):
     )
     look_through_mode: str | None = Field(
         default=None,
-        alias="lookThroughMode",
         description=(
             "Optional look-through handling requested by the caller. Current reporting behavior "
             "passes this as request context and does not invent look-through holdings."
@@ -113,7 +109,6 @@ class PortfolioReviewReportRequest(BaseModel):
     )
     benchmark_code: str | None = Field(
         default=None,
-        alias="benchmarkCode",
         description=(
             "Benchmark identifier used for benchmark-relative performance and risk supportability "
             "when sourced benchmark return series are available."
@@ -122,8 +117,7 @@ class PortfolioReviewReportRequest(BaseModel):
     )
 
     model_config = {
-        "extra": "allow",
-        "populate_by_name": True,
+        "extra": "forbid",
         "json_schema_extra": {
             "examples": [
                 {
@@ -134,10 +128,10 @@ class PortfolioReviewReportRequest(BaseModel):
                     "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
                 },
                 {
-                    "asOfDate": "2026-04-22",
+                    "as_of_date": "2026-04-22",
                     "sections": ["OVERVIEW", "HOLDINGS"],
-                    "reportingCurrency": "SGD",
-                    "benchmarkCode": "BMK_APAC_BALANCED",
+                    "reporting_currency": "SGD",
+                    "benchmark_code": "BMK_APAC_BALANCED",
                 },
             ]
         },
@@ -189,12 +183,12 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     review_period: dict[str, Any] | None = Field(
         default=None,
-        alias="reviewPeriod",
+        validation_alias="reviewPeriod",
         description="Review-period context such as as-of date and period labels.",
     )
     reporting_currency: str | None = Field(
         default=None,
-        alias="reportingCurrency",
+        validation_alias="reportingCurrency",
         description="Reporting currency used for portfolio-level monetary figures.",
     )
     audience: dict[str, Any] = Field(
@@ -214,7 +208,7 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     key_figures: dict[str, Any] = Field(
         default_factory=dict,
-        alias="keyFigures",
+        validation_alias="keyFigures",
         description=(
             "Normalized front-office figures for portfolio value, allocation, performance, "
             "contribution, risk, income/activity, holdings, P&L, transactions, and profile state."
@@ -222,20 +216,28 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     report_coverage: dict[str, Any] = Field(
         default_factory=dict,
-        alias="reportCoverage",
+        validation_alias="reportCoverage",
         description=(
             "Coverage map showing which gold-standard report families are present, partial, "
             "unavailable, or not sourced."
         ),
     )
+    upstream_capability_audit: dict[str, Any] = Field(
+        default_factory=dict,
+        validation_alias="upstreamCapabilityAudit",
+        description=(
+            "Machine-readable audit separating source-backed report capabilities from gaps that "
+            "require upstream domain features or fixes before the report can certify them."
+        ),
+    )
     review_observations: list[dict[str, Any]] = Field(
         default_factory=list,
-        alias="reviewObservations",
+        validation_alias="reviewObservations",
         description="Advisor attention points derived from sourced figures and explicit gaps.",
     )
     client_profile: dict[str, Any] = Field(
         default_factory=dict,
-        alias="clientProfile",
+        validation_alias="clientProfile",
         description=(
             "Source-backed client, advisor, booking-center, portfolio, and mandate context from "
             "lotus-core where available. Missing profile fields are explicit gaps."
@@ -243,19 +245,19 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     report_structure: dict[str, Any] = Field(
         default_factory=dict,
-        alias="reportStructure",
+        validation_alias="reportStructure",
         description=(
             "Recommended meeting-pack sequence for UI, document, or presentation consumers."
         ),
     )
     advisor_briefing: dict[str, Any] = Field(
         default_factory=dict,
-        alias="advisorBriefing",
+        validation_alias="advisorBriefing",
         description="Deterministic advisor-only talking points and required pre-meeting checks.",
     )
     ai_readiness: dict[str, Any] = Field(
         default_factory=dict,
-        alias="aiReadiness",
+        validation_alias="aiReadiness",
         description=(
             "Guarded AI-assistance metadata. This endpoint does not generate advice, trade "
             "recommendations, suitability determinations, or inferred client profiles."
@@ -289,12 +291,12 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     risk_analytics: dict[str, Any] | None = Field(
         default=None,
-        alias="riskAnalytics",
+        validation_alias="riskAnalytics",
         description="Risk analytics, metric summary, and benchmark supportability when sourced.",
     )
     income_and_activity: dict[str, Any] | None = Field(
         default=None,
-        alias="incomeAndActivity",
+        validation_alias="incomeAndActivity",
         description="Income, fee, cash-flow, and activity summary when requested and sourced.",
     )
     holdings: dict[str, Any] | None = Field(
@@ -319,7 +321,7 @@ class PortfolioReviewReportResponse(BaseModel):
                     "as_of_date": "2026-04-22",
                     "generated_at": "2026-04-22T09:00:00Z",
                     "readiness": {"status": "ready"},
-                    "clientProfile": {
+                    "client_profile": {
                         "status": "present",
                         "identity": {
                             "client_id": "CIF_SG_000184",
@@ -338,7 +340,7 @@ class PortfolioReviewReportResponse(BaseModel):
                         },
                         "missing_fields": [],
                     },
-                    "keyFigures": {
+                    "key_figures": {
                         "portfolio": {
                             "total_market_value": 1000000.0,
                             "reporting_currency": "USD",
@@ -352,7 +354,7 @@ class PortfolioReviewReportResponse(BaseModel):
                             "total_unrealized_pnl_pct": 0.0295,
                         },
                     },
-                    "reportCoverage": {
+                    "report_coverage": {
                         "position_pnl_and_cost_basis": {
                             "status": "present",
                             "required": True,
@@ -362,7 +364,25 @@ class PortfolioReviewReportResponse(BaseModel):
                             "required": True,
                         },
                     },
-                    "reportStructure": {
+                    "upstream_capability_audit": {
+                        "status": "action_required",
+                        "source_backed_capabilities": [
+                            {
+                                "capability_id": "holdings_pnl_cost_basis",
+                                "source_service": "lotus-core",
+                                "status": "present",
+                            }
+                        ],
+                        "upstream_gaps": [
+                            {
+                                "capability_id": "targets_guidelines_suitability",
+                                "owning_service": "lotus-advise / lotus-manage",
+                                "status": "not_sourced",
+                            }
+                        ],
+                        "report_side_findings": [],
+                    },
+                    "report_structure": {
                         "sequence": [
                             {
                                 "order": 1,
@@ -371,7 +391,7 @@ class PortfolioReviewReportResponse(BaseModel):
                             }
                         ]
                     },
-                    "advisorBriefing": {
+                    "advisor_briefing": {
                         "status": "ready",
                         "briefings": [
                             {
@@ -386,7 +406,7 @@ class PortfolioReviewReportResponse(BaseModel):
                             }
                         ],
                     },
-                    "aiReadiness": {
+                    "ai_readiness": {
                         "status": "guarded_ready",
                         "mode": "grounded_assistance_metadata_only",
                         "blocked_features": [

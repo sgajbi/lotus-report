@@ -621,6 +621,14 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["aiReadiness"]["blocked_ai_features"][0]["feature_id"] == (
         "trade_recommendation"
     )
+    assert response["upstreamCapabilityAudit"]["status"] == "action_required"
+    audit_gaps = {
+        gap["capability_id"]: gap for gap in response["upstreamCapabilityAudit"]["upstream_gaps"]
+    }
+    assert audit_gaps["targets_guidelines_suitability"]["owning_service"] == (
+        "lotus-advise / lotus-manage"
+    )
+    assert response["upstreamCapabilityAudit"]["report_side_findings"] == []
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
     requested_periods = [
@@ -667,6 +675,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
     assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
     assert [section["section_id"] for section in response["client_sections"]] == [
+        "client_profile",
         "executive_summary",
         "asset_allocation",
         "performance_review",
@@ -678,6 +687,7 @@ async def test_review_composes_core_query_performance_and_risk():
     section_statuses = {
         section["section_id"]: section["status"] for section in response["client_sections"]
     }
+    assert section_statuses["client_profile"] == "ready"
     assert section_statuses["executive_summary"] == "ready"
     assert section_statuses["asset_allocation"] == "ready"
     assert section_statuses["performance_review"] == "partial"
@@ -740,6 +750,13 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
     client_sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert client_sections["client_profile"]["items"][0] == {
+        "item_type": "client_identity",
+        "client_id": "CIF_SG_000184",
+        "advisor_id": "RM_SG_001",
+        "booking_center_code": "Singapore",
+        "profile_status": "present",
+    }
     assert client_sections["executive_summary"]["items"][0] == {
         "item_type": "measure",
         "metric": "total_market_value",

@@ -70,6 +70,10 @@ def get_capabilities(
                 "enabled": True,
             },
             {
+                "key": "lotus-report.reporting.portfolio_review.upstream_capability_audit.v1",
+                "enabled": True,
+            },
+            {
                 "key": "lotus-report.reporting.portfolio_review.advisor_sections.v1",
                 "enabled": True,
             },

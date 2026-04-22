@@ -8,13 +8,14 @@ from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.services.portfolio_review_advisor import build_advisor_sections
 
-AS_OF_DATE_KEYS = ("as_of_date", "asOfDate")
-REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
-LOOK_THROUGH_MODE_KEYS = ("look_through_mode", "lookThroughMode")
-ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions", "allocationDimensions")
-BENCHMARK_CODE_KEYS = ("benchmark_code", "benchmarkCode")
+AS_OF_DATE_KEYS = ("as_of_date",)
+REPORTING_CURRENCY_KEYS = ("reporting_currency",)
+LOOK_THROUGH_MODE_KEYS = ("look_through_mode",)
+ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions",)
+BENCHMARK_CODE_KEYS = ("benchmark_code",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 REVIEW_SECTION_DEFINITIONS = (
+    ("CLIENT_PROFILE", "client_profile", "Client And Mandate Profile", "clientProfile"),
     ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
     ("ALLOCATION", "asset_allocation", "Asset Allocation And Portfolio Construction", "allocation"),
     ("PERFORMANCE", "performance_review", "Performance Review", "performance"),
@@ -145,6 +146,7 @@ class ReportingReadService:
         requested_sections = self._requested_sections(
             request_payload=request_payload,
             default_sections=[
+                "CLIENT_PROFILE",
                 "OVERVIEW",
                 "ALLOCATION",
                 "PERFORMANCE",
@@ -154,6 +156,7 @@ class ReportingReadService:
                 "TRANSACTIONS",
             ],
         )
+        requested_sections.add("CLIENT_PROFILE")
 
         summary_status, summary_payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
@@ -298,6 +301,7 @@ class ReportingReadService:
             response=response,
         )
         response["client_sections"] = client_sections
+        response["upstreamCapabilityAudit"] = self._upstream_capability_audit(response)
         response["audience"] = self._review_audience(client_sections)
         response["disclosures"] = self._review_disclosures(response)
         response["advisor_sections"] = build_advisor_sections(
@@ -323,6 +327,7 @@ class ReportingReadService:
             "evidence": {},
             "keyFigures": {},
             "reportCoverage": {},
+            "upstreamCapabilityAudit": {},
             "reviewObservations": [],
             "clientProfile": {},
             "reportStructure": {},
@@ -2602,6 +2607,170 @@ class ReportingReadService:
             ],
         }
 
+    def _upstream_capability_audit(self, response: dict[str, object]) -> dict[str, object]:
+        coverage_groups: dict[str, dict[str, object]] = {}
+        for group_payload in self._as_list(
+            self._as_dict(response.get("reportCoverage")).get("figure_groups")
+        ):
+            group = self._as_dict(group_payload)
+            coverage_groups[self._safe_str(group.get("group_id"))] = group
+        source_backed = [
+            self._capability_item(
+                "client_profile",
+                "lotus-core",
+                "present",
+                "Client, advisor, booking center, portfolio profile, and mandate profile.",
+            ),
+            self._capability_item(
+                "portfolio_summary",
+                "lotus-core",
+                self._safe_str(coverage_groups.get("portfolio_value", {}).get("status")),
+                "Portfolio market value, cash, invested value, and review date.",
+            ),
+            self._capability_item(
+                "asset_allocation",
+                "lotus-core",
+                self._safe_str(coverage_groups.get("allocation", {}).get("status")),
+                "Asset-class and supported allocation views.",
+            ),
+            self._capability_item(
+                "holdings_pnl_cost_basis",
+                "lotus-core",
+                self._safe_str(
+                    coverage_groups.get("position_pnl_and_cost_basis", {}).get("status")
+                ),
+                "Position market value, cost basis, unrealized P&L, and instrument reference data.",
+            ),
+            self._capability_item(
+                "transaction_activity",
+                "lotus-core",
+                self._safe_str(coverage_groups.get("transactions", {}).get("status")),
+                "Transaction rows, cash flows, income, fees, and taxes for the review window.",
+            ),
+            self._capability_item(
+                "performance_returns",
+                "lotus-performance",
+                self._safe_str(coverage_groups.get("performance", {}).get("status")),
+                "Time-weighted return periods used by the performance review.",
+            ),
+            self._capability_item(
+                "performance_contribution",
+                "lotus-performance",
+                self._safe_str(coverage_groups.get("performance_contribution", {}).get("status")),
+                "YTD position, asset-class, and sector contribution.",
+            ),
+            self._capability_item(
+                "risk_metrics",
+                "lotus-risk",
+                self._safe_str(coverage_groups.get("risk", {}).get("status")),
+                "Volatility, drawdown, VaR, expected shortfall, and risk-adjusted return.",
+            ),
+        ]
+        upstream_gaps = [
+            self._capability_gap(
+                "benchmark_return_series",
+                "lotus-performance / lotus-risk",
+                self._safe_str(coverage_groups.get("benchmark_comparison", {}).get("status")),
+                (
+                    "Benchmark-relative excess return, tracking error, information ratio, beta, "
+                    "and benchmark-relative risk cannot be certified until benchmark return series "
+                    "are source-backed."
+                ),
+                ["performance_review", "risk_review"],
+            ),
+            self._capability_gap(
+                "targets_guidelines_suitability",
+                "lotus-advise / lotus-manage",
+                "not_sourced",
+                (
+                    "Target allocation, mandate guideline checks, liquidity needs, product "
+                    "restrictions, suitability posture, and review approval state are not "
+                    "authoritative inputs to lotus-report yet."
+                ),
+                ["client_profile", "asset_allocation", "holdings_appendix"],
+            ),
+            self._capability_gap(
+                "tax_lot_realized_gain_loss",
+                "lotus-core / tax domain",
+                "not_sourced",
+                (
+                    "Tax-lot-level realized gain/loss and jurisdiction-specific tax treatment are "
+                    "not exposed as governed upstream report inputs."
+                ),
+                ["holdings_appendix", "transactions_appendix"],
+            ),
+        ]
+        risk = self._as_dict(response.get("riskAnalytics"))
+        for note in self._as_list(self._as_dict(risk.get("supportability")).get("notes")):
+            note_payload = self._as_dict(note)
+            if note_payload.get("code") == "missing_risk_free_rate":
+                upstream_gaps.append(
+                    self._capability_gap(
+                        "source_backed_risk_free_rate",
+                        "lotus-risk / market-data domain",
+                        "not_sourced",
+                        self._safe_str(note_payload.get("message")),
+                        ["risk_review"],
+                    )
+                )
+                break
+        report_side_findings = self._report_side_findings(response)
+        return {
+            "status": "action_required" if upstream_gaps or report_side_findings else "complete",
+            "source_backed_capabilities": source_backed,
+            "upstream_gaps": upstream_gaps,
+            "report_side_findings": report_side_findings,
+        }
+
+    def _capability_item(
+        self, capability_id: str, source_service: str, status_value: str, description: str
+    ) -> dict[str, object]:
+        return {
+            "capability_id": capability_id,
+            "source_service": source_service,
+            "status": status_value or "missing",
+            "description": description,
+        }
+
+    def _capability_gap(
+        self,
+        capability_id: str,
+        owning_service: str,
+        status_value: str,
+        impact: str,
+        source_section_ids: list[str],
+    ) -> dict[str, object]:
+        return {
+            "capability_id": capability_id,
+            "owning_service": owning_service,
+            "status": status_value or "not_sourced",
+            "impact": impact,
+            "source_section_ids": source_section_ids,
+        }
+
+    def _report_side_findings(self, response: dict[str, object]) -> list[dict[str, object]]:
+        findings: list[dict[str, object]] = []
+        holdings = self._as_dict(self._as_dict(response.get("keyFigures")).get("holdings"))
+        if holdings.get("unrealized_pnl_coverage") not in {"present", None}:
+            findings.append(
+                {
+                    "finding_id": "incomplete_position_unrealized_pnl",
+                    "severity": "gap",
+                    "message": "Some position rows are missing unrealized P&L or cost basis.",
+                    "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        if not self._as_list(response.get("client_sections")):
+            findings.append(
+                {
+                    "finding_id": "client_sections_missing",
+                    "severity": "blocking",
+                    "message": "Client-ready section envelope is missing from the report response.",
+                    "source_section_ids": [],
+                }
+            )
+        return findings
+
     def _client_profile_coverage(self, response: dict[str, object]) -> str:
         profile = self._as_dict(response.get("clientProfile"))
         profile_status = self._safe_str(profile.get("status"))
@@ -2928,6 +3097,8 @@ class ReportingReadService:
 
     def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
         section = self._as_dict(section_payload)
+        if section_id == "client_profile":
+            return self._client_profile_items(section)
         if section_id == "executive_summary":
             return self._overview_items(section)
         if section_id == "asset_allocation":
@@ -2943,6 +3114,42 @@ class ReportingReadService:
         if section_id == "transactions_appendix":
             return self._transaction_items(section)
         return [{"item_type": "section_payload", "payload": section}]
+
+    def _client_profile_items(self, profile: dict[str, object]) -> list[dict[str, object]]:
+        identity = self._as_dict(profile.get("identity"))
+        portfolio_profile = self._as_dict(profile.get("portfolio_profile"))
+        mandate_profile = self._as_dict(profile.get("mandate_profile"))
+        items: list[dict[str, object]] = [
+            {
+                "item_type": "client_identity",
+                "client_id": identity.get("client_id"),
+                "advisor_id": identity.get("advisor_id"),
+                "booking_center_code": identity.get("booking_center_code"),
+                "profile_status": profile.get("status"),
+            },
+            {
+                "item_type": "portfolio_profile",
+                "portfolio_id": portfolio_profile.get("portfolio_id"),
+                "base_currency": portfolio_profile.get("base_currency"),
+                "open_date": portfolio_profile.get("open_date"),
+                "status": portfolio_profile.get("status"),
+            },
+            {
+                "item_type": "mandate_profile",
+                "portfolio_type": mandate_profile.get("portfolio_type"),
+                "objective": mandate_profile.get("objective"),
+                "risk_exposure": mandate_profile.get("risk_exposure"),
+                "investment_time_horizon": mandate_profile.get("investment_time_horizon"),
+                "is_leverage_allowed": mandate_profile.get("is_leverage_allowed"),
+                "cost_basis_method": mandate_profile.get("cost_basis_method"),
+            },
+        ]
+        missing_fields = [
+            self._safe_str(field) for field in self._as_list(profile.get("missing_fields"))
+        ]
+        if missing_fields:
+            items.append({"item_type": "missing_profile_fields", "fields": missing_fields})
+        return items
 
     def _overview_items(self, overview: dict[str, object]) -> list[dict[str, object]]:
         currency = self._safe_str(overview.get("currency"))
