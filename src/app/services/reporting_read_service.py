@@ -5,6 +5,11 @@ from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 
+AS_OF_DATE_KEYS = ("as_of_date", "asOfDate")
+REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
+LOOK_THROUGH_MODE_KEYS = ("look_through_mode", "lookThroughMode")
+ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions", "allocationDimensions")
+
 
 class ReportingReadService:
     def __init__(
@@ -38,18 +43,19 @@ class ReportingReadService:
         request_payload: dict[str, object],
         correlation_id: str | None,
     ) -> dict[str, object]:
-        as_of_date = self._required_string(request_payload, "as_of_date", "asOfDate")
+        as_of_date = self._request_as_of_date(request_payload)
         requested_sections = self._requested_sections(
             request_payload=request_payload,
             default_sections=["WEALTH", "ALLOCATION", "PNL", "INCOME", "ACTIVITY"],
         )
 
         summary_request: dict[str, object] = {"as_of_date": as_of_date}
-        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
-            "reportingCurrency"
+        self._copy_optional_request_string(
+            summary_request,
+            request_payload,
+            source_keys=REPORTING_CURRENCY_KEYS,
+            target_key="reporting_currency",
         )
-        if isinstance(reporting_currency, str) and reporting_currency:
-            summary_request["reporting_currency"] = reporting_currency
 
         status_code, payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
@@ -116,7 +122,7 @@ class ReportingReadService:
         request_payload: dict[str, object],
         correlation_id: str | None,
     ) -> dict[str, object]:
-        as_of_date = self._required_string(request_payload, "as_of_date", "asOfDate")
+        as_of_date = self._request_as_of_date(request_payload)
         requested_sections = self._requested_sections(
             request_payload=request_payload,
             default_sections=[
@@ -443,25 +449,30 @@ class ReportingReadService:
     def _build_allocation_request(self, request_payload: dict[str, object]) -> dict[str, object]:
         dimensions = self._allocation_dimensions(request_payload)
         allocation_request: dict[str, object] = {"dimensions": dimensions}
-        as_of_date = request_payload.get("as_of_date") or request_payload.get("asOfDate")
-        if isinstance(as_of_date, str) and as_of_date:
-            allocation_request["as_of_date"] = as_of_date
-        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
-            "reportingCurrency"
+        self._copy_optional_request_string(
+            allocation_request,
+            request_payload,
+            source_keys=AS_OF_DATE_KEYS,
+            target_key="as_of_date",
         )
-        if isinstance(reporting_currency, str) and reporting_currency:
-            allocation_request["reporting_currency"] = reporting_currency
-        look_through_mode = request_payload.get("look_through_mode") or request_payload.get(
-            "lookThroughMode"
+        self._copy_optional_request_string(
+            allocation_request,
+            request_payload,
+            source_keys=REPORTING_CURRENCY_KEYS,
+            target_key="reporting_currency",
         )
-        if isinstance(look_through_mode, str) and look_through_mode:
-            allocation_request["look_through_mode"] = look_through_mode
+        self._copy_optional_request_string(
+            allocation_request,
+            request_payload,
+            source_keys=LOOK_THROUGH_MODE_KEYS,
+            target_key="look_through_mode",
+        )
         return allocation_request
 
     def _build_transaction_window_params(
         self, request_payload: dict[str, object]
     ) -> dict[str, object]:
-        end_date = self._required_string(request_payload, "as_of_date", "asOfDate")
+        end_date = self._request_as_of_date(request_payload)
         transaction_params: dict[str, object] = {
             "start_date": f"{end_date[:4]}-01-01",
             "end_date": end_date,
@@ -471,33 +482,36 @@ class ReportingReadService:
             "limit": 500,
             "skip": 0,
         }
-        as_of_date = request_payload.get("as_of_date") or request_payload.get("asOfDate")
-        if isinstance(as_of_date, str) and as_of_date:
-            transaction_params["as_of_date"] = as_of_date
-        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
-            "reportingCurrency"
+        self._copy_optional_request_string(
+            transaction_params,
+            request_payload,
+            source_keys=AS_OF_DATE_KEYS,
+            target_key="as_of_date",
         )
-        if isinstance(reporting_currency, str) and reporting_currency:
-            transaction_params["reporting_currency"] = reporting_currency
+        self._copy_optional_request_string(
+            transaction_params,
+            request_payload,
+            source_keys=REPORTING_CURRENCY_KEYS,
+            target_key="reporting_currency",
+        )
         return transaction_params
 
     def _build_position_params(self, request_payload: dict[str, object]) -> dict[str, object]:
-        as_of_date = self._required_string(request_payload, "as_of_date", "asOfDate")
+        as_of_date = self._request_as_of_date(request_payload)
         params: dict[str, object] = {
             "as_of_date": as_of_date,
             "include_projected": "false",
         }
-        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
-            "reportingCurrency"
+        self._copy_optional_request_string(
+            params,
+            request_payload,
+            source_keys=REPORTING_CURRENCY_KEYS,
+            target_key="reporting_currency",
         )
-        if isinstance(reporting_currency, str) and reporting_currency:
-            params["reporting_currency"] = reporting_currency
         return params
 
     def _allocation_dimensions(self, request_payload: dict[str, object]) -> list[str]:
-        raw_dimensions = request_payload.get("allocation_dimensions")
-        if raw_dimensions is None:
-            raw_dimensions = request_payload.get("allocationDimensions")
+        raw_dimensions = self._optional_value(request_payload, *ALLOCATION_DIMENSIONS_KEYS)
         if raw_dimensions is None:
             return ["asset_class"]
         if not isinstance(raw_dimensions, list) or not raw_dimensions:
@@ -828,10 +842,8 @@ class ReportingReadService:
             "stateful_input": {},
             "periods": [{"period": period, "frequencies": ["daily"]} for period in periods],
         }
-        reporting_currency = request_payload.get("reporting_currency") or request_payload.get(
-            "reportingCurrency"
-        )
-        if isinstance(reporting_currency, str) and reporting_currency:
+        reporting_currency = self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS)
+        if reporting_currency:
             request["report_ccy"] = reporting_currency
             request["currency"] = reporting_currency
         return request
@@ -906,6 +918,34 @@ class ReportingReadService:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Missing required request field: {keys[0]}",
         )
+
+    def _request_as_of_date(self, payload: dict[str, object]) -> str:
+        return self._required_string(payload, *AS_OF_DATE_KEYS)
+
+    def _copy_optional_request_string(
+        self,
+        target: dict[str, object],
+        payload: dict[str, object],
+        *,
+        source_keys: tuple[str, ...],
+        target_key: str,
+    ) -> None:
+        value = self._optional_string(payload, *source_keys)
+        if value:
+            target[target_key] = value
+
+    def _optional_value(self, payload: dict[str, object], *keys: str) -> object | None:
+        for key in keys:
+            value = payload.get(key)
+            if value is not None:
+                return value
+        return None
+
+    def _optional_string(self, payload: dict[str, object], *keys: str) -> str | None:
+        value = self._optional_value(payload, *keys)
+        if isinstance(value, str) and value:
+            return value
+        return None
 
     @staticmethod
     def _as_dict(value: object) -> dict[str, object]:

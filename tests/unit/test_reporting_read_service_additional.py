@@ -681,17 +681,6 @@ async def test_build_risk_analytics_returns_none_on_workspace_summary_failure():
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_when_workspace_summary_call_fails():
-    service = ReportingReadService(
-        core_query_client=_CoreQuerySuccessMinimal(),
-        performance_client=_PerformanceWorkspaceStatusError(),
-        risk_client=_RiskSuccess(),
-    )
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
-    assert result is None
-
-
-@pytest.mark.asyncio
 async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),

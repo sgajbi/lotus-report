@@ -13,7 +13,7 @@ def get_reporting_read_service() -> ReportingReadService:
     return ReportingReadService()
 
 
-def _apply_section_limit(payload: dict[str, Any], section_limit: int) -> dict[str, Any]:
+def _apply_requested_section_limit(payload: dict[str, Any], section_limit: int) -> dict[str, Any]:
     limited_payload = dict(payload)
     sections = limited_payload.get("sections")
     if isinstance(sections, list) and len(sections) > section_limit:
@@ -55,7 +55,7 @@ async def get_portfolio_summary(
 ) -> dict[str, Any]:
     return await service.get_portfolio_summary(
         portfolio_id=portfolio_id,
-        request_payload=_apply_section_limit(request, section_limit),
+        request_payload=_apply_requested_section_limit(request, section_limit),
         correlation_id=correlation_id,
     )
 
@@ -80,6 +80,6 @@ async def get_portfolio_review(
 ) -> dict[str, Any]:
     return await service.get_portfolio_review(
         portfolio_id=portfolio_id,
-        request_payload=_apply_section_limit(request, section_limit),
+        request_payload=_apply_requested_section_limit(request, section_limit),
         correlation_id=correlation_id,
     )
