@@ -392,6 +392,82 @@ async def test_core_query_client_get_portfolio_review_posts_expected_contract(mo
 
 
 @pytest.mark.asyncio
+async def test_performance_client_get_contribution_posts_expected_contract(monkeypatch):
+    response = _FakeResponse(
+        status_code=200,
+        payload={"results_by_period": {"YTD": {"total_contribution": 1.2}}},
+    )
+    recorder = _RecordingAsyncClient(response=response)
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
+    status_code, payload = await client.get_contribution(
+        {"portfolio_id": "P1", "report_start_date": "2026-01-01"}
+    )
+
+    assert status_code == 200
+    assert payload == {"results_by_period": {"YTD": {"total_contribution": 1.2}}}
+    assert recorder.calls[0]["url"] == "http://performance/performance/contribution"
+    assert recorder.calls[0]["json"] == {
+        "portfolio_id": "P1",
+        "report_start_date": "2026-01-01",
+    }
+
+
+@pytest.mark.asyncio
+async def test_performance_client_get_contribution_polls_async_result(monkeypatch):
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-1",
+                    "result_path": "/performance/contribution/results/calc-1",
+                },
+            ),
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        retry_backoff_seconds=0,
+    )
+    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    assert payload == {"results_by_period": {"YTD": {}}}
+    assert recorder.calls[1]["url"] == (
+        "http://performance/performance/contribution/results/calc-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_performance_client_get_contribution_returns_accepted_without_result_path(
+    monkeypatch,
+):
+    response = _FakeResponse(status_code=202, payload={"calculation_id": "calc-1"})
+    recorder = _RecordingAsyncClient(response=response)
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
+    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert payload == {"calculation_id": "calc-1"}
+
+
 @pytest.mark.asyncio
 async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     async def _fake_post_with_retry(**kwargs):

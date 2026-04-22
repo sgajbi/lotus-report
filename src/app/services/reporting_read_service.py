@@ -240,10 +240,31 @@ class ReportingReadService:
             if self._workspace_summary_ready(performance_status, performance_payload):
                 workspace_summary_payload = performance_payload
             if self._workspace_summary_ready(performance_status, performance_payload):
-                response["performance"] = self._map_workspace_performance(
+                performance = self._map_workspace_performance(
                     performance_payload,
                     request_payload=request_payload,
                 )
+                (
+                    contribution_status,
+                    contribution_payload,
+                ) = await self._performance_client.get_contribution(
+                    self._build_contribution_request(
+                        portfolio_id=portfolio_id,
+                        as_of_date=as_of_date,
+                        request_payload=request_payload,
+                    )
+                )
+                contribution = self._map_performance_contribution(
+                    status_code=contribution_status,
+                    payload=contribution_payload,
+                )
+                performance["contribution"] = contribution
+                response["performance"] = performance
+                if "HOLDINGS" in requested_sections:
+                    self._enrich_holdings_with_contribution(
+                        response=response,
+                        contribution=contribution,
+                    )
             else:
                 response["performance"] = None
 
@@ -921,8 +942,44 @@ class ReportingReadService:
                     "instrument_name": self._safe_str(
                         row.get("instrument_name") or row.get("description")
                     ),
+                    "isin": self._safe_str(row.get("isin")) or None,
                     "quantity": self._to_float(row.get("quantity")),
+                    "position_date": self._safe_str(row.get("position_date")) or None,
+                    "product_type": self._safe_str(row.get("product_type")) or None,
+                    "sector": self._safe_str(row.get("sector")) or None,
+                    "country_of_risk": self._safe_str(row.get("country_of_risk")) or None,
+                    "rating": self._safe_str(row.get("rating")) or None,
+                    "liquidity_tier": self._safe_str(row.get("liquidity_tier")) or None,
+                    "held_since_date": self._safe_str(row.get("held_since_date")) or None,
+                    "market_price": self._position_number(
+                        row, ("market_price",), ("market_price",)
+                    ),
+                    "cost_basis_reporting_currency": self._position_number(
+                        row,
+                        ("cost_basis_reporting_currency", "cost_basis"),
+                    ),
+                    "cost_basis_local": self._position_number(row, ("cost_basis_local",)),
                     "market_value_reporting_currency": self._position_market_value(row),
+                    "market_value_local": self._position_number(
+                        row,
+                        ("market_value_local",),
+                        ("market_value_local",),
+                    ),
+                    "unrealized_pnl_reporting_currency": self._position_number(
+                        row,
+                        (
+                            "unrealized_pnl_reporting_currency",
+                            "unrealized_gain_loss",
+                            "unrealized_pnl",
+                        ),
+                        ("unrealized_gain_loss", "unrealized_pnl"),
+                    ),
+                    "unrealized_pnl_local": self._position_number(
+                        row,
+                        ("unrealized_pnl_local", "unrealized_gain_loss_local"),
+                        ("unrealized_gain_loss_local", "unrealized_pnl_local"),
+                    ),
+                    "unrealized_pnl_pct": self._position_unrealized_pnl_pct(row),
                     "weight": self._to_float(row.get("weight")),
                     "currency": self._safe_str(row.get("currency")),
                 }
@@ -1386,6 +1443,156 @@ class ReportingReadService:
             request["currency"] = reporting_currency
         return request
 
+    def _build_contribution_request(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: str,
+        request_payload: dict[str, object],
+    ) -> dict[str, object]:
+        reporting_currency = (
+            self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS) or "USD"
+        )
+        return {
+            "portfolio_id": portfolio_id,
+            "report_start_date": f"{as_of_date[:4]}-01-01",
+            "report_end_date": as_of_date,
+            "analyses": [{"period": "YTD", "frequencies": ["daily"]}],
+            "input_mode": "stateful",
+            "stateful_input": {
+                "metric_basis": "NET",
+                "dimensions": ["asset_class", "sector"],
+                "include_cash_flows": True,
+            },
+            "hierarchy": ["asset_class", "sector"],
+            "emit": {
+                "by_level": True,
+                "top_n_per_level": 10,
+                "include_other": True,
+                "include_unclassified": True,
+            },
+            "currency": reporting_currency,
+            "report_ccy": reporting_currency,
+        }
+
+    def _map_performance_contribution(
+        self,
+        *,
+        status_code: int,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        if not self._contribution_ready(status_code, payload):
+            return {
+                "status": "unavailable",
+                "reason_code": "contribution_not_sourced",
+                "message": (
+                    "Position and hierarchy contribution were not returned by lotus-performance."
+                ),
+            }
+        results_by_period = self._as_dict(payload.get("results_by_period"))
+        ytd = self._as_dict(results_by_period.get("YTD"))
+        return {
+            "status": "present",
+            "period": "YTD",
+            "total_portfolio_return_pct": ytd.get("total_portfolio_return"),
+            "total_contribution_pct": ytd.get("total_contribution"),
+            "summary": self._as_dict(ytd.get("summary")),
+            "top_position_contributors": self._map_position_contributions(
+                self._as_list(ytd.get("position_contributions"))
+            ),
+            "hierarchy": self._map_contribution_levels(self._as_list(ytd.get("levels"))),
+            "methodology": {
+                "source": "lotus-performance:/performance/contribution",
+                "basis": "NET",
+                "frequency": "daily",
+                "weighting_scheme": self._as_dict(ytd.get("summary")).get("weighting_scheme"),
+            },
+            "diagnostics": payload.get("diagnostics"),
+            "audit": payload.get("audit"),
+        }
+
+    @staticmethod
+    def _contribution_ready(status_code: int, payload: dict[str, object]) -> bool:
+        return status_code < status.HTTP_400_BAD_REQUEST and "results_by_period" in payload
+
+    def _map_position_contributions(self, rows: list[object]) -> list[dict[str, object]]:
+        mapped: list[dict[str, object]] = []
+        for row_payload in rows:
+            row = self._as_dict(row_payload)
+            position_id = self._safe_str(row.get("position_id"))
+            mapped.append(
+                {
+                    "position_id": position_id,
+                    "security_id": self._security_id_from_position_id(position_id),
+                    "total_contribution_pct": row.get("total_contribution"),
+                    "average_weight_pct": row.get("average_weight"),
+                    "total_return_pct": row.get("total_return"),
+                    "local_contribution_pct": row.get("local_contribution"),
+                    "fx_contribution_pct": row.get("fx_contribution"),
+                }
+            )
+        return mapped
+
+    def _map_contribution_levels(self, levels: list[object]) -> list[dict[str, object]]:
+        mapped: list[dict[str, object]] = []
+        for level_payload in levels:
+            level = self._as_dict(level_payload)
+            mapped.append(
+                {
+                    "level": self._to_int(level.get("level")),
+                    "name": level.get("name"),
+                    "parent": level.get("parent"),
+                    "rows": [
+                        {
+                            "key": self._as_dict(row.get("key")),
+                            "contribution_pct": row.get("contribution"),
+                            "average_weight_pct": row.get("weight_avg"),
+                            "is_other": row.get("is_other"),
+                            "children_count": row.get("children_count"),
+                        }
+                        for row in [
+                            self._as_dict(item) for item in self._as_list(level.get("rows"))
+                        ]
+                    ],
+                }
+            )
+        return mapped
+
+    @staticmethod
+    def _security_id_from_position_id(position_id: str) -> str:
+        if ":" in position_id:
+            return position_id.rsplit(":", 1)[-1]
+        return position_id
+
+    def _enrich_holdings_with_contribution(
+        self,
+        *,
+        response: dict[str, object],
+        contribution: dict[str, object],
+    ) -> None:
+        if contribution.get("status") != "present":
+            return
+        contribution_by_security = {
+            self._safe_str(row.get("security_id")): row
+            for row in [
+                self._as_dict(item)
+                for item in self._as_list(contribution.get("top_position_contributors"))
+            ]
+            if self._safe_str(row.get("security_id"))
+        }
+        holdings = self._as_dict(response.get("holdings"))
+        for rows in self._as_dict(holdings.get("holdingsByAssetClass")).values():
+            for row_payload in self._as_list(rows):
+                row = self._as_dict(row_payload)
+                contribution_row = self._as_dict(
+                    contribution_by_security.get(self._safe_str(row.get("security_id")))
+                )
+                if not contribution_row:
+                    continue
+                row["ytd_contribution_pct"] = contribution_row.get("total_contribution_pct")
+                row["ytd_average_weight_pct"] = contribution_row.get("average_weight_pct")
+                row["ytd_total_return_pct"] = contribution_row.get("total_return_pct")
+
     def _workspace_period_start(self, period_payload: dict[str, object]) -> str | None:
         daily_breakdowns = self._workspace_daily_breakdowns(period_payload)
         if daily_breakdowns:
@@ -1645,6 +1852,8 @@ class ReportingReadService:
     def _performance_key_figures(self, performance: dict[str, object]) -> dict[str, object]:
         summary = self._as_dict(performance.get("summary"))
         benchmark = self._as_dict(performance.get("benchmark"))
+        contribution = self._as_dict(performance.get("contribution"))
+        top_contributors = self._as_list(contribution.get("top_position_contributors"))
         return {
             "one_month_net_return_pct": self._period_return(summary, "1M", "net_cumulative_return"),
             "three_month_net_return_pct": self._period_return(
@@ -1659,6 +1868,14 @@ class ReportingReadService:
             ),
             "benchmark_code": benchmark.get("benchmark_code"),
             "benchmark_comparison_status": benchmark.get("comparison_status"),
+            "contribution_status": contribution.get("status", "not_requested"),
+            "ytd_total_contribution_pct": contribution.get("total_contribution_pct"),
+            "largest_positive_contributor": self._contribution_extreme(
+                top_contributors, largest=True
+            ),
+            "largest_negative_contributor": self._contribution_extreme(
+                top_contributors, largest=False
+            ),
         }
 
     def _risk_key_figures(self, risk: dict[str, object]) -> dict[str, object]:
@@ -1711,6 +1928,20 @@ class ReportingReadService:
         positive_exposure = sum(
             self._to_float(row.get("market_value_reporting_currency")) for row in sorted_rows
         )
+        unrealized_pnl_rows = [
+            row
+            for row in rows
+            if self._optional_number_raw(row.get("unrealized_pnl_reporting_currency")) is not None
+        ]
+        total_unrealized_pnl = sum(
+            self._to_float(row.get("unrealized_pnl_reporting_currency"))
+            for row in unrealized_pnl_rows
+        )
+        cost_basis_rows = [
+            row
+            for row in rows
+            if self._optional_number_raw(row.get("cost_basis_reporting_currency")) is not None
+        ]
         negative_cash_rows = [
             row
             for row in rows
@@ -1720,6 +1951,20 @@ class ReportingReadService:
         return {
             "position_count": self._to_int(holdings.get("positionCount")),
             "positive_exposure_reporting_currency": positive_exposure,
+            "cost_basis_coverage": self._coverage_status(len(cost_basis_rows), len(rows)),
+            "unrealized_pnl_coverage": self._coverage_status(len(unrealized_pnl_rows), len(rows)),
+            "total_unrealized_pnl_reporting_currency": (
+                total_unrealized_pnl if unrealized_pnl_rows else None
+            ),
+            "total_unrealized_pnl_pct": self._safe_pct(
+                total_unrealized_pnl,
+                sum(
+                    abs(self._to_float(row.get("cost_basis_reporting_currency")))
+                    for row in cost_basis_rows
+                ),
+            )
+            if cost_basis_rows and unrealized_pnl_rows
+            else None,
             "top_holding": self._holding_key_figure(sorted_rows[0]) if sorted_rows else None,
             "top_five_positive_exposure_pct": self._safe_pct(
                 sum(
@@ -1747,6 +1992,16 @@ class ReportingReadService:
                 else None
             ),
         }
+
+    @staticmethod
+    def _coverage_status(populated_count: int, total_count: int) -> str:
+        if total_count <= 0:
+            return "not_sourced"
+        if populated_count == total_count:
+            return "present"
+        if populated_count > 0:
+            return "partial"
+        return "not_sourced"
 
     def _transaction_key_figures(self, transactions: dict[str, object]) -> dict[str, object]:
         by_category = self._as_dict(transactions.get("transactionsByCategory"))
@@ -1776,6 +2031,29 @@ class ReportingReadService:
                         "so excess return and benchmark-relative risk are not available."
                     ),
                     "source_section_ids": ["performance_review", "risk_review"],
+                }
+            )
+        if performance.get("contribution_status") not in {"present", None, "not_requested"}:
+            observations.append(
+                {
+                    "observation_id": "performance_contribution_unavailable",
+                    "severity": "gap",
+                    "message": (
+                        "Position and hierarchy contribution were requested but are not available "
+                        "in the current report response."
+                    ),
+                    "source_section_ids": ["performance_review"],
+                }
+            )
+        if holdings.get("unrealized_pnl_coverage") != "present":
+            observations.append(
+                {
+                    "observation_id": "position_unrealized_pnl_incomplete",
+                    "severity": "gap",
+                    "message": (
+                        "Not all holdings include source-backed cost basis and unrealized P&L."
+                    ),
+                    "source_section_ids": ["holdings_appendix"],
                 }
             )
         ytd_return = self._optional_number_raw(performance.get("ytd_net_return_pct"))
@@ -1851,6 +2129,33 @@ class ReportingReadService:
                     ),
                 },
                 {
+                    "group_id": "position_pnl_and_cost_basis",
+                    "status": self._position_pnl_coverage(response),
+                    "required": True,
+                    "message": (
+                        "Position-level book cost and unrealized gain/loss are sourced from "
+                        "lotus-core HoldingsAsOf and must be present for a complete review pack."
+                    ),
+                },
+                {
+                    "group_id": "performance_contribution",
+                    "status": self._contribution_coverage(response),
+                    "required": True,
+                    "message": (
+                        "Position, asset-class, and sector contribution are sourced from "
+                        "lotus-performance /performance/contribution for YTD review attribution."
+                    ),
+                },
+                {
+                    "group_id": "instrument_reference_data",
+                    "status": self._instrument_reference_coverage(response),
+                    "required": True,
+                    "message": (
+                        "Security identifier, ISIN, product type, sector, country of risk, "
+                        "rating, liquidity tier, and holding date are required where sourced."
+                    ),
+                },
+                {
                     "group_id": "targets_guidelines_and_suitability",
                     "status": "not_sourced",
                     "required": False,
@@ -1891,6 +2196,37 @@ class ReportingReadService:
         if benchmark.get("comparison_status") == "available":
             return "present"
         return "partial"
+
+    def _position_pnl_coverage(self, response: dict[str, object]) -> str:
+        holdings = self._as_dict(response.get("holdings"))
+        rows = self._holding_rows(holdings)
+        populated = [
+            row
+            for row in rows
+            if self._optional_number_raw(row.get("cost_basis_reporting_currency")) is not None
+            and self._optional_number_raw(row.get("unrealized_pnl_reporting_currency")) is not None
+        ]
+        return self._coverage_status(len(populated), len(rows))
+
+    def _contribution_coverage(self, response: dict[str, object]) -> str:
+        contribution = self._as_dict(self._as_dict(response.get("performance")).get("contribution"))
+        if contribution.get("status") == "present":
+            return "present"
+        if response.get("performance") is None:
+            return "not_sourced"
+        return "unavailable"
+
+    def _instrument_reference_coverage(self, response: dict[str, object]) -> str:
+        holdings = self._as_dict(response.get("holdings"))
+        rows = self._holding_rows(holdings)
+        populated = [
+            row
+            for row in rows
+            if self._safe_str(row.get("isin"))
+            and self._safe_str(row.get("product_type"))
+            and self._safe_str(row.get("liquidity_tier"))
+        ]
+        return self._coverage_status(len(populated), len(rows))
 
     def _period_return(self, summary: dict[str, object], period: str, key: str) -> object | None:
         return self._as_dict(summary.get(period)).get(key)
@@ -1947,6 +2283,39 @@ class ReportingReadService:
             ),
             "weight_pct": self._to_float(row.get("weight")) * 100,
             "currency": row.get("currency"),
+            "unrealized_pnl_reporting_currency": row.get("unrealized_pnl_reporting_currency"),
+            "unrealized_pnl_pct": row.get("unrealized_pnl_pct"),
+            "ytd_contribution_pct": row.get("ytd_contribution_pct"),
+        }
+
+    def _contribution_extreme(
+        self, rows: list[object], *, largest: bool
+    ) -> dict[str, object] | None:
+        mapped_rows = [self._as_dict(row) for row in rows]
+        mapped_rows = [
+            row
+            for row in mapped_rows
+            if self._optional_number_raw(row.get("total_contribution_pct")) is not None
+        ]
+        if not mapped_rows:
+            return None
+        selected = (
+            max(
+                mapped_rows,
+                key=lambda row: self._to_float(row.get("total_contribution_pct")),
+            )
+            if largest
+            else min(
+                mapped_rows,
+                key=lambda row: self._to_float(row.get("total_contribution_pct")),
+            )
+        )
+        return {
+            "security_id": selected.get("security_id"),
+            "position_id": selected.get("position_id"),
+            "total_contribution_pct": selected.get("total_contribution_pct"),
+            "average_weight_pct": selected.get("average_weight_pct"),
+            "total_return_pct": selected.get("total_return_pct"),
         }
 
     def _safe_pct(self, numerator: float, denominator: float) -> float | None:
@@ -2075,6 +2444,44 @@ class ReportingReadService:
         valuation = self._as_dict(row.get("valuation"))
         return self._to_float(valuation.get("market_value"))
 
+    def _position_number(
+        self,
+        row: dict[str, object],
+        row_keys: tuple[str, ...],
+        valuation_keys: tuple[str, ...] = (),
+    ) -> float | None:
+        for key in row_keys:
+            parsed = self._optional_number_raw(row.get(key))
+            if parsed is not None:
+                return parsed
+        valuation = self._as_dict(row.get("valuation"))
+        for key in valuation_keys:
+            parsed = self._optional_number_raw(valuation.get(key))
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _position_unrealized_pnl_pct(self, row: dict[str, object]) -> object | None:
+        explicit = self._position_number(
+            row,
+            ("unrealized_pnl_pct", "unrealized_gain_loss_pct"),
+            ("unrealized_pnl_pct", "unrealized_gain_loss_pct"),
+        )
+        if explicit is not None:
+            return explicit
+        pnl = self._position_number(
+            row,
+            ("unrealized_pnl_reporting_currency", "unrealized_gain_loss", "unrealized_pnl"),
+            ("unrealized_gain_loss", "unrealized_pnl"),
+        )
+        cost_basis = self._position_number(
+            row,
+            ("cost_basis_reporting_currency", "cost_basis"),
+        )
+        if pnl is None or cost_basis is None or cost_basis == 0:
+            return None
+        return (pnl / abs(cost_basis)) * 100
+
     @staticmethod
     def _workspace_summary_ready(status_code: int, payload: dict[str, object]) -> bool:
         return status_code < status.HTTP_400_BAD_REQUEST and "results_by_period" in payload
@@ -2140,7 +2547,7 @@ class ReportingReadService:
     def _performance_items(self, performance: dict[str, object]) -> list[dict[str, object]]:
         summary = self._as_dict(performance.get("summary"))
         benchmark = self._as_dict(performance.get("benchmark"))
-        return [
+        items = [
             {
                 "item_type": "performance_period",
                 "period": period,
@@ -2157,6 +2564,32 @@ class ReportingReadService:
             for period, period_payload in summary.items()
             for row in [self._as_dict(period_payload)]
         ]
+        contribution = self._as_dict(performance.get("contribution"))
+        if contribution.get("status") == "present":
+            items.append(
+                {
+                    "item_type": "contribution_summary",
+                    "period": contribution.get("period"),
+                    "total_portfolio_return_pct": contribution.get("total_portfolio_return_pct"),
+                    "total_contribution_pct": contribution.get("total_contribution_pct"),
+                }
+            )
+            for row_payload in self._as_list(contribution.get("top_position_contributors")):
+                row = self._as_dict(row_payload)
+                items.append({"item_type": "position_contribution", **row})
+            for level_payload in self._as_list(contribution.get("hierarchy")):
+                level = self._as_dict(level_payload)
+                for row_payload in self._as_list(level.get("rows")):
+                    row = self._as_dict(row_payload)
+                    items.append(
+                        {
+                            "item_type": "hierarchy_contribution",
+                            "level": level.get("level"),
+                            "dimension": level.get("name"),
+                            **row,
+                        }
+                    )
+        return items
 
     def _risk_items(self, risk_analytics: dict[str, object]) -> list[dict[str, object]]:
         summary = self._as_dict(risk_analytics.get("summary"))
@@ -2215,10 +2648,30 @@ class ReportingReadService:
                         "rank": rank,
                         "security_id": row.get("security_id"),
                         "instrument_name": row.get("instrument_name"),
+                        "isin": row.get("isin"),
                         "quantity": row.get("quantity"),
+                        "position_date": row.get("position_date"),
+                        "product_type": row.get("product_type"),
+                        "sector": row.get("sector"),
+                        "country_of_risk": row.get("country_of_risk"),
+                        "rating": row.get("rating"),
+                        "liquidity_tier": row.get("liquidity_tier"),
+                        "held_since_date": row.get("held_since_date"),
+                        "market_price": row.get("market_price"),
+                        "cost_basis_reporting_currency": row.get("cost_basis_reporting_currency"),
+                        "cost_basis_local": row.get("cost_basis_local"),
                         "market_value_reporting_currency": row.get(
                             "market_value_reporting_currency"
                         ),
+                        "market_value_local": row.get("market_value_local"),
+                        "unrealized_pnl_reporting_currency": row.get(
+                            "unrealized_pnl_reporting_currency"
+                        ),
+                        "unrealized_pnl_local": row.get("unrealized_pnl_local"),
+                        "unrealized_pnl_pct": row.get("unrealized_pnl_pct"),
+                        "ytd_contribution_pct": row.get("ytd_contribution_pct"),
+                        "ytd_average_weight_pct": row.get("ytd_average_weight_pct"),
+                        "ytd_total_return_pct": row.get("ytd_total_return_pct"),
                         "weight": row.get("weight"),
                         "currency": row.get("currency"),
                     }

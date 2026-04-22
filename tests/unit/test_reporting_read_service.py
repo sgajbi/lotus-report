@@ -108,8 +108,21 @@ class _CoreQueryClientSuccess:
                     "security_id": "EQ-1",
                     "instrument_name": "Equity 1",
                     "asset_class": "Equity",
+                    "isin": "US0000000001",
+                    "sector": "Technology",
+                    "country_of_risk": "United States",
+                    "product_type": "Equity",
+                    "liquidity_tier": "L1",
+                    "held_since_date": "2025-01-15",
                     "quantity": 10,
-                    "valuation": {"market_value": "600000.0"},
+                    "cost_basis": "500000.0",
+                    "valuation": {
+                        "market_price": "60.0",
+                        "market_value": "600000.0",
+                        "unrealized_gain_loss": "100000.0",
+                        "market_value_local": "600000.0",
+                        "unrealized_gain_loss_local": "100000.0",
+                    },
                     "weight": 0.6,
                     "currency": "USD",
                 },
@@ -117,8 +130,13 @@ class _CoreQueryClientSuccess:
                     "security_id": "CASH-1",
                     "instrument_name": "Cash",
                     "asset_class": "Cash",
+                    "isin": "CASH-USD",
+                    "product_type": "Cash",
+                    "liquidity_tier": "L1",
                     "quantity": 1,
+                    "cost_basis": 50000.0,
                     "market_value_reporting_currency": 50000.0,
+                    "valuation": {"unrealized_gain_loss": 0.0},
                     "weight": 0.05,
                     "currency": "USD",
                 },
@@ -213,6 +231,52 @@ class _PerformanceClientSuccess:
                     "money_weighted_return": {"start_date": "2023-02-24", "end_date": "2026-02-24"},
                 },
             }
+        }
+
+    async def get_contribution(self, payload: dict[str, object]):
+        self.seen_payloads.append(payload)
+        return 200, {
+            "results_by_period": {
+                "YTD": {
+                    "total_portfolio_return": 4.1,
+                    "total_contribution": 4.1,
+                    "position_contributions": [
+                        {
+                            "position_id": "P1:EQ-1",
+                            "total_contribution": 3.5,
+                            "average_weight": 60.0,
+                            "total_return": 5.8,
+                        },
+                        {
+                            "position_id": "P1:CASH-1",
+                            "total_contribution": 0.0,
+                            "average_weight": 5.0,
+                            "total_return": 0.0,
+                        },
+                    ],
+                    "summary": {
+                        "portfolio_contribution": 4.1,
+                        "coverage_mv_pct": 100.0,
+                        "weighting_scheme": "BOD",
+                    },
+                    "levels": [
+                        {
+                            "level": 1,
+                            "name": "asset_class",
+                            "rows": [
+                                {
+                                    "key": {"asset_class": "Equity"},
+                                    "contribution": 3.5,
+                                    "weight_avg": 60.0,
+                                    "is_other": False,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+            "diagnostics": {"notes": []},
+            "audit": {"counts": {"input_positions": 2}},
         }
 
 
@@ -316,6 +380,9 @@ class _CoreQueryClientFailure:
 
 class _PerformanceClientFailure:
     async def get_workspace_summary(self, payload: dict[str, object]):
+        return 503, {"detail": "upstream unavailable"}
+
+    async def get_contribution(self, payload: dict[str, object]):
         return 503, {"detail": "upstream unavailable"}
 
 
@@ -474,14 +541,27 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert response["keyFigures"]["performance"]["ytd_net_return_pct"] == 4.1
     assert response["keyFigures"]["performance"]["benchmark_comparison_status"] == "unavailable"
+    assert response["keyFigures"]["performance"]["contribution_status"] == "present"
+    assert response["keyFigures"]["performance"]["largest_positive_contributor"] == {
+        "security_id": "EQ-1",
+        "position_id": "P1:EQ-1",
+        "total_contribution_pct": 3.5,
+        "average_weight_pct": 60.0,
+        "total_return_pct": 5.8,
+    }
     assert response["keyFigures"]["risk"]["ytd_volatility_pct"] == 0.12
     assert response["keyFigures"]["holdings"]["top_holding"]["security_id"] == "EQ-1"
+    assert response["keyFigures"]["holdings"]["unrealized_pnl_coverage"] == "present"
+    assert response["keyFigures"]["holdings"]["total_unrealized_pnl_reporting_currency"] == 100000.0
     assert response["keyFigures"]["holdings"]["top_five_positive_exposure_pct"] == 100.0
     coverage = {
         group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
     }
     assert coverage["portfolio_value"] == "present"
     assert coverage["benchmark_comparison"] == "partial"
+    assert coverage["position_pnl_and_cost_basis"] == "present"
+    assert coverage["performance_contribution"] == "present"
+    assert coverage["instrument_reference_data"] == "present"
     assert coverage["targets_guidelines_and_suitability"] == "not_sourced"
     assert response["reviewObservations"][0]["observation_id"] == (
         "benchmark_comparison_not_sourced"
@@ -637,6 +717,11 @@ async def test_review_composes_core_query_performance_and_risk():
         client_sections["holdings_appendix"]["items"][1]["market_value_reporting_currency"]
         == 600000.0
     )
+    assert (
+        client_sections["holdings_appendix"]["items"][1]["unrealized_pnl_reporting_currency"]
+        == 100000.0
+    )
+    assert client_sections["holdings_appendix"]["items"][1]["ytd_contribution_pct"] == 3.5
 
 
 @pytest.mark.asyncio

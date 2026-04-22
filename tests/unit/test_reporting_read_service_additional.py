@@ -180,6 +180,25 @@ class _PerformanceSuccessEmpty:
             }
         }
 
+    async def get_contribution(self, payload: dict[str, object]):
+        return 200, {
+            "results_by_period": {
+                "YTD": {
+                    "total_portfolio_return": 2.1,
+                    "total_contribution": 2.1,
+                    "position_contributions": [],
+                    "summary": {
+                        "portfolio_contribution": 2.1,
+                        "coverage_mv_pct": 100.0,
+                        "weighting_scheme": "BOD",
+                    },
+                    "levels": [],
+                }
+            },
+            "diagnostics": {"notes": []},
+            "audit": {"counts": {"input_positions": 0}},
+        }
+
 
 class _RiskSuccess:
     async def calculate_risk(self, payload: dict[str, object]):
@@ -758,6 +777,7 @@ def test_review_key_figures_capture_missing_gold_standard_figures():
     }
     assert {item["observation_id"] for item in observations} == {
         "benchmark_comparison_not_sourced",
+        "position_unrealized_pnl_incomplete",
         "negative_ytd_performance",
         "negative_cash_position",
         "top_five_positive_exposure",
@@ -765,6 +785,8 @@ def test_review_key_figures_capture_missing_gold_standard_figures():
     }
     coverage_by_group = {group["group_id"]: group["status"] for group in coverage["figure_groups"]}
     assert coverage_by_group["benchmark_comparison"] == "partial"
+    assert coverage_by_group["position_pnl_and_cost_basis"] == "not_sourced"
+    assert coverage_by_group["performance_contribution"] == "unavailable"
     assert coverage_by_group["tax_lot_and_realized_gain_loss"] == "not_sourced"
 
 
