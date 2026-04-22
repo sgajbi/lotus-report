@@ -279,10 +279,33 @@ def test_openapi_uses_typed_portfolio_review_contract():
     response_schema = review_post["responses"]["200"]["content"]["application/json"]["schema"]
     request_schema = review_post["requestBody"]["content"]["application/json"]["schema"]
 
+    assert review_post["summary"] == "Get first-class portfolio review report"
+    assert "machine-readable JSON" in review_post["description"]
+    assert "not sourced" in review_post["description"]
+
     assert response_schema["$ref"].endswith("/PortfolioReviewReportResponse")
     assert request_schema["$ref"].endswith("/PortfolioReviewReportRequest")
     request_contract = schema["components"]["schemas"]["PortfolioReviewReportRequest"]
     assert "benchmarkCode" in request_contract["properties"]
+    assert request_contract["properties"]["benchmarkCode"]["description"]
+
+    response_contract = schema["components"]["schemas"]["PortfolioReviewReportResponse"]
+    for property_name in [
+        "clientProfile",
+        "keyFigures",
+        "reportCoverage",
+        "advisorBriefing",
+        "aiReadiness",
+    ]:
+        assert response_contract["properties"][property_name]["description"]
+
+    examples = response_contract["examples"]
+    assert examples[0]["clientProfile"]["status"] == "present"
+    assert (
+        examples[0]["reportCoverage"]["targets_guidelines_and_suitability"]["status"]
+        == "not_sourced"
+    )
+    assert "trade_recommendation" in examples[0]["aiReadiness"]["blocked_features"]
 
 
 def test_ras_portfolio_review_propagates_upstream_error():

@@ -68,21 +68,49 @@ async def get_portfolio_summary(
 @router.post(
     "/portfolios/{portfolio_id}/review",
     response_model=PortfolioReviewReportResponse,
-    summary="Get portfolio review report (lotus-report-owned)",
+    summary="Get first-class portfolio review report",
     description=(
-        "lotus-report-owned reporting endpoint for portfolio review report payload. "
-        "Returns the typed RFC-0002 portfolio review report contract while preserving "
-        "current legacy report groups during rollout."
+        "Returns the lotus-report-owned RFC-0002 portfolio review contract for front-office "
+        "client/advisor review meetings. The response is machine-readable JSON with sourced "
+        "client profile, key figures, client-ready sections, advisor-only sections, report "
+        "coverage, observations, evidence lineage, deterministic advisor briefing, presentation "
+        "structure, and guarded AI-readiness metadata. The endpoint composes authoritative "
+        "lotus-core, lotus-performance, and lotus-risk data and marks unsupported suitability, "
+        "mandate-control, target-allocation, tax-lot, realized-gain/loss, and advice features as "
+        "not sourced rather than inventing report content."
     ),
 )
 async def get_portfolio_review(
-    portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
+    portfolio_id: Annotated[
+        str,
+        Path(
+            description=(
+                "Canonical portfolio identifier. Use PB_SG_GLOBAL_BAL_001 for governed local "
+                "front-office proof unless a different dataset is explicitly required."
+            )
+        ),
+    ],
     request: PortfolioReviewReportRequest,
     section_limit: Annotated[
-        int, Query(alias="sectionLimit", ge=1, le=20, description="pagination")
+        int,
+        Query(
+            alias="sectionLimit",
+            ge=1,
+            le=20,
+            description=(
+                "Maximum number of requested section keys to honor from the request body. This "
+                "is a compatibility guard, not result-row pagination."
+            ),
+        ),
     ] = 10,
     service: ReportingReadService = Depends(get_reporting_read_service),
-    correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Correlation-ID",
+            description="Caller-supplied correlation id propagated to upstream service calls.",
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     return await service.get_portfolio_review(
         portfolio_id=portfolio_id,
