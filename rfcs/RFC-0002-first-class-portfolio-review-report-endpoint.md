@@ -236,8 +236,10 @@ Required contract properties:
 2. explicit request model and response model names,
 3. stable section identifiers,
 4. stable supportability-state vocabulary,
-5. OpenAPI examples covering ready, partial, and unavailable states,
-6. source and methodology metadata included in the response rather than hidden in logs.
+5. normalized machine-readable `client_sections[].items` rather than empty presentation
+   placeholders,
+6. OpenAPI examples covering ready, partial, and unavailable states,
+7. source and methodology metadata included in the response rather than hidden in logs.
 
 ### Request Compatibility
 

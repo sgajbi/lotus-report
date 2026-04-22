@@ -49,8 +49,8 @@ Boundary rules that matter:
    `lotus-performance`, and `lotus-risk`.
 2. It is part of the canonical front-office stack and is exposed through `report.dev.lotus`.
 3. `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
-   report contract with typed request/response models, explicit section readiness, evidence
-   lineage, and advisor-only discussion sections.
+   report contract with typed request/response models, normalized machine-readable JSON section
+   items, explicit section readiness, evidence lineage, and advisor-only discussion sections.
 4. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 5. Request conventions are mixed by surface: integration capabilities use snake_case query

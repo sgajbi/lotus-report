@@ -362,7 +362,7 @@ class ReportingReadService:
                 "status": supportability_status,
                 "reason_code": self._supportability_reason_code(supportability),
                 "message": self._supportability_message(supportability, title),
-                "items": [self._as_dict(section_payload)],
+                "items": self._section_items(section_id, section_payload),
             }
 
         if self._section_not_applicable(section_id=section_id, section_payload=section_payload):
@@ -372,14 +372,14 @@ class ReportingReadService:
                 "status": "not_applicable",
                 "reason_code": "no_applicable_activity",
                 "message": f"{title} has no applicable activity for this request.",
-                "items": [self._as_dict(section_payload)],
+                "items": self._section_items(section_id, section_payload),
             }
 
         return {
             "section_id": section_id,
             "title": title,
             "status": "ready",
-            "items": [self._as_dict(section_payload)],
+            "items": self._section_items(section_id, section_payload),
         }
 
     def _section_not_applicable(self, *, section_id: str, section_payload: object) -> bool:
@@ -1498,3 +1498,179 @@ class ReportingReadService:
         if isinstance(value, str):
             return value
         return ""
+
+    def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
+        section = self._as_dict(section_payload)
+        if section_id == "executive_summary":
+            return self._overview_items(section)
+        if section_id == "asset_allocation":
+            return self._allocation_items(section)
+        if section_id == "performance_review":
+            return self._performance_items(section)
+        if section_id == "risk_review":
+            return self._risk_items(section)
+        if section_id == "income_cash_activity":
+            return self._income_activity_items(section)
+        if section_id == "holdings_appendix":
+            return self._holding_items(section)
+        if section_id == "transactions_appendix":
+            return self._transaction_items(section)
+        return [{"item_type": "section_payload", "payload": section}]
+
+    def _overview_items(self, overview: dict[str, object]) -> list[dict[str, object]]:
+        currency = self._safe_str(overview.get("currency"))
+        metrics = (
+            ("total_market_value", "Total market value"),
+            ("total_cash", "Total cash"),
+            ("invested_market_value", "Invested market value"),
+        )
+        return [
+            {
+                "item_type": "measure",
+                "metric": metric,
+                "label": label,
+                "value": self._to_float(overview.get(metric)),
+                "unit": "money",
+                "currency": currency,
+            }
+            for metric, label in metrics
+            if metric in overview
+        ]
+
+    def _allocation_items(self, allocation: dict[str, object]) -> list[dict[str, object]]:
+        items: list[dict[str, object]] = []
+        for view_key, buckets in allocation.items():
+            if not isinstance(view_key, str):
+                continue
+            for rank, bucket in enumerate(self._as_list(buckets), start=1):
+                row = self._as_dict(bucket)
+                items.append(
+                    {
+                        "item_type": "allocation_bucket",
+                        "view": view_key,
+                        "rank": rank,
+                        "group": row.get("group"),
+                        "weight": self._to_float(row.get("weight")),
+                        "market_value": self._to_float(row.get("market_value")),
+                        "position_count": self._to_int(row.get("position_count")),
+                    }
+                )
+        return items
+
+    def _performance_items(self, performance: dict[str, object]) -> list[dict[str, object]]:
+        summary = self._as_dict(performance.get("summary"))
+        benchmark = self._as_dict(performance.get("benchmark"))
+        return [
+            {
+                "item_type": "performance_period",
+                "period": period,
+                "start_date": row.get("start_date"),
+                "end_date": row.get("end_date"),
+                "net_cumulative_return": row.get("net_cumulative_return"),
+                "net_annualized_return": row.get("net_annualized_return"),
+                "gross_cumulative_return": row.get("gross_cumulative_return"),
+                "gross_annualized_return": row.get("gross_annualized_return"),
+                "annualized_return_supported": row.get("annualized_return_supported"),
+                "benchmark_code": benchmark.get("benchmark_code"),
+            }
+            for period, period_payload in summary.items()
+            for row in [self._as_dict(period_payload)]
+        ]
+
+    def _risk_items(self, risk_analytics: dict[str, object]) -> list[dict[str, object]]:
+        summary = self._as_dict(risk_analytics.get("summary"))
+        return [
+            {
+                "item_type": "risk_period",
+                "period": period,
+                "volatility": row.get("volatility"),
+                "risk_adjusted_return": row.get("risk_adjusted_return"),
+                "drawdown": row.get("drawdown"),
+                "value_at_risk": row.get("value_at_risk"),
+            }
+            for period, period_payload in summary.items()
+            for row in [self._as_dict(period_payload)]
+        ]
+
+    def _income_activity_items(
+        self, income_and_activity: dict[str, object]
+    ) -> list[dict[str, object]]:
+        items: list[dict[str, object]] = []
+        income_summary = self._as_dict(income_and_activity.get("incomeSummary"))
+        if income_summary:
+            items.append({"item_type": "income_summary", **income_summary})
+        activity_summary = self._as_dict(income_and_activity.get("activitySummary"))
+        for key, value in activity_summary.items():
+            if not key.startswith("total_"):
+                continue
+            bucket = key.removeprefix("total_")
+            items.append(
+                {
+                    "item_type": "activity_flow",
+                    "bucket": bucket.upper(),
+                    "amount_reporting_currency": self._to_float(value),
+                    "transaction_count": self._to_int(
+                        activity_summary.get(f"{bucket}_transaction_count")
+                    ),
+                }
+            )
+        return items
+
+    def _holding_items(self, holdings: dict[str, object]) -> list[dict[str, object]]:
+        items = [
+            {
+                "item_type": "holdings_summary",
+                "position_count": self._to_int(holdings.get("positionCount")),
+            }
+        ]
+        holdings_by_asset_class = self._as_dict(holdings.get("holdingsByAssetClass"))
+        for asset_class, rows in holdings_by_asset_class.items():
+            for rank, row_payload in enumerate(self._as_list(rows), start=1):
+                row = self._as_dict(row_payload)
+                items.append(
+                    {
+                        "item_type": "holding",
+                        "asset_class": asset_class,
+                        "rank": rank,
+                        "security_id": row.get("security_id"),
+                        "instrument_name": row.get("instrument_name"),
+                        "quantity": row.get("quantity"),
+                        "market_value_reporting_currency": row.get(
+                            "market_value_reporting_currency"
+                        ),
+                        "weight": row.get("weight"),
+                        "currency": row.get("currency"),
+                    }
+                )
+        return items
+
+    def _transaction_items(self, transactions: dict[str, object]) -> list[dict[str, object]]:
+        items = [
+            {
+                "item_type": "transactions_summary",
+                "transaction_count": self._to_int(transactions.get("transactionCount")),
+            }
+        ]
+        transactions_by_asset_class = self._as_dict(transactions.get("transactionsByAssetClass"))
+        for asset_class, rows in transactions_by_asset_class.items():
+            for row_payload in self._as_list(rows):
+                row = self._as_dict(row_payload)
+                items.append(
+                    {
+                        "item_type": "transaction",
+                        "asset_class": asset_class,
+                        "transaction_id": row.get("transaction_id"),
+                        "transaction_date": row.get("transaction_date"),
+                        "transaction_type": row.get("transaction_type"),
+                        "gross_transaction_amount_reporting_currency": row.get(
+                            "gross_transaction_amount_reporting_currency"
+                        ),
+                        "net_interest_amount_reporting_currency": row.get(
+                            "net_interest_amount_reporting_currency"
+                        ),
+                        "withholding_tax_amount_reporting_currency": row.get(
+                            "withholding_tax_amount_reporting_currency"
+                        ),
+                    }
+                )
+        return items

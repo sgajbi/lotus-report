@@ -515,6 +515,32 @@ async def test_review_composes_core_query_performance_and_risk():
         "value_at_risk": -0.02,
     }
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
+    client_sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert client_sections["executive_summary"]["items"][0] == {
+        "item_type": "measure",
+        "metric": "total_market_value",
+        "label": "Total market value",
+        "value": 1_000_000.0,
+        "unit": "money",
+        "currency": "",
+    }
+    assert client_sections["performance_review"]["items"][0]["item_type"] == ("performance_period")
+    assert client_sections["performance_review"]["items"][0]["period"] == "MTD"
+    assert client_sections["risk_review"]["items"] == [
+        {
+            "item_type": "risk_period",
+            "period": "YTD",
+            "volatility": 0.12,
+            "risk_adjusted_return": 1.05,
+            "drawdown": -0.08,
+            "value_at_risk": -0.02,
+        }
+    ]
+    assert client_sections["holdings_appendix"]["items"][0] == {
+        "item_type": "holdings_summary",
+        "position_count": 2,
+    }
+    assert client_sections["holdings_appendix"]["items"][1]["item_type"] == "holding"
 
 
 @pytest.mark.asyncio
