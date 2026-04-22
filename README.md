@@ -82,6 +82,8 @@ Key code areas:
   lotus-core, lotus-performance, lotus-risk, and HTTP resilience clients
 - `docs/standards/`
   ownership, readiness, migration, precision, and scalability guidance
+- `docs/supported-features.md`
+  implementation-backed product capability registry
 
 ## Repository Layout
 
@@ -97,6 +99,8 @@ Key code areas:
   unit, integration, and e2e coverage for reporting behavior
 - `scripts/`
   OpenAPI, migration, and monetary-float governance checks
+- `docs/supported-features.md`
+  implementation-backed product capability registry
 - `wiki/`
   canonical authored source for the GitHub wiki page set
 
@@ -217,6 +221,8 @@ Current orchestration model:
   [docs/standards/data-model-ownership.md](docs/standards/data-model-ownership.md)
 - local operations workflow:
   [docs/operations/development-workflow-and-ci-strategy.md](docs/operations/development-workflow-and-ci-strategy.md)
+- supported features:
+  [docs/supported-features.md](docs/supported-features.md)
 - local standards:
   [docs/standards](docs/standards)
 - wiki home:
