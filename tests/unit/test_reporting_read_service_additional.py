@@ -154,7 +154,26 @@ class _PerformanceSuccessEmpty:
 
 class _RiskSuccess:
     async def calculate_risk(self, payload: dict[str, object]):
-        return 200, {"results": {"YTD": {"metrics": {"VOLATILITY": {"value": 0.2}}}}}
+        return 200, {
+            "results": {
+                "YTD": {
+                    "metrics": {
+                        "VOLATILITY": {"value": 0.2},
+                        "SHARPE": {"value": 0.9},
+                        "DRAWDOWN": {"value": -0.05},
+                        "VAR": {"value": -0.01},
+                    }
+                }
+            },
+            "metadata": {
+                "risk_free_context": {
+                    "requested": True,
+                    "applied": True,
+                    "reason": "ZERO_RATE",
+                    "periodic_rate": 0.0,
+                }
+            },
+        }
 
 
 class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
@@ -702,36 +721,39 @@ class _RiskStatusError(_RiskSuccess):
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_on_workspace_summary_failure():
+async def test_build_risk_analytics_reports_workspace_summary_failure():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceWorkspaceStatusError(),
         risk_client=_RiskSuccess(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
-    assert result is None
+    assert result["supportability"]["status"] == "unavailable"
+    assert result["supportability"]["notes"][0]["code"] == "risk_return_history_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_when_daily_returns_empty():
+async def test_build_risk_analytics_reports_empty_daily_returns():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceWorkspaceNoReturns(),
         risk_client=_RiskSuccess(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
-    assert result is None
+    assert result["supportability"]["status"] == "unavailable"
+    assert result["supportability"]["notes"][0]["code"] == "missing_return_history"
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_when_risk_call_fails():
+async def test_build_risk_analytics_reports_risk_call_failure():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskStatusError(),
     )
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
-    assert result is None
+    assert result["supportability"]["status"] == "unavailable"
+    assert result["supportability"]["notes"][0]["code"] == "risk_upstream_failure"
 
 
 def test_extract_daily_returns_skips_invalid_items():
@@ -853,7 +875,7 @@ def test_build_workspace_summary_request_sets_reporting_currency_aliases():
 
 
 @pytest.mark.asyncio
-async def test_build_risk_analytics_returns_none_without_portfolio_open_date():
+async def test_build_risk_analytics_reports_missing_portfolio_open_date():
     class _PerformanceWorkspaceNoOpenDate:
         async def get_workspace_summary(self, payload: dict[str, object]):
             _ = payload
@@ -884,4 +906,31 @@ async def test_build_risk_analytics_returns_none_without_portfolio_open_date():
 
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
 
-    assert result is None
+    assert result["supportability"]["status"] == "unavailable"
+    assert result["supportability"]["notes"][0]["code"] == "missing_return_history"
+
+
+@pytest.mark.asyncio
+async def test_build_risk_analytics_surfaces_missing_risk_free_and_benchmark_notes():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+
+    notes = {note["code"]: note for note in result["supportability"]["notes"]}
+    assert result["supportability"]["status"] == "ready"
+    assert notes["missing_risk_free_rate"]["severity"] == "informational"
+    assert notes["missing_benchmark"]["severity"] == "informational"
+    assert result["source"] == {
+        "service": "lotus-risk",
+        "endpoint": "/analytics/risk/calculate",
+    }
+    assert result["summary"]["YTD"] == {
+        "volatility": 0.2,
+        "risk_adjusted_return": 0.9,
+        "drawdown": -0.05,
+        "value_at_risk": -0.01,
+    }

@@ -12,6 +12,7 @@ REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
 LOOK_THROUGH_MODE_KEYS = ("look_through_mode", "lookThroughMode")
 ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions", "allocationDimensions")
 BENCHMARK_CODE_KEYS = ("benchmark_code", "benchmarkCode")
+RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 REVIEW_SECTION_DEFINITIONS = (
     ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
     ("ALLOCATION", "asset_allocation", "Asset Allocation And Portfolio Construction", "allocation"),
@@ -339,6 +340,17 @@ class ReportingReadService:
                 "message": f"{title} is unavailable for this request.",
                 "items": [],
             }
+        supportability = self._as_dict(self._as_dict(section_payload).get("supportability"))
+        supportability_status = supportability.get("status")
+        if supportability_status in {"partial", "unavailable"}:
+            return {
+                "section_id": section_id,
+                "title": title,
+                "status": supportability_status,
+                "reason_code": self._supportability_reason_code(supportability),
+                "message": self._supportability_message(supportability, title),
+                "items": [self._as_dict(section_payload)],
+            }
 
         return {
             "section_id": section_id,
@@ -367,29 +379,188 @@ class ReportingReadService:
                 )
             )
             if summary_status >= status.HTTP_400_BAD_REQUEST:
-                return None
+                return self._risk_unavailable(
+                    reason_code="risk_return_history_unavailable",
+                    message=(
+                        "Risk Review is unavailable because performance return history could "
+                        "not be sourced."
+                    ),
+                )
 
         returns = self._extract_daily_returns_from_workspace_summary(workspace_summary_payload)
         if not returns:
-            return None
+            return self._risk_unavailable(
+                reason_code="missing_return_history",
+                message=(
+                    "Risk Review is unavailable because no daily return history was available "
+                    "for the selected request."
+                ),
+            )
         portfolio_open_date = self._workspace_portfolio_open_date(workspace_summary_payload)
         if portfolio_open_date is None:
-            return None
+            return self._risk_unavailable(
+                reason_code="missing_return_history",
+                message=(
+                    "Risk Review is unavailable because the sourced return history did not "
+                    "include a portfolio open date."
+                ),
+            )
 
         risk_payload = {
             "scope": {"asOfDate": as_of_date, "netOrGross": "NET"},
             "periods": [{"type": "YTD"}, {"type": "THREE_YEAR"}],
-            "metrics": ["VOLATILITY", "SHARPE", "DRAWDOWN", "VAR"],
+            "metrics": list(RISK_METRICS),
             "portfolioOpenDate": portfolio_open_date,
             "returns": returns,
             "benchmarkReturns": [],
         }
         risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
         if risk_status >= status.HTTP_400_BAD_REQUEST:
-            return None
+            return self._risk_unavailable(
+                reason_code="risk_upstream_failure",
+                message=(
+                    "Risk Review is unavailable because lotus-risk could not calculate metrics."
+                ),
+            )
 
         results = self._as_dict(risk_response.get("results"))
-        return {"results": results}
+        metadata = self._as_dict(risk_response.get("metadata"))
+        supportability = self._risk_supportability(
+            results=results,
+            metadata=metadata,
+            request_payload=request_payload,
+        )
+        return {
+            "source": {
+                "service": "lotus-risk",
+                "endpoint": "/analytics/risk/calculate",
+            },
+            "methodology": {
+                "metrics": list(RISK_METRICS),
+                "return_source": "lotus-performance workspace summary",
+                "return_basis": "NET",
+                "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
+            },
+            "supportability": supportability,
+            "summary": self._risk_metric_summary(results),
+            "results": results,
+            "metadata": metadata,
+        }
+
+    def _risk_unavailable(self, *, reason_code: str, message: str) -> dict[str, object]:
+        return {
+            "source": {
+                "service": "lotus-risk",
+                "endpoint": "/analytics/risk/calculate",
+            },
+            "methodology": {"metrics": list(RISK_METRICS), "return_basis": "NET"},
+            "supportability": {
+                "status": "unavailable",
+                "notes": [
+                    {
+                        "code": reason_code,
+                        "severity": "blocking",
+                        "message": message,
+                    }
+                ],
+            },
+            "summary": {},
+            "results": {},
+            "metadata": {},
+        }
+
+    def _risk_supportability(
+        self,
+        *,
+        results: dict[str, object],
+        metadata: dict[str, object],
+        request_payload: dict[str, object],
+    ) -> dict[str, object]:
+        notes: list[dict[str, object]] = []
+        if not results:
+            notes.append(
+                {
+                    "code": "missing_return_history",
+                    "severity": "blocking",
+                    "message": "lotus-risk returned no period results for the selected request.",
+                }
+            )
+
+        risk_free_context = self._as_dict(metadata.get("risk_free_context"))
+        if risk_free_context.get("requested") and risk_free_context.get("reason") == "ZERO_RATE":
+            notes.append(
+                {
+                    "code": "missing_risk_free_rate",
+                    "severity": "informational",
+                    "message": (
+                        "Risk-adjusted return uses the lotus-risk zero-rate convention because "
+                        "no source-backed risk-free rate was applied."
+                    ),
+                }
+            )
+
+        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        benchmark_context = self._as_dict(metadata.get("benchmark_context"))
+        if benchmark_code is None:
+            notes.append(
+                {
+                    "code": "missing_benchmark",
+                    "severity": "informational",
+                    "message": (
+                        "Benchmark-relative risk posture is unavailable because no benchmark "
+                        "code was provided."
+                    ),
+                }
+            )
+        elif not benchmark_context.get("requested"):
+            notes.append(
+                {
+                    "code": "missing_benchmark",
+                    "severity": "informational",
+                    "message": (
+                        "Benchmark-relative risk posture is unavailable because benchmark "
+                        "return series is not sourced for the risk calculation."
+                    ),
+                }
+            )
+
+        status_value = (
+            "unavailable" if any(note.get("severity") == "blocking" for note in notes) else "ready"
+        )
+        return {"status": status_value, "notes": notes}
+
+    def _risk_metric_summary(self, results: dict[str, object]) -> dict[str, object]:
+        summary: dict[str, object] = {}
+        for period, period_payload in results.items():
+            row = self._as_dict(period_payload)
+            metrics = self._as_dict(row.get("metrics"))
+            summary[period] = {
+                "volatility": self._metric_value(metrics, "VOLATILITY"),
+                "risk_adjusted_return": self._metric_value(metrics, "SHARPE"),
+                "drawdown": self._metric_value(metrics, "DRAWDOWN"),
+                "value_at_risk": self._metric_value(metrics, "VAR"),
+            }
+        return summary
+
+    def _metric_value(self, metrics: dict[str, object], metric_name: str) -> object | None:
+        metric = self._as_dict(metrics.get(metric_name))
+        return metric.get("value")
+
+    def _supportability_reason_code(self, supportability: dict[str, object]) -> str:
+        for note in self._as_list(supportability.get("notes")):
+            note_payload = self._as_dict(note)
+            code = note_payload.get("code")
+            if isinstance(code, str) and code:
+                return code
+        return "source_unavailable"
+
+    def _supportability_message(self, supportability: dict[str, object], title: str) -> str:
+        for note in self._as_list(supportability.get("notes")):
+            note_payload = self._as_dict(note)
+            message = note_payload.get("message")
+            if isinstance(message, str) and message:
+                return message
+        return f"{title} is unavailable for this request."
 
     def _extract_daily_returns_from_workspace_summary(
         self,

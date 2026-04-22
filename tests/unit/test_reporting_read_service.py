@@ -205,9 +205,22 @@ class _RiskClientSuccess:
                 "YTD": {
                     "startDate": "2025-01-01",
                     "endDate": "2025-02-24",
-                    "metrics": {"VOLATILITY": {"value": 0.12}},
+                    "metrics": {
+                        "VOLATILITY": {"value": 0.12},
+                        "SHARPE": {"value": 1.05},
+                        "DRAWDOWN": {"value": -0.08},
+                        "VAR": {"value": -0.02},
+                    },
                 }
-            }
+            },
+            "metadata": {
+                "risk_free_context": {
+                    "requested": True,
+                    "applied": True,
+                    "reason": "ANNUAL_RATE_APPLIED",
+                    "periodic_rate": 0.0001,
+                }
+            },
         }
 
 
@@ -430,6 +443,15 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
     assert response["performance"]["summary"]["THREE_YEAR"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
+    assert response["riskAnalytics"]["source"]["service"] == "lotus-risk"
+    assert response["riskAnalytics"]["supportability"]["status"] == "ready"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == "missing_benchmark"
+    assert response["riskAnalytics"]["summary"]["YTD"] == {
+        "volatility": 0.12,
+        "risk_adjusted_return": 1.05,
+        "drawdown": -0.08,
+        "value_at_risk": -0.02,
+    }
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
 
 
@@ -460,7 +482,7 @@ async def test_review_sets_performance_none_when_performance_unavailable():
 
 
 @pytest.mark.asyncio
-async def test_review_sets_risk_none_when_upstreams_fail():
+async def test_review_sets_risk_unavailable_when_upstreams_fail():
     service = ReportingReadService(
         core_query_client=_CoreQueryClientSuccess(),
         performance_client=_PerformanceClientFailure(),
@@ -471,11 +493,15 @@ async def test_review_sets_risk_none_when_upstreams_fail():
         {"as_of_date": "2026-02-24", "sections": ["RISK_ANALYTICS"]},
         None,
     )
-    assert response["riskAnalytics"] is None
+    assert response["riskAnalytics"]["supportability"]["status"] == "unavailable"
+    assert response["riskAnalytics"]["supportability"]["notes"][0]["code"] == (
+        "risk_return_history_unavailable"
+    )
     risk_section = next(
         section for section in response["client_sections"] if section["section_id"] == "risk_review"
     )
     assert risk_section["status"] == "unavailable"
+    assert risk_section["reason_code"] == "risk_return_history_unavailable"
     assert response["readiness"] == {
         "status": "partial",
         "reason": "Unavailable sections for the selected request: Risk Review",
