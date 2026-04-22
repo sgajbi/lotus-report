@@ -22,9 +22,13 @@ This document provides explicit implementation evidence pointers for active RFCs
 - Implementation evidence added during rollout:
   - typed report request/response contracts in `src/app/models/contracts.py`
   - review route contract tests in `tests/integration/test_api.py`
+  - implementation-backed capability publication in `GET /integration/capabilities`
   - section, performance, risk, evidence, and lineage tests in
     `tests/unit/test_reporting_read_service.py` and
     `tests/unit/test_reporting_read_service_additional.py`
+  - advisor discussion builder tests in `tests/unit/test_portfolio_review_advisor.py`
+  - gateway readiness proof in `sgajbi/lotus-gateway#145`
   - OpenAPI/vocabulary validation output
-  - supported-features rows promoted from `planned` to `implementation-backed` only after closure
+  - supported-features rows promoted from `planned` to `implementation-backed` only after
+    implementation evidence exists
   - repo-local wiki usage examples

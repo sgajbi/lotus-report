@@ -92,7 +92,14 @@ def test_integration_capabilities():
     assert body["contractVersion"] == "v1"
     assert body["policyVersion"] == "ras-default-v1"
     assert body["supportedInputModes"] == ["portfolio_id"]
-    assert len(body["features"]) >= 3
+    feature_keys = {feature["key"] for feature in body["features"] if feature["enabled"]}
+    assert {
+        "lotus-report.reporting.portfolio_review.first_class.v1",
+        "lotus-report.reporting.portfolio_review.section_readiness.v1",
+        "lotus-report.reporting.portfolio_review.evidence_pack.v1",
+        "lotus-report.reporting.portfolio_review.advisor_sections.v1",
+        "lotus-report.reporting.portfolio_review.workbench_ready.v1",
+    } <= feature_keys
     assert len(body["workflows"]) >= 1
 
 
