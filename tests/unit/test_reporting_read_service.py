@@ -403,6 +403,23 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["portfolio_id"] == "P1"
     assert response["as_of_date"] == "2026-02-24"
     assert response["readiness"] == {"status": "ready"}
+    assert [section["section_id"] for section in response["client_sections"]] == [
+        "executive_summary",
+        "asset_allocation",
+        "performance_review",
+        "risk_review",
+        "income_cash_activity",
+        "holdings_appendix",
+        "transactions_appendix",
+    ]
+    section_statuses = {
+        section["section_id"]: section["status"] for section in response["client_sections"]
+    }
+    assert section_statuses["executive_summary"] == "ready"
+    assert section_statuses["asset_allocation"] == "omitted_by_request"
+    assert section_statuses["performance_review"] == "ready"
+    assert section_statuses["risk_review"] == "ready"
+    assert response["advisor_sections"] == []
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert "YTD" in response["riskAnalytics"]["results"]
@@ -422,9 +439,16 @@ async def test_review_sets_performance_none_when_performance_unavailable():
         None,
     )
     assert response["performance"] is None
+    performance_section = next(
+        section
+        for section in response["client_sections"]
+        if section["section_id"] == "performance_review"
+    )
+    assert performance_section["status"] == "unavailable"
+    assert performance_section["reason_code"] == "source_unavailable"
     assert response["readiness"] == {
         "status": "partial",
-        "reason": "Unavailable sections for the selected request: PERFORMANCE",
+        "reason": "Unavailable sections for the selected request: Performance Review",
     }
 
 
@@ -441,9 +465,13 @@ async def test_review_sets_risk_none_when_upstreams_fail():
         None,
     )
     assert response["riskAnalytics"] is None
+    risk_section = next(
+        section for section in response["client_sections"] if section["section_id"] == "risk_review"
+    )
+    assert risk_section["status"] == "unavailable"
     assert response["readiness"] == {
         "status": "partial",
-        "reason": "Unavailable sections for the selected request: RISK_ANALYTICS",
+        "reason": "Unavailable sections for the selected request: Risk Review",
     }
 
 

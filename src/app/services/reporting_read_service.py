@@ -11,6 +11,20 @@ AS_OF_DATE_KEYS = ("as_of_date", "asOfDate")
 REPORTING_CURRENCY_KEYS = ("reporting_currency", "reportingCurrency")
 LOOK_THROUGH_MODE_KEYS = ("look_through_mode", "lookThroughMode")
 ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions", "allocationDimensions")
+REVIEW_SECTION_DEFINITIONS = (
+    ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
+    ("ALLOCATION", "asset_allocation", "Asset Allocation And Portfolio Construction", "allocation"),
+    ("PERFORMANCE", "performance_review", "Performance Review", "performance"),
+    ("RISK_ANALYTICS", "risk_review", "Risk Review", "riskAnalytics"),
+    (
+        "INCOME_AND_ACTIVITY",
+        "income_cash_activity",
+        "Income, Cash, And Activity",
+        "incomeAndActivity",
+    ),
+    ("HOLDINGS", "holdings_appendix", "Holdings Appendix", "holdings"),
+    ("TRANSACTIONS", "transactions_appendix", "Transactions Appendix", "transactions"),
+)
 
 
 class ReportingReadService:
@@ -232,10 +246,13 @@ class ReportingReadService:
                 workspace_summary_payload=workspace_summary_payload,
             )
 
-        response["readiness"] = self._review_readiness(
+        client_sections = self._build_client_sections(
             response=response,
             requested_sections=requested_sections,
         )
+        response["readiness"] = self._review_readiness(client_sections=client_sections)
+        response["client_sections"] = client_sections
+        response["advisor_sections"] = []
         return response
 
     def _new_review_response(self, *, portfolio_id: str, as_of_date: str) -> dict[str, object]:
@@ -251,14 +268,13 @@ class ReportingReadService:
     def _review_readiness(
         self,
         *,
-        response: dict[str, object],
-        requested_sections: set[str],
+        client_sections: list[dict[str, object]],
     ) -> dict[str, object]:
-        unavailable_sections: list[str] = []
-        if "PERFORMANCE" in requested_sections and response.get("performance") is None:
-            unavailable_sections.append("PERFORMANCE")
-        if "RISK_ANALYTICS" in requested_sections and response.get("riskAnalytics") is None:
-            unavailable_sections.append("RISK_ANALYTICS")
+        unavailable_sections = [
+            self._safe_str(section.get("title"))
+            for section in client_sections
+            if section.get("status") == "unavailable"
+        ]
 
         if not unavailable_sections:
             return {"status": "ready"}
@@ -267,6 +283,62 @@ class ReportingReadService:
             "reason": (
                 "Unavailable sections for the selected request: " + ", ".join(unavailable_sections)
             ),
+        }
+
+    def _build_client_sections(
+        self,
+        *,
+        response: dict[str, object],
+        requested_sections: set[str],
+    ) -> list[dict[str, object]]:
+        return [
+            self._build_review_section(
+                requested_key=requested_key,
+                section_id=section_id,
+                title=title,
+                response_key=response_key,
+                response=response,
+                requested_sections=requested_sections,
+            )
+            for requested_key, section_id, title, response_key in REVIEW_SECTION_DEFINITIONS
+        ]
+
+    def _build_review_section(
+        self,
+        *,
+        requested_key: str,
+        section_id: str,
+        title: str,
+        response_key: str,
+        response: dict[str, object],
+        requested_sections: set[str],
+    ) -> dict[str, object]:
+        if requested_key not in requested_sections:
+            return {
+                "section_id": section_id,
+                "title": title,
+                "status": "omitted_by_request",
+                "reason_code": "section_not_requested",
+                "message": f"{title} was not requested.",
+                "items": [],
+            }
+
+        section_payload = response.get(response_key)
+        if section_payload is None:
+            return {
+                "section_id": section_id,
+                "title": title,
+                "status": "unavailable",
+                "reason_code": "source_unavailable",
+                "message": f"{title} is unavailable for this request.",
+                "items": [],
+            }
+
+        return {
+            "section_id": section_id,
+            "title": title,
+            "status": "ready",
+            "items": [self._as_dict(section_payload)],
         }
 
     async def _build_risk_analytics(

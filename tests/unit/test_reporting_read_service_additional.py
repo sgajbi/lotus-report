@@ -516,6 +516,38 @@ async def test_review_without_risk_section_omits_risk_block():
     assert "overview" in response
     assert "holdings" in response
     assert "riskAnalytics" not in response
+    statuses = {section["section_id"]: section["status"] for section in response["client_sections"]}
+    assert statuses["executive_summary"] == "ready"
+    assert statuses["holdings_appendix"] == "ready"
+    assert statuses["risk_review"] == "omitted_by_request"
+    assert statuses["performance_review"] == "omitted_by_request"
+
+
+@pytest.mark.asyncio
+async def test_review_section_envelope_marks_unrequested_sections_explicitly():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["OVERVIEW"]},
+        None,
+    )
+
+    sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert sections["executive_summary"]["status"] == "ready"
+    assert sections["asset_allocation"] == {
+        "section_id": "asset_allocation",
+        "title": "Asset Allocation And Portfolio Construction",
+        "status": "omitted_by_request",
+        "reason_code": "section_not_requested",
+        "message": "Asset Allocation And Portfolio Construction was not requested.",
+        "items": [],
+    }
+    assert response["advisor_sections"] == []
 
 
 @pytest.mark.asyncio
