@@ -290,6 +290,8 @@ def _top_allocation_bucket(allocation: dict[str, object]) -> dict[str, object] |
 
 
 def _optional_number(value: object) -> Decimal | None:
+    if value is None:
+        return None
     try:
         return _to_decimal(value)
     except InvalidOperation:
