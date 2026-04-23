@@ -69,6 +69,16 @@ class _StubPerformanceClient:
         )
 
 
+class _StubCoreQueryClientWithMalformedSummary(_StubCoreQueryClient):
+    async def get_portfolio_summary(
+        self,
+        portfolio_id: str,
+        payload: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        return 200, "not-a-dict"
+
+
 @pytest.mark.asyncio
 async def test_live_aggregation_uses_upstream_payloads():
     service = AggregationService(
@@ -87,6 +97,43 @@ async def test_live_aggregation_uses_upstream_payloads():
     assert round(bucket_metric_map[("EQUITY", "weight_pct")], 2) == 50.0
     assert round(bucket_metric_map[("FIXED_INCOME", "weight_pct")], 2) == 30.0
     assert round(bucket_metric_map[("CASH", "weight_pct")], 2) == 20.0
+
+
+@pytest.mark.asyncio
+async def test_live_aggregation_ignores_malformed_summary_payload():
+    service = AggregationService(
+        core_query_client=_StubCoreQueryClientWithMalformedSummary(),
+        performance_client=_StubPerformanceClient(),
+    )
+    response = await service.get_portfolio_aggregation_live(
+        portfolio_id="P1",
+        as_of_date="2026-02-24",
+    )
+
+    metric_map = {row.metric: row.value for row in response.rows}
+    assert metric_map["market_value_base"] == 1_250_000.0
+    assert metric_map["position_count"] == 0.0
+    assert metric_map["return_ytd_pct"] == 4.2
+
+
+def test_build_asset_class_rows_ignores_non_asset_class_views():
+    service = AggregationService(
+        core_query_client=_StubCoreQueryClient(),
+        performance_client=_StubPerformanceClient(),
+    )
+
+    rows = service._build_asset_class_rows(
+        core_query_payload={
+            "allocation": {
+                "views": [
+                    {"dimension": "sector", "buckets": [{"dimension_value": "TECH"}]},
+                ],
+            }
+        },
+        total_mv=1_000_000.0,
+    )
+
+    assert rows == []
 
 
 class _FailingCoreQueryClient:

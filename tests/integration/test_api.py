@@ -5,9 +5,11 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routers import health as health_router
 from app.routers.reports import get_reporting_read_service
 
 client = TestClient(app)
+app.state.report_job_ledger_readiness_override = lambda: True
 
 
 def test_health():
@@ -35,6 +37,58 @@ def test_health_ready_returns_503_when_draining():
 
     assert response.status_code == 503
     assert response.json() == {"status": "draining"}
+
+
+def test_health_ready_uses_report_job_ledger_readiness_when_no_override(monkeypatch):
+    class _ReadyLedger:
+        def check_ready(self) -> None:
+            return None
+
+    previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    delattr(app.state, "report_job_ledger_readiness_override")
+    monkeypatch.setattr(health_router, "get_report_job_ledger", lambda: _ReadyLedger())
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.state.report_job_ledger_readiness_override = previous_override
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
+def test_health_ready_reports_unavailable_when_readiness_override_fails():
+    previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    app.state.report_job_ledger_readiness_override = lambda: False
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.state.report_job_ledger_readiness_override = previous_override
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "reason": "report_job_ledger_unavailable",
+    }
+
+
+def test_health_ready_reports_unavailable_when_report_job_ledger_check_fails(monkeypatch):
+    class _UnavailableLedger:
+        def check_ready(self) -> None:
+            raise RuntimeError("schema unavailable")
+
+    previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    delattr(app.state, "report_job_ledger_readiness_override")
+    monkeypatch.setattr(health_router, "get_report_job_ledger", lambda: _UnavailableLedger())
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.state.report_job_ledger_readiness_override = previous_override
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "reason": "report_job_ledger_unavailable",
+    }
 
 
 def test_lifespan_sets_drain_flag_on_shutdown():
@@ -110,8 +164,14 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.upstream_capability_audit.v1",
         "lotus-report.reporting.portfolio_review.advisor_sections.v1",
         "lotus-report.reporting.portfolio_review.workbench_ready.v1",
+        "lotus-report.reporting.portfolio_review.job_ledger.v1",
+        "lotus-report.reporting.portfolio_review.idempotent_job_create.v1",
+        "lotus-report.reporting.portfolio_review.job_status.v1",
+        "lotus-report.reporting.portfolio_review.job_event_history.v1",
+        "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
     } <= feature_keys
-    assert len(body["workflows"]) >= 1
+    workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}
+    assert "portfolio_review_report_job" in workflow_keys
 
 
 def test_integration_capabilities_camel_case_params_do_not_override_context():
