@@ -212,7 +212,7 @@ class _PerformanceClientSuccess:
                             "cumulative_return": {"base": 0.9},
                             "annualized_return": {"base": 0.9},
                         },
-                        "benchmark_id": "BMK_GLOBAL_BALANCED_60_40",
+                        "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
                         "benchmark_currency": "USD",
                         "input_mode": "stateful",
                         "return_source": "calculated",
@@ -254,7 +254,7 @@ class _PerformanceClientSuccess:
                             "cumulative_return": {"base": 3.4},
                             "annualized_return": {"base": 3.4},
                         },
-                        "benchmark_id": "BMK_GLOBAL_BALANCED_60_40",
+                        "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
                         "benchmark_currency": "USD",
                         "input_mode": "stateful",
                         "return_source": "calculated",
@@ -296,7 +296,7 @@ class _PerformanceClientSuccess:
                             "cumulative_return": {"base": 10.8},
                             "annualized_return": {"base": 3.4},
                         },
-                        "benchmark_id": "BMK_GLOBAL_BALANCED_60_40",
+                        "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
                         "benchmark_currency": "USD",
                         "input_mode": "stateful",
                         "return_source": "calculated",
@@ -767,7 +767,7 @@ async def test_review_composes_core_query_performance_and_risk():
     )
     assert "tax_lot_jurisdiction_tax_treatment" in audit_gaps
     assert response["upstreamCapabilityAudit"]["report_side_findings"] == []
-    assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
+    assert response["methodology"]["benchmark_code"] == "BMK_PB_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
     requested_periods = [
         period["period"] for period in performance_client.seen_payloads[0]["periods"]
@@ -775,7 +775,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert requested_periods == ["1M", "3M", "YTD", "5Y", "SI"]
     assert performance_client.seen_payloads[0]["include_benchmark"] is True
     assert performance_client.seen_payloads[0]["benchmark"] == {
-        "benchmark_id": "BMK_GLOBAL_BALANCED_60_40",
+        "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
         "input_mode": "stateful",
         "return_source": "calculated",
         "stateful_input": {},
@@ -788,7 +788,7 @@ async def test_review_composes_core_query_performance_and_risk():
                 "as_of_date": "2026-02-24",
                 "reporting_currency": "USD",
                 "client_id": None,
-                "benchmark_id": "BMK_GLOBAL_BALANCED_60_40",
+                "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
                 "net_or_gross": "NET",
                 "periods": [
                     {"type": "YTD", "name": "YTD"},
@@ -886,7 +886,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["overview"]["total_market_value"] == 1_000_000.0
     assert "YTD" in response["performance"]["summary"]
     assert response["performance"]["benchmark"] == {
-        "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+        "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
         "requested_benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
         "comparison_status": "available",
         "return_source": "calculated",

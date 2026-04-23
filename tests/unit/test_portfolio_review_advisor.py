@@ -50,7 +50,7 @@ def test_advisor_sections_include_fact_backed_prompts_and_readiness_detail():
         "performance": {
             "summary": {"YTD": {"net_cumulative_return": "4.2"}},
             "benchmark": {
-                "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+                "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
                 "comparison_status": "unavailable",
             },
         },
@@ -86,7 +86,7 @@ def test_advisor_sections_include_fact_backed_prompts_and_readiness_detail():
     assert "12 sourced positions" in construction_prompt
     assert prompts["performance_discussion"]["prompt"] == (
         "Discuss performance using YTD net cumulative return 4.20%, benchmark "
-        "BMK_GLOBAL_BALANCED_60_40, benchmark comparison is not source-backed in this report, "
+        "BMK_PB_GLOBAL_BALANCED_60_40, benchmark comparison is not source-backed in this report, "
         "sub-year annualized returns are suppressed unless source support is explicit."
     )
     assert prompts["risk_discussion"]["prompt"] == (

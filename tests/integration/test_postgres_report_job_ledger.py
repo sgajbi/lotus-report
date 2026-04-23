@@ -43,7 +43,7 @@ def _request_and_context(
         as_of_date="2026-04-22",
         requested_output_formats=["json"],
         reporting_currency="USD",
-        options={"sections": ["OVERVIEW"], "benchmark_code": "BMK_GLOBAL_BALANCED_60_40"},
+        options={"sections": ["OVERVIEW"], "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40"},
     )
     caller_context = ReportCallerContext(
         triggered_by="advisor-123",

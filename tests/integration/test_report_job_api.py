@@ -41,7 +41,7 @@ def _payload():
         "reporting_currency": "USD",
         "options": {
             "sections": ["OVERVIEW", "PERFORMANCE"],
-            "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+            "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
         },
     }
 
