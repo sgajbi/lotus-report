@@ -30,5 +30,6 @@
 - keep reporting contract ownership separate from upstream domain truth
 - use canonical service identity for cross-app validation
 - keep request-convention documentation explicit while the surface is mixed
-- expose suitability, mandate-control, tax, and realized-gain/loss gaps explicitly until governed
-  upstream sources provide them
+- expose suitability, mandate-control, open tax-lot, and jurisdiction-specific tax gaps explicitly
+  until governed upstream sources provide them; transaction-level realized gain/loss is sourced
+  from lotus-core where present

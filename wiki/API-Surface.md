@@ -77,7 +77,8 @@ The review response is a typed report contract. It separates client-ready `clien
 advisor-only `advisor_sections`, carries explicit section readiness states including
 `not_applicable` for requested supporting sections with no applicable activity, includes
 report-level `evidence`, exposes source-backed client/mandate profile context from lotus-core,
-position cost/unrealized P&L, and YTD contribution where upstream services provide them. It also
+position cost/unrealized P&L, transaction-level realized P&L, and YTD contribution where upstream
+services provide them. It also
 includes deterministic `report_structure`, `advisor_briefing`, guarded `ai_readiness`, and
 `upstream_capability_audit` metadata so front-office consumers can organize a review meeting without
 treating report gaps as advice or silently losing upstream dependency gaps.

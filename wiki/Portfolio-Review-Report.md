@@ -20,9 +20,10 @@ The report should help a client advisor answer five meeting questions:
 5. which facts are sourced, partial, unavailable, or not yet supported?
 
 The contract is deliberately strict about missing information. If an enterprise-grade review should
-include suitability, target allocation, mandate restrictions, liquidity needs, tax lots, or realized
-gain/loss but the source system has not provided that data, the response marks the gap explicitly
-instead of inventing report content.
+include suitability, target allocation, mandate restrictions, liquidity needs, open tax-lot
+attribution, or jurisdiction-specific tax treatment but the source system has not provided that data,
+the response marks the gap explicitly instead of inventing report content. Transaction-level
+realized gain/loss is sourced from `lotus-core` transaction rows where present.
 
 ## Audience Model
 
@@ -102,6 +103,8 @@ Current implementation-backed figures include:
 - position-level market value, cost basis, unrealized P&L, unrealized P&L percentage, product type,
   sector, country of risk, rating, liquidity tier, and held-since date where sourced
 - income/activity totals and transaction categorization
+- transaction-level realized gain/loss totals and transaction-row enrichment where sourced from
+  `lotus-core`
 - negative cash and concentration observations
 - client profile and mandate context where sourced from `lotus-core`
 
@@ -111,8 +114,8 @@ Current explicit gaps:
 - target allocation and drift versus target
 - mandate guideline tests and product restrictions
 - client liquidity needs and review-cycle freshness
-- tax-lot detail
-- realized gain/loss
+- open tax-lot attribution
+- jurisdiction-specific tax treatment
 - trade recommendations
 - AI-generated client advice
 

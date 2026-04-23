@@ -1016,7 +1016,8 @@ def test_review_key_figures_capture_missing_gold_standard_figures():
     assert coverage_by_group["benchmark_comparison"] == "partial"
     assert coverage_by_group["position_pnl_and_cost_basis"] == "not_sourced"
     assert coverage_by_group["performance_contribution"] == "unavailable"
-    assert coverage_by_group["tax_lot_and_realized_gain_loss"] == "not_sourced"
+    assert coverage_by_group["transaction_realized_gain_loss"] == "not_applicable"
+    assert coverage_by_group["tax_lot_and_jurisdiction_tax_treatment"] == "not_sourced"
 
 
 @pytest.mark.asyncio

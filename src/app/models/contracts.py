@@ -113,6 +113,7 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
             "income_ytd": 18420.0,
             "fees_ytd": 2410.0,
             "net_cash_flow_ytd": -12500.0,
+            "total_realized_pnl_reporting_currency": 1250.0,
             "transaction_count": 19,
         },
         "holdings": {
@@ -124,6 +125,7 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
             "last_activity_date": "2026-04-19",
             "purchases_ytd": 95000.0,
             "sales_ytd": 72000.0,
+            "total_realized_pnl_reporting_currency": 1250.0,
         },
     },
     "report_coverage": {
@@ -133,7 +135,12 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
         "performance_and_contribution": {"status": "present", "required": True},
         "risk_analytics": {"status": "present", "required": True},
         "income_and_activity": {"status": "present", "required": True},
+        "transaction_realized_gain_loss": {"status": "present", "required": False},
         "position_pnl_and_cost_basis": {"status": "present", "required": True},
+        "tax_lot_and_jurisdiction_tax_treatment": {
+            "status": "not_sourced",
+            "required": False,
+        },
         "targets_guidelines_and_suitability": {"status": "not_sourced", "required": True},
     },
     "upstream_capability_audit": {
@@ -149,13 +156,23 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
                 "source_service": "lotus-performance",
                 "status": "present",
             },
+            {
+                "capability_id": "transaction_realized_gain_loss",
+                "source_service": "lotus-core",
+                "status": "present",
+            },
         ],
         "upstream_gaps": [
             {
                 "capability_id": "targets_guidelines_suitability",
                 "owning_service": "lotus-advise / lotus-manage",
                 "status": "not_sourced",
-            }
+            },
+            {
+                "capability_id": "tax_lot_jurisdiction_tax_treatment",
+                "owning_service": "lotus-core / tax domain",
+                "status": "not_sourced",
+            },
         ],
         "report_side_findings": [],
     },
@@ -332,6 +349,11 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
     "income_and_activity": {
         "summary": {"income_ytd": 18420.0, "fees_ytd": 2410.0, "net_cash_flow_ytd": -12500.0},
+        "realized_pnl_summary": {
+            "status": "present",
+            "total_realized_pnl_reporting_currency": 1250.0,
+            "transaction_count": 1,
+        },
         "cash_flow_breakdown": [
             {"category": "DIVIDENDS", "amount": 9600.0},
             {"category": "COUPONS", "amount": 8820.0},
@@ -366,7 +388,16 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
                     "amount": 1250.0,
                     "currency": "USD",
                     "instrument_name": "Global Quality Equity Fund",
-                }
+                },
+                {
+                    "transaction_id": "TXN_20260418_SELL_001",
+                    "trade_date": "2026-04-18",
+                    "category": "SELL",
+                    "amount": 25000.0,
+                    "realized_pnl_reporting_currency": 1250.0,
+                    "currency": "USD",
+                    "instrument_name": "Global Quality Equity Fund",
+                },
             ]
         },
     },

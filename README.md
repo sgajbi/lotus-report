@@ -73,7 +73,7 @@ The response includes:
   leverage, status, and cost-basis context from `lotus-core`
 - `key_figures`
   normalized portfolio value, allocation, performance, risk, income/activity, holdings,
-  unrealized P&L, position contribution, and client-profile figures
+  unrealized P&L, transaction-level realized P&L, position contribution, and client-profile figures
 - `client_sections`
   ordered client-ready report sections with explicit readiness states
 - `advisor_sections`
@@ -99,8 +99,10 @@ Current live-proof portfolio:
   [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
 
 Important limitation: `lotus-report` does not invent suitability, target allocation, product
-restriction, liquidity-need, tax-lot, or realized-gain/loss facts. Those must come from the
-authoritative upstream owner before they become report-backed product features.
+restriction, liquidity-need, open tax-lot attribution, or jurisdiction-specific tax treatment.
+Transaction-level realized gain/loss is sourced from `lotus-core` transaction rows where present;
+tax-lot and jurisdiction-specific reporting must come from the authoritative upstream owner before
+they become report-backed product features.
 
 ## Architecture At A Glance
 

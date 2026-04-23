@@ -208,6 +208,7 @@ class ReportingReadService:
             response["incomeAndActivity"] = {
                 "incomeSummary": self._map_income_summary_from_rows(transaction_rows),
                 "activitySummary": self._map_activity_summary_from_rows(transaction_rows),
+                "realizedPnlSummary": self._summarize_realized_pnl_rows(transaction_rows),
             }
         if "HOLDINGS" in requested_sections:
             (
@@ -1384,6 +1385,54 @@ class ReportingReadService:
     def _new_flow_metric(self) -> dict[str, object]:
         return {"transaction_count": 0, "amount_reporting_currency": 0.0}
 
+    def _summarize_realized_pnl_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        realized_rows = [
+            row
+            for row in rows
+            if self._optional_number_raw(self._realized_pnl_reporting_amount(row)) is not None
+        ]
+        gains = [
+            row
+            for row in realized_rows
+            if self._to_float(self._realized_pnl_reporting_amount(row)) > 0
+        ]
+        losses = [
+            row
+            for row in realized_rows
+            if self._to_float(self._realized_pnl_reporting_amount(row)) < 0
+        ]
+        return {
+            "status": "present" if realized_rows else "not_applicable",
+            "transaction_count": len(realized_rows),
+            "total_realized_pnl_reporting_currency": sum(
+                self._to_float(self._realized_pnl_reporting_amount(row)) for row in realized_rows
+            ),
+            "total_realized_gains_reporting_currency": sum(
+                self._to_float(self._realized_pnl_reporting_amount(row)) for row in gains
+            ),
+            "total_realized_losses_reporting_currency": sum(
+                self._to_float(self._realized_pnl_reporting_amount(row)) for row in losses
+            ),
+            "largest_realized_gain": self._realized_pnl_transaction_key_figure(
+                max(gains, key=lambda row: self._to_float(self._realized_pnl_reporting_amount(row)))
+            )
+            if gains
+            else None,
+            "largest_realized_loss": self._realized_pnl_transaction_key_figure(
+                min(
+                    losses,
+                    key=lambda row: self._to_float(self._realized_pnl_reporting_amount(row)),
+                )
+            )
+            if losses
+            else None,
+            "methodology": {
+                "source": "lotus-core:/portfolios/{portfolio_id}/transactions",
+                "basis": "transaction_level_realized_gain_loss",
+                "tax_lot_jurisdiction_treatment": "not_sourced",
+            },
+        }
+
     def _accumulate_income_metric(
         self,
         accumulator: dict[str, object],
@@ -1455,6 +1504,17 @@ class ReportingReadService:
             reporting_key="gross_transaction_amount_reporting_currency",
             portfolio_key="gross_transaction_amount",
         )
+
+    def _realized_pnl_reporting_amount(self, row: dict[str, object]) -> object | None:
+        for key in (
+            "realized_gain_loss_reporting_currency",
+            "realized_total_pnl_base",
+            "realized_gain_loss",
+        ):
+            value = row.get(key)
+            if value is not None:
+                return value
+        return None
 
     def _income_net_reporting_amount(self, row: dict[str, object]) -> float:
         if (
@@ -2048,6 +2108,7 @@ class ReportingReadService:
     def _income_activity_key_figures(self, income_activity: dict[str, object]) -> dict[str, object]:
         income = self._as_dict(income_activity.get("incomeSummary"))
         activity = self._as_dict(income_activity.get("activitySummary"))
+        realized_pnl = self._as_dict(income_activity.get("realizedPnlSummary"))
         return {
             "gross_income_reporting_currency": self._to_float(
                 income.get("gross_amount_reporting_currency")
@@ -2063,6 +2124,11 @@ class ReportingReadService:
             "total_outflows_reporting_currency": self._to_float(activity.get("total_outflows")),
             "total_fees_reporting_currency": self._to_float(activity.get("total_fees")),
             "total_taxes_reporting_currency": self._to_float(activity.get("total_taxes")),
+            "realized_pnl_status": realized_pnl.get("status", "not_applicable"),
+            "total_realized_pnl_reporting_currency": self._to_float(
+                realized_pnl.get("total_realized_pnl_reporting_currency")
+            ),
+            "realized_pnl_transaction_count": self._to_int(realized_pnl.get("transaction_count")),
         }
 
     def _holdings_key_figures(self, holdings: dict[str, object]) -> dict[str, object]:
@@ -2155,6 +2221,16 @@ class ReportingReadService:
 
     def _transaction_key_figures(self, transactions: dict[str, object]) -> dict[str, object]:
         by_category = self._as_dict(transactions.get("transactionsByCategory"))
+        rows = [
+            self._as_dict(row)
+            for category_rows in by_category.values()
+            for row in self._as_list(category_rows)
+        ]
+        realized_rows = [
+            row
+            for row in rows
+            if self._optional_number_raw(row.get("realized_pnl_reporting_currency")) is not None
+        ]
         counts = {
             category: len(self._as_list(rows))
             for category, rows in by_category.items()
@@ -2163,6 +2239,23 @@ class ReportingReadService:
         return {
             "transaction_count": self._to_int(transactions.get("transactionCount")),
             "transaction_count_by_category": counts,
+            "realized_pnl_status": "present" if realized_rows else "not_applicable",
+            "realized_pnl_transaction_count": len(realized_rows),
+            "total_realized_pnl_reporting_currency": sum(
+                self._to_float(row.get("realized_pnl_reporting_currency")) for row in realized_rows
+            ),
+        }
+
+    def _realized_pnl_transaction_key_figure(self, row: dict[str, object]) -> dict[str, object]:
+        return {
+            "transaction_id": row.get("transaction_id"),
+            "transaction_date": row.get("transaction_date"),
+            "transaction_type": row.get("transaction_type"),
+            "security_id": row.get("security_id"),
+            "instrument_id": row.get("instrument_id"),
+            "realized_pnl_reporting_currency": self._to_float(
+                self._realized_pnl_reporting_amount(row)
+            ),
         }
 
     def _review_observations(self, response: dict[str, object]) -> list[dict[str, object]]:
@@ -2566,6 +2659,15 @@ class ReportingReadService:
                     ),
                 },
                 {
+                    "group_id": "transaction_realized_gain_loss",
+                    "status": self._transaction_realized_pnl_coverage(response),
+                    "required": False,
+                    "message": (
+                        "Transaction-level realized gain/loss is sourced from lotus-core "
+                        "TransactionLedgerWindow when disposal or realized-P&L rows are present."
+                    ),
+                },
+                {
                     "group_id": "instrument_reference_data",
                     "status": self._instrument_reference_coverage(response),
                     "required": True,
@@ -2596,12 +2698,13 @@ class ReportingReadService:
                     ),
                 },
                 {
-                    "group_id": "tax_lot_and_realized_gain_loss",
+                    "group_id": "tax_lot_and_jurisdiction_tax_treatment",
                     "status": "not_sourced",
                     "required": False,
                     "message": (
-                        "Tax-lot-level realized gain/loss, cost basis, and jurisdiction-specific "
-                        "tax treatment are not sourced in the current report response."
+                        "Open tax-lot reporting, lot-level realized gain/loss attribution, and "
+                        "jurisdiction-specific tax treatment are not sourced in the current "
+                        "report response."
                     ),
                 },
             ],
@@ -2648,6 +2751,14 @@ class ReportingReadService:
                 "Transaction rows, cash flows, income, fees, and taxes for the review window.",
             ),
             self._capability_item(
+                "transaction_realized_gain_loss",
+                "lotus-core",
+                self._safe_str(
+                    coverage_groups.get("transaction_realized_gain_loss", {}).get("status")
+                ),
+                "Transaction-level realized gain/loss for disposal and realized-P&L rows.",
+            ),
+            self._capability_item(
                 "performance_returns",
                 "lotus-performance",
                 self._safe_str(coverage_groups.get("performance", {}).get("status")),
@@ -2690,12 +2801,13 @@ class ReportingReadService:
                 ["client_profile", "asset_allocation", "holdings_appendix"],
             ),
             self._capability_gap(
-                "tax_lot_realized_gain_loss",
+                "tax_lot_jurisdiction_tax_treatment",
                 "lotus-core / tax domain",
                 "not_sourced",
                 (
-                    "Tax-lot-level realized gain/loss and jurisdiction-specific tax treatment are "
-                    "not exposed as governed upstream report inputs."
+                    "Open tax-lot reporting, lot-level realized gain/loss attribution, and "
+                    "jurisdiction-specific tax treatment are not exposed as governed upstream "
+                    "report inputs."
                 ),
                 ["holdings_appendix", "transactions_appendix"],
             ),
@@ -2824,6 +2936,17 @@ class ReportingReadService:
         if response.get("performance") is None:
             return "not_sourced"
         return "unavailable"
+
+    def _transaction_realized_pnl_coverage(self, response: dict[str, object]) -> str:
+        transactions = self._as_dict(response.get("transactions"))
+        key_figures = self._as_dict(self._as_dict(response.get("keyFigures")).get("transactions"))
+        if key_figures.get("realized_pnl_status") == "present":
+            return "present"
+        if not transactions:
+            return "not_requested"
+        if self._to_int(transactions.get("transactionCount")) == 0:
+            return "not_applicable"
+        return "not_applicable"
 
     def _instrument_reference_coverage(self, response: dict[str, object]) -> str:
         holdings = self._as_dict(response.get("holdings"))
@@ -2990,12 +3113,20 @@ class ReportingReadService:
             "transaction_id": transaction_id,
             "transaction_date": self._safe_str(row.get("transaction_date")),
             "transaction_type": transaction_type,
+            "instrument_id": self._safe_str(row.get("instrument_id")) or None,
+            "security_id": self._safe_str(row.get("security_id")) or None,
             "transaction_category": category,
             "display_label": self._transaction_display_label(transaction_type, cash_leg),
             "cash_leg": cash_leg,
             "asset_class": self._safe_str(row.get("asset_class")) or None,
             "amount_reporting_currency": amount,
             "gross_transaction_amount_reporting_currency": gross_amount,
+            "realized_pnl_reporting_currency": self._optional_number_raw(
+                self._realized_pnl_reporting_amount(row)
+            ),
+            "realized_pnl_local": self._optional_number_raw(
+                row.get("realized_gain_loss_local") or row.get("realized_total_pnl_local")
+            ),
             "net_interest_amount_reporting_currency": interest_amount,
             "withholding_tax_amount_reporting_currency": tax_amount,
             "income_or_tax_reporting_currency": interest_amount - tax_amount,
@@ -3275,6 +3406,9 @@ class ReportingReadService:
                     ),
                 }
             )
+        realized_pnl_summary = self._as_dict(income_and_activity.get("realizedPnlSummary"))
+        if realized_pnl_summary:
+            items.append({"item_type": "realized_pnl_summary", **realized_pnl_summary})
         return items
 
     def _holding_items(self, holdings: dict[str, object]) -> list[dict[str, object]]:
@@ -3349,10 +3483,16 @@ class ReportingReadService:
                         "transaction_id": row.get("transaction_id"),
                         "transaction_date": row.get("transaction_date"),
                         "transaction_type": row.get("transaction_type"),
+                        "instrument_id": row.get("instrument_id"),
+                        "security_id": row.get("security_id"),
                         "amount_reporting_currency": row.get("amount_reporting_currency"),
                         "gross_transaction_amount_reporting_currency": row.get(
                             "gross_transaction_amount_reporting_currency"
                         ),
+                        "realized_pnl_reporting_currency": row.get(
+                            "realized_pnl_reporting_currency"
+                        ),
+                        "realized_pnl_local": row.get("realized_pnl_local"),
                         "net_interest_amount_reporting_currency": row.get(
                             "net_interest_amount_reporting_currency"
                         ),
