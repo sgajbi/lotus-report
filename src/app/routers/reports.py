@@ -86,11 +86,34 @@ def _caller_context(
     correlation_id: str | None,
     trace_id: str | None,
 ) -> ReportCallerContext:
+    missing = [
+        name
+        for name, value in {
+            "X-Actor-Id": triggered_by,
+            "X-Caller-Application": caller_application,
+            "X-Tenant-Id": tenant_id,
+            "X-Region": region,
+        }.items()
+        if not value or not value.strip()
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "missing_caller_context",
+                "message": "Required caller context headers are missing.",
+                "missing_headers": missing,
+            },
+        )
+    assert triggered_by is not None
+    assert caller_application is not None
+    assert tenant_id is not None
+    assert region is not None
     return ReportCallerContext(
-        triggered_by=triggered_by or "unknown",
-        caller_application=caller_application or "unknown",
-        tenant_id=tenant_id or "default",
-        region=region or "UNSPECIFIED",
+        triggered_by=triggered_by.strip(),
+        caller_application=caller_application.strip(),
+        tenant_id=tenant_id.strip(),
+        region=region.strip(),
         booking_center_code=booking_center_code,
         role=role,
         correlation_id=correlation_id or "",
@@ -158,6 +181,11 @@ async def submit_portfolio_review_job(
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
     trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
 ) -> ReportJobHandleResponse:
+    if not idempotency_key or not idempotency_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
+        )
     try:
         record = ledger.create_portfolio_review_job(
             request=request,
@@ -215,7 +243,21 @@ async def submit_portfolio_review_job(
 async def get_report_job_status(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
 ) -> ReportJobStatusResponse:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
     try:
         return _record_to_status(ledger.get_job(job_id))
     except ReportJobNotFoundError as exc:
@@ -238,9 +280,22 @@ async def cancel_report_job(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
     trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
 ) -> ReportJobStatusResponse:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
     try:
         return _record_to_status(
             ledger.cancel_job(

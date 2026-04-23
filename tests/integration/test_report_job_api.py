@@ -59,7 +59,10 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert handle["status_url"] == f"/reports/jobs/{handle['report_job_id']}"
         assert handle["idempotency_key"] == _headers()["Idempotency-Key"]
 
-        status_response = client.get(f"/reports/jobs/{handle['report_job_id']}")
+        status_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}",
+            headers=_headers(),
+        )
         assert status_response.status_code == 200
         status_body = status_response.json()
         assert status_body["report_job_id"] == handle["report_job_id"]
@@ -73,7 +76,13 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
 
         cancel_response = client.post(
             f"/reports/jobs/{handle['report_job_id']}/cancel",
-            headers={"X-Actor-Id": "advisor-123", "X-Correlation-ID": "corr-cancel"},
+            headers={
+                "X-Actor-Id": "advisor-123",
+                "X-Caller-Application": "lotus-gateway",
+                "X-Tenant-Id": "tenant-sg",
+                "X-Region": "APAC",
+                "X-Correlation-ID": "corr-cancel",
+            },
         )
         assert cancel_response.status_code == 200
         cancel_body = cancel_response.json()
@@ -113,6 +122,25 @@ def test_portfolio_review_job_rejects_missing_idempotency_key(tmp_path):
         _clear_overrides()
 
 
+def test_portfolio_review_job_rejects_missing_caller_context(tmp_path):
+    client, _ledger = _client(tmp_path)
+    try:
+        headers = {"Idempotency-Key": "portfolio-review-missing-context"}
+        response = client.post("/reports/portfolio-reviews", json=_payload(), headers=headers)
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail["code"] == "missing_caller_context"
+        assert detail["missing_headers"] == [
+            "X-Actor-Id",
+            "X-Caller-Application",
+            "X-Tenant-Id",
+            "X-Region",
+        ]
+    finally:
+        _clear_overrides()
+
+
 def test_portfolio_review_job_rejects_idempotency_conflict(tmp_path):
     client, _ledger = _client(tmp_path)
     try:
@@ -135,7 +163,7 @@ def test_portfolio_review_job_rejects_idempotency_conflict(tmp_path):
 def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
     client, _ledger = _client(tmp_path)
     try:
-        unknown = client.get("/reports/jobs/rjob_missing")
+        unknown = client.get("/reports/jobs/rjob_missing", headers=_headers())
         assert unknown.status_code == 404
         assert unknown.json()["detail"]["code"] == "report_job_not_found"
 
@@ -144,8 +172,14 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
             json=_payload(),
             headers=_headers("portfolio-review-cancel-repeat"),
         ).json()
-        first_cancel = client.post(f"/reports/jobs/{handle['report_job_id']}/cancel")
-        duplicate_cancel = client.post(f"/reports/jobs/{handle['report_job_id']}/cancel")
+        first_cancel = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/cancel",
+            headers=_headers("portfolio-review-cancel-repeat"),
+        )
+        duplicate_cancel = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/cancel",
+            headers=_headers("portfolio-review-cancel-repeat"),
+        )
 
         assert first_cancel.status_code == 200
         assert duplicate_cancel.status_code == 409
