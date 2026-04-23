@@ -5,6 +5,7 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobLedger,
+    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 
@@ -156,3 +157,19 @@ def test_report_job_ledger_rejects_duplicate_cancel(tmp_path):
             correlation_id="corr-102",
             trace_id="trace-102",
         )
+
+
+def test_report_job_ledger_rejects_unknown_cancel_and_missing_request_load(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    with pytest.raises(ReportJobNotFoundError):
+        ledger.cancel_job(
+            job_id="rjob_missing",
+            actor="advisor-123",
+            correlation_id="corr-missing",
+            trace_id="trace-missing",
+        )
+
+    with ledger._connect() as connection:
+        with pytest.raises(ReportJobNotFoundError):
+            ledger._load_by_request_id(connection, "rrq_missing")

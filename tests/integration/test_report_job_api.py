@@ -1,7 +1,11 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.ledger import (
+    MissingIdempotencyKeyError,
+    ReportJobLedger,
+    ReportJobNotFoundError,
+)
 from app.reporting_jobs.service import get_report_job_ledger
 
 
@@ -134,6 +138,26 @@ def test_portfolio_review_job_rejects_missing_idempotency_key(tmp_path):
         _clear_overrides()
 
 
+def test_portfolio_review_job_translates_ledger_missing_idempotency_error(tmp_path):
+    client, ledger = _client(tmp_path)
+
+    def _raise_missing_key(**_kwargs):
+        raise MissingIdempotencyKeyError("missing_idempotency_key")
+
+    ledger.create_portfolio_review_job = _raise_missing_key
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-ledger-missing-key"),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "missing_idempotency_key"
+    finally:
+        _clear_overrides()
+
+
 def test_portfolio_review_job_rejects_missing_caller_context(tmp_path):
     client, _ledger = _client(tmp_path)
     try:
@@ -197,6 +221,26 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
         assert duplicate_cancel.status_code == 409
         assert duplicate_cancel.json()["detail"]["code"] == "report_job_cannot_be_cancelled"
         assert "traceback" not in str(duplicate_cancel.json()).lower()
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_events_and_cancel_translate_unknown_job(tmp_path):
+    client, ledger = _client(tmp_path)
+
+    def _raise_not_found(*_args, **_kwargs):
+        raise ReportJobNotFoundError("report_job_not_found")
+
+    ledger.get_job = _raise_not_found
+    ledger.cancel_job = _raise_not_found
+    try:
+        events = client.get("/reports/jobs/rjob_missing/events", headers=_headers())
+        cancel = client.post("/reports/jobs/rjob_missing/cancel", headers=_headers())
+
+        assert events.status_code == 404
+        assert events.json()["detail"]["code"] == "report_job_not_found"
+        assert cancel.status_code == 404
+        assert cancel.json()["detail"]["code"] == "report_job_not_found"
     finally:
         _clear_overrides()
 
