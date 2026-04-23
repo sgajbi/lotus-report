@@ -19,6 +19,9 @@
 - `POST /reports/portfolio-reviews`
   internal durable portfolio review report job initiation; returns a job handle, not a rendered
   document
+- `GET /reports/jobs`
+  internal operator-safe bounded search for report jobs by tenant, region, status, report type,
+  portfolio id, as-of date, idempotency key, correlation id, and created-at window
 - `GET /reports/jobs/{job_id}`
   internal product-safe report job status and diagnostics
 - `GET /reports/jobs/{job_id}/events`
@@ -31,6 +34,7 @@
 Front-office callers must use `lotus-gateway` for report job initiation and status:
 
 - `POST /api/v1/reports/portfolio-reviews`
+- `GET /api/v1/report-jobs`
 - `GET /api/v1/report-jobs/{job_id}`
 - `GET /api/v1/report-jobs/{job_id}/events`
 - `POST /api/v1/report-jobs/{job_id}/cancel`
@@ -54,6 +58,7 @@ front-office consumers.
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
+- report job search requires at least one supported filter and is bounded by `limit`
 - report job endpoints do not render PDFs or archive documents
 
 ## Request examples
@@ -117,6 +122,15 @@ Report job status:
 
 ```bash
 curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example"
+```
+
+Report job operational search:
+
+```bash
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=accepted&limit=25" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
 ```
 
 Report job cancellation:

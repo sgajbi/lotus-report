@@ -24,6 +24,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
+    ReportJobListFilters,
     ReportJobStatus,
     ReportStatusEvent,
 )
@@ -220,6 +221,97 @@ class PostgresReportJobLedger:
                 (job_id,),
             ).fetchall()
         return [_event_from_row(row) for row in rows]
+
+    def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
+        where_clauses = ["1=1"]
+        params: list[Any] = []
+
+        if filters.tenant_id:
+            where_clauses.append("req.tenant_id = %s")
+            params.append(filters.tenant_id)
+        if filters.region:
+            where_clauses.append("req.region = %s")
+            params.append(filters.region)
+        if filters.status:
+            where_clauses.append("job.status = %s")
+            params.append(filters.status)
+        if filters.report_type:
+            where_clauses.append("req.report_type = %s")
+            params.append(filters.report_type)
+        if filters.portfolio_id:
+            where_clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(
+                        req.portfolio_scope_json -> 'portfolio_ids'
+                    ) AS pid(value)
+                    WHERE pid.value = %s
+                )
+                """
+            )
+            params.append(filters.portfolio_id)
+        if filters.as_of_date:
+            where_clauses.append("req.as_of_date = %s")
+            params.append(filters.as_of_date)
+        if filters.idempotency_key:
+            where_clauses.append("req.idempotency_key = %s")
+            params.append(filters.idempotency_key)
+        if filters.correlation_id:
+            where_clauses.append("req.correlation_id = %s")
+            params.append(filters.correlation_id)
+        if filters.created_from:
+            where_clauses.append("job.created_at >= %s")
+            params.append(filters.created_from)
+        if filters.created_to:
+            where_clauses.append("job.created_at <= %s")
+            params.append(filters.created_to)
+
+        query = f"""
+            SELECT
+                req.report_request_id,
+                req.report_type,
+                req.portfolio_scope_json AS request_portfolio_scope_json,
+                req.requested_output_formats_json,
+                req.as_of_date,
+                req.reporting_currency,
+                req.options_json,
+                req.trigger_type,
+                req.triggered_by,
+                req.caller_application,
+                req.tenant_id,
+                req.region,
+                req.booking_center_code,
+                req.role,
+                req.idempotency_key,
+                req.request_hash,
+                req.correlation_id,
+                req.trace_id,
+                req.created_at AS request_created_at,
+                job.report_job_id,
+                job.portfolio_scope_json AS job_portfolio_scope_json,
+                job.status,
+                job.failure_category,
+                job.failure_message,
+                job.current_step,
+                job.retry_eligible,
+                job.cancel_requested,
+                job.created_at AS job_created_at,
+                job.updated_at,
+                job.started_at,
+                job.completed_at,
+                job.cancelled_at
+            FROM report_request req
+            JOIN report_job job ON job.report_request_id = req.report_request_id
+            WHERE {" AND ".join(where_clauses)}
+            ORDER BY job.created_at DESC, job.report_job_id DESC
+            LIMIT %s
+        """
+        params.append(filters.limit)
+
+        with self._connect() as connection:
+            rows = connection.execute(query, tuple(params)).fetchall()
+        return [_record_from_row(row) for row in rows]
 
     def cancel_job(
         self,

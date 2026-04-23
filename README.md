@@ -17,7 +17,7 @@ Local ownership guidance:
 - portfolio summary payload shaping
 - portfolio review report payload shaping for client/advisor meetings
 - PostgreSQL-backed durable portfolio review report job ledger for gateway-first initiation and
-  status tracking
+  operational search, status tracking, event history, and bounded cancellation
 - reporting capability publication for downstream consumers
 
 It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
@@ -56,9 +56,10 @@ Boundary rules that matter:
    client/advisor section separation, explicit section readiness, evidence lineage, source-backed
    key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
    metadata.
-4. `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, and
-   `POST /reports/jobs/{job_id}/cancel` provide the durable job-ledger foundation for
-   gateway-first report initiation, product-safe status, database-backed idempotency, and bounded
+4. `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
+   `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` provide the
+   durable job-ledger foundation for gateway-first report initiation, operator-safe job search,
+   product-safe status, append-only event history, database-backed idempotency, and bounded
    pre-render cancellation. These endpoints do not render PDFs or archive documents.
 5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
@@ -124,6 +125,7 @@ Main runtime surfaces come from [src/app/main.py](src/app/main.py):
   `POST /reports/portfolios/{portfolio_id}/review`
 - report job lifecycle endpoints
   `POST /reports/portfolio-reviews`
+  `GET /reports/jobs`
   `GET /reports/jobs/{job_id}`
   `GET /reports/jobs/{job_id}/events`
   `POST /reports/jobs/{job_id}/cancel`
