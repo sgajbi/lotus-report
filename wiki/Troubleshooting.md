@@ -4,7 +4,7 @@
 
 - if reporting payloads look wrong, verify upstream responses before changing local formatting
 - if integration capabilities appear incorrect, check `consumer_system` and `tenant_id` query shape
-- if aggregation requests fail, confirm `asOfDate` query handling and live/static mode intent
+- if aggregation requests fail, confirm `as_of_date` query handling and live/static mode intent
 - if summary/review requests fail validation, confirm request body date field shape and section limit
 
 ## Useful commands

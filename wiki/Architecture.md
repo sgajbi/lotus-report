@@ -14,18 +14,18 @@
 - `src/app/routers/aggregations.py`
   portfolio aggregation read models
 - `src/app/routers/reports.py`
-  report generation plus reporting summary/review endpoints
+  reporting summary/review endpoints
 - `src/app/services/reporting_read_service.py`
   summary/review composition from lotus-core, lotus-performance, and lotus-risk
 - `src/app/services/aggregation_service.py`
   static and live aggregation logic
 - `src/app/models/contracts.py`
-  outward contract models and alias behavior
+  outward contract models and OpenAPI examples
 
 ## Boundary notes
 
 1. upstream source truth stays upstream
 2. `lotus-report` owns reporting response shape and orchestration behavior
 3. capability publication uses snake_case query parameters today
-4. the first-class portfolio review endpoint publishes snake_case request, query, and response
-   fields only; remaining legacy aliases on other surfaces should be handled as cleanup debt
+4. public API surfaces publish canonical snake_case request, query, and response fields only
+5. stale placeholder routes should be removed rather than documented as product capabilities

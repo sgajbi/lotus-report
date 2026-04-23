@@ -2,8 +2,8 @@
 
 ## Purpose
 
-`POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
-contract for front-office client review meetings.
+`POST /reports/portfolios/{portfolio_id}/review` is the portfolio review contract for
+front-office client review meetings.
 
 It is not a PDF renderer and it is not an advice engine. It produces a governed, machine-readable
 review payload that Workbench, gateway, downstream reporting surfaces, and future document
@@ -58,8 +58,8 @@ Canonical local probe for the governed front-office portfolio:
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" \
   -H "Content-Type: application/json" \
-  -H "X-Correlation-ID: rfc-0002-local-proof" \
-  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -H "X-Correlation-ID: portfolio-review-local-proof" \
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"CLIENT_PROFILE\",\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 Request convention notes:
@@ -75,7 +75,7 @@ Top-level response families:
 
 | Field | Purpose |
 | --- | --- |
-| `reportMetadata` | report id, portfolio id, as-of date, currency, audience posture, generated timestamp |
+| `contract_version`, `report_id`, `portfolio_id`, `as_of_date`, `generated_at`, `review_period`, `reporting_currency`, `audience` | report metadata, currency, period, and audience posture |
 | `readiness` | overall readiness status and report-level reasons |
 | `client_profile` | source-backed client, advisor, booking center, mandate, objective, risk exposure, horizon, leverage, status, open date, base currency, and cost-basis method |
 | `key_figures` | normalized front-office figures for portfolio value, allocation, performance, contribution, risk, income/activity, holdings, P&L, transactions, and profile state |
@@ -185,8 +185,8 @@ For live local proof:
 docker compose up -d --build
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" `
   -H "Content-Type: application/json" `
-  -H "X-Correlation-ID: rfc-0002-local-proof" `
-  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -H "X-Correlation-ID: portfolio-review-local-proof" `
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"CLIENT_PROFILE\",\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 Do not treat a visually pleasant output as sufficient proof. A review report is only acceptable

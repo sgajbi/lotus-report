@@ -12,10 +12,9 @@
 ## Current phase
 
 - active reporting orchestration service in the canonical front-office stack
-- RFC-0002 first-class portfolio review report is live as a machine-readable client/advisor
-  meeting-pack contract
-- contract surface is live, but request conventions remain mixed across several endpoints
-- documentation must stay explicit about those compatibility shapes until the API is standardized
+- portfolio review report is live as a machine-readable client/advisor meeting-pack contract
+- public request, query, and response fields use canonical snake_case names
+- Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
 ## Most important commands
 
@@ -30,7 +29,6 @@ This repo owns:
 
 - reporting read-model aggregation
 - portfolio summary and portfolio review payload shaping
-- report metadata and download-reference contracts
 - reporting capability publication for downstream consumers
 
 This repo does not own:
