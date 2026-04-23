@@ -46,7 +46,7 @@ PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE: dict[str, Any] = {
     "reporting_currency": "USD",
     "allocation_dimensions": ["asset_class", "currency", "sector", "region"],
     "look_through_mode": "direct_only",
-    "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+    "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
 }
 
 
@@ -354,8 +354,8 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
             },
         },
         "benchmark": {
-            "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
-            "requested_benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+            "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
+            "requested_benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
             "comparison_status": "available",
             "return_source": "calculated",
             "reason_code": None,
@@ -477,8 +477,8 @@ class PortfolioReviewReportRequest(BaseModel):
         default=None,
         description=(
             "Optional allocation dimensions requested by the caller, such as asset_class, "
-            "currency, sector, region, country, product_type, rating, or issuer where "
-            "supported by upstream data."
+            "currency, sector, region, country, product_type, or rating. Unsupported issuer "
+            "dimensions are rejected until lotus-core exposes a governed allocation view for them."
         ),
         examples=[["asset_class", "currency"]],
     )
@@ -496,7 +496,7 @@ class PortfolioReviewReportRequest(BaseModel):
             "Benchmark identifier used for benchmark-relative performance and risk supportability "
             "when sourced benchmark return series are available."
         ),
-        examples=["BMK_GLOBAL_BALANCED_60_40"],
+        examples=["BMK_PB_GLOBAL_BALANCED_60_40"],
     )
 
     model_config = {

@@ -333,7 +333,11 @@ def test_openapi_uses_typed_portfolio_review_contract():
     assert "benchmark_code" in request_contract["properties"]
     assert "benchmarkCode" not in request_contract["properties"]
     assert request_contract["properties"]["benchmark_code"]["description"]
+    assert request_content["example"]["benchmark_code"] == "BMK_PB_GLOBAL_BALANCED_60_40"
     assert request_content["example"]["look_through_mode"] == "direct_only"
+    allocation_description = request_contract["properties"]["allocation_dimensions"]["description"]
+    assert "or issuer where" not in allocation_description
+    assert "Unsupported issuer dimensions" in allocation_description
     assert (
         request_content["examples"]["full_portfolio_review"]["value"]["sections"]
         == (request_content["example"]["sections"])

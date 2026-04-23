@@ -381,10 +381,30 @@ class _CoreQueryNestedInvalidSummary:
         return 200, {"views": []}
 
 
+class _AggregationServiceWithMalformedFetchedSummary(AggregationService):
+    async def _fetch_inputs(self, portfolio_id: str, as_of_date: str):
+        _ = portfolio_id, as_of_date
+        return {"summary": "invalid", "allocation": {"views": []}}, {}
+
+
 @pytest.mark.asyncio
 async def test_live_aggregation_defaults_when_nested_summary_is_not_a_dict():
     service = AggregationService(
         core_query_client=_CoreQueryNestedInvalidSummary(),
+        performance_client=_PerformanceOkClient(),
+    )
+
+    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+
+    metric_map = {row.metric: row.value for row in response.rows}
+    assert metric_map["market_value_base"] == 1_250_000.0
+    assert metric_map["position_count"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_live_aggregation_defaults_when_fetched_summary_is_not_a_dict():
+    service = _AggregationServiceWithMalformedFetchedSummary(
+        core_query_client=_CoreQueryOkClient(),
         performance_client=_PerformanceOkClient(),
     )
 
