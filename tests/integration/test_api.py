@@ -102,6 +102,7 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.position_pnl.v1",
         "lotus-report.reporting.portfolio_review.performance_contribution.v1",
         "lotus-report.reporting.portfolio_review.source_backed_risk_free.v1",
+        "lotus-report.reporting.portfolio_review.source_backed_benchmark.v1",
         "lotus-report.reporting.portfolio_review.transaction_realized_pnl.v1",
         "lotus-report.reporting.portfolio_review.client_profile.v1",
         "lotus-report.reporting.portfolio_review.advisor_briefing.v1",

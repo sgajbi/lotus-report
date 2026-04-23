@@ -15,6 +15,7 @@ ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions",)
 BENCHMARK_CODE_KEYS = ("benchmark_code",)
 CLIENT_ID_KEYS = ("client_id",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
+BENCHMARK_RISK_METRICS = ("BETA", "TRACKING_ERROR", "INFORMATION_RATIO")
 REVIEW_SECTION_DEFINITIONS = (
     ("CLIENT_PROFILE", "client_profile", "Client And Mandate Profile", "clientProfile"),
     ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
@@ -594,6 +595,7 @@ class ReportingReadService:
                         "Risk Review is unavailable because performance return history could "
                         "not be sourced."
                     ),
+                    request_payload=request_payload,
                 )
 
         returns = self._extract_daily_returns_from_workspace_summary(workspace_summary_payload)
@@ -604,6 +606,7 @@ class ReportingReadService:
                     "Risk Review is unavailable because no daily return history was available "
                     "for the selected request."
                 ),
+                request_payload=request_payload,
             )
         portfolio_open_date = self._workspace_portfolio_open_date(workspace_summary_payload)
         if portfolio_open_date is None:
@@ -613,8 +616,9 @@ class ReportingReadService:
                     "Risk Review is unavailable because the sourced return history did not "
                     "include a portfolio open date."
                 ),
+                request_payload=request_payload,
             )
-        risk_payload = {
+        risk_payload: dict[str, object] = {
             "input_mode": "stateful",
             "stateful_input": self._build_risk_stateful_input(
                 portfolio_id=portfolio_id,
@@ -623,13 +627,20 @@ class ReportingReadService:
             ),
         }
         risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
+        period_failures: list[dict[str, object]] = []
         if risk_status >= status.HTTP_400_BAD_REQUEST:
-            return self._risk_unavailable(
-                reason_code="risk_upstream_failure",
-                message=(
-                    "Risk Review is unavailable because lotus-risk could not calculate metrics."
-                ),
+            risk_response, period_failures = await self._calculate_risk_by_period(
+                risk_payload,
+                fallback_reason_code="risk_period_upstream_failure",
             )
+            if not self._as_dict(risk_response.get("results")):
+                return self._risk_unavailable(
+                    reason_code="risk_upstream_failure",
+                    message=(
+                        "Risk Review is unavailable because lotus-risk could not calculate metrics."
+                    ),
+                    request_payload=request_payload,
+                )
 
         results = self._as_dict(risk_response.get("results"))
         metadata = self._as_dict(risk_response.get("metadata"))
@@ -637,6 +648,7 @@ class ReportingReadService:
             results=results,
             metadata=metadata,
             request_payload=request_payload,
+            period_failures=period_failures,
         )
         return {
             "source": {
@@ -644,7 +656,7 @@ class ReportingReadService:
                 "endpoint": "/analytics/risk/calculate",
             },
             "methodology": {
-                "metrics": list(RISK_METRICS),
+                "metrics": self._requested_risk_metrics(request_payload),
                 "return_source": (
                     "lotus-risk stateful sourcing via lotus-performance returns-series"
                 ),
@@ -657,13 +669,81 @@ class ReportingReadService:
             "metadata": metadata,
         }
 
-    def _risk_unavailable(self, *, reason_code: str, message: str) -> dict[str, object]:
+    async def _calculate_risk_by_period(
+        self,
+        risk_payload: dict[str, object],
+        *,
+        fallback_reason_code: str,
+    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+        stateful_input = self._as_dict(risk_payload.get("stateful_input"))
+        periods = self._as_list(stateful_input.get("periods"))
+        if len(periods) <= 1:
+            return {}, []
+
+        merged_results: dict[str, object] = {}
+        merged_metadata: dict[str, object] = {}
+        period_failures: list[dict[str, object]] = []
+        for period in periods:
+            period_payload = self._as_dict(period)
+            period_risk_payload = {
+                "input_mode": risk_payload.get("input_mode"),
+                "stateful_input": {
+                    **stateful_input,
+                    "periods": [period_payload],
+                },
+            }
+            period_status, period_response = await self._risk_client.calculate_risk(
+                period_risk_payload
+            )
+            period_name = self._safe_str(period_payload.get("name")) or self._safe_str(
+                period_payload.get("type")
+            )
+            if period_status >= status.HTTP_400_BAD_REQUEST:
+                period_failures.append(
+                    {
+                        "period": period_name,
+                        "code": fallback_reason_code,
+                        "status_code": period_status,
+                        "message": self._upstream_error_message(period_response),
+                    }
+                )
+                continue
+            merged_results.update(self._as_dict(period_response.get("results")))
+            if not merged_metadata:
+                merged_metadata = self._as_dict(period_response.get("metadata"))
+
+        if period_failures:
+            merged_metadata["period_failures"] = period_failures
+        return {"results": merged_results, "metadata": merged_metadata}, period_failures
+
+    def _upstream_error_message(self, payload: dict[str, object]) -> str:
+        error = self._as_dict(payload.get("error"))
+        message = self._safe_str(error.get("message"))
+        if message:
+            return message
+        detail = self._as_dict(payload.get("detail"))
+        message = self._safe_str(detail.get("message"))
+        if message:
+            return message
+        return "Upstream risk calculation failed for this period."
+
+    def _risk_unavailable(
+        self,
+        *,
+        reason_code: str,
+        message: str,
+        request_payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        request_payload = request_payload or {}
         return {
             "source": {
                 "service": "lotus-risk",
                 "endpoint": "/analytics/risk/calculate",
             },
-            "methodology": {"metrics": list(RISK_METRICS), "return_basis": "NET"},
+            "methodology": {
+                "metrics": self._requested_risk_metrics(request_payload),
+                "return_basis": "NET",
+            },
             "supportability": {
                 "status": "unavailable",
                 "notes": [
@@ -685,6 +765,7 @@ class ReportingReadService:
         results: dict[str, object],
         metadata: dict[str, object],
         request_payload: dict[str, object],
+        period_failures: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         notes: list[dict[str, object]] = []
         if not results:
@@ -706,6 +787,17 @@ class ReportingReadService:
                         "Risk-adjusted return uses the lotus-risk zero-rate convention because "
                         "no source-backed risk-free rate was applied."
                     ),
+                }
+            )
+
+        for failure in period_failures or []:
+            notes.append(
+                {
+                    "code": failure.get("code") or "risk_period_upstream_failure",
+                    "severity": "warning",
+                    "period": failure.get("period"),
+                    "message": failure.get("message")
+                    or "Risk metrics are unavailable for this period.",
                 }
             )
 
@@ -753,6 +845,10 @@ class ReportingReadService:
                 "risk_adjusted_return": self._metric_value(metrics, "SHARPE"),
                 "drawdown": self._metric_value(metrics, "DRAWDOWN"),
                 "value_at_risk": self._metric_value(metrics, "VAR"),
+                "beta": self._metric_value(metrics, "BETA"),
+                "tracking_error": self._metric_value(metrics, "TRACKING_ERROR"),
+                "information_ratio": self._metric_value(metrics, "INFORMATION_RATIO"),
+                "benchmark_relative_risk": self._metric_value(metrics, "TRACKING_ERROR"),
             }
         return summary
 
@@ -1569,16 +1665,35 @@ class ReportingReadService:
         request_payload = request_payload or {}
         results_by_period = self._as_dict(payload.get("results_by_period"))
         summary: dict[str, object] = {}
+        benchmark_available = False
+        resolved_benchmark_code: str | None = None
+        resolved_benchmark_source: str | None = None
         for period, row in results_by_period.items():
             row_dict = self._as_dict(row)
             portfolio_twr = self._as_dict(row_dict.get("portfolio_twr"))
             net_summary = self._as_dict(self._as_dict(portfolio_twr.get("net")).get("summary"))
             gross_summary = self._as_dict(self._as_dict(portfolio_twr.get("gross")).get("summary"))
+            benchmark = self._as_dict(row_dict.get("benchmark"))
+            active = self._as_dict(row_dict.get("active"))
+            active_net = self._as_dict(active.get("net"))
+            if benchmark:
+                benchmark_available = True
+                resolved_benchmark_code = (
+                    self._safe_str(benchmark.get("benchmark_id")) or resolved_benchmark_code
+                )
+                resolved_benchmark_source = (
+                    self._safe_str(benchmark.get("return_source")) or resolved_benchmark_source
+                )
             annualized_supported = self._annualized_return_supported(period)
             summary[period] = {
                 "start_date": self._workspace_period_start(row_dict),
                 "end_date": self._workspace_period_end(row_dict),
                 "net_cumulative_return": self._return_base(net_summary, "cumulative_return"),
+                "benchmark_cumulative_return": self._return_base(
+                    self._as_dict(benchmark.get("summary")),
+                    "cumulative_return",
+                ),
+                "benchmark_relative_return": self._return_base(active_net, "cumulative_return"),
                 "net_annualized_return": (
                     self._return_base(net_summary, "annualized_return")
                     if annualized_supported
@@ -1594,8 +1709,16 @@ class ReportingReadService:
             }
         return {
             "summary": summary,
-            "benchmark": self._performance_benchmark_context(request_payload),
-            "supportability": self._performance_supportability(request_payload),
+            "benchmark": self._performance_benchmark_context(
+                request_payload,
+                available=benchmark_available,
+                resolved_benchmark_code=resolved_benchmark_code,
+                return_source=resolved_benchmark_source,
+            ),
+            "supportability": self._performance_supportability(
+                request_payload,
+                benchmark_available=benchmark_available,
+            ),
             "methodology": self._review_methodology(request_payload),
         }
 
@@ -1632,6 +1755,15 @@ class ReportingReadService:
         if reporting_currency:
             request["report_ccy"] = reporting_currency
             request["currency"] = reporting_currency
+        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        if benchmark_code:
+            request["include_benchmark"] = True
+            request["benchmark"] = {
+                "benchmark_id": benchmark_code,
+                "input_mode": "stateful",
+                "return_source": "calculated",
+                "stateful_input": {},
+            }
         return request
 
     def _build_contribution_request(
@@ -2072,6 +2204,12 @@ class ReportingReadService:
                 summary, "3M", "net_cumulative_return"
             ),
             "ytd_net_return_pct": self._period_return(summary, "YTD", "net_cumulative_return"),
+            "ytd_benchmark_return_pct": self._period_return(
+                summary, "YTD", "benchmark_cumulative_return"
+            ),
+            "ytd_benchmark_relative_return_pct": self._period_return(
+                summary, "YTD", "benchmark_relative_return"
+            ),
             "five_year_net_annualized_return_pct": self._period_return(
                 summary, "5Y", "net_annualized_return"
             ),
@@ -2100,10 +2238,16 @@ class ReportingReadService:
             "ytd_value_at_risk_pct": ytd.get("value_at_risk"),
             "ytd_expected_shortfall_pct": self._expected_shortfall(risk, "YTD"),
             "ytd_risk_adjusted_return": ytd.get("risk_adjusted_return"),
+            "ytd_beta": ytd.get("beta"),
+            "ytd_tracking_error_pct": ytd.get("tracking_error"),
+            "ytd_information_ratio": ytd.get("information_ratio"),
             "three_year_volatility_pct": three_year.get("volatility"),
             "three_year_drawdown_pct": three_year.get("drawdown"),
             "three_year_value_at_risk_pct": three_year.get("value_at_risk"),
             "three_year_expected_shortfall_pct": self._expected_shortfall(risk, "THREE_YEAR"),
+            "three_year_beta": three_year.get("beta"),
+            "three_year_tracking_error_pct": three_year.get("tracking_error"),
+            "three_year_information_ratio": three_year.get("information_ratio"),
             "benchmark_relative_status": self._risk_benchmark_status(risk),
         }
 
@@ -2799,18 +2943,21 @@ class ReportingReadService:
                     ),
                 )
             )
-        upstream_gaps = [
-            self._capability_gap(
+        benchmark_status = self._safe_str(
+            coverage_groups.get("benchmark_comparison", {}).get("status")
+        )
+        source_backed.append(
+            self._capability_item(
                 "benchmark_return_series",
                 "lotus-performance / lotus-risk",
-                self._safe_str(coverage_groups.get("benchmark_comparison", {}).get("status")),
+                benchmark_status,
                 (
                     "Benchmark-relative excess return, tracking error, information ratio, beta, "
-                    "and benchmark-relative risk cannot be certified until benchmark return series "
-                    "are source-backed."
+                    "and benchmark-relative risk sourced through lotus-performance and lotus-risk."
                 ),
-                ["performance_review", "risk_review"],
-            ),
+            )
+        )
+        upstream_gaps = [
             self._capability_gap(
                 "targets_guidelines_suitability",
                 "lotus-advise / lotus-manage",
@@ -2834,6 +2981,21 @@ class ReportingReadService:
                 ["holdings_appendix", "transactions_appendix"],
             ),
         ]
+        if benchmark_status != "present":
+            upstream_gaps.insert(
+                0,
+                self._capability_gap(
+                    "benchmark_return_series",
+                    "lotus-performance / lotus-risk",
+                    benchmark_status,
+                    (
+                        "Benchmark-relative excess return, tracking error, information ratio, "
+                        "beta, and benchmark-relative risk cannot be certified until benchmark "
+                        "return series are source-backed."
+                    ),
+                    ["performance_review", "risk_review"],
+                ),
+            )
         for note in self._as_list(self._as_dict(risk.get("supportability")).get("notes")):
             note_payload = self._as_dict(note)
             if note_payload.get("code") == "missing_risk_free_rate":
@@ -3091,17 +3253,37 @@ class ReportingReadService:
         return None
 
     def _performance_benchmark_context(
-        self, request_payload: dict[str, object]
+        self,
+        request_payload: dict[str, object],
+        *,
+        available: bool = False,
+        resolved_benchmark_code: str | None = None,
+        return_source: str | None = None,
     ) -> dict[str, object]:
         benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        if available:
+            return {
+                "benchmark_code": resolved_benchmark_code or benchmark_code,
+                "requested_benchmark_code": benchmark_code,
+                "comparison_status": "available",
+                "return_source": return_source,
+                "reason_code": None,
+            }
         return {
             "benchmark_code": benchmark_code,
             "comparison_status": "unavailable" if benchmark_code else "not_requested",
             "reason_code": "benchmark_return_series_not_sourced" if benchmark_code else None,
         }
 
-    def _performance_supportability(self, request_payload: dict[str, object]) -> dict[str, object]:
+    def _performance_supportability(
+        self,
+        request_payload: dict[str, object],
+        *,
+        benchmark_available: bool = False,
+    ) -> dict[str, object]:
         if not self._optional_string(request_payload, *BENCHMARK_CODE_KEYS):
+            return {"status": "ready", "notes": []}
+        if benchmark_available:
             return {"status": "ready", "notes": []}
         return {
             "status": "partial",
@@ -3180,17 +3362,20 @@ class ReportingReadService:
         as_of_date: str,
         request_payload: dict[str, object],
     ) -> dict[str, object]:
+        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        metrics = self._requested_risk_metrics(request_payload)
         return {
             "portfolio_id": portfolio_id,
             "as_of_date": as_of_date,
             "reporting_currency": self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS),
             "client_id": self._optional_string(request_payload, *CLIENT_ID_KEYS),
+            "benchmark_id": benchmark_code,
             "net_or_gross": "NET",
             "periods": [
                 {"type": "YTD", "name": "YTD"},
                 {"type": "THREE_YEAR", "name": "THREE_YEAR"},
             ],
-            "metrics": list(RISK_METRICS),
+            "metrics": metrics,
             "options": {
                 "frequency": "DAILY",
                 "var": {
@@ -3201,6 +3386,12 @@ class ReportingReadService:
                 },
             },
         }
+
+    def _requested_risk_metrics(self, request_payload: dict[str, object]) -> list[str]:
+        metrics = list(RISK_METRICS)
+        if self._optional_string(request_payload, *BENCHMARK_CODE_KEYS):
+            metrics.extend(BENCHMARK_RISK_METRICS)
+        return metrics
 
     def _position_market_value(self, row: dict[str, object]) -> float:  # monetary-float-allow
         if row.get("market_value_reporting_currency") is not None:
@@ -3359,6 +3550,8 @@ class ReportingReadService:
                 "net_annualized_return": row.get("net_annualized_return"),
                 "gross_cumulative_return": row.get("gross_cumulative_return"),
                 "gross_annualized_return": row.get("gross_annualized_return"),
+                "benchmark_cumulative_return": row.get("benchmark_cumulative_return"),
+                "benchmark_relative_return": row.get("benchmark_relative_return"),
                 "annualized_return_supported": row.get("annualized_return_supported"),
                 "benchmark_code": benchmark.get("benchmark_code"),
                 "benchmark_comparison_status": benchmark.get("comparison_status"),
@@ -3403,6 +3596,9 @@ class ReportingReadService:
                 "risk_adjusted_return": row.get("risk_adjusted_return"),
                 "drawdown": row.get("drawdown"),
                 "value_at_risk": row.get("value_at_risk"),
+                "beta": row.get("beta"),
+                "tracking_error": row.get("tracking_error"),
+                "information_ratio": row.get("information_ratio"),
             }
             for period, period_payload in summary.items()
             for row in [self._as_dict(period_payload)]

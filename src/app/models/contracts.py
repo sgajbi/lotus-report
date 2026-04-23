@@ -98,6 +98,7 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
         },
         "performance": {
             "ytd_net_return_pct": 4.18,
+            "ytd_benchmark_return_pct": 3.54,
             "one_year_net_return_pct": 7.42,
             "ytd_benchmark_relative_return_pct": 0.64,
             "top_contributor_ytd_pct": 0.83,
@@ -107,6 +108,9 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
             "portfolio_volatility_pct": 9.8,
             "max_drawdown_pct": -5.7,
             "value_at_risk_95_pct": -2.4,
+            "ytd_beta": 0.86,
+            "ytd_tracking_error_pct": 3.2,
+            "ytd_information_ratio": 0.2,
             "risk_level": "balanced",
         },
         "income_and_activity": {
@@ -164,6 +168,11 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
             {
                 "capability_id": "source_backed_risk_free_rate",
                 "source_service": "lotus-core / lotus-risk",
+                "status": "present",
+            },
+            {
+                "capability_id": "benchmark_return_series",
+                "source_service": "lotus-performance / lotus-risk",
                 "status": "present",
             },
         ],
@@ -333,8 +342,23 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
     "performance": {
         "summary": {
-            "YTD": {"net_cumulative_return": 4.18, "benchmark_relative_return": 0.64},
-            "1Y": {"net_cumulative_return": 7.42, "benchmark_relative_return": 0.91},
+            "YTD": {
+                "net_cumulative_return": 4.18,
+                "benchmark_cumulative_return": 3.54,
+                "benchmark_relative_return": 0.64,
+            },
+            "1Y": {
+                "net_cumulative_return": 7.42,
+                "benchmark_cumulative_return": 6.51,
+                "benchmark_relative_return": 0.91,
+            },
+        },
+        "benchmark": {
+            "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+            "requested_benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+            "comparison_status": "available",
+            "return_source": "calculated",
+            "reason_code": None,
         },
         "contribution": {
             "by_asset_class": [
@@ -346,9 +370,16 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
     "risk_analytics": {
         "summary": {
-            "volatility_pct": 9.8,
-            "max_drawdown_pct": -5.7,
-            "value_at_risk_95_pct": -2.4,
+            "YTD": {
+                "volatility": 9.8,
+                "risk_adjusted_return": 1.1,
+                "drawdown": -5.7,
+                "value_at_risk": -2.4,
+                "beta": 0.86,
+                "tracking_error": 3.2,
+                "information_ratio": 0.2,
+                "benchmark_relative_risk": 3.2,
+            }
         },
         "exposures": [{"risk_factor": "equity_beta", "value": 0.62}],
     },
