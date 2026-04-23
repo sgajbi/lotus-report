@@ -55,7 +55,7 @@ class PortfolioReviewJobRequest(BaseModel):
         examples=[
             {
                 "sections": ["OVERVIEW", "PERFORMANCE"],
-                "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+                "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
             }
         ],
     )
@@ -68,7 +68,7 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "reporting_currency": "USD",
     "options": {
         "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS"],
-        "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+        "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
     },
 }
 

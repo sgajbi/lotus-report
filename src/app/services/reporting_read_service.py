@@ -13,6 +13,9 @@ REPORTING_CURRENCY_KEYS = ("reporting_currency",)
 LOOK_THROUGH_MODE_KEYS = ("look_through_mode",)
 ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions",)
 BENCHMARK_CODE_KEYS = ("benchmark_code",)
+BENCHMARK_CODE_ALIASES = {
+    "BMK_GLOBAL_BALANCED_60_40": "BMK_PB_GLOBAL_BALANCED_60_40",
+}
 CLIENT_ID_KEYS = ("client_id",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 BENCHMARK_RISK_METRICS = ("BETA", "TRACKING_ERROR", "INFORMATION_RATIO")
@@ -1725,9 +1728,12 @@ class ReportingReadService:
         return isinstance(period, str) and period.upper() in {"1Y", "2Y", "5Y", "10Y", "SI"}
 
     def _review_methodology(self, request_payload: dict[str, object]) -> dict[str, object]:
+        benchmark_code = self._normalized_benchmark_code(
+            self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        )
         return {
             "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
-            "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
+            "benchmark_code": benchmark_code,
             "fee_treatment": "source_provided",
             "return_methodology": "time_weighted_return",
             "annualization_policy": (
@@ -1754,7 +1760,9 @@ class ReportingReadService:
         if reporting_currency:
             request["report_ccy"] = reporting_currency
             request["currency"] = reporting_currency
-        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        benchmark_code = self._normalized_benchmark_code(
+            self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        )
         if benchmark_code:
             request["include_benchmark"] = True
             request["benchmark"] = {
@@ -3259,11 +3267,12 @@ class ReportingReadService:
         resolved_benchmark_code: str | None = None,
         return_source: str | None = None,
     ) -> dict[str, object]:
-        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        requested_benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        benchmark_code = self._normalized_benchmark_code(requested_benchmark_code)
         if available:
             return {
                 "benchmark_code": resolved_benchmark_code or benchmark_code,
-                "requested_benchmark_code": benchmark_code,
+                "requested_benchmark_code": requested_benchmark_code,
                 "comparison_status": "available",
                 "return_source": return_source,
                 "reason_code": None,
@@ -3361,7 +3370,9 @@ class ReportingReadService:
         as_of_date: str,
         request_payload: dict[str, object],
     ) -> dict[str, object]:
-        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        benchmark_code = self._normalized_benchmark_code(
+            self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        )
         metrics = self._requested_risk_metrics(request_payload)
         return {
             "portfolio_id": portfolio_id,
@@ -3385,6 +3396,11 @@ class ReportingReadService:
                 },
             },
         }
+
+    def _normalized_benchmark_code(self, benchmark_code: str | None) -> str | None:
+        if benchmark_code is None:
+            return None
+        return BENCHMARK_CODE_ALIASES.get(benchmark_code, benchmark_code)
 
     def _requested_risk_metrics(self, request_payload: dict[str, object]) -> list[str]:
         metrics = list(RISK_METRICS)
