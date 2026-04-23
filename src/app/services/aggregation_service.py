@@ -150,7 +150,7 @@ class AggregationService:
         portfolio_id: str,
         as_of_date: str,
     ) -> PortfolioAggregationResponse:
-        scope = AggregationScope(portfolioId=portfolio_id, asOfDate=as_of_date)
+        scope = AggregationScope(portfolio_id=portfolio_id, as_of_date=as_of_date)
         # Placeholder deterministic rows until lotus-core+lotus-performance connectors are added.
         rows = [
             AggregationRow(bucket="TOTAL", metric="market_value_base", value=1_250_000.0),
@@ -160,7 +160,7 @@ class AggregationService:
         ]
         return PortfolioAggregationResponse(
             scope=scope,
-            generatedAt=datetime.now(UTC),
+            generated_at=datetime.now(UTC),
             rows=rows,
         )
 
@@ -169,7 +169,7 @@ class AggregationService:
         portfolio_id: str,
         as_of_date: str,
     ) -> PortfolioAggregationResponse:
-        scope = AggregationScope(portfolioId=portfolio_id, asOfDate=as_of_date)
+        scope = AggregationScope(portfolio_id=portfolio_id, as_of_date=as_of_date)
         core_query_payload, performance_payload = await self._fetch_inputs(portfolio_id, as_of_date)
 
         summary_payload = core_query_payload.get("summary", {})
@@ -228,6 +228,6 @@ class AggregationService:
         )
         return PortfolioAggregationResponse(
             scope=scope,
-            generatedAt=datetime.now(UTC),
+            generated_at=datetime.now(UTC),
             rows=rows,
         )

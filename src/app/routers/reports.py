@@ -3,12 +3,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Path, Query
 
 from app.models.contracts import (
+    PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
+    PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
     PortfolioReviewReportRequest,
     PortfolioReviewReportResponse,
-    ReportRequest,
-    ReportResponse,
 )
-from app.services.report_service import ReportService
 from app.services.reporting_read_service import ReportingReadService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -24,20 +23,6 @@ def _apply_requested_section_limit(payload: dict[str, Any], section_limit: int) 
     if isinstance(sections, list) and len(sections) > section_limit:
         limited_payload["sections"] = sections[:section_limit]
     return limited_payload
-
-
-@router.post(
-    "",
-    response_model=ReportResponse,
-    summary="Generate report",
-    description=(
-        "Generates a report metadata record from aggregated "
-        "lotus-core+lotus-performance backed views. "
-        "Current slice supports JSON metadata and PDF placeholder download URL."
-    ),
-)
-def generate_report(request: ReportRequest) -> ReportResponse:
-    return ReportService().generate_report(request)
 
 
 @router.post(
@@ -66,17 +51,45 @@ async def get_portfolio_summary(
 @router.post(
     "/portfolios/{portfolio_id}/review",
     response_model=PortfolioReviewReportResponse,
-    summary="Get first-class portfolio review report",
+    summary="Get portfolio review report",
     description=(
-        "Returns the lotus-report-owned RFC-0002 portfolio review contract for front-office "
-        "client/advisor review meetings. The response is machine-readable JSON with sourced "
-        "client profile, key figures, client-ready sections, advisor-only sections, report "
-        "coverage, observations, evidence lineage, deterministic advisor briefing, presentation "
-        "structure, and guarded AI-readiness metadata. The endpoint composes authoritative "
-        "lotus-core, lotus-performance, and lotus-risk data and marks unsupported suitability, "
-        "mandate-control, target-allocation, tax-lot, realized-gain/loss, and advice features as "
-        "not sourced rather than inventing report content."
+        "Returns the lotus-report-owned portfolio review contract for front-office client/advisor "
+        "review meetings. The response is machine-readable JSON with sourced client profile, key "
+        "figures, client-ready sections, advisor-only sections, report coverage, observations, "
+        "evidence lineage, deterministic advisor briefing, presentation structure, and guarded "
+        "AI-readiness metadata. The endpoint composes authoritative lotus-core, lotus-performance, "
+        "and lotus-risk data and marks unsupported suitability, mandate-control, "
+        "target-allocation, tax-lot, realized-gain/loss, and advice features as not sourced "
+        "rather than inventing report content."
     ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "full_portfolio_review": {
+                            "summary": "Full portfolio review request",
+                            "value": PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
+                        }
+                    }
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "examples": {
+                            "full_portfolio_review": {
+                                "summary": "Full portfolio review response",
+                                "value": PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    },
 )
 async def get_portfolio_review(
     portfolio_id: Annotated[

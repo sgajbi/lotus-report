@@ -20,9 +20,7 @@ router = APIRouter(prefix="/aggregations", tags=["Aggregations"])
 )
 async def get_portfolio_aggregation(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
-    as_of_date: Annotated[
-        str, Query(alias="asOfDate", description="Business as-of date (YYYY-MM-DD).")
-    ],
+    as_of_date: Annotated[str, Query(description="Business as-of date (YYYY-MM-DD).")],
     live: Annotated[
         bool,
         Query(

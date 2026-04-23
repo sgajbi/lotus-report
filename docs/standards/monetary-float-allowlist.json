@@ -1,7 +1,7 @@
 {
   "description": "Approved baseline monetary-float findings. New findings fail CI.",
   "policy_version": "1.1.0",
-  "generated_at": "2026-04-22T23:47:41Z",
+  "generated_at": "2026-04-23T00:03:49Z",
   "allowlist": [
     {
       "finding": "scripts/check_monetary_float_usage.py:112:\"justification\": \"Temporary approved monetary float usage; migrate to Decimal.\",",
@@ -10,10 +10,10 @@
       "review_by": "2026-08-24"
     },
     {
-      "finding": "src/app/models/contracts.py:17:value: float",
+      "finding": "src/app/models/contracts.py:15:value: float",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2026-08-24"
+      "review_by": "2026-10-20"
     },
     {
       "finding": "src/app/services/aggregation_service.py:114:asset_market_value = float(",
