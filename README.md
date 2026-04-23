@@ -16,6 +16,7 @@ Local ownership guidance:
 - reporting read-model aggregation
 - portfolio summary payload shaping
 - portfolio review report payload shaping for client/advisor meetings
+- durable portfolio review report job ledger for gateway-first initiation and status tracking
 - reporting capability publication for downstream consumers
 
 It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
@@ -39,7 +40,8 @@ It depends on:
 Boundary rules that matter:
 
 1. upstream domain truth stays in the authoritative services
-2. `lotus-report` owns reporting aggregation and response shape, not ledger or analytics authority
+2. `lotus-report` owns reporting aggregation, response shape, and reporting job lifecycle state, not
+   portfolio, performance, or risk analytics authority
 3. cross-app reporting payloads must stay faithful to upstream evidence
 4. canonical service identity for cross-app validation is `http://report.dev.lotus`
 
@@ -53,9 +55,13 @@ Boundary rules that matter:
    client/advisor section separation, explicit section readiness, evidence lineage, source-backed
    key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
    metadata.
-4. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
+4. `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, and
+   `POST /reports/jobs/{job_id}/cancel` provide the durable job-ledger foundation for
+   gateway-first report initiation, product-safe status, idempotency, and bounded pre-render
+   cancellation. These endpoints do not render PDFs or archive documents.
+5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
-5. Request conventions are governed by the Lotus API vocabulary standard. Public query,
+6. Request conventions are governed by the Lotus API vocabulary standard. Public query,
    request-body, and response fields use canonical snake_case names and do not publish camelCase
    compatibility aliases.
 
@@ -115,6 +121,10 @@ Main runtime surfaces come from [src/app/main.py](src/app/main.py):
 - reporting read endpoints
   `POST /reports/portfolios/{portfolio_id}/summary`
   `POST /reports/portfolios/{portfolio_id}/review`
+- report job lifecycle endpoints
+  `POST /reports/portfolio-reviews`
+  `GET /reports/jobs/{job_id}`
+  `POST /reports/jobs/{job_id}/cancel`
 - platform surfaces
   `/health`, `/health/live`, `/health/ready`, `/metrics`, `/docs`
 
@@ -128,6 +138,8 @@ Key code areas:
   deterministic advisor-only discussion prompts and route targets for review meetings
 - `src/app/services/aggregation_service.py`
   aggregation read-model composition and live/static aggregation flows
+- `src/app/reporting_jobs/`
+  durable report request/job/status-event ledger, idempotency, and bounded cancellation
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, and HTTP resilience clients
 - `docs/standards/`

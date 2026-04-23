@@ -110,8 +110,13 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.upstream_capability_audit.v1",
         "lotus-report.reporting.portfolio_review.advisor_sections.v1",
         "lotus-report.reporting.portfolio_review.workbench_ready.v1",
+        "lotus-report.reporting.portfolio_review.job_ledger.v1",
+        "lotus-report.reporting.portfolio_review.idempotent_job_create.v1",
+        "lotus-report.reporting.portfolio_review.job_status.v1",
+        "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
     } <= feature_keys
-    assert len(body["workflows"]) >= 1
+    workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}
+    assert "portfolio_review_report_job" in workflow_keys
 
 
 def test_integration_capabilities_camel_case_params_do_not_override_context():

@@ -38,10 +38,14 @@ Current repository posture:
 5. `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
    report contract with typed request/response models, explicit client section readiness,
    advisor-only discussion sections, evidence lineage, and implementation-backed capability keys,
-6. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+6. `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, and
+   `POST /reports/jobs/{job_id}/cancel` are the RFC-0100 durable report job ledger foundation for
+   gateway-first initiation, idempotency, product-safe status, and bounded pre-render cancellation;
+   they do not render PDFs or archive documents,
+7. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-7. CI is standardized but still lighter than some core domain services,
-8. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+8. CI is standardized but still lighter than some core domain services,
+9. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -62,6 +66,9 @@ Primary areas:
    reporting evidence products.
 7. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
+8. `src/app/reporting_jobs/`
+   durable report request/job/status-event ledger, idempotency, request hashing, status retrieval,
+   and bounded cancellation for the first asynchronous reporting wave.
 
 ## Runtime And Integration Boundaries
 
@@ -149,7 +156,8 @@ Update this document when:
 3. upstream dependency posture changes materially,
 4. canonical runtime identity or front-office integration role changes,
 5. current request-convention compatibility or canonical parameter naming changes,
-6. current-state rollout posture changes.
+6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
+7. current-state rollout posture changes.
 
 ## Cross-Links
 

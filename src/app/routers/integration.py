@@ -90,11 +90,28 @@ def get_capabilities(
                 "enabled": True,
             },
             {"key": "lotus-report.reporting.portfolio_review.workbench_ready.v1", "enabled": True},
+            {
+                "key": "lotus-report.reporting.portfolio_review.job_ledger.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.idempotent_job_create.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.job_status.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
+                "enabled": True,
+            },
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},
         ],
         workflows=[
             {"workflow_key": "portfolio_reporting", "enabled": True},
             {"workflow_key": "portfolio_review_reporting", "enabled": True},
+            {"workflow_key": "portfolio_review_report_job", "enabled": True},
         ],
         supported_input_modes=["portfolio_id"],
     )

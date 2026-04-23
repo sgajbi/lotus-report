@@ -9,6 +9,8 @@
 - for portfolio review evidence, verify the JSON contract, section readiness, report coverage,
   advisor-only separation, AI-readiness guardrails, and evidence lineage before treating the output
   as meeting-ready
+- for report job evidence, verify idempotency behavior, product-safe status, append-only status
+  events, and bounded cancellation before render/archive/completion
 
 ## Health and readiness surfaces
 
@@ -25,6 +27,8 @@
 
 - `lotus-report` composes from lotus-core, lotus-performance, and lotus-risk
 - reporting payload quality depends on upstream fidelity and contract handling
+- report job lifecycle state is durable in the local report job ledger database configured by
+  `REPORT_JOB_LEDGER_DB_PATH`
 - direct process port `8300` is useful for local debugging, but canonical cross-app validation
   should use `report.dev.lotus`
 - Docker Compose uses `host.docker.internal` upstream URLs so the container can reach the
@@ -55,6 +59,26 @@ Expected posture:
    silently omitting them.
 4. `advisor_briefing` should stay deterministic and advisor-only.
 5. `ai_readiness` should describe guarded assistance and blocked advice/suitability use cases.
+
+Portfolio review report job proof:
+
+```powershell
+curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22" `
+  -H "X-Actor-Id: advisor-123" `
+  -H "X-Caller-Application: lotus-gateway" `
+  -H "X-Tenant-Id: tenant-sg" `
+  -H "X-Region: APAC" `
+  -H "X-Booking-Center-Code: SG" `
+  -H "X-Role: advisor" `
+  -H "X-Correlation-ID: portfolio-review-job-local-proof" `
+  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"json\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\"}}"
+```
+
+The expected response is a job handle with `report_request_id`, `report_job_id`, `status`,
+`status_url`, and `idempotency_key`. Use `GET /reports/jobs/{job_id}` for status and
+`POST /reports/jobs/{job_id}/cancel` only before render/archive/completion phases.
 
 ## Key references
 
