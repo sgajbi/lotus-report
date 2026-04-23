@@ -160,3 +160,25 @@ def test_report_input_snapshot_store_upstream_calls_are_idempotent_by_snapshot(t
 
     assert len(first) == 1
     assert second == first
+
+
+def test_report_input_snapshot_store_normalizes_datetime_payloads(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+
+    created = store.create_snapshot(
+        _request(
+            snapshot_payload={
+                "captured_window": {
+                    "started_at": datetime(2026, 4, 22, 9, 0, tzinfo=UTC),
+                    "ended_at": datetime(2026, 4, 22, 9, 5, tzinfo=UTC),
+                }
+            },
+            lineage_summary={
+                "last_source_refresh_at": datetime(2026, 4, 22, 8, 59, tzinfo=UTC),
+            },
+        )
+    )
+
+    assert created.snapshot_payload["captured_window"]["started_at"] == "2026-04-22T09:00:00Z"
+    assert created.snapshot_payload["captured_window"]["ended_at"] == "2026-04-22T09:05:00Z"
+    assert created.lineage_summary["last_source_refresh_at"] == "2026-04-22T08:59:00Z"

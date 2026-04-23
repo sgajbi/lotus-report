@@ -372,7 +372,7 @@ async def submit_portfolio_review_job(
                 "message": "Idempotency-Key was reused with a different report request.",
             },
         ) from exc
-    if record.status in {"accepted", "collecting_data"}:
+    if record.status == "accepted":
         record = await capture_service.capture_for_job(record)
     return _record_to_handle(record)
 

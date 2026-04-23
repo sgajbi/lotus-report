@@ -58,24 +58,31 @@ def _seed_job(unique_suffix: str) -> str:
     return job.job_id
 
 
-def _request(unique_suffix: str, *, report_job_id: str) -> ReportInputSnapshotCreateRequest:
-    return ReportInputSnapshotCreateRequest(
-        report_job_id=report_job_id,
-        report_type="portfolio_review",
-        report_data_contract_version="v1",
-        portfolio_scope={"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
-        as_of_date="2026-04-22",
-        snapshot_payload={
+def _request(
+    unique_suffix: str,
+    *,
+    report_job_id: str,
+    **overrides: Any,
+) -> ReportInputSnapshotCreateRequest:
+    payload: dict[str, Any] = {
+        "report_job_id": report_job_id,
+        "report_type": "portfolio_review",
+        "report_data_contract_version": "v1",
+        "portfolio_scope": {"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
+        "as_of_date": "2026-04-22",
+        "snapshot_payload": {
             "report_id": f"portfolio-review:PB_SG_GLOBAL_BAL_001_{unique_suffix}:2026-04-22",
             "sections": ["OVERVIEW", "PERFORMANCE"],
         },
-        supportability_status="complete",
-        completeness_status="complete",
-        lineage_summary={"source_services": ["lotus-core", "lotus-performance", "lotus-risk"]},
-        captured_at=datetime(2026, 4, 22, 9, 0, 3, tzinfo=UTC),
-        correlation_id=f"corr-snapshot-{unique_suffix}",
-        trace_id=f"trace-snapshot-{unique_suffix}",
-    )
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "lineage_summary": {"source_services": ["lotus-core", "lotus-performance", "lotus-risk"]},
+        "captured_at": datetime(2026, 4, 22, 9, 0, 3, tzinfo=UTC),
+        "correlation_id": f"corr-snapshot-{unique_suffix}",
+        "trace_id": f"trace-snapshot-{unique_suffix}",
+    }
+    payload.update(overrides)
+    return ReportInputSnapshotCreateRequest(**payload)
 
 
 def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> None:
@@ -142,6 +149,30 @@ def test_postgres_report_input_snapshot_store_rejects_conflicting_rewrite() -> N
                 update={"snapshot_payload": {"report_id": "portfolio-review:changed"}}
             )
         )
+
+
+def test_postgres_report_input_snapshot_store_normalizes_datetime_payloads() -> None:
+    store = _store()
+    unique_suffix = uuid4().hex
+    created = store.create_snapshot(
+        _request(
+            unique_suffix,
+            report_job_id=_seed_job(unique_suffix),
+            snapshot_payload={
+                "captured_window": {
+                    "started_at": datetime(2026, 4, 22, 9, 0, tzinfo=UTC),
+                    "ended_at": datetime(2026, 4, 22, 9, 5, tzinfo=UTC),
+                }
+            },
+            lineage_summary={
+                "last_source_refresh_at": datetime(2026, 4, 22, 8, 59, tzinfo=UTC),
+            },
+        )
+    )
+
+    assert created.snapshot_payload["captured_window"]["started_at"] == "2026-04-22T09:00:00Z"
+    assert created.snapshot_payload["captured_window"]["ended_at"] == "2026-04-22T09:05:00Z"
+    assert created.lineage_summary["last_source_refresh_at"] == "2026-04-22T08:59:00Z"
 
 
 def test_postgres_report_input_snapshot_store_check_ready_reports_missing_schema() -> None:

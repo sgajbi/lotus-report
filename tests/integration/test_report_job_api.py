@@ -64,8 +64,10 @@ class _FakeCaptureService:
     def __init__(self, ledger: ReportJobLedger, lineage_store: ReportInputSnapshotStore):
         self._ledger = ledger
         self._lineage_store = lineage_store
+        self.calls = 0
 
     async def capture_for_job(self, job):
+        self.calls += 1
         self._ledger.mark_collecting_data(
             job_id=job.job_id,
             actor=job.triggered_by,
@@ -244,6 +246,39 @@ def test_portfolio_review_job_submit_is_idempotent(tmp_path):
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json() == first.json()
+    finally:
+        _clear_overrides()
+
+
+def test_portfolio_review_job_does_not_recapture_collecting_data_replay(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+
+    original_create = ledger.create_portfolio_review_job
+
+    def _return_collecting_data_on_replay(**kwargs):
+        record = original_create(**kwargs)
+        if capture_service.calls == 0:
+            return record
+        return record.model_copy(
+            update={
+                "status": "collecting_data",
+                "current_step": "collecting_data",
+            }
+        )
+
+    ledger.create_portfolio_review_job = _return_collecting_data_on_replay
+    try:
+        first = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+        second = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert capture_service.calls == 1
+        assert second.json()["report_job_id"] == first.json()["report_job_id"]
     finally:
         _clear_overrides()
 
