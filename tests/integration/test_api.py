@@ -121,6 +121,40 @@ def test_health_ready_reports_unavailable_when_report_job_ledger_check_fails(mon
     }
 
 
+def test_health_ready_reports_unavailable_when_snapshot_store_check_fails(monkeypatch):
+    class _ReadyLedger:
+        def check_ready(self) -> None:
+            return None
+
+    class _UnavailableSnapshotStore:
+        def check_ready(self) -> None:
+            raise RuntimeError("snapshot store unavailable")
+
+    previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    previous_snapshot_override = getattr(
+        app.state, "report_input_snapshot_store_readiness_override", None
+    )
+    delattr(app.state, "report_job_ledger_readiness_override")
+    delattr(app.state, "report_input_snapshot_store_readiness_override")
+    monkeypatch.setattr(health_router, "get_report_job_ledger", lambda: _ReadyLedger())
+    monkeypatch.setattr(
+        health_router,
+        "get_report_input_snapshot_store",
+        lambda: _UnavailableSnapshotStore(),
+    )
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.state.report_job_ledger_readiness_override = previous_override
+        app.state.report_input_snapshot_store_readiness_override = previous_snapshot_override
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "reason": "report_input_snapshot_store_unavailable",
+    }
+
+
 def test_health_ready_reports_unavailable_when_snapshot_store_override_fails():
     previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
     previous_snapshot_override = getattr(

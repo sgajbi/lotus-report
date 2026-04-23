@@ -1,0 +1,61 @@
+import pytest
+
+from app.clients import render_client as render_client_module
+from app.clients.render_client import RenderClient
+
+
+@pytest.mark.asyncio
+async def test_submit_render_package_posts_to_render_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured.update(kwargs)
+        return 201, {"status": "rendered"}
+
+    monkeypatch.setattr(render_client_module, "post_with_retry", _fake_post_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus/",
+        timeout_seconds=12.5,
+        max_retries=4,
+        retry_backoff_seconds=0.75,
+    )
+
+    status_code, payload = await client.submit_render_package(
+        {"render_job_id": "rdr_123"},
+        correlation_id="corr-123",
+    )
+
+    assert status_code == 201
+    assert payload == {"status": "rendered"}
+    assert captured == {
+        "url": "http://render.dev.lotus/renders",
+        "timeout_seconds": 12.5,
+        "json_body": {"render_job_id": "rdr_123"},
+        "headers": {
+            "Content-Type": "application/json",
+            "X-Correlation-ID": "corr-123",
+        },
+        "max_retries": 4,
+        "backoff_seconds": 0.75,
+    }
+
+
+@pytest.mark.asyncio
+async def test_submit_render_package_omits_correlation_header_when_absent(monkeypatch):
+    captured_headers: dict[str, str] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured_headers.update(kwargs["headers"])
+        return 200, {}
+
+    monkeypatch.setattr(render_client_module, "post_with_retry", _fake_post_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus",
+        timeout_seconds=5.0,
+        max_retries=1,
+        retry_backoff_seconds=0.1,
+    )
+
+    await client.submit_render_package({"render_job_id": "rdr_456"})
+
+    assert captured_headers == {"Content-Type": "application/json"}
