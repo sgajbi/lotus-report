@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from functools import lru_cache
+from numbers import Real
 from typing import Any, Protocol
 
 from app.clients.render_client import RenderClient
@@ -158,29 +159,130 @@ def _build_render_package(
 ) -> dict[str, Any]:
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
+    mandate_profile = _as_dict(client_profile.get("mandate_profile"))
     overview = _as_dict(snapshot.get("overview"))
+    key_figures = _as_dict(snapshot.get("keyFigures"))
+    allocation = _as_dict(key_figures.get("allocation"))
+    portfolio_value = _as_dict(key_figures.get("portfolio_value"))
     performance = _as_dict(_as_dict(snapshot.get("keyFigures")).get("performance"))
     holdings = _as_dict(_as_dict(snapshot.get("keyFigures")).get("holdings"))
     risk = _as_dict(_as_dict(snapshot.get("keyFigures")).get("risk"))
+    evidence = _as_dict(snapshot.get("evidence"))
+    trust_metadata = _as_dict(evidence.get("trust_metadata"))
     currency = (
         _optional_str(snapshot.get("reportingCurrency"))
         or _optional_str(overview.get("currency"))
         or job.reporting_currency
         or "USD"
     )
-    observations = [
-        text
-        for text in [
-            _performance_observation(performance),
-            _risk_observation(risk),
-            _holding_observation(holdings),
-        ]
-        if text
-    ]
+    observations = _review_observations(snapshot, performance, risk, holdings)
     if not observations:
         observations = [
             "Portfolio review was rendered from the governed lotus-report snapshot.",
         ]
+    report_data = {
+        "client_name": (
+            _optional_str(identity.get("client_name"))
+            or _optional_str(_as_dict(snapshot.get("clientProfile")).get("display_name"))
+            or "Client"
+        ),
+        "portfolio_name": _portfolio_name(job, snapshot),
+        "as_of_date": job.as_of_date.isoformat(),
+        "currency": currency,
+        "total_value": str(_optional_decimal(overview.get("total_market_value")) or "0"),
+        "summary_paragraph": _summary_paragraph(snapshot),
+        "review_observations": observations,
+        "review_period_label": _optional_str(_as_dict(snapshot.get("reviewPeriod")).get("label"))
+        or "YTD",
+        "mandate": {
+            "objective": _optional_str(_as_dict(key_figures.get("client_profile")).get("objective"))
+            or _optional_str(_as_dict(snapshot.get("methodology")).get("investment_objective"))
+            or "Objective not available in the governed snapshot.",
+            "risk_exposure": _optional_str(mandate_profile.get("risk_exposure")) or "not_available",
+            "booking_center_code": _optional_str(identity.get("booking_center_code"))
+            or "not_available",
+            "advisor_id": _optional_str(identity.get("advisor_id")) or "not_available",
+        },
+        "portfolio_metrics": {
+            "invested_value": _decimal_text(
+                portfolio_value.get("invested_market_value_reporting_currency")
+            ),
+            "cash_balance": _decimal_text(portfolio_value.get("cash_balance_reporting_currency")),
+            "cash_weight_pct": _percent_text(portfolio_value.get("cash_weight_pct")),
+        },
+        "allocation_summary": {
+            "largest_asset_class_name": _optional_str(allocation.get("name")) or "Not available",
+            "largest_asset_class_weight_pct": _percent_text(allocation.get("weight_pct")),
+            "largest_asset_class_market_value": _decimal_text(
+                allocation.get("market_value_reporting_currency")
+            ),
+            "largest_asset_class_position_count": _optional_int(allocation.get("position_count")),
+        },
+        "performance_periods": _performance_periods(snapshot),
+        "performance_highlight": {
+            "largest_positive_contributor_name": _holding_name(
+                _as_dict(performance.get("largest_positive_contributor"))
+            )
+            or "Not available",
+            "largest_positive_contribution_pct": _percent_text(
+                _as_dict(performance.get("largest_positive_contributor")).get(
+                    "total_contribution_pct"
+                )
+                or _as_dict(performance.get("largest_positive_contributor")).get(
+                    "ytd_contribution_pct"
+                )
+            ),
+            "benchmark_comparison_status": _optional_str(
+                performance.get("benchmark_comparison_status")
+            )
+            or "not_available",
+        },
+        "risk_summary": {
+            "volatility_pct": _percent_text(
+                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
+                .get("YTD", {})
+                .get("volatility")
+                or risk.get("ytd_volatility_pct")
+            ),
+            "beta": _decimal_text(
+                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
+                .get("YTD", {})
+                .get("beta")
+                or risk.get("ytd_beta")
+            ),
+            "tracking_error_pct": _percent_text(
+                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
+                .get("YTD", {})
+                .get("tracking_error")
+                or risk.get("ytd_tracking_error_pct")
+            ),
+            "information_ratio": _decimal_text(
+                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
+                .get("YTD", {})
+                .get("information_ratio")
+                or risk.get("ytd_information_ratio")
+            ),
+            "value_at_risk_pct": _percent_text(
+                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
+                .get("YTD", {})
+                .get("value_at_risk")
+            ),
+        },
+        "top_holdings": _top_holdings(snapshot),
+        "governance_summary": {
+            "source_services": [
+                str(item)
+                for item in evidence.get("source_services", [])
+                if isinstance(item, str) and item.strip()
+            ],
+            "completeness_status": _optional_str(trust_metadata.get("completeness_status"))
+            or "unknown",
+            "data_quality_status": _optional_str(trust_metadata.get("data_quality_status"))
+            or "unknown",
+            "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
+            or "unknown",
+        },
+    }
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
@@ -194,15 +296,7 @@ def _build_render_package(
         "brand_variant": "private_banking",
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
-        "report_data": {
-            "client_name": _optional_str(identity.get("client_name")) or "Client",
-            "portfolio_name": job.portfolio_scope.get("portfolio_ids", ["Portfolio"])[0],
-            "as_of_date": job.as_of_date.isoformat(),
-            "currency": currency,
-            "total_value": str(_optional_decimal(overview.get("total_market_value")) or "0"),
-            "summary_paragraph": _summary_paragraph(snapshot),
-            "review_observations": observations,
-        },
+        "report_data": report_data,
         "lineage_refs": [job.job_id],
         "disclosure_refs": ["portfolio-review.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
@@ -212,12 +306,50 @@ def _build_render_package(
 
 
 def _summary_paragraph(snapshot: dict[str, Any]) -> str:
+    executive_summary = next(
+        (
+            _optional_str(item.get("summary"))
+            for item in snapshot.get("reviewObservations", [])
+            if isinstance(item, dict) and _optional_str(item.get("summary"))
+        ),
+        None,
+    )
+    if executive_summary:
+        return executive_summary
     readiness = _as_dict(snapshot.get("readiness"))
     status = _optional_str(readiness.get("status")) or "ready"
     return (
         "Portfolio review data capture completed in lotus-report with readiness "
         f"{status} for the requested as-of date."
     )
+
+
+def _review_observations(
+    snapshot: dict[str, Any],
+    performance: dict[str, Any],
+    risk: dict[str, Any],
+    holdings: dict[str, Any],
+) -> list[str]:
+    snapshot_observations = [
+        text
+        for text in (
+            _optional_str(item.get("summary"))
+            for item in snapshot.get("reviewObservations", [])
+            if isinstance(item, dict)
+        )
+        if text
+    ]
+    if snapshot_observations:
+        return snapshot_observations
+    return [
+        text
+        for text in [
+            _performance_observation(performance),
+            _risk_observation(risk),
+            _holding_observation(holdings),
+        ]
+        if text
+    ]
 
 
 def _performance_observation(performance: dict[str, Any]) -> str | None:
@@ -255,6 +387,97 @@ def _holding_observation(holdings: dict[str, Any]) -> str | None:
     return None
 
 
+def _portfolio_name(job: ReportJobLedgerRecord, snapshot: dict[str, Any]) -> str:
+    return (
+        _optional_str(snapshot.get("portfolio_name"))
+        or _optional_str(snapshot.get("portfolioName"))
+        or job.portfolio_scope.get("portfolio_ids", ["Portfolio"])[0]
+    )
+
+
+def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    summary = _as_dict(_as_dict(snapshot.get("performance")).get("summary"))
+    periods: list[dict[str, str]] = []
+    for period_code in ("1M", "3M", "YTD", "1Y", "5Y", "SI"):
+        period_summary = _as_dict(summary.get(period_code))
+        if not period_summary:
+            continue
+        periods.append(
+            {
+                "period": period_code,
+                "net_return_pct": _percent_text(period_summary.get("net_cumulative_return")),
+                "benchmark_return_pct": _percent_text(
+                    period_summary.get("benchmark_cumulative_return")
+                ),
+                "relative_return_pct": _percent_text(
+                    period_summary.get("benchmark_relative_return")
+                ),
+            }
+        )
+    return periods
+
+
+def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    grouped_holdings = _as_dict(snapshot.get("holdings")).get("holdingsByAssetClass")
+    if not isinstance(grouped_holdings, dict):
+        return []
+    flattened: list[dict[str, Any]] = []
+    for asset_class, items in grouped_holdings.items():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            flattened.append(
+                {
+                    "asset_class": str(asset_class),
+                    "security_name": _holding_name(item) or "Unknown holding",
+                    "weight_pct": _percent_text(item.get("weight")),
+                    "market_value": _decimal_text(item.get("market_value_reporting_currency")),
+                    "unrealized_pnl": _decimal_text(item.get("unrealized_pnl_reporting_currency")),
+                    "ytd_contribution_pct": _percent_text(item.get("ytd_contribution_pct")),
+                    "_sort_value": _optional_decimal(item.get("market_value_reporting_currency"))
+                    or Decimal("0"),
+                }
+            )
+    flattened.sort(key=lambda item: item["_sort_value"], reverse=True)
+    top_holdings: list[dict[str, str]] = []
+    for item in flattened[:5]:
+        top_holdings.append(
+            {
+                "asset_class": item["asset_class"],
+                "security_name": item["security_name"],
+                "weight_pct": item["weight_pct"],
+                "market_value": item["market_value"],
+                "unrealized_pnl": item["unrealized_pnl"],
+                "ytd_contribution_pct": item["ytd_contribution_pct"],
+            }
+        )
+    return top_holdings
+
+
+def _holding_name(item: dict[str, Any]) -> str | None:
+    return (
+        _optional_str(item.get("security_name"))
+        or _optional_str(item.get("instrument_name"))
+        or _optional_str(item.get("security_id"))
+    )
+
+
+def _percent_text(value: object) -> str:
+    decimal_value = _optional_decimal(value)
+    if decimal_value is None:
+        return "Not available"
+    return f"{decimal_value.quantize(Decimal('0.01'))}%"
+
+
+def _decimal_text(value: object) -> str:
+    decimal_value = _optional_decimal(value)
+    if decimal_value is None:
+        return "Not available"
+    return str(decimal_value.quantize(Decimal("0.01")))
+
+
 def _as_dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -271,6 +494,8 @@ def _optional_decimal(value: object) -> Decimal | None:
         return None
     if isinstance(value, int):
         return Decimal(value)
+    if isinstance(value, Real):
+        return Decimal(str(value))
     if isinstance(value, Decimal):
         return value
     if isinstance(value, str):

@@ -23,6 +23,7 @@ class _RenderClientSuccess:
     async def submit_render_package(self, payload, correlation_id=None):
         assert correlation_id == "corr-render"
         assert payload["report_data"]["client_name"] == "Alex Tan"
+        assert payload["report_data"]["performance_periods"][0]["period"] == "YTD"
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -112,13 +113,87 @@ def _seed_data_ready_job(tmp_path):
             snapshot_payload={
                 "readiness": {"status": "ready"},
                 "reportingCurrency": "USD",
-                "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+                "reviewPeriod": {"label": "YTD"},
+                "clientProfile": {
+                    "identity": {
+                        "client_name": "Alex Tan",
+                        "advisor_id": "RM_SG_001",
+                        "booking_center_code": "Singapore",
+                    },
+                    "mandate_profile": {"risk_exposure": "balanced"},
+                },
                 "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+                "performance": {
+                    "summary": {
+                        "YTD": {
+                            "net_cumulative_return": 4.1,
+                            "benchmark_cumulative_return": 3.4,
+                            "benchmark_relative_return": 0.7,
+                        }
+                    }
+                },
+                "riskAnalytics": {
+                    "summary": {
+                        "YTD": {
+                            "volatility": 12.0,
+                            "beta": 0.82,
+                            "tracking_error": 4.0,
+                            "information_ratio": 0.72,
+                            "value_at_risk": -2.0,
+                        }
+                    }
+                },
+                "holdings": {
+                    "holdingsByAssetClass": {
+                        "Equity": [
+                            {
+                                "security_id": "EQ-1",
+                                "instrument_name": "Global Equity Sleeve",
+                                "weight": 60.0,
+                                "market_value_reporting_currency": 600000.0,
+                                "unrealized_pnl_reporting_currency": 100000.0,
+                                "ytd_contribution_pct": 3.5,
+                            }
+                        ]
+                    }
+                },
+                "reviewObservations": [
+                    {
+                        "observation_id": "obs-1",
+                        "summary": (
+                            "Equity sleeve remained the main performance driver "
+                            "through the review period."
+                        ),
+                    }
+                ],
+                "evidence": {
+                    "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+                    "trust_metadata": {
+                        "completeness_status": "complete",
+                        "data_quality_status": "quality_passed",
+                    },
+                },
                 "keyFigures": {
+                    "client_profile": {
+                        "objective": (
+                            "Long-term real wealth growth with controlled income and liquidity."
+                        )
+                    },
+                    "portfolio_value": {
+                        "invested_market_value_reporting_currency": 14984567.89,
+                        "cash_balance_reporting_currency": 250000.0,
+                        "cash_weight_pct": 1.64,
+                    },
+                    "allocation": {
+                        "name": "Equity",
+                        "weight_pct": 60.0,
+                        "market_value_reporting_currency": 600000.0,
+                        "position_count": 3,
+                    },
                     "performance": {
                         "largest_positive_contributor": {
                             "security_name": "Global Equity Sleeve",
-                            "ytd_contribution_pct": 3.5,
+                            "total_contribution_pct": 3.5,
                         }
                     },
                     "risk": {"ytd_volatility_pct": 12.0, "ytd_beta": 0.82},
@@ -249,9 +324,171 @@ def test_build_render_package_uses_fallback_values_for_sparse_snapshot(tmp_path)
     assert payload["report_data"]["client_name"] == "Client"
     assert payload["report_data"]["currency"] == "SGD"
     assert payload["report_data"]["total_value"] == "1000.50"
+    assert payload["report_data"]["review_period_label"] == "YTD"
+    assert payload["report_data"]["performance_periods"] == []
+    assert payload["report_data"]["top_holdings"] == []
     assert payload["report_data"]["review_observations"] == [
         "Portfolio review was rendered from the governed lotus-report snapshot."
     ]
+
+
+def test_build_render_package_emits_richer_report_contract(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-rich",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        render_job_id="rdr-rich",
+        snapshot={
+            "portfolioName": "PB SG Global Balanced",
+            "reviewPeriod": {"label": "YTD"},
+            "readiness": {"status": "ready"},
+            "reportingCurrency": "USD",
+            "clientProfile": {
+                "identity": {
+                    "client_name": "Alex Tan",
+                    "advisor_id": "RM_SG_001",
+                    "booking_center_code": "Singapore",
+                },
+                "mandate_profile": {"risk_exposure": "balanced"},
+            },
+            "overview": {"currency": "USD", "total_market_value": "1000.50"},
+            "performance": {
+                "summary": {
+                    "YTD": {
+                        "net_cumulative_return": 4.1,
+                        "benchmark_cumulative_return": 3.4,
+                        "benchmark_relative_return": 0.7,
+                    }
+                }
+            },
+            "riskAnalytics": {
+                "summary": {
+                    "YTD": {
+                        "volatility": 12.0,
+                        "beta": 0.82,
+                        "tracking_error": 4.0,
+                        "information_ratio": 0.72,
+                        "value_at_risk": -2.0,
+                    }
+                }
+            },
+            "holdings": {
+                "holdingsByAssetClass": {
+                    "Equity": [
+                        {
+                            "security_id": "EQ-1",
+                            "instrument_name": "Equity 1",
+                            "weight": 60.0,
+                            "market_value_reporting_currency": 600000.0,
+                            "unrealized_pnl_reporting_currency": 100000.0,
+                            "ytd_contribution_pct": 3.5,
+                        }
+                    ]
+                }
+            },
+            "reviewObservations": [
+                {"summary": "Risk posture remained within the balanced mandate range."}
+            ],
+            "evidence": {
+                "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+                "trust_metadata": {
+                    "completeness_status": "complete",
+                    "data_quality_status": "quality_passed",
+                },
+            },
+            "keyFigures": {
+                "client_profile": {
+                    "objective": (
+                        "Long-term real wealth growth with controlled income and liquidity."
+                    )
+                },
+                "portfolio_value": {
+                    "invested_market_value_reporting_currency": 998800.0,
+                    "cash_balance_reporting_currency": 50000.0,
+                    "cash_weight_pct": 5.0,
+                },
+                "allocation": {
+                    "name": "Equity",
+                    "weight_pct": 60.0,
+                    "market_value_reporting_currency": 600000.0,
+                    "position_count": 3,
+                },
+                "performance": {
+                    "benchmark_comparison_status": "available",
+                    "largest_positive_contributor": {
+                        "security_name": "Equity 1",
+                        "total_contribution_pct": 3.5,
+                    },
+                },
+                "risk": {
+                    "ytd_volatility_pct": 12.0,
+                    "ytd_beta": 0.82,
+                    "ytd_tracking_error_pct": 4.0,
+                    "ytd_information_ratio": 0.72,
+                },
+                "holdings": {"position_count": 12},
+            },
+        },
+    )
+
+    report_data = payload["report_data"]
+    assert report_data["portfolio_name"] == "PB SG Global Balanced"
+    assert report_data["summary_paragraph"] == (
+        "Risk posture remained within the balanced mandate range."
+    )
+    assert report_data["mandate"] == {
+        "objective": "Long-term real wealth growth with controlled income and liquidity.",
+        "risk_exposure": "balanced",
+        "booking_center_code": "Singapore",
+        "advisor_id": "RM_SG_001",
+    }
+    assert report_data["portfolio_metrics"] == {
+        "invested_value": "998800.00",
+        "cash_balance": "50000.00",
+        "cash_weight_pct": "5.00%",
+    }
+    assert report_data["allocation_summary"] == {
+        "largest_asset_class_name": "Equity",
+        "largest_asset_class_weight_pct": "60.00%",
+        "largest_asset_class_market_value": "600000.00",
+        "largest_asset_class_position_count": 3,
+    }
+    assert report_data["performance_periods"] == [
+        {
+            "period": "YTD",
+            "net_return_pct": "4.10%",
+            "benchmark_return_pct": "3.40%",
+            "relative_return_pct": "0.70%",
+        }
+    ]
+    assert report_data["risk_summary"] == {
+        "volatility_pct": "12.00%",
+        "beta": "0.82",
+        "tracking_error_pct": "4.00%",
+        "information_ratio": "0.72",
+        "value_at_risk_pct": "-2.00%",
+    }
+    assert report_data["top_holdings"] == [
+        {
+            "asset_class": "Equity",
+            "security_name": "Equity 1",
+            "weight_pct": "60.00%",
+            "market_value": "600000.00",
+            "unrealized_pnl": "100000.00",
+            "ytd_contribution_pct": "3.50%",
+        }
+    ]
+    assert report_data["governance_summary"] == {
+        "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+        "completeness_status": "complete",
+        "data_quality_status": "quality_passed",
+        "readiness_status": "ready",
+    }
 
 
 def test_render_service_helpers_cover_fallback_branches(monkeypatch):
