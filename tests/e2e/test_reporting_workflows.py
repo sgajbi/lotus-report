@@ -68,10 +68,12 @@ def test_e2e_reporting_review_flow():
 
 
 def test_e2e_aggregation_non_live_flow():
-    response = client.get("/aggregations/portfolios/DEMO_CA_USD_001?asOfDate=2026-02-24&live=false")
+    response = client.get(
+        "/aggregations/portfolios/DEMO_CA_USD_001?as_of_date=2026-02-24&live=false"
+    )
     assert response.status_code == 200
     body = response.json()
-    assert body["scope"]["portfolioId"] == "DEMO_CA_USD_001"
+    assert body["scope"]["portfolio_id"] == "DEMO_CA_USD_001"
     row_metrics = {row["metric"] for row in body["rows"]}
     assert "market_value_base" in row_metrics
 

@@ -5,10 +5,8 @@ from pydantic import BaseModel, Field
 
 
 class AggregationScope(BaseModel):
-    portfolio_id: str = Field(..., alias="portfolioId")
-    as_of_date: date = Field(..., alias="asOfDate")
-
-    model_config = {"populate_by_name": True}
+    portfolio_id: str
+    as_of_date: date
 
 
 class AggregationRow(BaseModel):
@@ -18,45 +16,361 @@ class AggregationRow(BaseModel):
 
 
 class PortfolioAggregationResponse(BaseModel):
-    source_service: str = Field("lotus-report", alias="sourceService")
+    source_service: str = "lotus-report"
     scope: AggregationScope
-    generated_at: datetime = Field(..., alias="generatedAt")
+    generated_at: datetime
     rows: list[AggregationRow]
-
-    model_config = {"populate_by_name": True}
-
-
-class ReportRequest(BaseModel):
-    portfolio_id: str = Field(..., alias="portfolioId")
-    as_of_date: date = Field(..., alias="asOfDate")
-    report_type: Literal["PORTFOLIO_SNAPSHOT", "PERFORMANCE_SUMMARY"] = Field(
-        ..., alias="reportType"
-    )
-    output_format: Literal["JSON", "PDF"] = Field("JSON", alias="outputFormat")
-
-    model_config = {"populate_by_name": True}
-
-
-class ReportResponse(BaseModel):
-    report_id: str = Field(..., alias="reportId")
-    status: Literal["READY"] = "READY"
-    report_type: str = Field(..., alias="reportType")
-    output_format: str = Field(..., alias="outputFormat")
-    generated_at: datetime = Field(..., alias="generatedAt")
-    download_url: str | None = Field(default=None, alias="downloadUrl")
-
-    model_config = {"populate_by_name": True}
 
 
 class IntegrationCapabilitiesResponse(BaseModel):
-    source_service: str = Field("lotus-report", alias="sourceService")
-    contract_version: str = Field(..., alias="contractVersion")
-    policy_version: str = Field("ras-default-v1", alias="policyVersion")
+    source_service: str = "lotus-report"
+    contract_version: str
+    policy_version: str = "ras-default-v1"
     features: list[dict[str, str | bool]]
     workflows: list[dict[str, str | bool]]
-    supported_input_modes: list[str] = Field(alias="supportedInputModes")
+    supported_input_modes: list[str]
 
-    model_config = {"populate_by_name": True}
+
+PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE: dict[str, Any] = {
+    "as_of_date": "2026-04-22",
+    "sections": [
+        "CLIENT_PROFILE",
+        "OVERVIEW",
+        "ALLOCATION",
+        "PERFORMANCE",
+        "RISK_ANALYTICS",
+        "INCOME_AND_ACTIVITY",
+        "HOLDINGS",
+        "TRANSACTIONS",
+    ],
+    "reporting_currency": "USD",
+    "allocation_dimensions": ["asset_class", "currency", "sector", "geography"],
+    "look_through_mode": "DIRECT",
+    "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
+}
+
+
+PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "contract_version": "v1",
+    "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+    "as_of_date": "2026-04-22",
+    "generated_at": "2026-04-22T09:00:00Z",
+    "review_period": {
+        "as_of_date": "2026-04-22",
+        "periods": ["YTD", "1Y"],
+        "performance_start_date": "2026-01-01",
+    },
+    "reporting_currency": "USD",
+    "audience": {
+        "client_ready": True,
+        "advisor_only_sections": ["advisor_discussion"],
+        "client_distribution_allowed": True,
+    },
+    "readiness": {"status": "partial", "reason": "Some upstream suitability data is not sourced."},
+    "methodology": {
+        "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
+        "return_methodology": "time_weighted_return",
+        "risk_basis": "ex_post_volatility_and_drawdown",
+        "valuation_basis": "reporting_currency_market_value",
+    },
+    "evidence": {
+        "product_id": "lotus-report:ClientReportEvidencePack:v1",
+        "lineage_bundle_id": (
+            "lineage:lotus-report:portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22"
+        ),
+        "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+        "calculation_policy": "source_backed_no_invented_figures",
+    },
+    "key_figures": {
+        "portfolio": {
+            "total_market_value": 1321400.0,
+            "total_cash": 73500.0,
+            "net_invested_amount": 1282430.0,
+            "reporting_currency": "USD",
+            "position_count": 8,
+        },
+        "allocation": {
+            "largest_asset_class": "EQUITY",
+            "largest_asset_class_weight_pct": 48.2,
+            "cash_weight_pct": 5.56,
+            "top_issuer_concentration_pct": 7.9,
+        },
+        "performance": {
+            "ytd_net_return_pct": 4.18,
+            "one_year_net_return_pct": 7.42,
+            "ytd_benchmark_relative_return_pct": 0.64,
+            "top_contributor_ytd_pct": 0.83,
+            "bottom_contributor_ytd_pct": -0.21,
+        },
+        "risk": {
+            "portfolio_volatility_pct": 9.8,
+            "max_drawdown_pct": -5.7,
+            "value_at_risk_95_pct": -2.4,
+            "risk_level": "balanced",
+        },
+        "income_and_activity": {
+            "income_ytd": 18420.0,
+            "fees_ytd": 2410.0,
+            "net_cash_flow_ytd": -12500.0,
+            "transaction_count": 19,
+        },
+        "holdings": {
+            "total_unrealized_pnl": 38970.67,
+            "total_unrealized_pnl_pct": 2.95,
+            "largest_position_weight_pct": 7.9,
+        },
+        "transactions": {
+            "last_activity_date": "2026-04-19",
+            "purchases_ytd": 95000.0,
+            "sales_ytd": 72000.0,
+        },
+    },
+    "report_coverage": {
+        "client_profile": {"status": "present", "required": True},
+        "portfolio_snapshot": {"status": "present", "required": True},
+        "allocation": {"status": "present", "required": True},
+        "performance_and_contribution": {"status": "present", "required": True},
+        "risk_analytics": {"status": "present", "required": True},
+        "income_and_activity": {"status": "present", "required": True},
+        "position_pnl_and_cost_basis": {"status": "present", "required": True},
+        "targets_guidelines_and_suitability": {"status": "not_sourced", "required": True},
+    },
+    "upstream_capability_audit": {
+        "status": "action_required",
+        "source_backed_capabilities": [
+            {
+                "capability_id": "holdings_pnl_cost_basis",
+                "source_service": "lotus-core",
+                "status": "present",
+            },
+            {
+                "capability_id": "performance_contribution",
+                "source_service": "lotus-performance",
+                "status": "present",
+            },
+        ],
+        "upstream_gaps": [
+            {
+                "capability_id": "targets_guidelines_suitability",
+                "owning_service": "lotus-advise / lotus-manage",
+                "status": "not_sourced",
+            }
+        ],
+        "report_side_findings": [],
+    },
+    "review_observations": [
+        {
+            "severity": "attention",
+            "observation_id": "cash_weight",
+            "message": "Cash weight is above the client minimum liquidity buffer.",
+            "source_section_ids": ["asset_allocation"],
+        }
+    ],
+    "client_profile": {
+        "status": "present",
+        "identity": {
+            "client_id": "CIF_SG_000184",
+            "client_display_name": "Canonical Global Balanced Client",
+            "advisor_id": "RM_SG_001",
+            "booking_center_code": "SG",
+            "relationship_segment": "private_banking",
+        },
+        "portfolio_profile": {
+            "portfolio_name": "Global Balanced Mandate",
+            "base_currency": "USD",
+            "inception_date": "2021-07-01",
+        },
+        "mandate_profile": {
+            "portfolio_type": "discretionary",
+            "objective": "Long-term real wealth growth with controlled income and liquidity.",
+            "risk_exposure": "balanced",
+            "investment_time_horizon": "7Y_PLUS",
+            "is_leverage_allowed": False,
+            "cost_basis_method": "FIFO",
+        },
+        "missing_fields": [],
+    },
+    "report_structure": {
+        "sequence": [
+            {
+                "order": 1,
+                "title": "Client, Mandate, And Meeting Context",
+                "section_ids": ["client_profile"],
+            },
+            {
+                "order": 2,
+                "title": "Portfolio Review",
+                "section_ids": [
+                    "executive_summary",
+                    "asset_allocation",
+                    "performance_review",
+                    "risk_review",
+                ],
+            },
+            {
+                "order": 3,
+                "title": "Appendices",
+                "section_ids": ["holdings_appendix", "transactions_appendix"],
+            },
+        ]
+    },
+    "advisor_briefing": {
+        "status": "ready",
+        "briefings": [
+            {
+                "briefing_id": "meeting_focus",
+                "title": "Meeting focus",
+                "talking_points": [
+                    (
+                        "Discuss YTD return drivers, current risk posture, liquidity, "
+                        "and cash activity."
+                    )
+                ],
+                "required_checks": [
+                    "Confirm suitability and guideline data outside this payload before advice."
+                ],
+            }
+        ],
+    },
+    "ai_readiness": {
+        "status": "guarded_ready",
+        "mode": "grounded_assistance_metadata_only",
+        "allowed_features": ["summarization", "question_answering_with_citations"],
+        "blocked_features": [
+            "trade_recommendation",
+            "suitability_determination",
+            "client_profile_inference",
+        ],
+    },
+    "disclosures": [
+        {
+            "disclosure_id": "source_backed_reporting",
+            "text": (
+                "Figures are sourced from Lotus domain services and unsupported data is marked."
+            ),
+        }
+    ],
+    "client_sections": [
+        {
+            "section_id": "client_profile",
+            "title": "Client And Mandate Profile",
+            "status": "ready",
+            "items": [{"client_id": "CIF_SG_000184", "risk_exposure": "balanced"}],
+        },
+        {
+            "section_id": "executive_summary",
+            "title": "Executive Review Summary",
+            "status": "ready",
+            "items": [{"total_market_value": 1321400.0, "ytd_net_return_pct": 4.18}],
+        },
+        {
+            "section_id": "holdings_appendix",
+            "title": "Holdings Appendix",
+            "status": "ready",
+            "items": [{"position_id": "POS_EQ_US_001", "unrealized_pnl": 12450.0}],
+        },
+    ],
+    "advisor_sections": [
+        {
+            "section_id": "advisor_discussion",
+            "title": "Advisor Discussion And Follow-Up",
+            "status": "ready",
+            "items": [
+                {
+                    "prompt_id": "review_readiness",
+                    "advisor_only": True,
+                    "prompt": "Confirm suitability, guideline, and target-allocation context.",
+                    "source_section_ids": ["client_profile", "risk_review"],
+                    "route_targets": [
+                        {
+                            "target_id": "workbench_review",
+                            "surface": "lotus-workbench",
+                            "route_key": "portfolio_review",
+                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                            "as_of_date": "2026-04-22",
+                            "mutation_allowed": False,
+                        }
+                    ],
+                }
+            ],
+        }
+    ],
+    "overview": {
+        "total_market_value": 1321400.0,
+        "total_cash": 73500.0,
+        "currency": "USD",
+    },
+    "allocation": {
+        "by_asset_class": [
+            {"asset_class": "EQUITY", "market_value": 636914.8, "weight_pct": 48.2},
+            {"asset_class": "FIXED_INCOME", "market_value": 478746.8, "weight_pct": 36.23},
+            {"asset_class": "CASH", "market_value": 73500.0, "weight_pct": 5.56},
+        ],
+        "by_currency": [{"currency": "USD", "market_value": 1023300.0, "weight_pct": 77.44}],
+    },
+    "performance": {
+        "summary": {
+            "YTD": {"net_cumulative_return": 4.18, "benchmark_relative_return": 0.64},
+            "1Y": {"net_cumulative_return": 7.42, "benchmark_relative_return": 0.91},
+        },
+        "contribution": {
+            "by_asset_class": [
+                {"asset_class": "EQUITY", "contribution_pct": 2.37},
+                {"asset_class": "FIXED_INCOME", "contribution_pct": 1.11},
+            ],
+            "by_position": [{"position_id": "POS_EQ_US_001", "contribution_pct": 0.83}],
+        },
+    },
+    "risk_analytics": {
+        "summary": {
+            "volatility_pct": 9.8,
+            "max_drawdown_pct": -5.7,
+            "value_at_risk_95_pct": -2.4,
+        },
+        "exposures": [{"risk_factor": "equity_beta", "value": 0.62}],
+    },
+    "income_and_activity": {
+        "summary": {"income_ytd": 18420.0, "fees_ytd": 2410.0, "net_cash_flow_ytd": -12500.0},
+        "cash_flow_breakdown": [
+            {"category": "DIVIDENDS", "amount": 9600.0},
+            {"category": "COUPONS", "amount": 8820.0},
+        ],
+    },
+    "holdings": {
+        "position_count": 8,
+        "holdings_by_asset_class": {
+            "EQUITY": [
+                {
+                    "position_id": "POS_EQ_US_001",
+                    "instrument_name": "Global Quality Equity Fund",
+                    "quantity": 2200.0,
+                    "market_value": 104360.0,
+                    "weight_pct": 7.9,
+                    "cost_basis": 91910.0,
+                    "unrealized_pnl": 12450.0,
+                    "unrealized_pnl_pct": 13.55,
+                    "contribution_ytd_pct": 0.83,
+                }
+            ]
+        },
+    },
+    "transactions": {
+        "transaction_count": 19,
+        "transactions_by_category": {
+            "INCOME": [
+                {
+                    "transaction_id": "TXN_20260419_DIV_001",
+                    "trade_date": "2026-04-19",
+                    "category": "DIVIDEND",
+                    "amount": 1250.0,
+                    "currency": "USD",
+                    "instrument_name": "Global Quality Equity Fund",
+                }
+            ]
+        },
+    },
+}
 
 
 class PortfolioReviewReportRequest(BaseModel):
@@ -69,7 +383,8 @@ class PortfolioReviewReportRequest(BaseModel):
         default=None,
         description=(
             "Optional requested report sections. Supported values include OVERVIEW, ALLOCATION, "
-            "PERFORMANCE, RISK_ANALYTICS, INCOME_AND_ACTIVITY, HOLDINGS, and TRANSACTIONS."
+            "CLIENT_PROFILE, PERFORMANCE, RISK_ANALYTICS, INCOME_AND_ACTIVITY, HOLDINGS, "
+            "and TRANSACTIONS."
         ),
         examples=[
             [
@@ -120,13 +435,7 @@ class PortfolioReviewReportRequest(BaseModel):
         "extra": "forbid",
         "json_schema_extra": {
             "examples": [
-                {
-                    "as_of_date": "2026-04-22",
-                    "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE"],
-                    "reporting_currency": "USD",
-                    "allocation_dimensions": ["asset_class", "currency"],
-                    "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
-                },
+                PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
                 {
                     "as_of_date": "2026-04-22",
                     "sections": ["OVERVIEW", "HOLDINGS"],
@@ -313,232 +622,6 @@ class PortfolioReviewReportResponse(BaseModel):
     model_config = {
         "populate_by_name": True,
         "json_schema_extra": {
-            "examples": [
-                {
-                    "contract_version": "v1",
-                    "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
-                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                    "as_of_date": "2026-04-22",
-                    "generated_at": "2026-04-22T09:00:00Z",
-                    "readiness": {"status": "ready"},
-                    "client_profile": {
-                        "status": "present",
-                        "identity": {
-                            "client_id": "CIF_SG_000184",
-                            "advisor_id": "RM_SG_001",
-                            "booking_center_code": "SG",
-                        },
-                        "mandate_profile": {
-                            "portfolio_type": "discretionary",
-                            "objective": (
-                                "Long-term real wealth growth with controlled income and liquidity."
-                            ),
-                            "risk_exposure": "balanced",
-                            "investment_time_horizon": "7Y_PLUS",
-                            "is_leverage_allowed": False,
-                            "cost_basis_method": "FIFO",
-                        },
-                        "missing_fields": [],
-                    },
-                    "key_figures": {
-                        "portfolio": {
-                            "total_market_value": 1000000.0,
-                            "reporting_currency": "USD",
-                        },
-                        "performance": {
-                            "ytd_net_return_pct": -0.1557,
-                            "total_contribution_ytd_pct": -0.1461,
-                        },
-                        "holdings": {
-                            "total_unrealized_pnl_reporting_currency": 38970.67,
-                            "total_unrealized_pnl_pct": 0.0295,
-                        },
-                    },
-                    "report_coverage": {
-                        "position_pnl_and_cost_basis": {
-                            "status": "present",
-                            "required": True,
-                        },
-                        "targets_guidelines_and_suitability": {
-                            "status": "not_sourced",
-                            "required": True,
-                        },
-                    },
-                    "upstream_capability_audit": {
-                        "status": "action_required",
-                        "source_backed_capabilities": [
-                            {
-                                "capability_id": "holdings_pnl_cost_basis",
-                                "source_service": "lotus-core",
-                                "status": "present",
-                            }
-                        ],
-                        "upstream_gaps": [
-                            {
-                                "capability_id": "targets_guidelines_suitability",
-                                "owning_service": "lotus-advise / lotus-manage",
-                                "status": "not_sourced",
-                            }
-                        ],
-                        "report_side_findings": [],
-                    },
-                    "report_structure": {
-                        "sequence": [
-                            {
-                                "order": 1,
-                                "title": "Client, Mandate, And Meeting Context",
-                                "section_ids": ["client_profile"],
-                            }
-                        ]
-                    },
-                    "advisor_briefing": {
-                        "status": "ready",
-                        "briefings": [
-                            {
-                                "briefing_id": "client_context",
-                                "title": "Confirm client and mandate context",
-                                "talking_points": [
-                                    (
-                                        "Client CIF_SG_000184 is reviewed under a balanced "
-                                        "risk exposure."
-                                    )
-                                ],
-                            }
-                        ],
-                    },
-                    "ai_readiness": {
-                        "status": "guarded_ready",
-                        "mode": "grounded_assistance_metadata_only",
-                        "blocked_features": [
-                            "trade_recommendation",
-                            "suitability_determination",
-                            "client_profile_inference",
-                        ],
-                    },
-                    "methodology": {
-                        "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
-                        "return_methodology": "time_weighted_return",
-                    },
-                    "evidence": {
-                        "product_id": "lotus-report:ClientReportEvidencePack:v1",
-                        "lineage_bundle_id": (
-                            "lineage:lotus-report:portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22"
-                        ),
-                        "source_services": ["lotus-core"],
-                    },
-                    "client_sections": [
-                        {
-                            "section_id": "executive_summary",
-                            "title": "Executive Review Summary",
-                            "status": "ready",
-                            "items": [{"total_market_value": 1000000.0}],
-                        }
-                    ],
-                    "advisor_sections": [
-                        {
-                            "section_id": "advisor_discussion",
-                            "title": "Advisor Discussion And Follow-Up",
-                            "status": "ready",
-                            "items": [
-                                {
-                                    "prompt_id": "review_readiness",
-                                    "advisor_only": True,
-                                    "prompt": (
-                                        "Confirm report readiness is ready for "
-                                        "PB_SG_GLOBAL_BAL_001 as of 2026-04-22 with no "
-                                        "unavailable client sections."
-                                    ),
-                                    "source_section_ids": ["executive_summary"],
-                                    "route_targets": [
-                                        {
-                                            "target_id": "workbench_review",
-                                            "surface": "lotus-workbench",
-                                            "route_key": "portfolio_review",
-                                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                                            "as_of_date": "2026-04-22",
-                                            "mutation_allowed": False,
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ],
-                    "overview": {
-                        "total_market_value": 1000000.0,
-                        "total_cash": 50000.0,
-                        "currency": "USD",
-                    },
-                },
-                {
-                    "contract_version": "v1",
-                    "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
-                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                    "as_of_date": "2026-04-22",
-                    "generated_at": "2026-04-22T09:00:00Z",
-                    "readiness": {
-                        "status": "partial",
-                        "reason": "Performance section is unavailable for the selected request.",
-                    },
-                    "methodology": {
-                        "performance_basis": "NET_AND_GROSS_WHERE_AVAILABLE",
-                        "return_methodology": "time_weighted_return",
-                    },
-                    "evidence": {
-                        "product_id": "lotus-report:ClientReportEvidencePack:v1",
-                        "lineage_bundle_id": (
-                            "lineage:lotus-report:portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22"
-                        ),
-                        "source_services": ["lotus-performance"],
-                    },
-                    "client_sections": [
-                        {
-                            "section_id": "performance_review",
-                            "title": "Performance Review",
-                            "status": "unavailable",
-                            "reason_code": "source_unavailable",
-                            "message": "Performance Review is unavailable for this request.",
-                        },
-                        {
-                            "section_id": "transactions_appendix",
-                            "title": "Transactions Appendix",
-                            "status": "not_applicable",
-                            "reason_code": "no_applicable_activity",
-                            "message": (
-                                "Transactions Appendix has no applicable activity for this request."
-                            ),
-                        },
-                    ],
-                    "advisor_sections": [
-                        {
-                            "section_id": "advisor_discussion",
-                            "title": "Advisor Discussion And Follow-Up",
-                            "status": "ready",
-                            "items": [
-                                {
-                                    "prompt_id": "review_readiness",
-                                    "advisor_only": True,
-                                    "prompt": (
-                                        "Confirm report readiness is partial for "
-                                        "PB_SG_GLOBAL_BAL_001 as of 2026-04-22 with unavailable "
-                                        "client sections: Performance Review."
-                                    ),
-                                    "source_section_ids": ["performance_review"],
-                                    "route_targets": [
-                                        {
-                                            "target_id": "workbench_review",
-                                            "surface": "lotus-workbench",
-                                            "route_key": "portfolio_review",
-                                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                                            "as_of_date": "2026-04-22",
-                                            "mutation_allowed": False,
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ],
-                    "performance": None,
-                },
-            ]
+            "examples": [PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE],
         },
     }

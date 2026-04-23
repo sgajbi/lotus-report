@@ -12,13 +12,10 @@
 
 ## Reports
 
-- `POST /reports`
-  report metadata generation
 - `POST /reports/portfolios/{portfolio_id}/summary`
   lotus-report-owned portfolio summary payload
 - `POST /reports/portfolios/{portfolio_id}/review`
-  RFC-0002 first-class, machine-readable portfolio review report payload for client/advisor
-  meetings
+  machine-readable portfolio review report payload for client/advisor meetings
 
 ## Platform surfaces
 
@@ -31,7 +28,7 @@
 ## Current contract notes
 
 - integration capability query parameters are canonical snake_case: `consumer_system`, `tenant_id`
-- aggregation query currently uses camelCase alias `asOfDate`
+- aggregation query parameter is canonical snake_case: `as_of_date`
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 
@@ -46,7 +43,7 @@ curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gatew
 Aggregations:
 
 ```bash
-curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=2026-02-24&live=false"
+curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
 ```
 
 Portfolio summary:
@@ -72,8 +69,8 @@ Canonical front-office portfolio review:
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" \
   -H "Content-Type: application/json" \
-  -H "X-Correlation-ID: rfc-0002-local-proof" \
-  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
+  -H "X-Correlation-ID: portfolio-review-local-proof" \
+  -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\",\"sections\":[\"CLIENT_PROFILE\",\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
 
 The review response is a typed report contract. It separates client-ready `client_sections` from
@@ -84,9 +81,9 @@ position cost/unrealized P&L, and YTD contribution where upstream services provi
 includes deterministic `report_structure`, `advisor_briefing`, guarded `ai_readiness`, and
 `upstream_capability_audit` metadata so front-office consumers can organize a review meeting without
 treating report gaps as advice or silently losing upstream dependency gaps.
-RFC-0002 capability keys are published through `GET /integration/capabilities`.
+Portfolio review capability keys are published through `GET /integration/capabilities`.
 
 Detailed response-family guidance lives in [Portfolio Review Report](Portfolio-Review-Report).
 
-Use these examples to keep the mixed query and request-body conventions visible until the public
-surface is intentionally standardized.
+Use these examples as the canonical public API shape. Swagger must not publish stale placeholder
+reporting endpoints, RFC names, or duplicate camelCase aliases.

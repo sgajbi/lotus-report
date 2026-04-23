@@ -15,8 +15,7 @@ Local ownership guidance:
 
 - reporting read-model aggregation
 - portfolio summary payload shaping
-- first-class portfolio review report payload shaping for client/advisor meetings
-- report metadata and download-reference contracts
+- portfolio review report payload shaping for client/advisor meetings
 - reporting capability publication for downstream consumers
 
 It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
@@ -49,15 +48,15 @@ Boundary rules that matter:
 1. `lotus-report` composes portfolio summary and review payloads from `lotus-core`,
    `lotus-performance`, and `lotus-risk`.
 2. It is part of the canonical front-office stack and is exposed through `report.dev.lotus`.
-3. `POST /reports/portfolios/{portfolio_id}/review` is the RFC-0002 first-class portfolio review
-   report contract with typed request/response models, normalized machine-readable JSON,
+3. `POST /reports/portfolios/{portfolio_id}/review` is the portfolio review report contract with
+   typed request/response models, normalized machine-readable JSON,
    client/advisor section separation, explicit section readiness, evidence lineage, source-backed
    key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
    metadata.
 4. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
-5. Request conventions are governed by the Lotus API vocabulary standard. The first-class
-   portfolio review endpoint uses canonical snake_case fields and does not publish camelCase
+5. Request conventions are governed by the Lotus API vocabulary standard. Public query,
+   request-body, and response fields use canonical snake_case names and do not publish camelCase
    compatibility aliases.
 
 ## First-Class Portfolio Review
@@ -111,8 +110,6 @@ Main runtime surfaces come from [src/app/main.py](src/app/main.py):
   `GET /integration/capabilities`
 - aggregations
   `GET /aggregations/portfolios/{portfolio_id}`
-- report generation
-  `POST /reports`
 - reporting read endpoints
   `POST /reports/portfolios/{portfolio_id}/summary`
   `POST /reports/portfolios/{portfolio_id}/review`
@@ -221,14 +218,16 @@ Important current request conventions:
 
 1. `GET /integration/capabilities` expects canonical snake_case query parameters
    `consumer_system` and `tenant_id`
-2. `GET /aggregations/portfolios/{portfolio_id}` currently uses camelCase query alias `asOfDate`
+2. `GET /aggregations/portfolios/{portfolio_id}` expects canonical snake_case query parameter
+   `as_of_date`
 3. `POST /reports/portfolios/{portfolio_id}/summary` and `/review` use canonical snake_case
    `section_limit`
 4. `POST /reports/portfolios/{portfolio_id}/review` publishes snake_case request and response
    fields only; camelCase aliases are rejected by the typed request model
 
-Keep any remaining non-standard surfaces explicit in documentation until the repo intentionally
-standardizes them.
+Do not add compatibility aliases for alternate case styles. If a public field name needs to
+change, treat it as a governed contract change with tests, OpenAPI updates, and downstream
+coordination.
 
 Copy-paste request examples live in [wiki/API-Surface.md](wiki/API-Surface.md).
 The portfolio review contract is explained in

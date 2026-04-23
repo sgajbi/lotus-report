@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
@@ -88,10 +89,10 @@ def test_integration_capabilities():
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["sourceService"] == "lotus-report"
-    assert body["contractVersion"] == "v1"
-    assert body["policyVersion"] == "ras-default-v1"
-    assert body["supportedInputModes"] == ["portfolio_id"]
+    assert body["source_service"] == "lotus-report"
+    assert body["contract_version"] == "v1"
+    assert body["policy_version"] == "ras-default-v1"
+    assert body["supported_input_modes"] == ["portfolio_id"]
     feature_keys = {feature["key"] for feature in body["features"] if feature["enabled"]}
     assert {
         "lotus-report.reporting.portfolio_review.first_class.v1",
@@ -115,51 +116,24 @@ def test_integration_capabilities_camel_case_params_do_not_override_context():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["sourceService"] == "lotus-report"
-    assert body["contractVersion"] == "v1"
-    assert body["policyVersion"] == "ras-default-v1"
+    assert body["source_service"] == "lotus-report"
+    assert body["contract_version"] == "v1"
+    assert body["policy_version"] == "ras-default-v1"
 
 
 def test_aggregation_endpoint():
     response = client.get(
-        "/aggregations/portfolios/DEMO_DPM_EUR_001?asOfDate=2026-02-24&live=false"
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["scope"]["portfolioId"] == "DEMO_DPM_EUR_001"
+    assert body["scope"]["portfolio_id"] == "DEMO_DPM_EUR_001"
     assert len(body["rows"]) >= 1
 
 
-def test_generate_report():
-    response = client.post(
-        "/reports",
-        json={
-            "portfolioId": "DEMO_DPM_EUR_001",
-            "asOfDate": "2026-02-24",
-            "reportType": "PORTFOLIO_SNAPSHOT",
-            "outputFormat": "PDF",
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "READY"
-    assert body["downloadUrl"] is not None
-
-
-def test_generate_report_non_pdf_has_no_download_url():
-    response = client.post(
-        "/reports",
-        json={
-            "portfolioId": "DEMO_DPM_EUR_001",
-            "asOfDate": "2026-02-24",
-            "reportType": "PORTFOLIO_SNAPSHOT",
-            "outputFormat": "JSON",
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "READY"
-    assert body["downloadUrl"] is None
+def test_stale_generic_report_endpoint_is_not_exposed():
+    response = client.post("/reports", json={})
+    assert response.status_code == 404
 
 
 class _StubReportingReadService:
@@ -278,9 +252,15 @@ def test_openapi_uses_typed_portfolio_review_contract():
     response_schema = review_post["responses"]["200"]["content"]["application/json"]["schema"]
     request_schema = review_post["requestBody"]["content"]["application/json"]["schema"]
 
-    assert review_post["summary"] == "Get first-class portfolio review report"
+    serialized_schema = json.dumps(schema)
+
+    assert review_post["summary"] == "Get portfolio review report"
     assert "machine-readable JSON" in review_post["description"]
     assert "not sourced" in review_post["description"]
+    assert "RFC-" not in serialized_schema
+    assert "RFC" not in serialized_schema
+    assert "first-class" not in serialized_schema.lower()
+    assert "/reports" not in schema["paths"]
 
     assert response_schema["$ref"].endswith("/PortfolioReviewReportResponse")
     assert request_schema["$ref"].endswith("/PortfolioReviewReportRequest")
@@ -288,6 +268,7 @@ def test_openapi_uses_typed_portfolio_review_contract():
     assert "benchmark_code" in request_contract["properties"]
     assert "benchmarkCode" not in request_contract["properties"]
     assert request_contract["properties"]["benchmark_code"]["description"]
+    assert "CLIENT_PROFILE" in request_contract["examples"][0]["sections"]
 
     response_contract = schema["components"]["schemas"]["PortfolioReviewReportResponse"]
     for property_name in [
@@ -302,6 +283,8 @@ def test_openapi_uses_typed_portfolio_review_contract():
 
     examples = response_contract["examples"]
     assert examples[0]["client_profile"]["status"] == "present"
+    assert examples[0]["holdings"]["holdings_by_asset_class"]["EQUITY"][0]["unrealized_pnl"]
+    assert examples[0]["performance"]["contribution"]["by_position"][0]["contribution_pct"]
     assert (
         examples[0]["report_coverage"]["targets_guidelines_and_suitability"]["status"]
         == "not_sourced"

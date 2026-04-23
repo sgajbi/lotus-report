@@ -35,7 +35,7 @@ def get_capabilities(
 ) -> IntegrationCapabilitiesResponse:
     _ = (consumer_system, tenant_id)
     return IntegrationCapabilitiesResponse(
-        contractVersion=settings.contract_version,
+        contract_version=settings.contract_version,
         features=[
             {"key": "lotus-report.reporting.portfolio_summary", "enabled": True},
             {"key": "lotus-report.reporting.portfolio_review", "enabled": True},
@@ -84,5 +84,5 @@ def get_capabilities(
             {"workflow_key": "portfolio_reporting", "enabled": True},
             {"workflow_key": "portfolio_review_reporting", "enabled": True},
         ],
-        supportedInputModes=["portfolio_id"],
+        supported_input_modes=["portfolio_id"],
     )
