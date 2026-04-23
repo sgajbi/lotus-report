@@ -161,6 +161,11 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
                 "source_service": "lotus-core",
                 "status": "present",
             },
+            {
+                "capability_id": "source_backed_risk_free_rate",
+                "source_service": "lotus-core / lotus-risk",
+                "status": "present",
+            },
         ],
         "upstream_gaps": [
             {
