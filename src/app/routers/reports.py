@@ -66,12 +66,13 @@ async def get_portfolio_summary(
         "requestBody": {
             "content": {
                 "application/json": {
+                    "example": PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
                     "examples": {
                         "full_portfolio_review": {
                             "summary": "Full portfolio review request",
                             "value": PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
                         }
-                    }
+                    },
                 }
             }
         },
@@ -79,12 +80,13 @@ async def get_portfolio_summary(
             "200": {
                 "content": {
                     "application/json": {
+                        "example": PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
                         "examples": {
                             "full_portfolio_review": {
                                 "summary": "Full portfolio review response",
                                 "value": PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
                             }
-                        }
+                        },
                     }
                 }
             }

@@ -435,6 +435,7 @@ class PortfolioReviewReportRequest(BaseModel):
     model_config = {
         "extra": "forbid",
         "json_schema_extra": {
+            "example": PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
             "examples": [
                 PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
                 {
@@ -443,7 +444,7 @@ class PortfolioReviewReportRequest(BaseModel):
                     "reporting_currency": "SGD",
                     "benchmark_code": "BMK_APAC_BALANCED",
                 },
-            ]
+            ],
         },
     }
 
@@ -623,6 +624,7 @@ class PortfolioReviewReportResponse(BaseModel):
     model_config = {
         "populate_by_name": True,
         "json_schema_extra": {
+            "example": PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
             "examples": [PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE],
         },
     }
