@@ -44,6 +44,101 @@
 - Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger
   parity; do not use a file database for runtime or integration evidence
 
+## RFC-0100 gateway-first job flow
+
+Front-office report job initiation is gateway-first. Workbench and other product surfaces should
+call `lotus-gateway`; `lotus-report` remains the durable job owner and internal orchestration
+service.
+
+```mermaid
+sequenceDiagram
+    participant WB as lotus-workbench / caller
+    participant GW as lotus-gateway
+    participant REPORT as lotus-report
+    participant PG as lotus-report-postgres
+
+    WB->>GW: POST /api/v1/reports/portfolio-reviews
+    GW->>REPORT: POST /reports/portfolio-reviews
+    REPORT->>PG: insert report_request, report_job, report_status_event
+    REPORT-->>GW: 202 job handle
+    GW-->>WB: 202 product-safe job handle
+    WB->>GW: GET /api/v1/report-jobs/{job_id}
+    GW->>REPORT: GET /reports/jobs/{job_id}
+    REPORT->>PG: read current job and request context
+    REPORT-->>GW: product-safe status
+    WB->>GW: GET /api/v1/report-jobs/{job_id}/events
+    GW->>REPORT: GET /reports/jobs/{job_id}/events
+    REPORT->>PG: read append-only status events
+    REPORT-->>GW: event history
+    WB->>GW: POST /api/v1/report-jobs/{job_id}/cancel
+    GW->>REPORT: POST /reports/jobs/{job_id}/cancel
+    REPORT->>PG: mark job cancelled and append cancellation event
+```
+
+Required caller context for job creation:
+
+1. `Idempotency-Key`
+2. `X-Actor-Id`
+3. `X-Caller-Application`
+4. `X-Tenant-Id`
+5. `X-Region`
+6. `X-Booking-Center-Code`
+7. `X-Role`
+8. `X-Correlation-ID`
+9. distributed trace context through `traceparent` or `X-Trace-ID`
+
+Expected controls:
+
+1. a duplicate request with the same `Idempotency-Key` and same canonical request hash returns the
+   existing job handle,
+2. a duplicate `Idempotency-Key` with a different canonical request hash returns `409
+   idempotency_conflict`,
+3. status and event endpoints return product-safe diagnostics and no database internals,
+4. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
+5. every report job has one durable `report_request`, one durable `report_job`, and append-only
+   `report_status_event` rows.
+
+## PostgreSQL ledger operations
+
+The local parity database is the `lotus-report-postgres` container published on host port `5439`.
+Runtime and integration evidence should set:
+
+```powershell
+$env:REPORT_JOB_LEDGER_DATABASE_URL = "postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
+```
+
+Operator-safe inspection queries should target indexed paths:
+
+```sql
+-- request lineage by idempotency key
+SELECT report_request_id, report_type, portfolio_scope_json, as_of_date, triggered_by,
+       caller_application, tenant_id, region, booking_center_code, role,
+       idempotency_key, request_hash, correlation_id, trace_id, created_at
+FROM report_request
+WHERE idempotency_key = '<idempotency-key>';
+
+-- current job state for support triage
+SELECT job.report_job_id, job.report_request_id, job.status, job.failure_category,
+       job.current_step, job.retry_eligible, job.cancel_requested,
+       job.created_at, job.updated_at, job.cancelled_at
+FROM report_job job
+JOIN report_request req ON req.report_request_id = job.report_request_id
+WHERE req.idempotency_key = '<idempotency-key>';
+
+-- append-only lifecycle evidence
+SELECT event.status_event_id, event.report_job_id, event.from_status, event.to_status,
+       event.event_type, event.actor, event.correlation_id, event.trace_id, event.created_at
+FROM report_status_event event
+JOIN report_job job ON job.report_job_id = event.report_job_id
+JOIN report_request req ON req.report_request_id = job.report_request_id
+WHERE req.idempotency_key = '<idempotency-key>'
+ORDER BY event.created_at;
+```
+
+Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
+ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention, rerender,
+reissue, and archive housekeeping belong to later reporting architecture RFCs.
+
 ## Practical probes
 
 ```powershell
@@ -73,11 +168,11 @@ Expected posture:
 Portfolio review report job proof:
 
 ```powershell
-curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" `
+curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
   -H "Content-Type: application/json" `
   -H "Idempotency-Key: portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22" `
   -H "X-Actor-Id: advisor-123" `
-  -H "X-Caller-Application: lotus-gateway" `
+  -H "X-Caller-Application: lotus-workbench" `
   -H "X-Tenant-Id: tenant-sg" `
   -H "X-Region: APAC" `
   -H "X-Booking-Center-Code: SG" `
@@ -86,10 +181,14 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" `
   -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"json\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_GLOBAL_BALANCED_60_40\"}}"
 ```
 
-The expected response is a job handle with `report_request_id`, `report_job_id`, `status`,
-`status_url`, and `idempotency_key`. Use `GET /reports/jobs/{job_id}` for status and
-`GET /reports/jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
-`POST /reports/jobs/{job_id}/cancel` only before render/archive/completion phases.
+The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
+`status_url`, and `idempotency_key`. Use `GET /api/v1/report-jobs/{job_id}` for status and
+`GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
+`POST /api/v1/report-jobs/{job_id}/cancel` only before render/archive/completion phases.
+
+When testing `lotus-report` directly for service-owned diagnostics, use the equivalent internal
+paths `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, `GET
+/reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel`.
 
 ## Key references
 

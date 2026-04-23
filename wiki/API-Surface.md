@@ -17,11 +17,27 @@
 - `POST /reports/portfolios/{portfolio_id}/review`
   machine-readable portfolio review report payload for client/advisor meetings
 - `POST /reports/portfolio-reviews`
-  durable portfolio review report job initiation; returns a job handle, not a rendered document
+  internal durable portfolio review report job initiation; returns a job handle, not a rendered
+  document
 - `GET /reports/jobs/{job_id}`
-  product-safe report job status and diagnostics
+  internal product-safe report job status and diagnostics
+- `GET /reports/jobs/{job_id}/events`
+  internal append-only report job lifecycle event history
 - `POST /reports/jobs/{job_id}/cancel`
-  bounded cancellation before render, archive, or completion phases
+  internal bounded cancellation before render, archive, or completion phases
+
+## Product-facing boundary
+
+Front-office callers must use `lotus-gateway` for report job initiation and status:
+
+- `POST /api/v1/reports/portfolio-reviews`
+- `GET /api/v1/report-jobs/{job_id}`
+- `GET /api/v1/report-jobs/{job_id}/events`
+- `POST /api/v1/report-jobs/{job_id}/cancel`
+
+`lotus-report` owns the durable ledger and internal orchestration state. `lotus-gateway` owns the
+product-facing ingress, caller context enforcement, and response posture for Workbench and other
+front-office consumers.
 
 ## Platform surfaces
 
@@ -84,11 +100,11 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/revi
 Portfolio review report job:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" \
+curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22" \
   -H "X-Actor-Id: advisor-123" \
-  -H "X-Caller-Application: lotus-gateway" \
+  -H "X-Caller-Application: lotus-workbench" \
   -H "X-Tenant-Id: tenant-sg" \
   -H "X-Region: APAC" \
   -H "X-Booking-Center-Code: SG" \
@@ -100,13 +116,13 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" \
 Report job status:
 
 ```bash
-curl "http://127.0.0.1:8300/reports/jobs/rjob_example"
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example"
 ```
 
 Report job cancellation:
 
 ```bash
-curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_example/cancel" \
+curl -X POST "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/cancel" \
   -H "X-Actor-Id: advisor-123" \
   -H "X-Correlation-ID: portfolio-review-job-cancel"
 ```
