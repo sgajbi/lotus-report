@@ -58,6 +58,10 @@ def get_capabilities(
                 "enabled": True,
             },
             {
+                "key": "lotus-report.reporting.portfolio_review.transaction_realized_pnl.v1",
+                "enabled": True,
+            },
+            {
                 "key": "lotus-report.reporting.portfolio_review.client_profile.v1",
                 "enabled": True,
             },

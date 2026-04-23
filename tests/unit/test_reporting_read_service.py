@@ -88,7 +88,7 @@ class _CoreQueryClientSuccess:
         return 200, {
             "portfolio_id": portfolio_id,
             "reporting_currency": params.get("reporting_currency", "USD"),
-            "total": 3,
+            "total": 4,
             "skip": 0,
             "limit": 500,
             "transactions": [
@@ -105,6 +105,16 @@ class _CoreQueryClientSuccess:
                     "transaction_date": "2026-02-01",
                     "transaction_type": "DEPOSIT",
                     "gross_transaction_amount_reporting_currency": 1000.0,
+                },
+                {
+                    "transaction_id": "TXN-SELL-1",
+                    "transaction_date": "2026-02-03",
+                    "transaction_type": "SELL",
+                    "instrument_id": "I-EQ-1",
+                    "security_id": "EQ-1",
+                    "gross_transaction_amount_reporting_currency": 25000.0,
+                    "realized_gain_loss_reporting_currency": 1250.0,
+                    "realized_gain_loss_local": 1250.0,
                 },
                 {
                     "transaction_id": "TXN-TAX-1",
@@ -535,7 +545,15 @@ async def test_review_composes_core_query_performance_and_risk():
             "as_of_date": "2026-02-24",
             "reporting_currency": "USD",
             "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
-            "sections": ["OVERVIEW", "ALLOCATION", "PERFORMANCE", "RISK_ANALYTICS", "HOLDINGS"],
+            "sections": [
+                "OVERVIEW",
+                "ALLOCATION",
+                "PERFORMANCE",
+                "RISK_ANALYTICS",
+                "INCOME_AND_ACTIVITY",
+                "HOLDINGS",
+                "TRANSACTIONS",
+            ],
         },
         "CID-1",
     )
@@ -599,6 +617,13 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["keyFigures"]["holdings"]["unrealized_pnl_coverage"] == "present"
     assert response["keyFigures"]["holdings"]["total_unrealized_pnl_reporting_currency"] == 100000.0
     assert response["keyFigures"]["holdings"]["top_five_positive_exposure_pct"] == 100.0
+    assert response["keyFigures"]["income_and_activity"]["realized_pnl_status"] == "present"
+    assert (
+        response["keyFigures"]["income_and_activity"]["total_realized_pnl_reporting_currency"]
+        == 1250.0
+    )
+    assert response["keyFigures"]["transactions"]["realized_pnl_status"] == "present"
+    assert response["keyFigures"]["transactions"]["total_realized_pnl_reporting_currency"] == 1250.0
     coverage = {
         group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
     }
@@ -607,8 +632,10 @@ async def test_review_composes_core_query_performance_and_risk():
     assert coverage["benchmark_comparison"] == "partial"
     assert coverage["position_pnl_and_cost_basis"] == "present"
     assert coverage["performance_contribution"] == "present"
+    assert coverage["transaction_realized_gain_loss"] == "present"
     assert coverage["instrument_reference_data"] == "present"
     assert coverage["targets_guidelines_and_suitability"] == "not_sourced"
+    assert coverage["tax_lot_and_jurisdiction_tax_treatment"] == "not_sourced"
     assert coverage["advisor_ai_assistance"] == "guarded_ready"
     observation_ids = {item["observation_id"] for item in response["reviewObservations"]}
     assert "suitability_and_mandate_controls_not_sourced" in observation_ids
@@ -628,6 +655,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert audit_gaps["targets_guidelines_suitability"]["owning_service"] == (
         "lotus-advise / lotus-manage"
     )
+    assert "tax_lot_jurisdiction_tax_treatment" in audit_gaps
     assert response["upstreamCapabilityAudit"]["report_side_findings"] == []
     assert response["methodology"]["benchmark_code"] == "BMK_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
@@ -749,6 +777,16 @@ async def test_review_composes_core_query_performance_and_risk():
         "value_at_risk": -0.02,
     }
     assert response["holdings"]["holdingsByAssetClass"]["Equity"][0]["security_id"] == "EQ-1"
+    assert (
+        response["incomeAndActivity"]["realizedPnlSummary"]["total_realized_pnl_reporting_currency"]
+        == 1250.0
+    )
+    sell_transaction = next(
+        item
+        for item in response["transactions"]["transactionsByCategory"]["Trading"]
+        if item["transaction_id"] == "TXN-SELL-1"
+    )
+    assert sell_transaction["realized_pnl_reporting_currency"] == 1250.0
     client_sections = {section["section_id"]: section for section in response["client_sections"]}
     assert client_sections["client_profile"]["items"][0] == {
         "item_type": "client_identity",
