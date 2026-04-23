@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -7,12 +9,24 @@ from app.reporting_jobs.ledger import (
     ReportJobNotFoundError,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_lineage.models import (
+    ReportInputSnapshotCreateRequest,
+    ReportUpstreamCallCreateRequest,
+)
+from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
+from app.reporting_lineage.store import ReportInputSnapshotStore
+from app.routers.report_jobs import get_report_lineage_store
 
 
 def _client(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    return TestClient(app), ledger
+    app.dependency_overrides[get_report_lineage_store] = lambda: lineage_store
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _FakeCaptureService(ledger, lineage_store)
+    )
+    return TestClient(app), ledger, lineage_store
 
 
 def _clear_overrides():
@@ -46,8 +60,86 @@ def _headers(idempotency_key="portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22")
     }
 
 
+class _FakeCaptureService:
+    def __init__(self, ledger: ReportJobLedger, lineage_store: ReportInputSnapshotStore):
+        self._ledger = ledger
+        self._lineage_store = lineage_store
+        self.calls = 0
+
+    async def capture_for_job(self, job):
+        self.calls += 1
+        self._ledger.mark_collecting_data(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        snapshot = self._lineage_store.create_snapshot(
+            ReportInputSnapshotCreateRequest(
+                report_job_id=job.job_id,
+                report_type=job.report_type,
+                report_data_contract_version="v1",
+                portfolio_scope=job.portfolio_scope,
+                as_of_date=job.as_of_date,
+                snapshot_payload={
+                    "report_id": (
+                        "portfolio-review:"
+                        f"{job.portfolio_scope['portfolio_ids'][0]}:"
+                        f"{job.as_of_date.isoformat()}"
+                    ),
+                    "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
+                    "as_of_date": job.as_of_date.isoformat(),
+                },
+                snapshot_storage_ref=None,
+                supportability_status="complete",
+                completeness_status="complete",
+                lineage_summary={
+                    "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+                    "call_count": 1,
+                    "supportability_status": "complete",
+                    "partial_call_count": 0,
+                    "unavailable_call_count": 0,
+                    "not_supported_call_count": 0,
+                    "redacted_call_count": 0,
+                },
+                captured_at=datetime.now(UTC),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        self._lineage_store.create_upstream_calls(
+            snapshot_id=snapshot.snapshot_id,
+            calls=[
+                ReportUpstreamCallCreateRequest(
+                    service_name="lotus-core",
+                    endpoint="/reporting/portfolio-summary/query",
+                    method="POST",
+                    contract_version="v1",
+                    request_hash="sha256:req",
+                    response_hash="sha256:resp",
+                    response_ref=None,
+                    status_code=200,
+                    latency_ms=184,
+                    supportability_status="complete",
+                    completeness_status="complete",
+                    failure_category="none",
+                    failure_message=None,
+                    captured_at=datetime.now(UTC),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            ],
+        )
+        return self._ledger.mark_data_ready(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+
+
 def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
-    client, ledger = _client(tmp_path)
+    client, ledger, _lineage_store = _client(tmp_path)
     try:
         submit_response = client.post(
             "/reports/portfolio-reviews",
@@ -59,7 +151,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         handle = submit_response.json()
         assert handle["report_request_id"].startswith("rrq_")
         assert handle["report_job_id"].startswith("rjob_")
-        assert handle["status"] == "accepted"
+        assert handle["status"] == "data_ready"
         assert handle["status_url"] == f"/reports/jobs/{handle['report_job_id']}"
         assert handle["idempotency_key"] == _headers()["Idempotency-Key"]
 
@@ -72,8 +164,8 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert status_body["report_job_id"] == handle["report_job_id"]
         assert status_body["report_type"] == "portfolio_review"
         assert status_body["portfolio_scope"] == {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]}
-        assert status_body["status"] == "accepted"
-        assert status_body["current_step"] == "accepted"
+        assert status_body["status"] == "data_ready"
+        assert status_body["current_step"] == "data_ready"
         assert status_body["retry_eligible"] is False
         assert status_body["correlation_id"] == "corr-report-job-1"
         assert "sqlite" not in str(status_body).lower()
@@ -83,7 +175,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             params={
                 "tenantId": "tenant-sg",
                 "region": "APAC",
-                "status": "accepted",
+                "status": "data_ready",
                 "portfolioId": "PB_SG_GLOBAL_BAL_001",
                 "asOfDate": "2026-04-22",
             },
@@ -115,7 +207,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         event_statuses = [
             event.to_status for event in ledger.list_status_events(handle["report_job_id"])
         ]
-        assert event_statuses == ["accepted", "cancelled"]
+        assert event_statuses == ["accepted", "collecting_data", "data_ready", "cancelled"]
 
         events_response = client.get(
             f"/reports/jobs/{handle['report_job_id']}/events",
@@ -126,6 +218,8 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert events_body["report_job_id"] == handle["report_job_id"]
         assert [event["to_status"] for event in events_body["events"]] == [
             "accepted",
+            "collecting_data",
+            "data_ready",
             "cancelled",
         ]
     finally:
@@ -133,7 +227,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
 
 
 def test_report_job_list_requires_filter(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         response = client.get("/reports/jobs", headers=_headers())
 
@@ -144,7 +238,7 @@ def test_report_job_list_requires_filter(tmp_path):
 
 
 def test_portfolio_review_job_submit_is_idempotent(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         first = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
         second = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
@@ -156,8 +250,41 @@ def test_portfolio_review_job_submit_is_idempotent(tmp_path):
         _clear_overrides()
 
 
+def test_portfolio_review_job_does_not_recapture_collecting_data_replay(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+
+    original_create = ledger.create_portfolio_review_job
+
+    def _return_collecting_data_on_replay(**kwargs):
+        record = original_create(**kwargs)
+        if capture_service.calls == 0:
+            return record
+        return record.model_copy(
+            update={
+                "status": "collecting_data",
+                "current_step": "collecting_data",
+            }
+        )
+
+    ledger.create_portfolio_review_job = _return_collecting_data_on_replay
+    try:
+        first = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+        second = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert capture_service.calls == 1
+        assert second.json()["report_job_id"] == first.json()["report_job_id"]
+    finally:
+        _clear_overrides()
+
+
 def test_portfolio_review_job_rejects_missing_idempotency_key(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         response = client.post("/reports/portfolio-reviews", json=_payload(), headers={})
 
@@ -168,7 +295,7 @@ def test_portfolio_review_job_rejects_missing_idempotency_key(tmp_path):
 
 
 def test_portfolio_review_job_translates_ledger_missing_idempotency_error(tmp_path):
-    client, ledger = _client(tmp_path)
+    client, ledger, _lineage_store = _client(tmp_path)
 
     def _raise_missing_key(**_kwargs):
         raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -188,7 +315,7 @@ def test_portfolio_review_job_translates_ledger_missing_idempotency_error(tmp_pa
 
 
 def test_portfolio_review_job_rejects_missing_caller_context(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         headers = {"Idempotency-Key": "portfolio-review-missing-context"}
         response = client.post("/reports/portfolio-reviews", json=_payload(), headers=headers)
@@ -207,7 +334,7 @@ def test_portfolio_review_job_rejects_missing_caller_context(tmp_path):
 
 
 def test_portfolio_review_job_rejects_idempotency_conflict(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         first = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
         changed_payload = _payload()
@@ -226,7 +353,7 @@ def test_portfolio_review_job_rejects_idempotency_conflict(tmp_path):
 
 
 def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
-    client, _ledger = _client(tmp_path)
+    client, _ledger, _lineage_store = _client(tmp_path)
     try:
         unknown = client.get("/reports/jobs/rjob_missing", headers=_headers())
         assert unknown.status_code == 404
@@ -255,7 +382,7 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
 
 
 def test_report_job_events_and_cancel_translate_unknown_job(tmp_path):
-    client, ledger = _client(tmp_path)
+    client, ledger, _lineage_store = _client(tmp_path)
 
     def _raise_not_found(*_args, **_kwargs):
         raise ReportJobNotFoundError("report_job_not_found")
@@ -290,7 +417,7 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
-    assert status_example["status"] == "accepted"
+    assert status_example["status"] == "data_ready"
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
     assert "Report Jobs" in list_get["tags"]
@@ -318,3 +445,69 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         properties = schema["components"]["schemas"][schema_name]["properties"]
         for property_contract in properties.values():
             assert property_contract.get("description")
+
+
+def test_report_job_snapshot_and_lineage_endpoints_are_support_safe(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers(),
+        ).json()
+
+        snapshot_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/snapshot",
+            headers=_headers(),
+        )
+        assert snapshot_response.status_code == 200
+        snapshot_body = snapshot_response.json()
+        assert snapshot_body["report_job_id"] == handle["report_job_id"]
+        assert snapshot_body["supportability_status"] == "complete"
+
+        lineage_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/lineage",
+            headers=_headers(),
+        )
+        assert lineage_response.status_code == 200
+        lineage_body = lineage_response.json()
+        assert lineage_body["snapshot"]["report_job_id"] == handle["report_job_id"]
+        assert lineage_body["upstream_calls"][0]["service_name"] == "lotus-core"
+        assert "response_payload" not in str(lineage_body).lower()
+
+        snapshot_id = snapshot_body["snapshot_id"]
+        snapshot_by_id = client.get(f"/reports/snapshots/{snapshot_id}", headers=_headers())
+        assert snapshot_by_id.status_code == 200
+        assert snapshot_by_id.json()["snapshot_id"] == snapshot_id
+
+        snapshot_lineage = client.get(
+            f"/reports/snapshots/{snapshot_id}/lineage",
+            headers=_headers(),
+        )
+        assert snapshot_lineage.status_code == 200
+        assert snapshot_lineage.json()["snapshot"]["snapshot_id"] == snapshot_id
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_snapshot_endpoints_translate_missing_snapshot_rows(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        missing_job_snapshot = client.get("/reports/jobs/rjob_missing/snapshot", headers=_headers())
+        missing_job_lineage = client.get("/reports/jobs/rjob_missing/lineage", headers=_headers())
+        missing_snapshot = client.get("/reports/snapshots/rsnap_missing", headers=_headers())
+        missing_snapshot_lineage = client.get(
+            "/reports/snapshots/rsnap_missing/lineage",
+            headers=_headers(),
+        )
+
+        assert missing_job_snapshot.status_code == 404
+        assert missing_job_snapshot.json()["detail"]["code"] == "report_job_not_found"
+        assert missing_job_lineage.status_code == 404
+        assert missing_job_lineage.json()["detail"]["code"] == "report_job_not_found"
+        assert missing_snapshot.status_code == 404
+        assert missing_snapshot.json()["detail"]["code"] == "report_snapshot_not_found"
+        assert missing_snapshot_lineage.status_code == 404
+        assert missing_snapshot_lineage.json()["detail"]["code"] == "report_snapshot_not_found"
+    finally:
+        _clear_overrides()

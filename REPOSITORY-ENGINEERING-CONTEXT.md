@@ -44,10 +44,14 @@ Current repository posture:
    idempotency, operator-safe job search, product-safe status, append-only event history,
    database-aware readiness, and bounded pre-render cancellation; they do not render PDFs or
    archive documents,
-7. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+7. RFC-0101 now adds durable `report_input_snapshot` and `report_upstream_call` persistence for
+   immutable report input capture, append-only upstream lineage, canonical hashing, support-safe
+   evidence APIs, PostgreSQL-backed migration smoke coverage, and readiness posture linked to
+   RFC-0100 jobs,
+8. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-8. CI is standardized but still lighter than some core domain services,
-9. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+9. CI is standardized but still lighter than some core domain services,
+10. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -72,6 +76,10 @@ Primary areas:
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, and bounded cancellation for the first
    asynchronous reporting wave.
+9. `src/app/reporting_lineage/`
+   PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
+   snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
+   lineage, support-safe evidence query models, and readiness checks for RFC-0101.
 
 ## Runtime And Integration Boundaries
 
@@ -119,12 +127,15 @@ Important validation expectations:
 1. OpenAPI, typecheck, migration smoke, and security audit are active,
 2. migration smoke and CI integration proof use PostgreSQL through
    `REPORT_JOB_LEDGER_DATABASE_URL`; file databases are not runtime evidence for RFC-0100,
-3. split unit, integration, e2e, and coverage validation are part of the merge gate,
-4. reporting orchestration changes should be evaluated for cross-app impact,
-5. README and wiki changes should preserve truthful explanation of API request conventions,
+3. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
+   migration smoke with `report_input_snapshot` and `report_upstream_call` table, index, and
+   check-constraint proof,
+4. split unit, integration, e2e, and coverage validation are part of the merge gate,
+5. reporting orchestration changes should be evaluated for cross-app impact,
+6. README and wiki changes should preserve truthful explanation of API request conventions,
    especially that the first-class portfolio review endpoint publishes snake_case request, query,
    and response fields only,
-6. when a remaining public surface exposes mixed query or request-body conventions, wiki or
+7. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
    agents do not normalize the wrong parameter shape by accident.
 
@@ -162,8 +173,10 @@ Update this document when:
 4. canonical runtime identity or front-office integration role changes,
 5. current request-convention compatibility or canonical parameter naming changes,
 6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
-7. report ledger database, readiness, migration, or CI proof posture changes,
-8. current-state rollout posture changes.
+7. durable report input snapshot or upstream-call lineage persistence, hashing, readiness, API, or
+   migration posture changes,
+8. report ledger database, readiness, migration, or CI proof posture changes,
+9. current-state rollout posture changes.
 
 ## Cross-Links
 

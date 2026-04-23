@@ -26,8 +26,16 @@
   internal product-safe report job status and diagnostics
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history
+- `GET /reports/jobs/{job_id}/snapshot`
+  internal durable report input snapshot lookup by job id
+- `GET /reports/jobs/{job_id}/lineage`
+  internal durable upstream-call lineage lookup by job id
 - `POST /reports/jobs/{job_id}/cancel`
   internal bounded cancellation before render, archive, or completion phases
+- `GET /reports/snapshots/{snapshot_id}`
+  internal durable report input snapshot lookup by snapshot id
+- `GET /reports/snapshots/{snapshot_id}/lineage`
+  internal durable upstream-call lineage lookup by snapshot id
 
 ## Product-facing boundary
 
@@ -60,6 +68,10 @@ front-office consumers.
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
 - report job endpoints do not render PDFs or archive documents
+- successful first-wave job initiation captures a durable snapshot and upstream lineage before the
+  job reaches `data_ready`
+- snapshot and lineage endpoints are support-safe evidence APIs; they return hashes, posture, and
+  summary metadata instead of raw upstream payload internals
 
 ## Request examples
 
@@ -124,14 +136,41 @@ Report job status:
 curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example"
 ```
 
+Internal report snapshot lookup:
+
+```bash
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/snapshot" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-gateway" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+Internal report lineage lookup:
+
+```bash
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-gateway" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
 Report job operational search:
 
 ```bash
-curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=accepted&limit=25" \
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=data_ready&limit=25" \
   -H "X-Actor-Id: support-operator-1" \
   -H "X-Tenant-Id: tenant-sg" \
   -H "X-Region: APAC"
 ```
+
+For direct `lotus-report` proof after RFC-0101, the equivalent support-safe evidence paths are:
+
+- `GET /reports/jobs/{job_id}/snapshot`
+- `GET /reports/jobs/{job_id}/lineage`
+- `GET /reports/snapshots/{snapshot_id}`
+- `GET /reports/snapshots/{snapshot_id}/lineage`
 
 Report job cancellation:
 

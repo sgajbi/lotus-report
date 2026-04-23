@@ -10,6 +10,7 @@ from app.routers.reports import get_reporting_read_service
 
 client = TestClient(app)
 app.state.report_job_ledger_readiness_override = lambda: True
+app.state.report_input_snapshot_store_readiness_override = lambda: True
 
 
 def test_health():
@@ -44,13 +45,25 @@ def test_health_ready_uses_report_job_ledger_readiness_when_no_override(monkeypa
         def check_ready(self) -> None:
             return None
 
+    class _ReadySnapshotStore:
+        def check_ready(self) -> None:
+            return None
+
     previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    previous_snapshot_override = getattr(
+        app.state, "report_input_snapshot_store_readiness_override", None
+    )
     delattr(app.state, "report_job_ledger_readiness_override")
+    delattr(app.state, "report_input_snapshot_store_readiness_override")
     monkeypatch.setattr(health_router, "get_report_job_ledger", lambda: _ReadyLedger())
+    monkeypatch.setattr(
+        health_router, "get_report_input_snapshot_store", lambda: _ReadySnapshotStore()
+    )
     try:
         response = client.get("/health/ready")
     finally:
         app.state.report_job_ledger_readiness_override = previous_override
+        app.state.report_input_snapshot_store_readiness_override = previous_snapshot_override
 
     assert response.status_code == 200
     assert response.json() == {"status": "ready"}
@@ -58,11 +71,16 @@ def test_health_ready_uses_report_job_ledger_readiness_when_no_override(monkeypa
 
 def test_health_ready_reports_unavailable_when_readiness_override_fails():
     previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    previous_snapshot_override = getattr(
+        app.state, "report_input_snapshot_store_readiness_override", None
+    )
     app.state.report_job_ledger_readiness_override = lambda: False
+    app.state.report_input_snapshot_store_readiness_override = lambda: True
     try:
         response = client.get("/health/ready")
     finally:
         app.state.report_job_ledger_readiness_override = previous_override
+        app.state.report_input_snapshot_store_readiness_override = previous_snapshot_override
 
     assert response.status_code == 503
     assert response.json() == {
@@ -76,18 +94,50 @@ def test_health_ready_reports_unavailable_when_report_job_ledger_check_fails(mon
         def check_ready(self) -> None:
             raise RuntimeError("schema unavailable")
 
+    class _ReadySnapshotStore:
+        def check_ready(self) -> None:
+            return None
+
     previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    previous_snapshot_override = getattr(
+        app.state, "report_input_snapshot_store_readiness_override", None
+    )
     delattr(app.state, "report_job_ledger_readiness_override")
+    delattr(app.state, "report_input_snapshot_store_readiness_override")
     monkeypatch.setattr(health_router, "get_report_job_ledger", lambda: _UnavailableLedger())
+    monkeypatch.setattr(
+        health_router, "get_report_input_snapshot_store", lambda: _ReadySnapshotStore()
+    )
     try:
         response = client.get("/health/ready")
     finally:
         app.state.report_job_ledger_readiness_override = previous_override
+        app.state.report_input_snapshot_store_readiness_override = previous_snapshot_override
 
     assert response.status_code == 503
     assert response.json() == {
         "status": "not_ready",
         "reason": "report_job_ledger_unavailable",
+    }
+
+
+def test_health_ready_reports_unavailable_when_snapshot_store_override_fails():
+    previous_override = getattr(app.state, "report_job_ledger_readiness_override", None)
+    previous_snapshot_override = getattr(
+        app.state, "report_input_snapshot_store_readiness_override", None
+    )
+    app.state.report_job_ledger_readiness_override = lambda: True
+    app.state.report_input_snapshot_store_readiness_override = lambda: False
+    try:
+        response = client.get("/health/ready")
+    finally:
+        app.state.report_job_ledger_readiness_override = previous_override
+        app.state.report_input_snapshot_store_readiness_override = previous_snapshot_override
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "not_ready",
+        "reason": "report_input_snapshot_store_unavailable",
     }
 
 

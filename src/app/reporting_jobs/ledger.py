@@ -345,6 +345,90 @@ class ReportJobLedger:
         records = [_record_from_row(row) for row in rows]
         return [record for record in records if _record_matches_filters(record, filters)]
 
+    def mark_collecting_data(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> ReportJobLedgerRecord:
+        with self._lock:
+            with self._connect() as connection:
+                return self._transition_job(
+                    connection=connection,
+                    job_id=job_id,
+                    allowed_from={"accepted"},
+                    to_status="collecting_data",
+                    failure_category=None,
+                    failure_message=None,
+                    current_step="collecting_data",
+                    retry_eligible=0,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    event_type="job_collecting_data",
+                    event_message="Portfolio review input capture started.",
+                    set_started_at=True,
+                )
+
+    def mark_data_ready(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> ReportJobLedgerRecord:
+        with self._lock:
+            with self._connect() as connection:
+                return self._transition_job(
+                    connection=connection,
+                    job_id=job_id,
+                    allowed_from={"accepted", "collecting_data"},
+                    to_status="data_ready",
+                    failure_category=None,
+                    failure_message=None,
+                    current_step="data_ready",
+                    retry_eligible=0,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    event_type="job_data_ready",
+                    event_message="Portfolio review snapshot and lineage captured.",
+                    set_started_at=True,
+                )
+
+    def mark_failed(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        failure_category: str,
+        failure_message: str,
+        retry_eligible: bool,
+    ) -> ReportJobLedgerRecord:
+        with self._lock:
+            with self._connect() as connection:
+                return self._transition_job(
+                    connection=connection,
+                    job_id=job_id,
+                    allowed_from={"accepted", "collecting_data"},
+                    to_status="failed",
+                    failure_category=failure_category,
+                    failure_message=failure_message,
+                    current_step="failed",
+                    retry_eligible=1 if retry_eligible else 0,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    event_type="job_failed",
+                    event_message=failure_message,
+                    set_started_at=True,
+                )
+
     def cancel_job(
         self,
         *,
@@ -439,6 +523,81 @@ class ReportJobLedger:
                 trace_id,
             ),
         )
+
+    def _transition_job(
+        self,
+        *,
+        connection: sqlite3.Connection,
+        job_id: str,
+        allowed_from: set[str],
+        to_status: ReportJobStatus,
+        failure_category: str | None,
+        failure_message: str | None,
+        current_step: str,
+        retry_eligible: int,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        event_type: str,
+        event_message: str | None,
+        set_started_at: bool,
+    ) -> ReportJobLedgerRecord:
+        existing = connection.execute(
+            "SELECT status, started_at FROM report_job WHERE report_job_id = ?",
+            (job_id,),
+        ).fetchone()
+        if not existing:
+            raise ReportJobNotFoundError("report_job_not_found")
+        current_status = str(existing["status"])
+        if current_status == to_status:
+            row = connection.execute(
+                "SELECT report_request_id FROM report_job WHERE report_job_id = ?",
+                (job_id,),
+            ).fetchone()
+            assert row is not None
+            return self._load_by_request_id(connection, row["report_request_id"])
+        if current_status not in allowed_from:
+            raise InvalidReportJobTransitionError("report_job_invalid_transition")
+
+        now = utc_now()
+        now_text = _dt_to_text(now)
+        started_at = existing["started_at"] or (now_text if set_started_at else None)
+        connection.execute(
+            """
+            UPDATE report_job
+            SET status = ?, failure_category = ?, failure_message = ?, current_step = ?,
+                retry_eligible = ?, updated_at = ?, started_at = ?
+            WHERE report_job_id = ?
+            """,
+            (
+                to_status,
+                failure_category,
+                failure_message,
+                current_step,
+                retry_eligible,
+                now_text,
+                started_at,
+                job_id,
+            ),
+        )
+        self._append_status_event(
+            connection=connection,
+            job_id=job_id,
+            from_status=current_status,
+            to_status=to_status,
+            event_type=event_type,
+            message=event_message,
+            actor=actor,
+            correlation_id=correlation_id,
+            trace_id=trace_id,
+            created_at=now,
+        )
+        row = connection.execute(
+            "SELECT report_request_id FROM report_job WHERE report_job_id = ?",
+            (job_id,),
+        ).fetchone()
+        assert row is not None
+        return self._load_by_request_id(connection, row["report_request_id"])
 
     def _load_by_request_id(
         self,
