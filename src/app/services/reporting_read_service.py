@@ -2231,7 +2231,7 @@ class ReportingReadService:
     def _risk_key_figures(self, risk: dict[str, object]) -> dict[str, object]:
         summary = self._as_dict(risk.get("summary"))
         ytd = self._as_dict(summary.get("YTD"))
-        three_year = self._as_dict(summary.get("THREE_YEAR"))
+        three_year = self._as_dict(summary.get("3Y"))
         return {
             "ytd_volatility_pct": ytd.get("volatility"),
             "ytd_drawdown_pct": ytd.get("drawdown"),
@@ -2244,7 +2244,7 @@ class ReportingReadService:
             "three_year_volatility_pct": three_year.get("volatility"),
             "three_year_drawdown_pct": three_year.get("drawdown"),
             "three_year_value_at_risk_pct": three_year.get("value_at_risk"),
-            "three_year_expected_shortfall_pct": self._expected_shortfall(risk, "THREE_YEAR"),
+            "three_year_expected_shortfall_pct": self._expected_shortfall(risk, "3Y"),
             "three_year_beta": three_year.get("beta"),
             "three_year_tracking_error_pct": three_year.get("tracking_error"),
             "three_year_information_ratio": three_year.get("information_ratio"),
@@ -3373,7 +3373,7 @@ class ReportingReadService:
             "net_or_gross": "NET",
             "periods": [
                 {"type": "YTD", "name": "YTD"},
-                {"type": "THREE_YEAR", "name": "THREE_YEAR"},
+                {"type": "3Y", "name": "3Y"},
             ],
             "metrics": metrics,
             "options": {

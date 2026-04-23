@@ -417,7 +417,7 @@ class _RiskClientPeriodFallback:
             }
         period = periods[0]
         assert isinstance(period, dict)
-        if period.get("name") == "THREE_YEAR":
+        if period.get("name") == "3Y":
             return 424, {
                 "error": {
                     "message": (
@@ -791,7 +791,7 @@ async def test_review_composes_core_query_performance_and_risk():
                 "net_or_gross": "NET",
                 "periods": [
                     {"type": "YTD", "name": "YTD"},
-                    {"type": "THREE_YEAR", "name": "THREE_YEAR"},
+                    {"type": "3Y", "name": "3Y"},
                 ],
                 "metrics": [
                     "VOLATILITY",
@@ -1002,10 +1002,10 @@ async def test_review_keeps_available_risk_periods_when_long_benchmark_window_fa
         "information_ratio": 0.72,
         "benchmark_relative_risk": 0.04,
     }
-    assert "THREE_YEAR" not in response["riskAnalytics"]["summary"]
+    assert "3Y" not in response["riskAnalytics"]["summary"]
     assert response["riskAnalytics"]["metadata"]["period_failures"] == [
         {
-            "period": "THREE_YEAR",
+            "period": "3Y",
             "code": "risk_period_upstream_failure",
             "status_code": 424,
             "message": (
@@ -1018,7 +1018,7 @@ async def test_review_keeps_available_risk_periods_when_long_benchmark_window_fa
         {
             "code": "risk_period_upstream_failure",
             "severity": "warning",
-            "period": "THREE_YEAR",
+            "period": "3Y",
             "message": (
                 "Benchmark composition window does not cover requested date 2023-04-12 "
                 "for benchmark_id=BMK_PB_GLOBAL_BALANCED_60_40."
