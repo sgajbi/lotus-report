@@ -13,6 +13,7 @@ REPORTING_CURRENCY_KEYS = ("reporting_currency",)
 LOOK_THROUGH_MODE_KEYS = ("look_through_mode",)
 ALLOCATION_DIMENSIONS_KEYS = ("allocation_dimensions",)
 BENCHMARK_CODE_KEYS = ("benchmark_code",)
+CLIENT_ID_KEYS = ("client_id",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 REVIEW_SECTION_DEFINITIONS = (
     ("CLIENT_PROFILE", "client_profile", "Client And Mandate Profile", "clientProfile"),
@@ -614,12 +615,11 @@ class ReportingReadService:
                 ),
             )
         risk_payload = {
-            "input_mode": "stateless",
-            "stateless_input": self._build_risk_stateless_input(
+            "input_mode": "stateful",
+            "stateful_input": self._build_risk_stateful_input(
+                portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 request_payload=request_payload,
-                portfolio_open_date=portfolio_open_date,
-                returns=returns,
             ),
         }
         risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
@@ -645,7 +645,9 @@ class ReportingReadService:
             },
             "methodology": {
                 "metrics": list(RISK_METRICS),
-                "return_source": "lotus-performance workspace summary",
+                "return_source": (
+                    "lotus-risk stateful sourcing via lotus-performance returns-series"
+                ),
                 "return_basis": "NET",
                 "benchmark_code": self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
             },
@@ -2777,6 +2779,26 @@ class ReportingReadService:
                 "Volatility, drawdown, VaR, expected shortfall, and risk-adjusted return.",
             ),
         ]
+        risk = self._as_dict(response.get("riskAnalytics"))
+        risk_metadata = self._as_dict(risk.get("metadata"))
+        risk_free_context = self._as_dict(risk_metadata.get("risk_free_context"))
+        if risk_free_context.get("requested"):
+            risk_free_status = (
+                "present"
+                if risk_free_context.get("reason") == "ANNUAL_RATE_APPLIED"
+                else "not_sourced"
+            )
+            source_backed.append(
+                self._capability_item(
+                    "source_backed_risk_free_rate",
+                    "lotus-core / lotus-risk",
+                    risk_free_status,
+                    (
+                        "Risk-free rate treatment for Sharpe sourced through lotus-risk stateful "
+                        "analytics and lotus-core mastered risk-free series when available."
+                    ),
+                )
+            )
         upstream_gaps = [
             self._capability_gap(
                 "benchmark_return_series",
@@ -2812,7 +2834,6 @@ class ReportingReadService:
                 ["holdings_appendix", "transactions_appendix"],
             ),
         ]
-        risk = self._as_dict(response.get("riskAnalytics"))
         for note in self._as_list(self._as_dict(risk.get("supportability")).get("notes")):
             note_payload = self._as_dict(note)
             if note_payload.get("code") == "missing_risk_free_rate":
@@ -3152,30 +3173,33 @@ class ReportingReadService:
             return f"Cash ledger leg for {transaction_type.title()}"
         return transaction_type.replace("_", " ").title() or "Transaction"
 
-    def _build_risk_stateless_input(
+    def _build_risk_stateful_input(
         self,
         *,
+        portfolio_id: str,
         as_of_date: str,
         request_payload: dict[str, object],
-        portfolio_open_date: str,
-        returns: list[dict[str, object]],
     ) -> dict[str, object]:
         return {
-            "scope": {
-                "as_of_date": as_of_date,
-                "reporting_currency": self._optional_string(
-                    request_payload, *REPORTING_CURRENCY_KEYS
-                ),
-                "net_or_gross": "NET",
-            },
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of_date,
+            "reporting_currency": self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS),
+            "client_id": self._optional_string(request_payload, *CLIENT_ID_KEYS),
+            "net_or_gross": "NET",
             "periods": [
                 {"type": "YTD", "name": "YTD"},
                 {"type": "THREE_YEAR", "name": "THREE_YEAR"},
             ],
             "metrics": list(RISK_METRICS),
-            "portfolio_open_date": portfolio_open_date,
-            "returns": returns,
-            "benchmark_returns": [],
+            "options": {
+                "frequency": "DAILY",
+                "var": {
+                    "method": "HISTORICAL",
+                    "confidence": 0.95,
+                    "horizon_days": 1,
+                    "include_expected_shortfall": True,
+                },
+            },
         }
 
     def _position_market_value(self, row: dict[str, object]) -> float:  # monetary-float-allow

@@ -665,21 +665,27 @@ async def test_review_composes_core_query_performance_and_risk():
     assert requested_periods == ["1M", "3M", "YTD", "5Y", "SI"]
     assert risk_client.seen_payloads == [
         {
-            "input_mode": "stateless",
-            "stateless_input": {
-                "scope": {
-                    "as_of_date": "2026-02-24",
-                    "reporting_currency": "USD",
-                    "net_or_gross": "NET",
-                },
+            "input_mode": "stateful",
+            "stateful_input": {
+                "portfolio_id": "P1",
+                "as_of_date": "2026-02-24",
+                "reporting_currency": "USD",
+                "client_id": None,
+                "net_or_gross": "NET",
                 "periods": [
                     {"type": "YTD", "name": "YTD"},
                     {"type": "THREE_YEAR", "name": "THREE_YEAR"},
                 ],
                 "metrics": ["VOLATILITY", "SHARPE", "DRAWDOWN", "VAR"],
-                "portfolio_open_date": "2023-02-24",
-                "returns": [{"date": "2026-02-24", "value": 1.0}],
-                "benchmark_returns": [],
+                "options": {
+                    "frequency": "DAILY",
+                    "var": {
+                        "method": "HISTORICAL",
+                        "confidence": 0.95,
+                        "horizon_days": 1,
+                        "include_expected_shortfall": True,
+                    },
+                },
             },
         }
     ]

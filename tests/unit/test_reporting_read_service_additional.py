@@ -275,6 +275,30 @@ class _RiskSuccess:
                 "risk_free_context": {
                     "requested": True,
                     "applied": True,
+                    "reason": "ANNUAL_RATE_APPLIED",
+                    "periodic_rate": 0.0001,
+                }
+            },
+        }
+
+
+class _RiskZeroRate:
+    async def calculate_risk(self, payload: dict[str, object]):
+        return 200, {
+            "results": {
+                "YTD": {
+                    "metrics": {
+                        "VOLATILITY": {"value": 0.2},
+                        "SHARPE": {"value": 0.9},
+                        "DRAWDOWN": {"value": -0.05},
+                        "VAR": {"value": -0.01},
+                    }
+                }
+            },
+            "metadata": {
+                "risk_free_context": {
+                    "requested": True,
+                    "applied": True,
                     "reason": "ZERO_RATE",
                     "periodic_rate": 0.0,
                 }
@@ -371,7 +395,7 @@ async def test_summary_requires_as_of_date():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceSuccessEmpty(),
-        risk_client=_RiskSuccess(),
+        risk_client=_RiskZeroRate(),
     )
     with pytest.raises(HTTPException) as exc:
         await service.get_portfolio_summary("P1", {}, None)
@@ -384,7 +408,7 @@ async def test_summary_includes_default_sections_when_sections_not_list():
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceSuccessEmpty(),
-        risk_client=_RiskSuccess(),
+        risk_client=_RiskZeroRate(),
     )
     response = await service.get_portfolio_summary(
         "P1",
@@ -1462,7 +1486,7 @@ async def test_build_risk_analytics_surfaces_missing_risk_free_and_benchmark_not
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
         performance_client=_PerformanceSuccessEmpty(),
-        risk_client=_RiskSuccess(),
+        risk_client=_RiskZeroRate(),
     )
 
     result = await service._build_risk_analytics("P1", "2026-02-24", {})
