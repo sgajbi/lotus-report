@@ -8,6 +8,7 @@ from app.main import app
 from app.routers.reports import get_reporting_read_service
 
 client = TestClient(app)
+app.state.report_job_ledger_readiness_override = lambda: True
 
 
 def test_health():
@@ -113,6 +114,7 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.job_ledger.v1",
         "lotus-report.reporting.portfolio_review.idempotent_job_create.v1",
         "lotus-report.reporting.portfolio_review.job_status.v1",
+        "lotus-report.reporting.portfolio_review.job_event_history.v1",
         "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
     } <= feature_keys
     workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}

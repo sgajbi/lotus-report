@@ -40,8 +40,8 @@ Current repository posture:
    advisor-only discussion sections, evidence lineage, and implementation-backed capability keys,
 6. `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, and
    `POST /reports/jobs/{job_id}/cancel` are the RFC-0100 durable report job ledger foundation for
-   gateway-first initiation, idempotency, product-safe status, and bounded pre-render cancellation;
-   they do not render PDFs or archive documents,
+   gateway-first initiation, PostgreSQL-backed idempotency, product-safe status, database-aware
+   readiness, and bounded pre-render cancellation; they do not render PDFs or archive documents,
 7. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 8. CI is standardized but still lighter than some core domain services,
@@ -67,8 +67,9 @@ Primary areas:
 7. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
 8. `src/app/reporting_jobs/`
-   durable report request/job/status-event ledger, idempotency, request hashing, status retrieval,
-   and bounded cancellation for the first asynchronous reporting wave.
+   PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
+   lifecycle, idempotency, request hashing, status retrieval, and bounded cancellation for the first
+   asynchronous reporting wave.
 
 ## Runtime And Integration Boundaries
 
@@ -114,12 +115,14 @@ Use these commands as the primary local contract:
 Important validation expectations:
 
 1. OpenAPI, typecheck, migration smoke, and security audit are active,
-2. split unit, integration, e2e, and coverage validation are part of the merge gate,
-3. reporting orchestration changes should be evaluated for cross-app impact,
-4. README and wiki changes should preserve truthful explanation of API request conventions,
+2. migration smoke and CI integration proof use PostgreSQL through
+   `REPORT_JOB_LEDGER_DATABASE_URL`; file databases are not runtime evidence for RFC-0100,
+3. split unit, integration, e2e, and coverage validation are part of the merge gate,
+4. reporting orchestration changes should be evaluated for cross-app impact,
+5. README and wiki changes should preserve truthful explanation of API request conventions,
    especially that the first-class portfolio review endpoint publishes snake_case request, query,
    and response fields only,
-5. when a remaining public surface exposes mixed query or request-body conventions, wiki or
+6. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
    agents do not normalize the wrong parameter shape by accident.
 
@@ -157,7 +160,8 @@ Update this document when:
 4. canonical runtime identity or front-office integration role changes,
 5. current request-convention compatibility or canonical parameter naming changes,
 6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
-7. current-state rollout posture changes.
+7. report ledger database, readiness, migration, or CI proof posture changes,
+8. current-state rollout posture changes.
 
 ## Cross-Links
 

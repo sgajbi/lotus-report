@@ -27,12 +27,22 @@
 
 - `lotus-report` composes from lotus-core, lotus-performance, and lotus-risk
 - reporting payload quality depends on upstream fidelity and contract handling
-- report job lifecycle state is durable in the local report job ledger database configured by
-  `REPORT_JOB_LEDGER_DB_PATH`
+- report job lifecycle state is durable in PostgreSQL and configured by
+  `REPORT_JOB_LEDGER_DATABASE_URL`; runtime readiness fails if the database or mandatory ledger
+  schema is unavailable
+- report job support queries are backed by indexes for idempotency lookup, tenant/region/time
+  diagnostics, as-of-date filtering, portfolio-scope diagnostics, status queues, completion scans,
+  request/job joins, and append-only event history
+- native PostgreSQL partitioning is intentionally deferred until a later scale/retention RFC can
+  preserve global idempotency semantics; the current ledger is partition-ready but not partitioned
+- destructive purge, legal hold, and document-retention operations are not first-wave ledger
+  features and must not be simulated with manual deletes in support workflows
 - direct process port `8300` is useful for local debugging, but canonical cross-app validation
   should use `report.dev.lotus`
 - Docker Compose uses `host.docker.internal` upstream URLs so the container can reach the
   host-published canonical upstream ports while callers continue to use `report.dev.lotus`
+- Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger
+  parity; do not use a file database for runtime or integration evidence
 
 ## Practical probes
 
@@ -78,6 +88,7 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolio-reviews" `
 
 The expected response is a job handle with `report_request_id`, `report_job_id`, `status`,
 `status_url`, and `idempotency_key`. Use `GET /reports/jobs/{job_id}` for status and
+`GET /reports/jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
 `POST /reports/jobs/{job_id}/cancel` only before render/archive/completion phases.
 
 ## Key references

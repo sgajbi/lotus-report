@@ -4,6 +4,7 @@ from app.main import app
 from app.routers.reports import get_reporting_read_service
 
 client = TestClient(app)
+app.state.report_job_ledger_readiness_override = lambda: True
 
 
 class _WorkflowReportingReadService:

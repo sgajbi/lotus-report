@@ -16,7 +16,8 @@ Local ownership guidance:
 - reporting read-model aggregation
 - portfolio summary payload shaping
 - portfolio review report payload shaping for client/advisor meetings
-- durable portfolio review report job ledger for gateway-first initiation and status tracking
+- PostgreSQL-backed durable portfolio review report job ledger for gateway-first initiation and
+  status tracking
 - reporting capability publication for downstream consumers
 
 It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
@@ -57,8 +58,8 @@ Boundary rules that matter:
    metadata.
 4. `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, and
    `POST /reports/jobs/{job_id}/cancel` provide the durable job-ledger foundation for
-   gateway-first report initiation, product-safe status, idempotency, and bounded pre-render
-   cancellation. These endpoints do not render PDFs or archive documents.
+   gateway-first report initiation, product-safe status, database-backed idempotency, and bounded
+   pre-render cancellation. These endpoints do not render PDFs or archive documents.
 5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 6. Request conventions are governed by the Lotus API vocabulary standard. Public query,
@@ -124,6 +125,7 @@ Main runtime surfaces come from [src/app/main.py](src/app/main.py):
 - report job lifecycle endpoints
   `POST /reports/portfolio-reviews`
   `GET /reports/jobs/{job_id}`
+  `GET /reports/jobs/{job_id}/events`
   `POST /reports/jobs/{job_id}/cancel`
 - platform surfaces
   `/health`, `/health/live`, `/health/ready`, `/metrics`, `/docs`
@@ -177,9 +179,15 @@ make install
 Run the service locally:
 
 ```bash
+$env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
 $env:PYTHONPATH="src"
 uvicorn app.main:app --reload --port 8300
 ```
+
+For local runtime parity, start a PostgreSQL database before launching the process. The repository
+Docker Compose file provides `lotus-report-postgres` on host port `5439`;
+`REPORT_JOB_LEDGER_DATABASE_URL` must point to PostgreSQL for runtime, integration, migration, and
+live-evidence proof.
 
 Canonical local service identity:
 
@@ -220,7 +228,8 @@ Repo-native gate mapping:
   lint, typecheck, OpenAPI gate, and unit tests
 - `make ci`
   merge-gate local proof with migration smoke, integration tests, e2e tests, coverage, and
-  security audit
+  security audit. `REPORT_JOB_LEDGER_DATABASE_URL` must be set to a reachable PostgreSQL database
+  for migration smoke and Postgres ledger integration proof.
 - `make ci-local`
   local alias for the repo’s PR-grade gate
 - `make docker-build`
@@ -254,6 +263,7 @@ Cross-app upstream defaults in local runtime:
 - `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
 - `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
+- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
 
 When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
 container uses host-reachable upstream URLs instead:
@@ -261,9 +271,11 @@ container uses host-reachable upstream URLs instead:
 - `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
 - `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
 - `RISK_BASE_URL=http://host.docker.internal:8130`
+- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report`
 
 This keeps `report.dev.lotus` stable for callers while allowing the containerized report service to
-reach the host-published canonical upstream ports.
+reach the host-published canonical upstream ports. The report job ledger uses the separate
+`lotus-report-postgres` container; file databases are not valid runtime evidence.
 
 Current orchestration model:
 
@@ -291,6 +303,10 @@ Current orchestration model:
   compatibility before changing response formatting
 - preserve observability and correlation behavior on reporting endpoints, especially when debugging
   summary or review flows
+- treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
+  PostgreSQL ledger or mandatory schema is not reachable
+- use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before
+  inspecting database rows directly
 
 ## Documentation Map
 

@@ -103,6 +103,10 @@ def get_capabilities(
                 "enabled": True,
             },
             {
+                "key": "lotus-report.reporting.portfolio_review.job_event_history.v1",
+                "enabled": True,
+            },
+            {
                 "key": "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
                 "enabled": True,
             },

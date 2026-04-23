@@ -18,11 +18,13 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE,
     REPORT_JOB_HANDLE_RESPONSE_EXAMPLE,
+    REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobHandleResponse,
     ReportJobLedgerRecord,
+    ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
 )
 from app.reporting_jobs.service import get_report_job_ledger
@@ -172,14 +174,38 @@ async def submit_portfolio_review_job(
             description="Required caller idempotency key for job creation.",
         ),
     ] = None,
-    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
-    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
-    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
-    region: Annotated[str | None, Header(alias="X-Region")] = None,
-    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
-    role: Annotated[str | None, Header(alias="X-Role")] = None,
-    correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
-    trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[
+        str | None,
+        Header(alias="X-Booking-Center-Code", description="Optional booking center code."),
+    ] = None,
+    role: Annotated[
+        str | None,
+        Header(alias="X-Role", description="Optional caller role for audit diagnostics."),
+    ] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
 ) -> ReportJobHandleResponse:
     if not idempotency_key or not idempotency_key.strip():
         raise HTTPException(
@@ -243,10 +269,22 @@ async def submit_portfolio_review_job(
 async def get_report_job_status(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
-    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
-    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
-    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
-    region: Annotated[str | None, Header(alias="X-Region")] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
 ) -> ReportJobStatusResponse:
     _caller_context(
         triggered_by=actor_id,
@@ -267,6 +305,76 @@ async def get_report_job_status(
         ) from exc
 
 
+@router.get(
+    "/jobs/{job_id}/events",
+    response_model=ReportJobStatusEventsResponse,
+    summary="Get report job event history",
+    description=(
+        "Returns append-only lifecycle events for operational support and audit diagnostics. "
+        "Use this endpoint when job status alone is insufficient to understand when a report job "
+        "was accepted, transitioned, cancelled, or failed."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_events": {
+                                "summary": "Report job lifecycle events",
+                                "value": REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+)
+async def get_report_job_events(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+) -> ReportJobStatusEventsResponse:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        ledger.get_job(job_id)
+        return ReportJobStatusEventsResponse(
+            report_job_id=job_id,
+            events=ledger.list_status_events(job_id),
+        )
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+
 @router.post(
     "/jobs/{job_id}/cancel",
     response_model=ReportJobStatusResponse,
@@ -279,12 +387,30 @@ async def get_report_job_status(
 async def cancel_report_job(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
-    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
-    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
-    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
-    region: Annotated[str | None, Header(alias="X-Region")] = None,
-    correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
-    trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
 ) -> ReportJobStatusResponse:
     _caller_context(
         triggered_by=actor_id,

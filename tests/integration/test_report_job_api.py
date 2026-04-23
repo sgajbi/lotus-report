@@ -94,6 +94,18 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             event.to_status for event in ledger.list_status_events(handle["report_job_id"])
         ]
         assert event_statuses == ["accepted", "cancelled"]
+
+        events_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/events",
+            headers=_headers(),
+        )
+        assert events_response.status_code == 200
+        events_body = events_response.json()
+        assert events_body["report_job_id"] == handle["report_job_id"]
+        assert [event["to_status"] for event in events_body["events"]] == [
+            "accepted",
+            "cancelled",
+        ]
     finally:
         _clear_overrides()
 
@@ -198,10 +210,23 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     response_example = submit_post["responses"]["202"]["content"]["application/json"]["example"]
     status_get = schema["paths"]["/reports/jobs/{job_id}"]["get"]
     status_example = status_get["responses"]["200"]["content"]["application/json"]["example"]
+    events_get = schema["paths"]["/reports/jobs/{job_id}/events"]["get"]
+    events_example = events_get["responses"]["200"]["content"]["application/json"]["example"]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
     assert status_example["status"] == "accepted"
+    assert events_example["events"][0]["event_type"] == "job_accepted"
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
+    assert "RFC-" not in str(events_example)
+    for schema_name in [
+        "ReportJobHandleResponse",
+        "ReportJobStatusResponse",
+        "ReportJobStatusEventsResponse",
+        "ReportStatusEvent",
+    ]:
+        properties = schema["components"]["schemas"][schema_name]["properties"]
+        for property_contract in properties.values():
+            assert property_contract.get("description")

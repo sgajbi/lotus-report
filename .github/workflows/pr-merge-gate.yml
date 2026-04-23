@@ -28,6 +28,20 @@ jobs:
   lint-typecheck-security:
     name: PR Merge Gate / Lint Typecheck Security
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lotus_report
+          POSTGRES_USER: lotus_report
+          POSTGRES_PASSWORD: lotus_report
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lotus_report -d lotus_report"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -45,6 +59,8 @@ jobs:
       - name: OpenAPI Gate
         run: make openapi-gate
       - name: Migration Contract Smoke
+        env:
+          REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
         run: make migration-smoke
       - name: Security Audit
         run: make security-audit
@@ -53,6 +69,20 @@ jobs:
     name: PR Merge Gate / Tests (${{ matrix.suite }})
     needs: [lint-typecheck-security]
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lotus_report
+          POSTGRES_USER: lotus_report
+          POSTGRES_PASSWORD: lotus_report
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lotus_report -d lotus_report"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +106,7 @@ jobs:
       - name: Run tests with coverage data
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
+          REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
         run: python -m pytest ${{ matrix.path }} --cov=src/app --cov-report=
       - name: Upload coverage data
         uses: actions/upload-artifact@v4
