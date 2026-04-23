@@ -1504,4 +1504,8 @@ async def test_build_risk_analytics_surfaces_missing_risk_free_and_benchmark_not
         "risk_adjusted_return": 0.9,
         "drawdown": -0.05,
         "value_at_risk": -0.01,
+        "beta": None,
+        "tracking_error": None,
+        "information_ratio": None,
+        "benchmark_relative_risk": None,
     }
