@@ -492,7 +492,7 @@ async def test_performance_client_get_contribution_returns_accepted_without_resu
 
 
 @pytest.mark.asyncio
-async def test_performance_client_returns_last_pending_contribution_after_polling_budget(
+async def test_performance_client_get_contribution_returns_last_pending_after_poll_budget(
     monkeypatch,
 ):
     pending_result = {
@@ -502,7 +502,7 @@ async def test_performance_client_returns_last_pending_contribution_after_pollin
     recorder = _SequencedRecordingAsyncClient(
         responses=[
             _FakeResponse(status_code=202, payload=pending_result),
-            *[_FakeResponse(status_code=200, payload=pending_result) for _ in range(8)],
+            *[_FakeResponse(status_code=202, payload=pending_result) for _ in range(8)],
         ]
     )
     monkeypatch.setattr(
@@ -521,10 +521,9 @@ async def test_performance_client_returns_last_pending_contribution_after_pollin
         max_retries=0,
         retry_backoff_seconds=0.01,
     )
-
     status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
 
-    assert status_code == 200
+    assert status_code == 202
     assert payload == pending_result
     assert [call["method"] for call in recorder.calls] == ["POST", *["GET"] * 8]
 

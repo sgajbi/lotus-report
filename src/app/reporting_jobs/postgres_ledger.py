@@ -1,0 +1,441 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import UTC, date, datetime
+from pathlib import Path
+from typing import Any, Iterator, Mapping
+from uuid import uuid4
+
+import psycopg
+from psycopg import Connection
+from psycopg.errors import UniqueViolation
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+
+from app.reporting_jobs.ledger import (
+    IdempotencyConflictError,
+    InvalidReportJobTransitionError,
+    MissingIdempotencyKeyError,
+    ReportJobNotFoundError,
+    compute_request_hash,
+    utc_now,
+)
+from app.reporting_jobs.models import (
+    PortfolioReviewJobRequest,
+    ReportCallerContext,
+    ReportJobLedgerRecord,
+    ReportJobStatus,
+    ReportStatusEvent,
+)
+
+MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+
+
+class PostgresReportJobLedger:
+    """PostgreSQL-backed runtime ledger for report request/job/status lifecycle state."""
+
+    def __init__(self, database_url: str):
+        self._database_url = database_url
+        self.ensure_schema()
+
+    @contextmanager
+    def _connect(self) -> Iterator[Connection[Mapping[str, Any]]]:
+        connection = psycopg.connect(self._database_url, row_factory=dict_row)
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def ensure_schema(self) -> None:
+        with self._connect() as connection:
+            for migration_path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                schema = migration_path.read_text(encoding="utf-8")
+                for statement in schema.split(";"):
+                    if statement.strip():
+                        connection.execute(statement)
+
+    def check_ready(self) -> None:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name IN ('report_request', 'report_job', 'report_status_event')
+                """
+            ).fetchall()
+            present = {str(row["table_name"]) for row in rows}
+        missing = {"report_request", "report_job", "report_status_event"} - present
+        if missing:
+            raise RuntimeError(f"report_job_ledger_schema_missing:{','.join(sorted(missing))}")
+
+    def create_portfolio_review_job(
+        self,
+        *,
+        request: PortfolioReviewJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        if not idempotency_key or not idempotency_key.strip():
+            raise MissingIdempotencyKeyError("missing_idempotency_key")
+
+        normalized_key = idempotency_key.strip()
+        request_hash = compute_request_hash(
+            report_type="portfolio_review",
+            request=request,
+            caller_context=caller_context,
+        )
+
+        try:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT report_request_id, request_hash
+                    FROM report_request
+                    WHERE idempotency_key = %s
+                    """,
+                    (normalized_key,),
+                ).fetchone()
+                if existing:
+                    return self._existing_or_conflict(connection, existing, request_hash)
+
+                now = utc_now()
+                request_id = f"rrq_{uuid4().hex}"
+                job_id = f"rjob_{uuid4().hex}"
+
+                connection.execute(
+                    """
+                    INSERT INTO report_request (
+                        report_request_id, report_type, portfolio_scope_json,
+                        requested_output_formats_json, as_of_date, reporting_currency,
+                        options_json, trigger_type, triggered_by, caller_application,
+                        tenant_id, region, booking_center_code, role, idempotency_key,
+                        request_hash, correlation_id, trace_id, created_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        request_id,
+                        "portfolio_review",
+                        Jsonb(request.portfolio_scope),
+                        Jsonb(sorted(request.requested_output_formats)),
+                        request.as_of_date,
+                        request.reporting_currency,
+                        Jsonb(request.options),
+                        caller_context.trigger_type,
+                        caller_context.triggered_by,
+                        caller_context.caller_application,
+                        caller_context.tenant_id,
+                        caller_context.region,
+                        caller_context.booking_center_code,
+                        caller_context.role,
+                        normalized_key,
+                        request_hash,
+                        caller_context.correlation_id,
+                        caller_context.trace_id,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO report_job (
+                        report_job_id, report_request_id, report_type, portfolio_scope_json,
+                        status, failure_category, failure_message, current_step, retry_eligible,
+                        cancel_requested, created_at, updated_at, started_at, completed_at,
+                        cancelled_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        job_id,
+                        request_id,
+                        "portfolio_review",
+                        Jsonb(request.portfolio_scope),
+                        "accepted",
+                        None,
+                        None,
+                        "accepted",
+                        False,
+                        False,
+                        now,
+                        now,
+                        None,
+                        None,
+                        None,
+                    ),
+                )
+                self._append_status_event(
+                    connection=connection,
+                    job_id=job_id,
+                    from_status=None,
+                    to_status="accepted",
+                    event_type="job_accepted",
+                    message="Portfolio review report job accepted.",
+                    actor=caller_context.triggered_by,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                    created_at=now,
+                )
+                return self._load_by_request_id(connection, request_id)
+        except UniqueViolation as exc:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT report_request_id, request_hash
+                    FROM report_request
+                    WHERE idempotency_key = %s
+                    """,
+                    (normalized_key,),
+                ).fetchone()
+                if existing:
+                    return self._existing_or_conflict(connection, existing, request_hash)
+            raise IdempotencyConflictError("idempotency_key_unique_violation") from exc
+
+    def get_job(self, job_id: str) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT report_request_id FROM report_job WHERE report_job_id = %s",
+                (job_id,),
+            ).fetchone()
+            if not row:
+                raise ReportJobNotFoundError("report_job_not_found")
+            return self._load_by_request_id(connection, str(row["report_request_id"]))
+
+    def list_status_events(self, job_id: str) -> list[ReportStatusEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_status_event
+                WHERE report_job_id = %s
+                ORDER BY created_at ASC, status_event_id ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [_event_from_row(row) for row in rows]
+
+    def cancel_job(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT status FROM report_job WHERE report_job_id = %s FOR UPDATE",
+                (job_id,),
+            ).fetchone()
+            if not existing:
+                raise ReportJobNotFoundError("report_job_not_found")
+            current_status = str(existing["status"])
+            if current_status in {"completed", "completed_with_warnings", "cancelled"}:
+                raise InvalidReportJobTransitionError("report_job_cannot_be_cancelled")
+
+            now = utc_now()
+            connection.execute(
+                """
+                UPDATE report_job
+                SET status = %s, failure_category = %s, failure_message = %s, current_step = %s,
+                    retry_eligible = %s, cancel_requested = %s, updated_at = %s, cancelled_at = %s
+                WHERE report_job_id = %s
+                """,
+                (
+                    "cancelled",
+                    "cancelled",
+                    "Report job cancelled before render or archive processing.",
+                    "cancelled",
+                    False,
+                    True,
+                    now,
+                    now,
+                    job_id,
+                ),
+            )
+            self._append_status_event(
+                connection=connection,
+                job_id=job_id,
+                from_status=current_status,
+                to_status="cancelled",
+                event_type="job_cancelled",
+                message="Report job cancelled before render or archive processing.",
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                created_at=now,
+            )
+            row = connection.execute(
+                "SELECT report_request_id FROM report_job WHERE report_job_id = %s",
+                (job_id,),
+            ).fetchone()
+            if not row:
+                raise ReportJobNotFoundError("report_job_not_found")
+            return self._load_by_request_id(connection, str(row["report_request_id"]))
+
+    def _existing_or_conflict(
+        self,
+        connection: Connection[Mapping[str, Any]],
+        existing: Mapping[str, Any],
+        request_hash: str,
+    ) -> ReportJobLedgerRecord:
+        if existing["request_hash"] != request_hash:
+            raise IdempotencyConflictError("idempotency_key_reused_with_different_request")
+        return self._load_by_request_id(connection, str(existing["report_request_id"]))
+
+    def _append_status_event(
+        self,
+        *,
+        connection: Connection[Mapping[str, Any]],
+        job_id: str,
+        from_status: str | None,
+        to_status: ReportJobStatus,
+        event_type: str,
+        message: str | None,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        created_at: datetime,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO report_status_event (
+                status_event_id, report_job_id, from_status, to_status, event_type,
+                message, actor, created_at, correlation_id, trace_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                f"rse_{uuid4().hex}",
+                job_id,
+                from_status,
+                to_status,
+                event_type,
+                message,
+                actor,
+                created_at,
+                correlation_id,
+                trace_id,
+            ),
+        )
+
+    def _load_by_request_id(
+        self,
+        connection: Connection[Mapping[str, Any]],
+        request_id: str,
+    ) -> ReportJobLedgerRecord:
+        row = connection.execute(
+            """
+            SELECT
+                req.report_request_id,
+                req.report_type,
+                req.portfolio_scope_json AS request_portfolio_scope_json,
+                req.requested_output_formats_json,
+                req.as_of_date,
+                req.reporting_currency,
+                req.options_json,
+                req.trigger_type,
+                req.triggered_by,
+                req.caller_application,
+                req.tenant_id,
+                req.region,
+                req.booking_center_code,
+                req.role,
+                req.idempotency_key,
+                req.request_hash,
+                req.correlation_id,
+                req.trace_id,
+                req.created_at AS request_created_at,
+                job.report_job_id,
+                job.portfolio_scope_json AS job_portfolio_scope_json,
+                job.status,
+                job.failure_category,
+                job.failure_message,
+                job.current_step,
+                job.retry_eligible,
+                job.cancel_requested,
+                job.created_at AS job_created_at,
+                job.updated_at,
+                job.started_at,
+                job.completed_at,
+                job.cancelled_at
+            FROM report_request req
+            JOIN report_job job ON job.report_request_id = req.report_request_id
+            WHERE req.report_request_id = %s
+            """,
+            (request_id,),
+        ).fetchone()
+        if not row:
+            raise ReportJobNotFoundError("report_job_not_found")
+        return _record_from_row(row)
+
+
+def _dt_from_value(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(UTC)
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(UTC)
+
+
+def _date_from_value(value: Any) -> date:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _record_from_row(row: Mapping[str, Any]) -> ReportJobLedgerRecord:
+    return ReportJobLedgerRecord(
+        request_id=str(row["report_request_id"]),
+        job_id=str(row["report_job_id"]),
+        report_type=str(row["report_type"]),
+        portfolio_scope=dict(row["request_portfolio_scope_json"]),
+        requested_output_formats=list(row["requested_output_formats_json"]),
+        as_of_date=_date_from_value(row["as_of_date"]),
+        reporting_currency=row["reporting_currency"],
+        options=dict(row["options_json"]),
+        trigger_type=str(row["trigger_type"]),
+        triggered_by=str(row["triggered_by"]),
+        caller_application=str(row["caller_application"]),
+        tenant_id=str(row["tenant_id"]),
+        region=str(row["region"]),
+        booking_center_code=row["booking_center_code"],
+        role=row["role"],
+        idempotency_key=str(row["idempotency_key"]),
+        request_hash=str(row["request_hash"]),
+        status=row["status"],
+        failure_category=row["failure_category"],
+        failure_message=row["failure_message"],
+        current_step=str(row["current_step"]),
+        retry_eligible=bool(row["retry_eligible"]),
+        cancel_requested=bool(row["cancel_requested"]),
+        created_at=_dt_from_value(row["job_created_at"]) or utc_now(),
+        updated_at=_dt_from_value(row["updated_at"]) or utc_now(),
+        started_at=_dt_from_value(row["started_at"]),
+        completed_at=_dt_from_value(row["completed_at"]),
+        cancelled_at=_dt_from_value(row["cancelled_at"]),
+        correlation_id=str(row["correlation_id"]),
+        trace_id=str(row["trace_id"]),
+    )
+
+
+def _event_from_row(row: Mapping[str, Any]) -> ReportStatusEvent:
+    return ReportStatusEvent(
+        status_event_id=str(row["status_event_id"]),
+        report_job_id=str(row["report_job_id"]),
+        from_status=row["from_status"],
+        to_status=row["to_status"],
+        event_type=str(row["event_type"]),
+        message=row["message"],
+        actor=str(row["actor"]),
+        created_at=_dt_from_value(row["created_at"]) or utc_now(),
+        correlation_id=str(row["correlation_id"]),
+        trace_id=str(row["trace_id"]),
+    )

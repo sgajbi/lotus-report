@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     upstream_timeout_seconds: float = Field(10.0, alias="UPSTREAM_TIMEOUT_SECONDS")
     upstream_max_retries: int = Field(2, alias="UPSTREAM_MAX_RETRIES")
     upstream_retry_backoff_seconds: float = Field(0.2, alias="UPSTREAM_RETRY_BACKOFF_SECONDS")
+    report_job_ledger_database_url: str = Field(
+        "postgresql://lotus_report:lotus_report@localhost:5439/lotus_report",
+        alias="REPORT_JOB_LEDGER_DATABASE_URL",
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

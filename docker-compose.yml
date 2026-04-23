@@ -1,4 +1,21 @@
 services:
+  lotus-report-postgres:
+    image: postgres:16-alpine
+    container_name: lotus-report-postgres
+    environment:
+      POSTGRES_DB: lotus_report
+      POSTGRES_USER: lotus_report
+      POSTGRES_PASSWORD: lotus_report
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lotus_report -d lotus_report"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "5439:5432"
+    volumes:
+      - lotus-report-postgres-data:/var/lib/postgresql/data
+
   lotus-report:
     build: .
     container_name: lotus-report
@@ -6,7 +23,14 @@ services:
       LOTUS_CORE_QUERY_BASE_URL: http://host.docker.internal:8201
       LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002
       RISK_BASE_URL: http://host.docker.internal:8130
+      REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
+    depends_on:
+      lotus-report-postgres:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "8300:8300"
+
+volumes:
+  lotus-report-postgres-data:

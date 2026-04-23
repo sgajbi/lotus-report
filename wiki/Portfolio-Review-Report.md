@@ -9,6 +9,10 @@ It is not a PDF renderer and it is not an advice engine. It produces a governed,
 review payload that Workbench, gateway, downstream reporting surfaces, and future document
 renderers can consume without losing source lineage or supportability state.
 
+For asynchronous job initiation, use `POST /reports/portfolio-reviews`. That route creates durable
+request/job/status ledger records and returns a job handle. It does not render a document or archive
+an output.
+
 ## Product Standard
 
 The report should help a client advisor answer five meeting questions:
