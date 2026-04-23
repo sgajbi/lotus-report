@@ -231,7 +231,7 @@ async def get_report_job_status(
     summary="Cancel report job before render or archive",
     description=(
         "Cancels a report job only while it is still before render/archive/completion phases. "
-        "Render, archive, rerender, and reissue semantics are owned by later reporting RFCs."
+        "Render, archive, rerender, and reissue semantics are owned by later reporting waves."
     ),
 )
 async def cancel_report_job(

@@ -39,7 +39,8 @@ class PortfolioReviewJobRequest(BaseModel):
     requested_output_formats: list[str] = Field(
         default_factory=lambda: ["json"],
         description=(
-            "Requested output formats. RFC-0100 accepts job intent only; PDF is not rendered."
+            "Requested output formats. The first job-ledger wave accepts job intent only; "
+            "PDF is not rendered."
         ),
         examples=[["json"]],
     )
