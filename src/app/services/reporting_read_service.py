@@ -1315,7 +1315,6 @@ class ReportingReadService:
             "region",
             "product_type",
             "rating",
-            "issuer",
         }
         for raw_dimension in raw_dimensions:
             if not isinstance(raw_dimension, str) or not raw_dimension.strip():
@@ -2231,7 +2230,7 @@ class ReportingReadService:
     def _risk_key_figures(self, risk: dict[str, object]) -> dict[str, object]:
         summary = self._as_dict(risk.get("summary"))
         ytd = self._as_dict(summary.get("YTD"))
-        three_year = self._as_dict(summary.get("3Y"))
+        one_year = self._as_dict(summary.get("1Y"))
         return {
             "ytd_volatility_pct": ytd.get("volatility"),
             "ytd_drawdown_pct": ytd.get("drawdown"),
@@ -2241,13 +2240,13 @@ class ReportingReadService:
             "ytd_beta": ytd.get("beta"),
             "ytd_tracking_error_pct": ytd.get("tracking_error"),
             "ytd_information_ratio": ytd.get("information_ratio"),
-            "three_year_volatility_pct": three_year.get("volatility"),
-            "three_year_drawdown_pct": three_year.get("drawdown"),
-            "three_year_value_at_risk_pct": three_year.get("value_at_risk"),
-            "three_year_expected_shortfall_pct": self._expected_shortfall(risk, "3Y"),
-            "three_year_beta": three_year.get("beta"),
-            "three_year_tracking_error_pct": three_year.get("tracking_error"),
-            "three_year_information_ratio": three_year.get("information_ratio"),
+            "one_year_volatility_pct": one_year.get("volatility"),
+            "one_year_drawdown_pct": one_year.get("drawdown"),
+            "one_year_value_at_risk_pct": one_year.get("value_at_risk"),
+            "one_year_expected_shortfall_pct": self._expected_shortfall(risk, "1Y"),
+            "one_year_beta": one_year.get("beta"),
+            "one_year_tracking_error_pct": one_year.get("tracking_error"),
+            "one_year_information_ratio": one_year.get("information_ratio"),
             "benchmark_relative_status": self._risk_benchmark_status(risk),
         }
 
@@ -3373,7 +3372,7 @@ class ReportingReadService:
             "net_or_gross": "NET",
             "periods": [
                 {"type": "YTD", "name": "YTD"},
-                {"type": "3Y", "name": "3Y"},
+                {"type": "1Y", "name": "1Y"},
             ],
             "metrics": metrics,
             "options": {

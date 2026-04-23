@@ -735,6 +735,7 @@ def test_section_item_mappers_include_contribution_and_income_branches():
         "asset_class",
         [],
         [""],
+        ["issuer"],
     ],
 )
 def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions):

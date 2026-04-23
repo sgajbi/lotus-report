@@ -426,9 +426,10 @@ class _RiskClientPeriodFallback:
                     )
                 }
             }
+        period_name = str(period.get("name") or period.get("type") or "YTD")
         return 200, {
             "results": {
-                "YTD": {
+                period_name: {
                     "start_date": "2026-01-01",
                     "end_date": "2026-02-24",
                     "metrics": {
@@ -791,7 +792,7 @@ async def test_review_composes_core_query_performance_and_risk():
                 "net_or_gross": "NET",
                 "periods": [
                     {"type": "YTD", "name": "YTD"},
-                    {"type": "3Y", "name": "3Y"},
+                    {"type": "1Y", "name": "1Y"},
                 ],
                 "metrics": [
                     "VOLATILITY",
@@ -971,7 +972,7 @@ async def test_review_composes_core_query_performance_and_risk():
 
 
 @pytest.mark.asyncio
-async def test_review_keeps_available_risk_periods_when_long_benchmark_window_fails():
+async def test_review_keeps_available_risk_periods_when_combined_risk_request_fails():
     risk_client = _RiskClientPeriodFallback()
     service = ReportingReadService(
         core_query_client=_CoreQueryClientSuccess(),
@@ -991,7 +992,7 @@ async def test_review_keeps_available_risk_periods_when_long_benchmark_window_fa
     )
 
     assert len(risk_client.seen_payloads) == 3
-    assert response["riskAnalytics"]["supportability"]["status"] == "partial"
+    assert response["riskAnalytics"]["supportability"]["status"] == "ready"
     assert response["riskAnalytics"]["summary"]["YTD"] == {
         "volatility": 0.12,
         "risk_adjusted_return": None,
@@ -1002,31 +1003,11 @@ async def test_review_keeps_available_risk_periods_when_long_benchmark_window_fa
         "information_ratio": 0.72,
         "benchmark_relative_risk": 0.04,
     }
-    assert "3Y" not in response["riskAnalytics"]["summary"]
-    assert response["riskAnalytics"]["metadata"]["period_failures"] == [
-        {
-            "period": "3Y",
-            "code": "risk_period_upstream_failure",
-            "status_code": 424,
-            "message": (
-                "Benchmark composition window does not cover requested date 2023-04-12 "
-                "for benchmark_id=BMK_PB_GLOBAL_BALANCED_60_40."
-            ),
-        }
-    ]
-    assert response["riskAnalytics"]["supportability"]["notes"] == [
-        {
-            "code": "risk_period_upstream_failure",
-            "severity": "warning",
-            "period": "3Y",
-            "message": (
-                "Benchmark composition window does not cover requested date 2023-04-12 "
-                "for benchmark_id=BMK_PB_GLOBAL_BALANCED_60_40."
-            ),
-        }
-    ]
+    assert response["riskAnalytics"]["summary"]["1Y"]["beta"] == 0.82
+    assert "period_failures" not in response["riskAnalytics"]["metadata"]
+    assert response["riskAnalytics"]["supportability"]["notes"] == []
     assert response["keyFigures"]["risk"]["ytd_beta"] == 0.82
-    assert response["keyFigures"]["risk"]["three_year_beta"] is None
+    assert response["keyFigures"]["risk"]["one_year_beta"] == 0.82
 
 
 @pytest.mark.asyncio
