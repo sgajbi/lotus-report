@@ -492,6 +492,44 @@ async def test_performance_client_get_contribution_returns_accepted_without_resu
 
 
 @pytest.mark.asyncio
+async def test_performance_client_returns_last_pending_contribution_after_polling_budget(
+    monkeypatch,
+):
+    pending_result = {
+        "calculation_id": "calc-1",
+        "result_path": "/performance/contribution/results/calc-1",
+    }
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(status_code=202, payload=pending_result),
+            *[_FakeResponse(status_code=200, payload=pending_result) for _ in range(8)],
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _no_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    assert payload == pending_result
+    assert [call["method"] for call in recorder.calls] == ["POST", *["GET"] * 8]
+
+
+@pytest.mark.asyncio
 async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     async def _fake_post_with_retry(**kwargs):
         return 200, {"results": {}}, kwargs

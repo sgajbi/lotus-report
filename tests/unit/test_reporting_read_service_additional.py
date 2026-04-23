@@ -707,7 +707,13 @@ def test_section_item_mappers_include_contribution_and_income_branches():
                 "total_portfolio_return_pct": 1.2,
                 "total_contribution_pct": 1.2,
                 "top_position_contributors": [{"security_id": "EQ-1"}],
-                "hierarchy": [{"level": "asset_class", "name": "Asset Class", "rows": []}],
+                "hierarchy": [
+                    {
+                        "level": "asset_class",
+                        "name": "Asset Class",
+                        "rows": [{"group": "Equity", "total_contribution_pct": 1.1}],
+                    }
+                ],
             },
         }
     )
@@ -723,10 +729,127 @@ def test_section_item_mappers_include_contribution_and_income_branches():
         "performance_period",
         "contribution_summary",
         "position_contribution",
+        "hierarchy_contribution",
     }
     assert income_items[0]["item_type"] == "income_summary"
     assert income_items[1]["bucket"] == "FEES"
     assert allocation_items == []
+
+
+def test_review_supportability_and_audit_edge_paths_remain_explicit():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    readiness = service._review_readiness(
+        client_sections=[
+            {"title": "Overview", "status": "ready"},
+            {"title": "Risk Review", "status": "partial"},
+        ]
+    )
+    assert readiness == {
+        "status": "partial",
+        "reason": "Partial sections for the selected request: Risk Review",
+    }
+    assert service._briefing_sentence("Review", "Already complete.") == "Review: Already complete."
+    assert (
+        service._workspace_period_end(
+            {
+                "portfolio_twr": {"net": {"breakdowns": {"daily": [{}]}}},
+                "money_weighted_return": {"end_date": "2026-02-24"},
+            }
+        )
+        == "2026-02-24"
+    )
+
+    risk_supportability = service._risk_supportability(
+        results={"YTD": {"metrics": {}}},
+        metadata={
+            "benchmark_context": {"requested": False},
+            "risk_free_context": {"requested": True, "reason": "ZERO_RATE"},
+        },
+        request_payload={"benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40"},
+        period_failures=[{"period": "1Y", "message": "Insufficient history."}],
+    )
+
+    assert risk_supportability["status"] == "partial"
+    assert {note["code"] for note in risk_supportability["notes"]} == {
+        "missing_risk_free_rate",
+        "risk_period_upstream_failure",
+        "missing_benchmark",
+    }
+
+    response = {
+        "reportCoverage": {
+            "figure_groups": [
+                {"group_id": "portfolio_value", "status": "present"},
+                {"group_id": "benchmark_comparison", "status": "partial"},
+            ]
+        },
+        "riskAnalytics": {
+            "metadata": {"risk_free_context": {"requested": True, "reason": "ZERO_RATE"}},
+            "supportability": {
+                "notes": [
+                    {
+                        "code": "missing_risk_free_rate",
+                        "message": "No source-backed risk-free rate was applied.",
+                    }
+                ]
+            },
+        },
+        "keyFigures": {"holdings": {"unrealized_pnl_coverage": "partial"}},
+        "client_sections": [],
+    }
+    audit = service._upstream_capability_audit(response)
+
+    assert audit["status"] == "action_required"
+    assert {gap["capability_id"] for gap in audit["upstream_gaps"]} >= {
+        "benchmark_return_series",
+        "source_backed_risk_free_rate",
+    }
+    assert {finding["finding_id"] for finding in audit["report_side_findings"]} == {
+        "incomplete_position_unrealized_pnl",
+        "client_sections_missing",
+    }
+
+
+def test_review_observations_and_profile_items_surface_meeting_gaps():
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = {
+        "clientProfile": {
+            "missing_fields": ["objective", "investment_time_horizon"],
+            "identity": {"client_name": "Client"},
+            "portfolio_profile": {},
+            "mandate_profile": {},
+        },
+        "keyFigures": {
+            "performance": {
+                "contribution_status": "unavailable",
+                "benchmark_comparison_status": "available",
+            },
+            "holdings": {"unrealized_pnl_coverage": "present"},
+        },
+        "riskAnalytics": {},
+    }
+
+    observations = service._review_observations(response)
+    profile_items = service._client_profile_items(response["clientProfile"])
+
+    assert {observation["observation_id"] for observation in observations} >= {
+        "client_profile_incomplete",
+        "performance_contribution_unavailable",
+    }
+    assert profile_items[-1] == {
+        "item_type": "missing_profile_fields",
+        "fields": ["objective", "investment_time_horizon"],
+    }
 
 
 @pytest.mark.parametrize(
