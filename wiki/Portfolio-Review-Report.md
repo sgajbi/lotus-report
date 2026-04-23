@@ -14,6 +14,15 @@ request/job/status ledger records, captures the immutable input snapshot and ups
 for PDF requests submits a governed render package to `lotus-render`. Archive and retention remain
 separate concerns and are not part of this route.
 
+The render handoff posture is explicit:
+
+- `lotus-report` owns data assembly, snapshot capture, lineage, and render-package composition
+- `lotus-render` owns PDF execution, artifact hashing, and support-safe render diagnostics
+- the supported repeatability claim is bounded runtime-envelope determinism via fingerprint, not
+  byte-stable PDF identity
+- archive retrieval, legal hold, replay, rerender, regenerate, and document distribution remain
+  outside RFC-0102 scope
+
 ## Product Standard
 
 The report should help a client advisor answer five meeting questions:
@@ -196,6 +205,16 @@ curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/revi
   -H "X-Correlation-ID: portfolio-review-local-proof" `
   -d "{\"as_of_date\":\"2026-04-22\",\"reporting_currency\":\"USD\",\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\",\"sections\":[\"CLIENT_PROFILE\",\"OVERVIEW\",\"ALLOCATION\",\"PERFORMANCE\",\"RISK_ANALYTICS\",\"INCOME_AND_ACTIVITY\",\"HOLDINGS\",\"TRANSACTIONS\"]}"
 ```
+
+For the governed RFC-0102 render-boundary proof pack:
+
+```powershell
+python scripts/rfc_0102_live_evidence.py
+```
+
+That script produces a clean evidence directory under `output/rfc-0102-live-evidence-*` containing
+the exact `lotus-report` to `lotus-render` package, live render responses, render metadata, status
+lookups, negative-path failures, runtime logs, and the bounded-determinism comparison summary.
 
 Do not treat a visually pleasant output as sufficient proof. A review report is only acceptable
 when the JSON contract, source coverage, key figures, gaps, evidence, and CI posture are all
