@@ -13,6 +13,7 @@ sys.path.insert(0, str(SRC))
 import psycopg  # noqa: E402
 
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger  # noqa: E402
+from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore  # noqa: E402
 
 REQUIRED_DOC = Path("docs/standards/migration-contract.md")
 REQUIRED_PHRASES = (
@@ -22,6 +23,7 @@ REQUIRED_PHRASES = (
     "report_request",
     "report_job",
     "report_status_event",
+    "report_input_snapshot",
 )
 
 
@@ -45,6 +47,8 @@ def run_ledger_schema_checks() -> int:
 
     ledger = PostgresReportJobLedger(database_url)
     ledger.check_ready()
+    snapshot_store = PostgresReportInputSnapshotStore(database_url)
+    snapshot_store.check_ready()
 
     with psycopg.connect(database_url) as connection:
         table_rows = connection.execute(
@@ -61,6 +65,19 @@ def run_ledger_schema_checks() -> int:
             print(f"Ledger schema smoke failed: missing tables {sorted(missing_tables)}")
             return 1
 
+        snapshot_table_rows = connection.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN ('report_input_snapshot')
+            """
+        ).fetchall()
+        snapshot_tables = {row[0] for row in snapshot_table_rows}
+        if {"report_input_snapshot"} - snapshot_tables:
+            print("Ledger schema smoke failed: missing tables ['report_input_snapshot']")
+            return 1
+
         index_rows = connection.execute(
             """
             SELECT indexname
@@ -75,7 +92,10 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_job_created',
                   'idx_report_job_completed',
                   'idx_report_job_request',
-                  'idx_report_status_event_job_created'
+                  'idx_report_status_event_job_created',
+                  'idx_report_input_snapshot_created',
+                  'idx_report_input_snapshot_supportability',
+                  'idx_report_input_snapshot_report_type_created'
               )
             """
         ).fetchall()
@@ -90,6 +110,9 @@ def run_ledger_schema_checks() -> int:
             "idx_report_job_completed",
             "idx_report_job_request",
             "idx_report_status_event_job_created",
+            "idx_report_input_snapshot_created",
+            "idx_report_input_snapshot_supportability",
+            "idx_report_input_snapshot_report_type_created",
         } - indexes
         if missing_indexes:
             print(f"Ledger schema smoke failed: missing indexes {sorted(missing_indexes)}")
@@ -142,6 +165,21 @@ def run_ledger_schema_checks() -> int:
                     f"is missing {category}."
                 )
                 return 1
+
+        snapshot_constraint_rows = connection.execute(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'report_input_snapshot'::regclass
+              AND contype = 'u'
+            """
+        ).fetchall()
+        if not any("report_job_id" in str(row[0]) for row in snapshot_constraint_rows):
+            print(
+                "Ledger schema smoke failed: "
+                "report_input_snapshot.report_job_id uniqueness is missing."
+            )
+            return 1
 
     print("Migration contract check passed (PostgreSQL report job ledger schema mode).")
     return 0
