@@ -24,10 +24,10 @@ openapi-gate:
 	python scripts/openapi_quality_gate.py
 
 migration-smoke:
-	python scripts/migration_contract_check.py --mode no-schema
+	python scripts/migration_contract_check.py --mode ledger-schema
 
 migration-apply:
-	python scripts/migration_contract_check.py --mode no-schema
+	python scripts/migration_contract_check.py --mode ledger-schema
 
 test:
 	$(MAKE) test-unit
