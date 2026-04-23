@@ -150,9 +150,16 @@ class PostgresReportJobLedger:
                         report_job_id, report_request_id, report_type, portfolio_scope_json,
                         status, failure_category, failure_message, current_step, retry_eligible,
                         cancel_requested, created_at, updated_at, started_at, completed_at,
-                        cancelled_at
+                        cancelled_at, render_job_id, render_output_format, render_template_id,
+                        render_template_version, render_artifact_sha256,
+                        render_bounded_determinism_fingerprint, render_runtime_engine,
+                        render_runtime_engine_version, render_duration_ms
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s
+                    )
                     """,
                     (
                         job_id,
@@ -167,6 +174,15 @@ class PostgresReportJobLedger:
                         False,
                         now,
                         now,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
                         None,
                         None,
                         None,
@@ -300,7 +316,16 @@ class PostgresReportJobLedger:
                 job.updated_at,
                 job.started_at,
                 job.completed_at,
-                job.cancelled_at
+                job.cancelled_at,
+                job.render_job_id,
+                job.render_output_format,
+                job.render_template_id,
+                job.render_template_version,
+                job.render_artifact_sha256,
+                job.render_bounded_determinism_fingerprint,
+                job.render_runtime_engine,
+                job.render_runtime_engine_version,
+                job.render_duration_ms
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE {" AND ".join(where_clauses)}
@@ -337,6 +362,16 @@ class PostgresReportJobLedger:
                 event_type="job_collecting_data",
                 event_message="Portfolio review input capture started.",
                 set_started_at=True,
+                set_completed_at=False,
+                render_job_id=None,
+                render_output_format=None,
+                render_template_id=None,
+                render_template_version=None,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
             )
 
     def mark_data_ready(
@@ -363,6 +398,101 @@ class PostgresReportJobLedger:
                 event_type="job_data_ready",
                 event_message="Portfolio review snapshot and lineage captured.",
                 set_started_at=True,
+                set_completed_at=False,
+                render_job_id=None,
+                render_output_format=None,
+                render_template_id=None,
+                render_template_version=None,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
+            )
+
+    def mark_rendering(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        render_job_id: str,
+        output_format: str,
+        template_id: str,
+        template_version: str,
+    ) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            return self._transition_job(
+                connection=connection,
+                job_id=job_id,
+                allowed_from={"data_ready"},
+                to_status="rendering",
+                failure_category=None,
+                failure_message=None,
+                current_step="rendering",
+                retry_eligible=False,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                event_type="job_rendering",
+                event_message="Portfolio review render started.",
+                set_started_at=True,
+                set_completed_at=False,
+                render_job_id=render_job_id,
+                render_output_format=output_format,
+                render_template_id=template_id,
+                render_template_version=template_version,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
+            )
+
+    def mark_completed(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        render_job_id: str,
+        output_format: str,
+        template_id: str,
+        template_version: str,
+        artifact_sha256: str | None,
+        bounded_determinism_fingerprint: str | None,
+        runtime_engine: str | None,
+        runtime_engine_version: str | None,
+        render_duration_ms: int | None,
+    ) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            return self._transition_job(
+                connection=connection,
+                job_id=job_id,
+                allowed_from={"data_ready", "rendering"},
+                to_status="completed",
+                failure_category=None,
+                failure_message=None,
+                current_step="completed",
+                retry_eligible=False,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                event_type="job_completed",
+                event_message="Portfolio review render completed.",
+                set_started_at=True,
+                set_completed_at=True,
+                render_job_id=render_job_id,
+                render_output_format=output_format,
+                render_template_id=template_id,
+                render_template_version=template_version,
+                render_artifact_sha256=artifact_sha256,
+                render_bounded_determinism_fingerprint=bounded_determinism_fingerprint,
+                render_runtime_engine=runtime_engine,
+                render_runtime_engine_version=runtime_engine_version,
+                render_duration_ms=render_duration_ms,
             )
 
     def mark_failed(
@@ -380,7 +510,7 @@ class PostgresReportJobLedger:
             return self._transition_job(
                 connection=connection,
                 job_id=job_id,
-                allowed_from={"accepted", "collecting_data"},
+                allowed_from={"accepted", "collecting_data", "data_ready", "rendering"},
                 to_status="failed",
                 failure_category=failure_category,
                 failure_message=failure_message,
@@ -392,6 +522,16 @@ class PostgresReportJobLedger:
                 event_type="job_failed",
                 event_message=failure_message,
                 set_started_at=True,
+                set_completed_at=True,
+                render_job_id=None,
+                render_output_format=None,
+                render_template_id=None,
+                render_template_version=None,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
             )
 
     def cancel_job(
@@ -410,7 +550,7 @@ class PostgresReportJobLedger:
             if not existing:
                 raise ReportJobNotFoundError("report_job_not_found")
             current_status = str(existing["status"])
-            if current_status in {"completed", "completed_with_warnings", "cancelled"}:
+            if current_status in {"rendering", "completed", "completed_with_warnings", "cancelled"}:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_cancelled")
 
             now = utc_now()
@@ -516,6 +656,16 @@ class PostgresReportJobLedger:
         event_type: str,
         event_message: str | None,
         set_started_at: bool,
+        set_completed_at: bool,
+        render_job_id: str | None,
+        render_output_format: str | None,
+        render_template_id: str | None,
+        render_template_version: str | None,
+        render_artifact_sha256: str | None,
+        render_bounded_determinism_fingerprint: str | None,
+        render_runtime_engine: str | None,
+        render_runtime_engine_version: str | None,
+        render_duration_ms: int | None,
     ) -> ReportJobLedgerRecord:
         existing = connection.execute(
             "SELECT status, started_at FROM report_job WHERE report_job_id = %s FOR UPDATE",
@@ -536,11 +686,24 @@ class PostgresReportJobLedger:
 
         now = utc_now()
         started_at = existing["started_at"] or (now if set_started_at else None)
+        completed_at = now if set_completed_at else None
         connection.execute(
             """
             UPDATE report_job
             SET status = %s, failure_category = %s, failure_message = %s, current_step = %s,
-                retry_eligible = %s, updated_at = %s, started_at = %s
+                retry_eligible = %s, updated_at = %s, started_at = %s, completed_at = %s,
+                render_job_id = COALESCE(%s, render_job_id),
+                render_output_format = COALESCE(%s, render_output_format),
+                render_template_id = COALESCE(%s, render_template_id),
+                render_template_version = COALESCE(%s, render_template_version),
+                render_artifact_sha256 = COALESCE(%s, render_artifact_sha256),
+                render_bounded_determinism_fingerprint = COALESCE(
+                    %s,
+                    render_bounded_determinism_fingerprint
+                ),
+                render_runtime_engine = COALESCE(%s, render_runtime_engine),
+                render_runtime_engine_version = COALESCE(%s, render_runtime_engine_version),
+                render_duration_ms = COALESCE(%s, render_duration_ms)
             WHERE report_job_id = %s
             """,
             (
@@ -551,6 +714,16 @@ class PostgresReportJobLedger:
                 retry_eligible,
                 now,
                 started_at,
+                completed_at,
+                render_job_id,
+                render_output_format,
+                render_template_id,
+                render_template_version,
+                render_artifact_sha256,
+                render_bounded_determinism_fingerprint,
+                render_runtime_engine,
+                render_runtime_engine_version,
+                render_duration_ms,
                 job_id,
             ),
         )
@@ -612,7 +785,16 @@ class PostgresReportJobLedger:
                 job.updated_at,
                 job.started_at,
                 job.completed_at,
-                job.cancelled_at
+                job.cancelled_at,
+                job.render_job_id,
+                job.render_output_format,
+                job.render_template_id,
+                job.render_template_version,
+                job.render_artifact_sha256,
+                job.render_bounded_determinism_fingerprint,
+                job.render_runtime_engine,
+                job.render_runtime_engine_version,
+                job.render_duration_ms
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = %s
@@ -670,6 +852,15 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportJobLedgerRecord:
         cancelled_at=_dt_from_value(row["cancelled_at"]),
         correlation_id=str(row["correlation_id"]),
         trace_id=str(row["trace_id"]),
+        render_job_id=row.get("render_job_id"),
+        render_output_format=row.get("render_output_format"),
+        render_template_id=row.get("render_template_id"),
+        render_template_version=row.get("render_template_version"),
+        render_artifact_sha256=row.get("render_artifact_sha256"),
+        render_bounded_determinism_fingerprint=row.get("render_bounded_determinism_fingerprint"),
+        render_runtime_engine=row.get("render_runtime_engine"),
+        render_runtime_engine_version=row.get("render_runtime_engine_version"),
+        render_duration_ms=row.get("render_duration_ms"),
     )
 
 

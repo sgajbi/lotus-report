@@ -35,6 +35,8 @@ It depends on:
   workspace summary and performance analytics inputs used for reporting views
 - `lotus-risk`
   risk analytics derived from reporting review flows
+- `lotus-render`
+  deterministic PDF rendering for governed report packages
 - `lotus-gateway`
   primary product-facing consumer for front-office reporting workflows
 
@@ -59,8 +61,9 @@ Boundary rules that matter:
 4. `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` provide the
    durable job-ledger foundation for gateway-first report initiation, operator-safe job search,
-   product-safe status, append-only event history, database-backed idempotency, and bounded
-   pre-render cancellation. These endpoints do not render PDFs or archive documents.
+   product-safe status, append-only event history, database-backed idempotency, immutable snapshot
+   and lineage capture, lotus-render submission for PDF output, and bounded cancellation before the
+   job reaches `rendering`. Archive and retention workflows remain out of scope.
 5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 6. Request conventions are governed by the Lotus API vocabulary standard. Public query,
@@ -143,9 +146,12 @@ Key code areas:
 - `src/app/services/aggregation_service.py`
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
-  durable report request/job/status-event ledger, idempotency, and bounded cancellation
+  durable report request/job/status-event ledger, idempotency, render metadata, and bounded
+  cancellation
+- `src/app/reporting_render/`
+  governed render-package assembly and lotus-render orchestration
 - `src/app/clients/`
-  lotus-core, lotus-performance, lotus-risk, and HTTP resilience clients
+  lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
   ownership, readiness, migration, precision, and scalability guidance
 - `docs/supported-features.md`

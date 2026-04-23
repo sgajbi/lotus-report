@@ -10,8 +10,9 @@ review payload that Workbench, gateway, downstream reporting surfaces, and futur
 renderers can consume without losing source lineage or supportability state.
 
 For asynchronous job initiation, use `POST /reports/portfolio-reviews`. That route creates durable
-request/job/status ledger records and returns a job handle. It does not render a document or archive
-an output.
+request/job/status ledger records, captures the immutable input snapshot and upstream lineage, and
+for PDF requests submits a governed render package to `lotus-render`. Archive and retention remain
+separate concerns and are not part of this route.
 
 ## Product Standard
 

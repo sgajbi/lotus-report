@@ -42,16 +42,18 @@ Current repository posture:
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` are the RFC-0100
    durable report job ledger foundation for gateway-first initiation, PostgreSQL-backed
    idempotency, operator-safe job search, product-safe status, append-only event history,
-   database-aware readiness, and bounded pre-render cancellation; they do not render PDFs or
-   archive documents,
+   database-aware readiness, and bounded cancellation before `rendering`,
 7. RFC-0101 now adds durable `report_input_snapshot` and `report_upstream_call` persistence for
    immutable report input capture, append-only upstream lineage, canonical hashing, support-safe
    evidence APIs, PostgreSQL-backed migration smoke coverage, and readiness posture linked to
    RFC-0100 jobs,
-8. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+8. RFC-0102 now adds governed render-package assembly, lotus-render submission for PDF jobs,
+   persisted render metadata on report-job status, and render-aware completion/failure posture
+   while keeping archive and retention workflows out of scope,
+9. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-9. CI is standardized but still lighter than some core domain services,
-10. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+10. CI is standardized but still lighter than some core domain services,
+11. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -80,6 +82,9 @@ Primary areas:
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
+10. `src/app/reporting_render/`
+    render-package composition and lotus-render orchestration for PDF-capable report jobs,
+    including persisted render metadata and render failure mapping.
 
 ## Runtime And Integration Boundaries
 
@@ -87,7 +92,7 @@ Runtime model:
 
 1. FastAPI reporting service,
 2. consumed through `lotus-gateway` and reporting-oriented flows,
-3. depends on `lotus-core`, `lotus-performance`, and `lotus-risk`.
+3. depends on `lotus-core`, `lotus-performance`, `lotus-risk`, and `lotus-render` for PDF jobs.
 
 Boundary rules:
 
@@ -175,8 +180,10 @@ Update this document when:
 6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
 7. durable report input snapshot or upstream-call lineage persistence, hashing, readiness, API, or
    migration posture changes,
-8. report ledger database, readiness, migration, or CI proof posture changes,
-9. current-state rollout posture changes.
+8. render-package composition, lotus-render integration, persisted render metadata, or job
+   lifecycle semantics change,
+9. report ledger database, readiness, migration, or CI proof posture changes,
+10. current-state rollout posture changes.
 
 ## Cross-Links
 

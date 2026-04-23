@@ -219,6 +219,7 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.job_status.v1",
         "lotus-report.reporting.portfolio_review.job_event_history.v1",
         "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
+        "lotus-report.reporting.portfolio_review.render_submission.v1",
     } <= feature_keys
     workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}
     assert "portfolio_review_report_job" in workflow_keys

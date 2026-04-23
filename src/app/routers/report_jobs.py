@@ -24,6 +24,7 @@ from app.reporting_jobs.models import (
     ReportJobListFilters,
     ReportJobListItem,
     ReportJobListResponse,
+    ReportJobRenderInfo,
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
 )
@@ -38,6 +39,7 @@ from app.reporting_lineage.service import (
     get_report_input_snapshot_store,
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
+from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 jobs_router = APIRouter(prefix="/reports/jobs", tags=["Report Jobs"])
@@ -148,6 +150,26 @@ def _record_to_handle(record: ReportJobLedgerRecord) -> ReportJobHandleResponse:
     )
 
 
+def _record_to_render(record: ReportJobLedgerRecord) -> ReportJobRenderInfo | None:
+    if (
+        record.render_job_id is None
+        and record.render_artifact_sha256 is None
+        and record.render_output_format is None
+    ):
+        return None
+    return ReportJobRenderInfo(
+        render_job_id=record.render_job_id,
+        output_format=record.render_output_format,
+        template_id=record.render_template_id,
+        template_version=record.render_template_version,
+        artifact_sha256=record.render_artifact_sha256,
+        bounded_determinism_fingerprint=record.render_bounded_determinism_fingerprint,
+        runtime_engine=record.render_runtime_engine,
+        runtime_engine_version=record.render_runtime_engine_version,
+        render_duration_ms=record.render_duration_ms,
+    )
+
+
 def _record_to_status(record: ReportJobLedgerRecord) -> ReportJobStatusResponse:
     return ReportJobStatusResponse(
         report_job_id=record.job_id,
@@ -167,6 +189,7 @@ def _record_to_status(record: ReportJobLedgerRecord) -> ReportJobStatusResponse:
         cancelled_at=record.cancelled_at,
         correlation_id=record.correlation_id,
         trace_id=record.trace_id,
+        render=_record_to_render(record),
     )
 
 
@@ -188,6 +211,7 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
         correlation_id=record.correlation_id,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        render=_record_to_render(record),
     )
 
 
@@ -245,8 +269,9 @@ def _caller_context(
     description=(
         "Creates a durable portfolio-review report job and returns its job handle. Use this "
         "endpoint when a caller wants asynchronous report orchestration with idempotent request "
-        "identity. The endpoint records request, job, and lifecycle-event ledger entries only; "
-        "it does not render PDF output or archive documents."
+        "identity. The endpoint persists the request/job/event ledger, captures the immutable "
+        "report snapshot and upstream lineage, and when `pdf` is requested submits a governed "
+        "render package to lotus-render. Archive and retention workflows remain out of scope."
     ),
     openapi_extra={
         "requestBody": {
@@ -299,6 +324,7 @@ async def submit_portfolio_review_job(
     request: PortfolioReviewJobRequest,
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
     capture_service: Any = Depends(get_portfolio_review_snapshot_capture_service),
+    render_service: Any = Depends(get_portfolio_review_render_orchestration_service),
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -374,6 +400,8 @@ async def submit_portfolio_review_job(
         ) from exc
     if record.status == "accepted":
         record = await capture_service.capture_for_job(record)
+    if record.status == "data_ready" and "pdf" in request.requested_output_formats:
+        record = await render_service.render_for_job(record)
     return _record_to_handle(record)
 
 
