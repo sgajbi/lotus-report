@@ -44,8 +44,8 @@ PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE: dict[str, Any] = {
         "TRANSACTIONS",
     ],
     "reporting_currency": "USD",
-    "allocation_dimensions": ["asset_class", "currency", "sector", "geography"],
-    "look_through_mode": "DIRECT",
+    "allocation_dimensions": ["asset_class", "currency", "sector", "region"],
+    "look_through_mode": "direct_only",
     "benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
 }
 
@@ -410,7 +410,8 @@ class PortfolioReviewReportRequest(BaseModel):
         default=None,
         description=(
             "Optional allocation dimensions requested by the caller, such as asset_class, "
-            "currency, sector, or geography where supported by upstream data."
+            "currency, sector, region, country, product_type, rating, or issuer where "
+            "supported by upstream data."
         ),
         examples=[["asset_class", "currency"]],
     )
@@ -420,7 +421,7 @@ class PortfolioReviewReportRequest(BaseModel):
             "Optional look-through handling requested by the caller. Current reporting behavior "
             "passes this as request context and does not invent look-through holdings."
         ),
-        examples=["DIRECT"],
+        examples=["direct_only"],
     )
     benchmark_code: str | None = Field(
         default=None,
