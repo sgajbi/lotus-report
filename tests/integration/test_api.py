@@ -251,6 +251,8 @@ def test_openapi_uses_typed_portfolio_review_contract():
     review_post = schema["paths"]["/reports/portfolios/{portfolio_id}/review"]["post"]
     response_schema = review_post["responses"]["200"]["content"]["application/json"]["schema"]
     request_schema = review_post["requestBody"]["content"]["application/json"]["schema"]
+    request_content = review_post["requestBody"]["content"]["application/json"]
+    response_content = review_post["responses"]["200"]["content"]["application/json"]
 
     serialized_schema = json.dumps(schema)
 
@@ -268,6 +270,11 @@ def test_openapi_uses_typed_portfolio_review_contract():
     assert "benchmark_code" in request_contract["properties"]
     assert "benchmarkCode" not in request_contract["properties"]
     assert request_contract["properties"]["benchmark_code"]["description"]
+    assert request_content["example"]["look_through_mode"] == "direct_only"
+    assert (
+        request_content["examples"]["full_portfolio_review"]["value"]["sections"]
+        == (request_content["example"]["sections"])
+    )
     assert "CLIENT_PROFILE" in request_contract["examples"][0]["sections"]
 
     response_contract = schema["components"]["schemas"]["PortfolioReviewReportResponse"]
@@ -282,6 +289,12 @@ def test_openapi_uses_typed_portfolio_review_contract():
         assert response_contract["properties"][property_name]["description"]
 
     examples = response_contract["examples"]
+    assert response_contract["example"]["holdings"]
+    assert response_content["example"]["holdings"]
+    assert (
+        response_content["examples"]["full_portfolio_review"]["value"]["holdings"]
+        == (response_content["example"]["holdings"])
+    )
     assert examples[0]["client_profile"]["status"] == "present"
     assert examples[0]["holdings"]["holdings_by_asset_class"]["EQUITY"][0]["unrealized_pnl"]
     assert examples[0]["performance"]["contribution"]["by_position"][0]["contribution_pct"]
