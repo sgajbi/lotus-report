@@ -9,7 +9,12 @@ from uuid import uuid4
 import pytest
 
 from app.config import settings
-from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
+from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
+from app.reporting_lineage.models import (
+    ReportInputSnapshotCreateRequest,
+    ReportUpstreamCallCreateRequest,
+)
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_lineage.store import (
@@ -30,9 +35,32 @@ def _store() -> PostgresReportInputSnapshotStore:
     return PostgresReportInputSnapshotStore(_database_url())
 
 
-def _request(unique_suffix: str) -> ReportInputSnapshotCreateRequest:
+def _seed_job(unique_suffix: str) -> str:
+    ledger = PostgresReportJobLedger(_database_url())
+    job = ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest(
+            portfolio_scope={"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
+            as_of_date="2026-04-22",
+            requested_output_formats=["json"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+        ),
+        caller_context=ReportCallerContext(
+            triggered_by="advisor-123",
+            caller_application="lotus-gateway",
+            tenant_id="tenant-sg",
+            region="APAC",
+            correlation_id=f"corr-snapshot-{unique_suffix}",
+            trace_id=f"trace-snapshot-{unique_suffix}",
+        ),
+        idempotency_key=f"snapshot-proof-{unique_suffix}",
+    )
+    return job.job_id
+
+
+def _request(unique_suffix: str, *, report_job_id: str) -> ReportInputSnapshotCreateRequest:
     return ReportInputSnapshotCreateRequest(
-        report_job_id=f"rjob_snapshot_{unique_suffix}",
+        report_job_id=report_job_id,
         report_type="portfolio_review",
         report_data_contract_version="v1",
         portfolio_scope={"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
@@ -54,7 +82,8 @@ def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> N
     store = _store()
     store.check_ready()
 
-    request = _request(uuid4().hex)
+    unique_suffix = uuid4().hex
+    request = _request(unique_suffix, report_job_id=_seed_job(unique_suffix))
     created = store.create_snapshot(request)
 
     assert created.snapshot_hash == compute_snapshot_hash(request.snapshot_payload)
@@ -62,10 +91,46 @@ def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> N
     assert store.get_snapshot_by_job(request.report_job_id).report_job_id == request.report_job_id
 
 
+def test_postgres_report_input_snapshot_store_persists_and_lists_upstream_calls() -> None:
+    store = _store()
+    unique_suffix = uuid4().hex
+    snapshot = store.create_snapshot(
+        _request(unique_suffix, report_job_id=_seed_job(unique_suffix))
+    )
+
+    created = store.create_upstream_calls(
+        snapshot_id=snapshot.snapshot_id,
+        calls=[
+            ReportUpstreamCallCreateRequest(
+                service_name="lotus-core",
+                endpoint="/reporting/portfolio-summary/query",
+                method="POST",
+                contract_version="v1",
+                request_hash="sha256:req",
+                response_hash="sha256:resp",
+                response_ref=None,
+                status_code=200,
+                latency_ms=184,
+                supportability_status="complete",
+                completeness_status="complete",
+                failure_category="none",
+                failure_message=None,
+                captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+                correlation_id="corr-lineage",
+                trace_id="trace-lineage",
+            )
+        ],
+    )
+
+    assert len(created) == 1
+    assert store.list_upstream_calls(snapshot.snapshot_id)[0].service_name == "lotus-core"
+    assert store.list_upstream_calls_by_job(snapshot.report_job_id)[0].status_code == 200
+
+
 def test_postgres_report_input_snapshot_store_rejects_conflicting_rewrite() -> None:
     store = _store()
     unique_suffix = uuid4().hex
-    request = _request(unique_suffix)
+    request = _request(unique_suffix, report_job_id=_seed_job(unique_suffix))
     store.create_snapshot(request)
 
     with pytest.raises(
@@ -98,7 +163,7 @@ def test_postgres_report_input_snapshot_store_check_ready_reports_missing_schema
 
     with pytest.raises(
         RuntimeError,
-        match="report_input_snapshot_schema_missing:report_input_snapshot",
+        match="report_input_snapshot_schema_missing:report_input_snapshot,report_upstream_call",
     ):
         store.check_ready()
 

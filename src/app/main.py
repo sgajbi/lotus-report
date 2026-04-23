@@ -11,6 +11,7 @@ from app.observability import setup_observability
 from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
 from app.routers.integration import router as integration_router
+from app.routers.report_jobs import evidence_router as report_evidence_router
 from app.routers.report_jobs import jobs_router as report_jobs_router
 from app.routers.report_jobs import router as report_job_submission_router
 from app.routers.reports import router as reports_router
@@ -43,6 +44,10 @@ app = FastAPI(
             "name": "Report Jobs",
             "description": "Operational report-job lifecycle APIs for support and diagnostics.",
         },
+        {
+            "name": "Report Evidence",
+            "description": "Support-safe snapshot and upstream-lineage evidence APIs.",
+        },
     ],
     lifespan=_app_lifespan,
 )
@@ -56,3 +61,4 @@ app.include_router(aggregations_router)
 app.include_router(report_job_submission_router)
 app.include_router(reports_router)
 app.include_router(report_jobs_router)
+app.include_router(report_evidence_router)

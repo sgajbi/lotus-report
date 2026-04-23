@@ -9,9 +9,10 @@
 
 - `make migration-smoke` validates that this contract document exists, applies the versioned
   PostgreSQL report job ledger schema, checks mandatory tables `report_request`, `report_job`,
-  `report_status_event`, and `report_input_snapshot`, verifies required operational indexes, and
-  verifies database-level idempotency uniqueness on `report_request.idempotency_key` plus the
-  single-snapshot-per-job uniqueness posture on `report_input_snapshot.report_job_id`.
+  `report_status_event`, `report_input_snapshot`, and `report_upstream_call`, verifies required
+  operational indexes, and verifies database-level idempotency uniqueness on
+  `report_request.idempotency_key` plus the single-snapshot-per-job uniqueness posture on
+  `report_input_snapshot.report_job_id`.
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
 - Local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to a file
   database. SQLite is retained only as an isolated unit-test adapter for fast ledger behavior tests.
@@ -35,7 +36,9 @@ The first-wave ledger must keep these query paths indexed:
 7. completion scans for future housekeeping,
 8. request/job joins,
 9. append-only event history by job and event creation time,
-10. snapshot lookup by job and recent snapshot support diagnostics.
+10. snapshot lookup by job and recent snapshot support diagnostics,
+11. upstream-lineage lookup by snapshot id,
+12. upstream service and endpoint diagnostics by supportability posture and creation time.
 
 `make migration-smoke` checks that the implementation-backed indexes exist.
 

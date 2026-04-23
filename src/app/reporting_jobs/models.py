@@ -76,7 +76,7 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_HANDLE_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
-    "status": "accepted",
+    "status": "data_ready",
     "status_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5",
     "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
 }
@@ -87,10 +87,10 @@ REPORT_JOB_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_type": "portfolio_review",
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
-    "status": "accepted",
+    "status": "data_ready",
     "failure_category": None,
     "failure_message": None,
-    "current_step": "accepted",
+    "current_step": "data_ready",
     "retry_eligible": False,
     "cancel_requested": False,
     "created_at": "2026-04-22T09:00:00Z",
@@ -124,7 +124,7 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
-    "status": "accepted",
+    "status": "data_ready",
     "report_type": "portfolio_review",
     "portfolio_id": "PB_SG_GLOBAL_BAL_001",
     "as_of_date": "2026-04-22",
@@ -147,9 +147,9 @@ REPORT_JOB_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
             "region": "APAC",
             "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
             "as_of_date": "2026-04-22",
-            "status": "accepted",
+            "status": "data_ready",
             "failure_category": None,
-            "current_step": "accepted",
+            "current_step": "data_ready",
             "retry_eligible": False,
             "cancel_requested": False,
             "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
@@ -189,6 +189,12 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
         "detail": {
             "code": "report_job_not_found",
             "message": "Report job was not found.",
+        }
+    },
+    "report_snapshot_not_found": {
+        "detail": {
+            "code": "report_snapshot_not_found",
+            "message": "Report snapshot was not found.",
         }
     },
     "report_job_cannot_be_cancelled": {

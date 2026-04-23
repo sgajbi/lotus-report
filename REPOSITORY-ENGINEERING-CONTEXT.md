@@ -44,10 +44,10 @@ Current repository posture:
    idempotency, operator-safe job search, product-safe status, append-only event history,
    database-aware readiness, and bounded pre-render cancellation; they do not render PDFs or
    archive documents,
-7. `report_input_snapshot` persistence is the RFC-0101 storage foundation for durable,
-   immutable report input capture linked one-to-one to RFC-0100 jobs; the first slice ships
-   canonical snapshot hashing, PostgreSQL-backed storage, migration smoke coverage, and readiness
-   posture before upstream-call lineage and support APIs are added,
+7. RFC-0101 now adds durable `report_input_snapshot` and `report_upstream_call` persistence for
+   immutable report input capture, append-only upstream lineage, canonical hashing, support-safe
+   evidence APIs, PostgreSQL-backed migration smoke coverage, and readiness posture linked to
+   RFC-0100 jobs,
 8. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 9. CI is standardized but still lighter than some core domain services,
@@ -78,8 +78,8 @@ Primary areas:
    asynchronous reporting wave.
 9. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
-   snapshots, canonical snapshot hashing, immutable per-job capture, and readiness checks for the
-   RFC-0101 storage foundation.
+   snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
+   lineage, support-safe evidence query models, and readiness checks for RFC-0101.
 
 ## Runtime And Integration Boundaries
 
@@ -128,7 +128,8 @@ Important validation expectations:
 2. migration smoke and CI integration proof use PostgreSQL through
    `REPORT_JOB_LEDGER_DATABASE_URL`; file databases are not runtime evidence for RFC-0100,
 3. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
-   migration smoke with `report_input_snapshot` table and index proof,
+   migration smoke with `report_input_snapshot` and `report_upstream_call` table, index, and
+   check-constraint proof,
 4. split unit, integration, e2e, and coverage validation are part of the merge gate,
 5. reporting orchestration changes should be evaluated for cross-app impact,
 6. README and wiki changes should preserve truthful explanation of API request conventions,
@@ -172,7 +173,8 @@ Update this document when:
 4. canonical runtime identity or front-office integration role changes,
 5. current request-convention compatibility or canonical parameter naming changes,
 6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
-7. durable report input snapshot persistence, hashing, readiness, or migration posture changes,
+7. durable report input snapshot or upstream-call lineage persistence, hashing, readiness, API, or
+   migration posture changes,
 8. report ledger database, readiness, migration, or CI proof posture changes,
 9. current-state rollout posture changes.
 

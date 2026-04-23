@@ -10,7 +10,8 @@
   advisor-only separation, AI-readiness guardrails, and evidence lineage before treating the output
   as meeting-ready
 - for report job evidence, verify idempotency behavior, operator-safe search, product-safe status,
-  append-only status events, and bounded cancellation before render/archive/completion
+  append-only status events, durable snapshot evidence, upstream lineage evidence, and bounded
+  cancellation before render/archive/completion
 
 ## Health and readiness surfaces
 
@@ -30,9 +31,11 @@
 - report job lifecycle state is durable in PostgreSQL and configured by
   `REPORT_JOB_LEDGER_DATABASE_URL`; runtime readiness fails if the database or mandatory ledger
   schema is unavailable
+- RFC-0101 extends readiness to fail when either `report_input_snapshot` or
+  `report_upstream_call` schema is unavailable
 - report job support queries are backed by indexes for idempotency lookup, tenant/region/time
   diagnostics, as-of-date filtering, portfolio-scope diagnostics, status queues, completion scans,
-  request/job joins, and append-only event history
+  request/job joins, append-only event history, snapshot lookup, and upstream-lineage lookup
 - native PostgreSQL partitioning is intentionally deferred until a later scale/retention RFC can
   preserve global idempotency semantics; the current ledger is partition-ready but not partitioned
 - destructive purge, legal hold, and document-retention operations are not first-wave ledger
@@ -102,6 +105,41 @@ Expected controls:
 5. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
 
+## RFC-0101 snapshot and lineage flow
+
+RFC-0101 adds durable evidence capture on top of the RFC-0100 job ledger. The first wave is still
+owned by `lotus-report`; gateway remains an ingress and status boundary, not the durable evidence
+owner.
+
+```mermaid
+sequenceDiagram
+    participant GW as lotus-gateway or operator caller
+    participant REPORT as lotus-report
+    participant CORE as lotus-core
+    participant PERF as lotus-performance
+    participant RISK as lotus-risk
+    participant PG as lotus-report-postgres
+
+    GW->>REPORT: POST /reports/portfolio-reviews
+    REPORT->>PG: insert report_request, report_job, accepted event
+    REPORT->>PG: mark job collecting_data
+    REPORT->>CORE: summary/detail/allocation/positions/transactions calls
+    REPORT->>PERF: workspace summary and contribution calls
+    REPORT->>RISK: risk calculation calls
+    REPORT->>PG: insert report_input_snapshot
+    REPORT->>PG: insert report_upstream_call rows
+    REPORT->>PG: mark job data_ready or failed
+    REPORT-->>GW: 202 job handle with current status
+```
+
+Operational truths for this wave:
+
+1. one report job has zero or one durable snapshot,
+2. one snapshot can have many upstream-call rows,
+3. snapshot rows are immutable from the application contract perspective,
+4. upstream-call rows are append-only from the application contract perspective,
+5. support-safe APIs return hashes, posture, and lineage metadata instead of raw upstream payloads.
+
 ## PostgreSQL ledger operations
 
 The local parity database is the `lotus-report-postgres` container published on host port `5439`.
@@ -137,6 +175,22 @@ JOIN report_job job ON job.report_job_id = event.report_job_id
 JOIN report_request req ON req.report_request_id = job.report_request_id
 WHERE req.idempotency_key = '<idempotency-key>'
 ORDER BY event.created_at;
+
+-- durable snapshot evidence for one job
+SELECT snapshot_id, report_job_id, report_type, report_data_contract_version, as_of_date,
+       snapshot_hash, snapshot_storage_ref, supportability_status, completeness_status,
+       lineage_summary_json, captured_at, correlation_id, trace_id
+FROM report_input_snapshot
+WHERE report_job_id = '<report-job-id>';
+
+-- append-only upstream lineage for one snapshot
+SELECT upstream_call_id, snapshot_id, service_name, endpoint, method, contract_version,
+       request_hash, response_hash, response_ref, status_code, latency_ms,
+       supportability_status, completeness_status, failure_category, failure_message,
+       correlation_id, trace_id, captured_at
+FROM report_upstream_call
+WHERE snapshot_id = '<snapshot-id>'
+ORDER BY captured_at, upstream_call_id;
 ```
 
 Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
@@ -186,14 +240,17 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
 ```
 
 The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
-`status_url`, and `idempotency_key`. Use `GET /api/v1/report-jobs?portfolioId=...&tenantId=...`
-for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
+`status_url`, and `idempotency_key`. In the current first-wave implementation, synchronous capture
+typically advances the handle to `data_ready` before the response returns. Use
+`GET /api/v1/report-jobs?portfolioId=...&tenantId=...` for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
 `GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
 `POST /api/v1/report-jobs/{job_id}/cancel` only before render/archive/completion phases.
 
 When testing `lotus-report` directly for service-owned diagnostics, use the equivalent internal
 paths `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
-`GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel`.
+`GET /reports/jobs/{job_id}/events`, `GET /reports/jobs/{job_id}/snapshot`,
+`GET /reports/jobs/{job_id}/lineage`, `GET /reports/snapshots/{snapshot_id}`,
+`GET /reports/snapshots/{snapshot_id}/lineage`, and `POST /reports/jobs/{job_id}/cancel`.
 
 ## Key references
 

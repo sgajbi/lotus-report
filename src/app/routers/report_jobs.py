@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
 
@@ -28,9 +28,95 @@ from app.reporting_jobs.models import (
     ReportJobStatusResponse,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_lineage.models import (
+    ReportInputSnapshotRecord,
+    ReportSnapshotLineageResponse,
+    ReportUpstreamCallRecord,
+)
+from app.reporting_lineage.service import (
+    get_portfolio_review_snapshot_capture_service,
+    get_report_input_snapshot_store,
+)
+from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 jobs_router = APIRouter(prefix="/reports/jobs", tags=["Report Jobs"])
+evidence_router = APIRouter(prefix="/reports", tags=["Report Evidence"])
+
+
+class ReportLineageStore(Protocol):
+    def get_snapshot_by_job(self, report_job_id: str) -> ReportInputSnapshotRecord: ...
+
+    def get_snapshot(self, snapshot_id: str) -> ReportInputSnapshotRecord: ...
+
+    def list_upstream_calls(self, snapshot_id: str) -> list[ReportUpstreamCallRecord]: ...
+
+
+def get_report_lineage_store() -> ReportLineageStore:
+    return get_report_input_snapshot_store()
+
+
+REPORT_JOB_SNAPSHOT_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "report_type": "portfolio_review",
+    "report_data_contract_version": "v1",
+    "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+    "as_of_date": "2026-04-22",
+    "snapshot_payload": {
+        "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-04-22",
+    },
+    "snapshot_hash": "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd",
+    "snapshot_storage_ref": None,
+    "supportability_status": "complete",
+    "completeness_status": "complete",
+    "lineage_summary": {
+        "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+        "call_count": 8,
+        "supportability_status": "complete",
+        "partial_call_count": 0,
+        "unavailable_call_count": 0,
+        "not_supported_call_count": 0,
+        "redacted_call_count": 0,
+    },
+    "captured_at": "2026-04-22T09:00:03Z",
+    "created_at": "2026-04-22T09:00:03Z",
+    "correlation_id": "corr-portfolio-review-1",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+}
+
+REPORT_JOB_LINEAGE_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "snapshot": REPORT_JOB_SNAPSHOT_RESPONSE_EXAMPLE,
+    "upstream_calls": [
+        {
+            "upstream_call_id": "ruc_7c5d4f1e4cb6455fa11c06821c57b88f",
+            "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+            "service_name": "lotus-core",
+            "endpoint": "/reporting/portfolio-summary/query",
+            "method": "POST",
+            "contract_version": "v1",
+            "request_hash": (
+                "sha256:0f5de8ef5cf305bf2e38ed33139e1df8f06fdf531f80903c123c25f6d8c09780"
+            ),
+            "response_hash": (
+                "sha256:9de9c193650baf615ff8dca094d10ff18bdaabf0915963c4b3d74a3a07844f52"
+            ),
+            "response_ref": None,
+            "status_code": 200,
+            "latency_ms": 184,
+            "supportability_status": "complete",
+            "completeness_status": "complete",
+            "failure_category": "none",
+            "failure_message": None,
+            "captured_at": "2026-04-22T09:00:02Z",
+            "created_at": "2026-04-22T09:00:02Z",
+            "correlation_id": "corr-portfolio-review-1",
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        }
+    ],
+}
 
 
 def _error_response(
@@ -212,6 +298,7 @@ def _caller_context(
 async def submit_portfolio_review_job(
     request: PortfolioReviewJobRequest,
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    capture_service: Any = Depends(get_portfolio_review_snapshot_capture_service),
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -285,6 +372,8 @@ async def submit_portfolio_review_job(
                 "message": "Idempotency-Key was reused with a different report request.",
             },
         ) from exc
+    if record.status in {"accepted", "collecting_data"}:
+        record = await capture_service.capture_for_job(record)
     return _record_to_handle(record)
 
 
@@ -705,3 +794,237 @@ async def cancel_report_job(
                 "message": "Report job can no longer be cancelled.",
             },
         ) from exc
+
+
+@evidence_router.get(
+    "/jobs/{job_id}/snapshot",
+    response_model=ReportInputSnapshotRecord,
+    summary="Get durable report input snapshot by job",
+    description=(
+        "Returns the durable report input snapshot that belongs to one report job. Use this "
+        "endpoint when support or audit needs the exact support-safe machine-readable input state "
+        "captured for that job and business date."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_SNAPSHOT_RESPONSE_EXAMPLE,
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when no durable snapshot exists for the requested job.",
+        ),
+    },
+)
+async def get_report_job_snapshot(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
+) -> ReportInputSnapshotRecord:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        return store.get_snapshot_by_job(job_id)
+    except ReportInputSnapshotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+
+@evidence_router.get(
+    "/jobs/{job_id}/lineage",
+    response_model=ReportSnapshotLineageResponse,
+    summary="Get durable upstream lineage by job",
+    description=(
+        "Returns the durable upstream-call lineage associated with one report job. Use this "
+        "endpoint when support or audit needs to see which authoritative Lotus services, "
+        "endpoints, hashes, and supportability postures were recorded for that job."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_LINEAGE_RESPONSE_EXAMPLE,
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when no durable lineage exists for the requested job.",
+        ),
+    },
+)
+async def get_report_job_lineage(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
+) -> ReportSnapshotLineageResponse:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        snapshot = store.get_snapshot_by_job(job_id)
+    except ReportInputSnapshotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+    return ReportSnapshotLineageResponse(
+        snapshot=snapshot,
+        upstream_calls=store.list_upstream_calls(snapshot.snapshot_id),
+    )
+
+
+@evidence_router.get(
+    "/snapshots/{snapshot_id}",
+    response_model=ReportInputSnapshotRecord,
+    summary="Get durable report input snapshot by snapshot id",
+    description=(
+        "Returns one durable report input snapshot by its snapshot identifier. Use this endpoint "
+        "when an operator already has the snapshot identifier from evidence review or a prior "
+        "lineage lookup and needs the same support-safe snapshot contract directly."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_SNAPSHOT_RESPONSE_EXAMPLE,
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_snapshot_not_found",
+            description="Returned when the requested snapshot identifier does not exist.",
+        ),
+    },
+)
+async def get_snapshot(
+    snapshot_id: Annotated[str, Path(description="Opaque durable snapshot identifier.")],
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
+) -> ReportInputSnapshotRecord:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        return store.get_snapshot(snapshot_id)
+    except ReportInputSnapshotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "report_snapshot_not_found",
+                "message": "Report snapshot was not found.",
+            },
+        ) from exc
+
+
+@evidence_router.get(
+    "/snapshots/{snapshot_id}/lineage",
+    response_model=ReportSnapshotLineageResponse,
+    summary="Get durable upstream lineage by snapshot id",
+    description=(
+        "Returns one durable report input snapshot together with its append-only upstream-call "
+        "lineage. Use this endpoint when an operator needs the snapshot and the precise upstream "
+        "evidence rows in the same certified response."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_LINEAGE_RESPONSE_EXAMPLE,
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_snapshot_not_found",
+            description="Returned when the requested snapshot identifier does not exist.",
+        ),
+    },
+)
+async def get_snapshot_lineage(
+    snapshot_id: Annotated[str, Path(description="Opaque durable snapshot identifier.")],
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
+) -> ReportSnapshotLineageResponse:
+    _caller_context(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        snapshot = store.get_snapshot(snapshot_id)
+    except ReportInputSnapshotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "report_snapshot_not_found",
+                "message": "Report snapshot was not found.",
+            },
+        ) from exc
+    return ReportSnapshotLineageResponse(
+        snapshot=snapshot,
+        upstream_calls=store.list_upstream_calls(snapshot_id),
+    )

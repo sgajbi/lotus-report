@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
+from app.reporting_lineage.models import (
+    ReportInputSnapshotCreateRequest,
+    ReportUpstreamCallCreateRequest,
+)
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
     ReportInputSnapshotNotFoundError,
@@ -93,3 +96,67 @@ def test_report_input_snapshot_store_reports_missing_snapshot(tmp_path) -> None:
 
     with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
         store.get_snapshot_by_job("rjob_missing")
+
+
+def test_report_input_snapshot_store_creates_and_lists_upstream_calls(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+    snapshot = store.create_snapshot(_request())
+
+    created = store.create_upstream_calls(
+        snapshot_id=snapshot.snapshot_id,
+        calls=[
+            ReportUpstreamCallCreateRequest(
+                service_name="lotus-core",
+                endpoint="/reporting/portfolio-summary/query",
+                method="POST",
+                contract_version="v1",
+                request_hash="sha256:req",
+                response_hash="sha256:resp",
+                response_ref=None,
+                status_code=200,
+                latency_ms=184,
+                supportability_status="complete",
+                completeness_status="complete",
+                failure_category="none",
+                failure_message=None,
+                captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+                correlation_id="corr-portfolio-review-1",
+                trace_id="trace-portfolio-review-1",
+            )
+        ],
+    )
+
+    assert created[0].snapshot_id == snapshot.snapshot_id
+    assert store.list_upstream_calls(snapshot.snapshot_id)[0].service_name == "lotus-core"
+    assert store.list_upstream_calls_by_job(snapshot.report_job_id)[0].endpoint.endswith(
+        "/portfolio-summary/query"
+    )
+
+
+def test_report_input_snapshot_store_upstream_calls_are_idempotent_by_snapshot(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+    snapshot = store.create_snapshot(_request())
+    request = ReportUpstreamCallCreateRequest(
+        service_name="lotus-risk",
+        endpoint="/analytics/risk/calculate",
+        method="POST",
+        contract_version="v1",
+        request_hash="sha256:req",
+        response_hash=None,
+        response_ref=None,
+        status_code=504,
+        latency_ms=1000,
+        supportability_status="unavailable",
+        completeness_status="unavailable",
+        failure_category="timeout",
+        failure_message="Upstream request timed out before a complete response was returned.",
+        captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+        correlation_id="corr-portfolio-review-1",
+        trace_id="trace-portfolio-review-1",
+    )
+
+    first = store.create_upstream_calls(snapshot_id=snapshot.snapshot_id, calls=[request])
+    second = store.create_upstream_calls(snapshot_id=snapshot.snapshot_id, calls=[request])
+
+    assert len(first) == 1
+    assert second == first

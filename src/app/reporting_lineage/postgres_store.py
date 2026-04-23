@@ -10,11 +10,17 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from app.reporting_lineage.models import ReportInputSnapshotCreateRequest, ReportInputSnapshotRecord
+from app.reporting_lineage.models import (
+    ReportInputSnapshotCreateRequest,
+    ReportInputSnapshotRecord,
+    ReportUpstreamCallCreateRequest,
+    ReportUpstreamCallRecord,
+)
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
     ReportInputSnapshotNotFoundError,
     _record_from_row,
+    _upstream_call_from_row,
     compute_snapshot_hash,
     utc_now,
 )
@@ -56,11 +62,11 @@ class PostgresReportInputSnapshotStore:
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
-                  AND table_name IN ('report_input_snapshot')
+                  AND table_name IN ('report_input_snapshot', 'report_upstream_call')
                 """
             ).fetchall()
         present = {str(row["table_name"]) for row in rows}
-        missing = {"report_input_snapshot"} - present
+        missing = {"report_input_snapshot", "report_upstream_call"} - present
         if missing:
             raise RuntimeError(f"report_input_snapshot_schema_missing:{','.join(sorted(missing))}")
 
@@ -142,3 +148,99 @@ class PostgresReportInputSnapshotStore:
         if not row:
             raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
         return _record_from_row(row)
+
+    def create_upstream_calls(
+        self,
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> list[ReportUpstreamCallRecord]:
+        if not calls:
+            return []
+        with self._connect() as connection:
+            snapshot_exists = connection.execute(
+                "SELECT 1 FROM report_input_snapshot WHERE snapshot_id = %s",
+                (snapshot_id,),
+            ).fetchone()
+            if not snapshot_exists:
+                raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM report_upstream_call
+                WHERE snapshot_id = %s
+                ORDER BY created_at ASC, upstream_call_id ASC
+                """,
+                (snapshot_id,),
+            ).fetchall()
+            if existing:
+                return [_upstream_call_from_row(row) for row in existing]
+
+            now = utc_now()
+            for call in calls:
+                connection.execute(
+                    """
+                    INSERT INTO report_upstream_call (
+                        upstream_call_id, snapshot_id, service_name, endpoint, method,
+                        contract_version, request_hash, response_hash, response_ref,
+                        status_code, latency_ms, supportability_status, completeness_status,
+                        failure_category, failure_message, correlation_id, trace_id,
+                        captured_at, created_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s
+                    )
+                    """,
+                    (
+                        f"ruc_{uuid4().hex}",
+                        snapshot_id,
+                        call.service_name,
+                        call.endpoint,
+                        call.method,
+                        call.contract_version,
+                        call.request_hash,
+                        call.response_hash,
+                        call.response_ref,
+                        call.status_code,
+                        call.latency_ms,
+                        call.supportability_status,
+                        call.completeness_status,
+                        call.failure_category,
+                        call.failure_message,
+                        call.correlation_id,
+                        call.trace_id,
+                        call.captured_at,
+                        now,
+                    ),
+                )
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_upstream_call
+                WHERE snapshot_id = %s
+                ORDER BY created_at ASC, upstream_call_id ASC
+                """,
+                (snapshot_id,),
+            ).fetchall()
+        return [_upstream_call_from_row(row) for row in rows]
+
+    def list_upstream_calls(self, snapshot_id: str) -> list[ReportUpstreamCallRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_upstream_call
+                WHERE snapshot_id = %s
+                ORDER BY created_at ASC, upstream_call_id ASC
+                """,
+                (snapshot_id,),
+            ).fetchall()
+        return [_upstream_call_from_row(row) for row in rows]
+
+    def list_upstream_calls_by_job(self, report_job_id: str) -> list[ReportUpstreamCallRecord]:
+        snapshot = self.get_snapshot_by_job(report_job_id)
+        return self.list_upstream_calls(snapshot.snapshot_id)
