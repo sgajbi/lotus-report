@@ -78,6 +78,24 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert status_body["correlation_id"] == "corr-report-job-1"
         assert "sqlite" not in str(status_body).lower()
 
+        list_response = client.get(
+            "/reports/jobs",
+            params={
+                "tenantId": "tenant-sg",
+                "region": "APAC",
+                "status": "accepted",
+                "portfolioId": "PB_SG_GLOBAL_BAL_001",
+                "asOfDate": "2026-04-22",
+            },
+            headers=_headers(),
+        )
+        assert list_response.status_code == 200
+        list_body = list_response.json()
+        assert list_body["count"] == 1
+        assert list_body["applied_filters"]["tenant_id"] == "tenant-sg"
+        assert list_body["items"][0]["report_job_id"] == handle["report_job_id"]
+        assert list_body["items"][0]["idempotency_key"] == _headers()["Idempotency-Key"]
+
         cancel_response = client.post(
             f"/reports/jobs/{handle['report_job_id']}/cancel",
             headers={
@@ -110,6 +128,17 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             "accepted",
             "cancelled",
         ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_list_requires_filter(tmp_path):
+    client, _ledger = _client(tmp_path)
+    try:
+        response = client.get("/reports/jobs", headers=_headers())
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "invalid_report_job_filters"
     finally:
         _clear_overrides()
 
@@ -254,22 +283,37 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     response_example = submit_post["responses"]["202"]["content"]["application/json"]["example"]
     status_get = schema["paths"]["/reports/jobs/{job_id}"]["get"]
     status_example = status_get["responses"]["200"]["content"]["application/json"]["example"]
+    list_get = schema["paths"]["/reports/jobs"]["get"]
+    list_example = list_get["responses"]["200"]["content"]["application/json"]["example"]
     events_get = schema["paths"]["/reports/jobs/{job_id}/events"]["get"]
     events_example = events_get["responses"]["200"]["content"]["application/json"]["example"]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
     assert status_example["status"] == "accepted"
+    assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
+    assert "Report Jobs" in list_get["tags"]
+    assert "what" in list_get["description"].lower() or "returns" in list_get["description"].lower()
+    assert (
+        "when" in list_get["description"].lower()
+        or "use this endpoint" in list_get["description"].lower()
+    )
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
+    assert "RFC-" not in str(list_example)
     assert "RFC-" not in str(events_example)
     for schema_name in [
         "ReportJobHandleResponse",
         "ReportJobStatusResponse",
+        "ReportJobListResponse",
+        "ReportJobListItem",
+        "ReportJobListFilters",
         "ReportJobStatusEventsResponse",
         "ReportStatusEvent",
+        "ApiErrorResponse",
+        "ApiErrorDetail",
     ]:
         properties = schema["components"]["schemas"][schema_name]["properties"]
         for property_contract in properties.values():

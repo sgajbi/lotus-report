@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from psycopg.errors import UniqueViolation
 
+from app.config import settings
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
@@ -345,6 +346,7 @@ def test_postgres_report_job_ledger_value_parsers_accept_driver_and_text_values(
 
 
 def test_report_job_ledger_service_returns_postgres_ledger() -> None:
+    settings.report_job_ledger_database_url = _database_url()
     get_report_job_ledger.cache_clear()
     try:
         ledger = get_report_job_ledger()

@@ -14,6 +14,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
+    ReportJobListFilters,
     ReportJobStatus,
     ReportStatusEvent,
 )
@@ -297,6 +298,53 @@ class ReportJobLedger:
             ).fetchall()
         return [_event_from_row(row) for row in rows]
 
+    def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    req.report_request_id,
+                    req.report_type,
+                    req.portfolio_scope_json AS request_portfolio_scope_json,
+                    req.requested_output_formats_json,
+                    req.as_of_date,
+                    req.reporting_currency,
+                    req.options_json,
+                    req.trigger_type,
+                    req.triggered_by,
+                    req.caller_application,
+                    req.tenant_id,
+                    req.region,
+                    req.booking_center_code,
+                    req.role,
+                    req.idempotency_key,
+                    req.request_hash,
+                    req.correlation_id,
+                    req.trace_id,
+                    req.created_at AS request_created_at,
+                    job.report_job_id,
+                    job.portfolio_scope_json AS job_portfolio_scope_json,
+                    job.status,
+                    job.failure_category,
+                    job.failure_message,
+                    job.current_step,
+                    job.retry_eligible,
+                    job.cancel_requested,
+                    job.created_at AS job_created_at,
+                    job.updated_at,
+                    job.started_at,
+                    job.completed_at,
+                    job.cancelled_at
+                FROM report_request req
+                JOIN report_job job ON job.report_request_id = req.report_request_id
+                ORDER BY job.created_at DESC, job.report_job_id DESC
+                LIMIT ?
+                """,
+                (filters.limit,),
+            ).fetchall()
+        records = [_record_from_row(row) for row in rows]
+        return [record for record in records if _record_matches_filters(record, filters)]
+
     def cancel_job(
         self,
         *,
@@ -501,3 +549,29 @@ def _event_from_row(row: sqlite3.Row) -> ReportStatusEvent:
         correlation_id=row["correlation_id"],
         trace_id=row["trace_id"],
     )
+
+
+def _record_matches_filters(record: ReportJobLedgerRecord, filters: ReportJobListFilters) -> bool:
+    if filters.tenant_id and record.tenant_id != filters.tenant_id:
+        return False
+    if filters.region and record.region != filters.region:
+        return False
+    if filters.status and record.status != filters.status:
+        return False
+    if filters.report_type and record.report_type != filters.report_type:
+        return False
+    if filters.portfolio_id and (
+        filters.portfolio_id not in record.portfolio_scope.get("portfolio_ids", [])
+    ):
+        return False
+    if filters.as_of_date and record.as_of_date != filters.as_of_date:
+        return False
+    if filters.idempotency_key and record.idempotency_key != filters.idempotency_key:
+        return False
+    if filters.correlation_id and record.correlation_id != filters.correlation_id:
+        return False
+    if filters.created_from and record.created_at < filters.created_from:
+        return False
+    if filters.created_to and record.created_at > filters.created_to:
+        return False
+    return True

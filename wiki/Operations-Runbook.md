@@ -9,8 +9,8 @@
 - for portfolio review evidence, verify the JSON contract, section readiness, report coverage,
   advisor-only separation, AI-readiness guardrails, and evidence lineage before treating the output
   as meeting-ready
-- for report job evidence, verify idempotency behavior, product-safe status, append-only status
-  events, and bounded cancellation before render/archive/completion
+- for report job evidence, verify idempotency behavior, operator-safe search, product-safe status,
+  append-only status events, and bounded cancellation before render/archive/completion
 
 ## Health and readiness surfaces
 
@@ -62,6 +62,10 @@ sequenceDiagram
     REPORT->>PG: insert report_request, report_job, report_status_event
     REPORT-->>GW: 202 job handle
     GW-->>WB: 202 product-safe job handle
+    WB->>GW: GET /api/v1/report-jobs?portfolioId=...
+    GW->>REPORT: GET /reports/jobs?portfolioId=...
+    REPORT->>PG: indexed support search
+    REPORT-->>GW: bounded support-safe job summaries
     WB->>GW: GET /api/v1/report-jobs/{job_id}
     GW->>REPORT: GET /reports/jobs/{job_id}
     REPORT->>PG: read current job and request context
@@ -93,7 +97,7 @@ Expected controls:
    existing job handle,
 2. a duplicate `Idempotency-Key` with a different canonical request hash returns `409
    idempotency_conflict`,
-3. status and event endpoints return product-safe diagnostics and no database internals,
+3. search, status, and event endpoints return product-safe diagnostics and no database internals,
 4. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
 5. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
@@ -182,13 +186,14 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
 ```
 
 The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
-`status_url`, and `idempotency_key`. Use `GET /api/v1/report-jobs/{job_id}` for status and
+`status_url`, and `idempotency_key`. Use `GET /api/v1/report-jobs?portfolioId=...&tenantId=...`
+for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
 `GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
 `POST /api/v1/report-jobs/{job_id}/cancel` only before render/archive/completion phases.
 
 When testing `lotus-report` directly for service-owned diagnostics, use the equivalent internal
-paths `POST /reports/portfolio-reviews`, `GET /reports/jobs/{job_id}`, `GET
-/reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel`.
+paths `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
+`GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel`.
 
 ## Key references
 

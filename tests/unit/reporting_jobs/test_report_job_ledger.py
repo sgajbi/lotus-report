@@ -1,3 +1,5 @@
+from datetime import UTC, date, datetime
+
 import pytest
 
 from app.reporting_jobs.ledger import (
@@ -6,8 +8,16 @@ from app.reporting_jobs.ledger import (
     MissingIdempotencyKeyError,
     ReportJobLedger,
     ReportJobNotFoundError,
+    _dt_from_text,
+    _dt_to_text,
+    _event_from_row,
+    _record_from_row,
 )
-from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.models import (
+    PortfolioReviewJobRequest,
+    ReportCallerContext,
+    ReportJobListFilters,
+)
 
 
 def _request(**overrides):
@@ -173,3 +183,115 @@ def test_report_job_ledger_rejects_unknown_cancel_and_missing_request_load(tmp_p
     with ledger._connect() as connection:
         with pytest.raises(ReportJobNotFoundError):
             ledger._load_by_request_id(connection, "rrq_missing")
+
+
+def test_report_job_ledger_lists_and_filters_jobs(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    accepted = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(correlation_id="corr-accepted"),
+        idempotency_key="idem-list-accepted",
+    )
+    cancelled = ledger.create_portfolio_review_job(
+        request=_request(
+            portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_BAL_002"]},
+            as_of_date="2026-04-23",
+        ),
+        caller_context=_caller(
+            tenant_id="tenant-hk",
+            region="HKG",
+            correlation_id="corr-cancelled",
+        ),
+        idempotency_key="idem-list-cancelled",
+    )
+    ledger.cancel_job(
+        job_id=cancelled.job_id,
+        actor="advisor-123",
+        correlation_id="corr-cancelled-transition",
+        trace_id="trace-cancelled-transition",
+    )
+
+    all_records = ledger.list_jobs(filters=ReportJobListFilters(limit=10))
+    assert [record.job_id for record in all_records] == [cancelled.job_id, accepted.job_id]
+
+    accepted_only = ledger.list_jobs(
+        filters=ReportJobListFilters(
+            limit=10,
+            tenant_id="tenant-sg",
+            region="APAC",
+            status="accepted",
+            report_type="portfolio_review",
+            portfolio_id="PB_SG_GLOBAL_BAL_001",
+            as_of_date=date(2026, 4, 22),
+            idempotency_key="idem-list-accepted",
+            correlation_id="corr-accepted",
+            created_from=accepted.created_at,
+            created_to=accepted.updated_at,
+        )
+    )
+    assert [record.job_id for record in accepted_only] == [accepted.job_id]
+
+    no_match = ledger.list_jobs(filters=ReportJobListFilters(limit=10, tenant_id="tenant-nowhere"))
+    assert no_match == []
+
+
+def test_report_job_ledger_helpers_round_trip_rows() -> None:
+    now = datetime(2026, 4, 23, 12, 0, tzinfo=UTC)
+    now_text = _dt_to_text(now)
+    row = {
+        "report_request_id": "rrq_123",
+        "report_job_id": "rjob_123",
+        "report_type": "portfolio_review",
+        "request_portfolio_scope_json": '{"portfolio_ids":["PB_SG_GLOBAL_BAL_001"]}',
+        "requested_output_formats_json": '["json"]',
+        "as_of_date": "2026-04-22",
+        "reporting_currency": "USD",
+        "options_json": '{"sections":["OVERVIEW"]}',
+        "trigger_type": "user",
+        "triggered_by": "advisor-123",
+        "caller_application": "lotus-gateway",
+        "tenant_id": "tenant-sg",
+        "region": "APAC",
+        "booking_center_code": "SG",
+        "role": "advisor",
+        "idempotency_key": "idem-helpers",
+        "request_hash": "hash-123",
+        "status": "accepted",
+        "failure_category": None,
+        "failure_message": None,
+        "current_step": "accepted",
+        "retry_eligible": 0,
+        "cancel_requested": 0,
+        "job_created_at": now_text,
+        "updated_at": now_text,
+        "started_at": None,
+        "completed_at": None,
+        "cancelled_at": None,
+        "correlation_id": "corr-helpers",
+        "trace_id": "trace-helpers",
+    }
+
+    record = _record_from_row(row)
+    assert record.job_id == "rjob_123"
+    assert record.portfolio_scope == {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]}
+    assert record.requested_output_formats == ["json"]
+    assert record.created_at == now
+    assert _dt_from_text(None) is None
+    assert _dt_from_text(now_text) == now
+
+    event = _event_from_row(
+        {
+            "status_event_id": "rse_123",
+            "report_job_id": "rjob_123",
+            "from_status": None,
+            "to_status": "accepted",
+            "event_type": "job_accepted",
+            "message": "accepted",
+            "actor": "advisor-123",
+            "created_at": now_text,
+            "correlation_id": "corr-helpers",
+            "trace_id": "trace-helpers",
+        }
+    )
+    assert event.created_at == now
+    assert event.to_status == "accepted"
