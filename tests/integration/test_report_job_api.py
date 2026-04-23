@@ -488,3 +488,26 @@ def test_report_job_snapshot_and_lineage_endpoints_are_support_safe(tmp_path):
         assert snapshot_lineage.json()["snapshot"]["snapshot_id"] == snapshot_id
     finally:
         _clear_overrides()
+
+
+def test_report_job_snapshot_endpoints_translate_missing_snapshot_rows(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        missing_job_snapshot = client.get("/reports/jobs/rjob_missing/snapshot", headers=_headers())
+        missing_job_lineage = client.get("/reports/jobs/rjob_missing/lineage", headers=_headers())
+        missing_snapshot = client.get("/reports/snapshots/rsnap_missing", headers=_headers())
+        missing_snapshot_lineage = client.get(
+            "/reports/snapshots/rsnap_missing/lineage",
+            headers=_headers(),
+        )
+
+        assert missing_job_snapshot.status_code == 404
+        assert missing_job_snapshot.json()["detail"]["code"] == "report_job_not_found"
+        assert missing_job_lineage.status_code == 404
+        assert missing_job_lineage.json()["detail"]["code"] == "report_job_not_found"
+        assert missing_snapshot.status_code == 404
+        assert missing_snapshot.json()["detail"]["code"] == "report_snapshot_not_found"
+        assert missing_snapshot_lineage.status_code == 404
+        assert missing_snapshot_lineage.json()["detail"]["code"] == "report_snapshot_not_found"
+    finally:
+        _clear_overrides()

@@ -98,6 +98,113 @@ def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() 
     ]
 
 
+def test_postgres_report_job_ledger_marks_collecting_data_data_ready_and_failed() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+
+    ready = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-ready-{unique_suffix}",
+    )
+    failed = ledger.create_portfolio_review_job(
+        request=request.model_copy(
+            update={"portfolio_scope": {"portfolio_ids": [f"PB_SG_GLOBAL_BAL_002_{unique_suffix}"]}}
+        ),
+        caller_context=caller_context.model_copy(
+            update={
+                "correlation_id": f"corr-pg-failed-{unique_suffix}",
+                "trace_id": f"trace-pg-failed-{unique_suffix}",
+            }
+        ),
+        idempotency_key=f"portfolio-review-pg-failed-{unique_suffix}",
+    )
+
+    collecting = ledger.mark_collecting_data(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-collect-{unique_suffix}",
+        trace_id=f"trace-pg-collect-{unique_suffix}",
+    )
+    assert collecting.status == "collecting_data"
+    assert collecting.started_at is not None
+
+    data_ready = ledger.mark_data_ready(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-data-ready-{unique_suffix}",
+        trace_id=f"trace-pg-data-ready-{unique_suffix}",
+    )
+    assert data_ready.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+    failed_record = ledger.mark_failed(
+        job_id=failed.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-mark-failed-{unique_suffix}",
+        trace_id=f"trace-pg-mark-failed-{unique_suffix}",
+        failure_category="validation_failed",
+        failure_message="Requested report inputs were not fully supported.",
+        retry_eligible=False,
+    )
+    assert failed_record.status == "failed"
+    assert failed_record.failure_category == "validation_failed"
+    assert failed_record.retry_eligible is False
+    assert [event.to_status for event in ledger.list_status_events(failed.job_id)] == [
+        "accepted",
+        "failed",
+    ]
+
+
+def test_postgres_report_job_ledger_transition_helper_branches() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-transition-{unique_suffix}",
+    )
+
+    with pytest.raises(ReportJobNotFoundError, match="report_job_not_found"):
+        ledger.mark_collecting_data(
+            job_id=f"rjob_missing_{unique_suffix}",
+            actor="advisor-123",
+            correlation_id=f"corr-pg-missing-{unique_suffix}",
+            trace_id=f"trace-pg-missing-{unique_suffix}",
+        )
+
+    data_ready = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-first-ready-{unique_suffix}",
+        trace_id=f"trace-pg-first-ready-{unique_suffix}",
+    )
+    same_status = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-second-ready-{unique_suffix}",
+        trace_id=f"trace-pg-second-ready-{unique_suffix}",
+    )
+    assert same_status == data_ready
+
+    with pytest.raises(
+        InvalidReportJobTransitionError,
+        match="report_job_invalid_transition",
+    ):
+        ledger.mark_collecting_data(
+            job_id=job.job_id,
+            actor="advisor-123",
+            correlation_id=f"corr-pg-invalid-{unique_suffix}",
+            trace_id=f"trace-pg-invalid-{unique_suffix}",
+        )
+
+
 def test_postgres_report_job_ledger_rejects_missing_idempotency_key() -> None:
     request, caller_context = _request_and_context(uuid4().hex)
 

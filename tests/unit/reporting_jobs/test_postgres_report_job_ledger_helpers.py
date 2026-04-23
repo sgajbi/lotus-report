@@ -114,6 +114,26 @@ def test_postgres_report_job_ledger_list_jobs_builds_expected_filters() -> None:
     assert connection.params[-1] == 25
 
 
+def test_postgres_report_job_ledger_list_jobs_uses_limit_only_when_filters_are_empty() -> None:
+    ledger = object.__new__(PostgresReportJobLedger)
+    connection = _Connection([_row(job_id="rjob_limit_only")])
+
+    @contextmanager
+    def _connect() -> Iterator[_Connection]:
+        yield connection
+
+    ledger._connect = _connect  # type: ignore[method-assign]
+
+    records = ledger.list_jobs(filters=ReportJobListFilters(limit=5))
+
+    assert [record.job_id for record in records] == ["rjob_limit_only"]
+    assert connection.query is not None
+    assert "req.tenant_id = %s" not in connection.query
+    assert "req.region = %s" not in connection.query
+    assert "job.status = %s" not in connection.query
+    assert connection.params == (5,)
+
+
 def test_postgres_report_job_ledger_existing_or_conflict_and_row_helpers() -> None:
     ledger = object.__new__(PostgresReportJobLedger)
     expected_record = _record_from_row(_row())

@@ -10,6 +10,10 @@ from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
     ReportInputSnapshotNotFoundError,
     ReportInputSnapshotStore,
+    _date_from_value,
+    _dt_from_text,
+    _dt_to_text,
+    _normalize_json_value,
     canonical_json_dumps,
     compute_snapshot_hash,
 )
@@ -182,3 +186,50 @@ def test_report_input_snapshot_store_normalizes_datetime_payloads(tmp_path) -> N
     assert created.snapshot_payload["captured_window"]["started_at"] == "2026-04-22T09:00:00Z"
     assert created.snapshot_payload["captured_window"]["ended_at"] == "2026-04-22T09:05:00Z"
     assert created.lineage_summary["last_source_refresh_at"] == "2026-04-22T08:59:00Z"
+
+
+def test_report_input_snapshot_store_helper_normalizers_cover_all_value_types(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+    store.create_snapshot(_request())
+
+    naive = datetime(2026, 4, 22, 9, 0, 3)
+    assert _normalize_json_value(naive) == "2026-04-22T09:00:03Z"
+    assert (
+        _normalize_json_value(datetime(2026, 4, 22, 9, 0, 3, tzinfo=UTC)) == "2026-04-22T09:00:03Z"
+    )
+    assert _normalize_json_value(_request().as_of_date) == "2026-04-22"
+    assert _normalize_json_value((1, 2, 3)) == [1, 2, 3]
+    assert _dt_to_text(None) is None
+    assert _dt_to_text(naive) == "2026-04-22T09:00:03Z"
+    assert _dt_from_text(None) is None
+    assert _date_from_value("2026-04-22").isoformat() == "2026-04-22"
+
+
+def test_report_input_snapshot_store_rejects_upstream_calls_for_missing_snapshot(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+
+    assert store.create_upstream_calls(snapshot_id="rsnap_missing", calls=[]) == []
+    with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
+        store.create_upstream_calls(
+            snapshot_id="rsnap_missing",
+            calls=[
+                ReportUpstreamCallCreateRequest(
+                    service_name="lotus-core",
+                    endpoint="/reporting/portfolio-summary/query",
+                    method="POST",
+                    contract_version="v1",
+                    request_hash="sha256:req",
+                    response_hash="sha256:resp",
+                    response_ref=None,
+                    status_code=200,
+                    latency_ms=100,
+                    supportability_status="complete",
+                    completeness_status="complete",
+                    failure_category="none",
+                    failure_message=None,
+                    captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+                    correlation_id="corr-portfolio-review-1",
+                    trace_id="trace-portfolio-review-1",
+                )
+            ],
+        )
