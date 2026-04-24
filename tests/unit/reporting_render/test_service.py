@@ -24,6 +24,8 @@ class _RenderClientSuccess:
         assert correlation_id == "corr-render"
         assert payload["report_data"]["client_name"] == "Alex Tan"
         assert payload["report_data"]["performance_periods"][0]["period"] == "YTD"
+        assert payload["report_data"]["performance_summary_table"][0]["label"] == "Year-to-date"
+        assert payload["report_data"]["performance_monthly_history"][0]["period"] == "2026-01"
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -129,8 +131,40 @@ def _seed_data_ready_job(tmp_path):
                             "net_cumulative_return": 4.1,
                             "benchmark_cumulative_return": 3.4,
                             "benchmark_relative_return": 0.7,
+                        },
+                        "1Y": {
+                            "net_cumulative_return": 7.08,
+                            "net_annualized_return": 7.08,
+                        },
+                    },
+                    "monthly_history": [
+                        {
+                            "period": "2026-01",
+                            "period_start": "2026-01-01",
+                            "period_end": "2026-01-31",
+                            "end_market_value": 5_214_639.0,
+                            "inflows": 5_841_778.0,
+                            "outflows": -5_841_749.0,
+                            "performance_value": -87_158.0,
+                            "cumulative_performance_value": -87_158.0,
+                            "twr_pct": -1.64,
+                            "cumulative_twr_pct": -1.64,
                         }
-                    }
+                    ],
+                    "annual_history": [
+                        {
+                            "period": "2025",
+                            "period_start": "2025-01-01",
+                            "period_end": "2025-12-31",
+                            "end_market_value": 5_296_856.0,
+                            "inflows": 80_000.0,
+                            "outflows": -20_000.0,
+                            "performance_value": 226_856.0,
+                            "cumulative_performance_value": 226_856.0,
+                            "twr_pct": 4.5,
+                            "cumulative_twr_pct": 12.0,
+                        }
+                    ],
                 },
                 "riskAnalytics": {
                     "summary": {

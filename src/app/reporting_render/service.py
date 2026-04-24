@@ -220,6 +220,17 @@ def _build_render_package(
         },
         "allocation_breakdowns": _allocation_breakdowns(snapshot),
         "performance_periods": _performance_periods(snapshot),
+        "performance_summary_table": _performance_summary_table(snapshot),
+        "performance_monthly_history": _performance_history(
+            snapshot,
+            "monthly_history",
+            limit=12,
+        ),
+        "performance_annual_history": _performance_history(
+            snapshot,
+            "annual_history",
+            limit=8,
+        ),
         "performance_highlight": {
             "largest_positive_contributor_name": _holding_name(
                 _as_dict(performance.get("largest_positive_contributor"))
@@ -422,6 +433,62 @@ def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
     return periods
+
+
+def _performance_summary_table(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    summary = _as_dict(_as_dict(snapshot.get("performance")).get("summary"))
+    rows: list[dict[str, str]] = []
+    for label, period_code in (
+        ("Current month", "1M"),
+        ("Current quarter", "3M"),
+        ("Year-to-date", "YTD"),
+        ("Last 12 months", "1Y"),
+        ("Since inception", "SI"),
+    ):
+        period_summary = _as_dict(summary.get(period_code))
+        if not period_summary:
+            continue
+        rows.append(
+            {
+                "label": label,
+                "period": period_code,
+                "net_return_pct": _percent_text(period_summary.get("net_cumulative_return")),
+                "annualized_return_pct": _percent_text(period_summary.get("net_annualized_return")),
+            }
+        )
+    return rows
+
+
+def _performance_history(
+    snapshot: dict[str, Any],
+    key: str,
+    *,
+    limit: int,
+) -> list[dict[str, str]]:
+    rows = _as_dict(snapshot.get("performance")).get(key)
+    if not isinstance(rows, list):
+        return []
+    normalized: list[dict[str, str]] = []
+    for item in rows[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "period": _optional_str(item.get("period")) or "Not available",
+                "period_start": _optional_str(item.get("period_start")) or "Not available",
+                "period_end": _optional_str(item.get("period_end")) or "Not available",
+                "final_value": _decimal_text(item.get("end_market_value")),
+                "inflows": _decimal_text(item.get("inflows")),
+                "outflows": _decimal_text(item.get("outflows")),
+                "performance_value": _decimal_text(item.get("performance_value")),
+                "cumulative_performance_value": _decimal_text(
+                    item.get("cumulative_performance_value")
+                ),
+                "twr_pct": _percent_text(item.get("twr_pct")),
+                "cumulative_twr_pct": _percent_text(item.get("cumulative_twr_pct")),
+            }
+        )
+    return normalized
 
 
 def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
