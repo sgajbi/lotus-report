@@ -149,13 +149,53 @@ def _seed_data_ready_job(tmp_path):
                             {
                                 "security_id": "EQ-1",
                                 "instrument_name": "Global Equity Sleeve",
+                                "isin": "US0000000001",
+                                "quantity": 2200.0,
+                                "position_date": "2026-04-22",
+                                "product_type": "Fund",
+                                "sector": "Technology",
+                                "country_of_risk": "United States",
+                                "rating": "A",
+                                "liquidity_tier": "High",
+                                "held_since_date": "2024-01-15",
+                                "market_price": 102.35,
+                                "cost_basis_reporting_currency": 500000.0,
                                 "weight": 60.0,
                                 "market_value_reporting_currency": 600000.0,
                                 "unrealized_pnl_reporting_currency": 100000.0,
+                                "unrealized_pnl_pct": 20.0,
                                 "ytd_contribution_pct": 3.5,
+                                "ytd_average_weight_pct": 55.0,
+                                "ytd_total_return_pct": 8.4,
+                                "currency": "USD",
                             }
                         ]
                     }
+                },
+                "transactions": {
+                    "transactionsByCategory": {
+                        "Trading": [
+                            {
+                                "transaction_id": "TXN-1",
+                                "transaction_date": "2026-04-18",
+                                "transaction_type": "SELL",
+                                "instrument_id": "INST-1",
+                                "security_id": "EQ-1",
+                                "transaction_category": "Trading",
+                                "display_label": "Sell",
+                                "cash_leg": False,
+                                "asset_class": "Equity",
+                                "amount_reporting_currency": 25000.0,
+                                "gross_transaction_amount_reporting_currency": 25000.0,
+                                "realized_pnl_reporting_currency": 1250.0,
+                                "realized_pnl_local": 1250.0,
+                                "net_interest_amount_reporting_currency": 0.0,
+                                "withholding_tax_amount_reporting_currency": 0.0,
+                                "income_or_tax_reporting_currency": 0.0,
+                            }
+                        ]
+                    },
+                    "transactionCount": 1,
                 },
                 "reviewObservations": [
                     {
@@ -357,6 +397,88 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
                 "mandate_profile": {"risk_exposure": "balanced"},
             },
             "overview": {"currency": "USD", "total_market_value": "1000.50"},
+            "allocation": {
+                "byAssetClass": [
+                    {
+                        "group": "Equity",
+                        "weight": 60.0,
+                        "market_value": 600000.0,
+                        "position_count": 3,
+                    },
+                    {
+                        "group": "Fixed Income",
+                        "weight": 35.0,
+                        "market_value": 350000.0,
+                        "position_count": 2,
+                    },
+                ],
+                "byCurrency": [
+                    {
+                        "group": "USD",
+                        "weight": 95.0,
+                        "market_value": 950000.0,
+                        "position_count": 5,
+                    },
+                    {
+                        "group": "SGD",
+                        "weight": 5.0,
+                        "market_value": 50000.0,
+                        "position_count": 1,
+                    },
+                ],
+                "byRegion": [
+                    {
+                        "group": "North America",
+                        "weight": 62.0,
+                        "market_value": 620000.0,
+                        "position_count": 4,
+                    },
+                    {
+                        "group": "Asia",
+                        "weight": 18.0,
+                        "market_value": 180000.0,
+                        "position_count": 1,
+                    },
+                ],
+                "bySector": [
+                    {
+                        "group": "Technology",
+                        "weight": 30.0,
+                        "market_value": 300000.0,
+                        "position_count": 2,
+                    },
+                    {
+                        "group": "Healthcare",
+                        "weight": 15.0,
+                        "market_value": 150000.0,
+                        "position_count": 1,
+                    },
+                ],
+                "byCountry": [
+                    {
+                        "group": "United States",
+                        "weight": 55.0,
+                        "market_value": 550000.0,
+                        "position_count": 3,
+                    }
+                ],
+                "byProductType": [
+                    {
+                        "group": "Fund",
+                        "weight": 95.0,
+                        "market_value": 950000.0,
+                        "position_count": 5,
+                    }
+                ],
+                "byRating": [
+                    {
+                        "group": "A",
+                        "weight": 40.0,
+                        "market_value": 400000.0,
+                        "position_count": 2,
+                    }
+                ],
+            },
             "performance": {
                 "summary": {
                     "YTD": {
@@ -383,13 +505,53 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
                         {
                             "security_id": "EQ-1",
                             "instrument_name": "Equity 1",
+                            "isin": "US0000000001",
+                            "quantity": 2200.0,
+                            "position_date": "2026-04-22",
+                            "product_type": "Fund",
+                            "sector": "Technology",
+                            "country_of_risk": "United States",
+                            "rating": "A",
+                            "liquidity_tier": "High",
+                            "held_since_date": "2024-01-15",
+                            "market_price": 102.35,
+                            "cost_basis_reporting_currency": 500000.0,
                             "weight": 60.0,
                             "market_value_reporting_currency": 600000.0,
                             "unrealized_pnl_reporting_currency": 100000.0,
+                            "unrealized_pnl_pct": 20.0,
                             "ytd_contribution_pct": 3.5,
+                            "ytd_average_weight_pct": 55.0,
+                            "ytd_total_return_pct": 8.4,
+                            "currency": "USD",
                         }
                     ]
                 }
+            },
+            "transactions": {
+                "transactionsByCategory": {
+                    "Trading": [
+                        {
+                            "transaction_id": "TXN-1",
+                            "transaction_date": "2026-04-18",
+                            "transaction_type": "SELL",
+                            "instrument_id": "INST-1",
+                            "security_id": "EQ-1",
+                            "transaction_category": "Trading",
+                            "display_label": "Sell",
+                            "cash_leg": False,
+                            "asset_class": "Equity",
+                            "amount_reporting_currency": 25000.0,
+                            "gross_transaction_amount_reporting_currency": 25000.0,
+                            "realized_pnl_reporting_currency": 1250.0,
+                            "realized_pnl_local": 1250.0,
+                            "net_interest_amount_reporting_currency": 0.0,
+                            "withholding_tax_amount_reporting_currency": 0.0,
+                            "income_or_tax_reporting_currency": 0.0,
+                        }
+                    ]
+                },
+                "transactionCount": 1,
             },
             "reviewObservations": [
                 {"summary": "Risk posture remained within the balanced mandate range."}
@@ -458,6 +620,88 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
         "largest_asset_class_market_value": "600000.00",
         "largest_asset_class_position_count": 3,
     }
+    assert report_data["allocation_breakdowns"] == {
+        "by_asset_class": [
+            {
+                "name": "Equity",
+                "weight_pct": "60.00%",
+                "market_value": "600000.00",
+                "position_count": 3,
+            },
+            {
+                "name": "Fixed Income",
+                "weight_pct": "35.00%",
+                "market_value": "350000.00",
+                "position_count": 2,
+            },
+        ],
+        "by_currency": [
+            {
+                "name": "USD",
+                "weight_pct": "95.00%",
+                "market_value": "950000.00",
+                "position_count": 5,
+            },
+            {
+                "name": "SGD",
+                "weight_pct": "5.00%",
+                "market_value": "50000.00",
+                "position_count": 1,
+            },
+        ],
+        "by_region": [
+            {
+                "name": "North America",
+                "weight_pct": "62.00%",
+                "market_value": "620000.00",
+                "position_count": 4,
+            },
+            {
+                "name": "Asia",
+                "weight_pct": "18.00%",
+                "market_value": "180000.00",
+                "position_count": 1,
+            },
+        ],
+        "by_sector": [
+            {
+                "name": "Technology",
+                "weight_pct": "30.00%",
+                "market_value": "300000.00",
+                "position_count": 2,
+            },
+            {
+                "name": "Healthcare",
+                "weight_pct": "15.00%",
+                "market_value": "150000.00",
+                "position_count": 1,
+            },
+        ],
+        "by_country": [
+            {
+                "name": "United States",
+                "weight_pct": "55.00%",
+                "market_value": "550000.00",
+                "position_count": 3,
+            }
+        ],
+        "by_product_type": [
+            {
+                "name": "Fund",
+                "weight_pct": "95.00%",
+                "market_value": "950000.00",
+                "position_count": 5,
+            }
+        ],
+        "by_rating": [
+            {
+                "name": "A",
+                "weight_pct": "40.00%",
+                "market_value": "400000.00",
+                "position_count": 2,
+            }
+        ],
+    }
     assert report_data["performance_periods"] == [
         {
             "period": "YTD",
@@ -466,6 +710,7 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
             "relative_return_pct": "0.70%",
         }
     ]
+    assert report_data["transaction_period_label"] == "From 01.01.2026 to 22.04.2026"
     assert report_data["risk_summary"] == {
         "volatility_pct": "12.00%",
         "beta": "0.82",
@@ -478,9 +723,47 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
             "asset_class": "Equity",
             "security_name": "Equity 1",
             "weight_pct": "60.00%",
+            "quantity": "2200.00",
+            "currency": "USD",
+            "security_id": "EQ-1",
+            "instrument_name": "Equity 1",
+            "isin": "US0000000001",
+            "position_date": "2026-04-22",
+            "product_type": "Fund",
+            "sector": "Technology",
+            "country_of_risk": "United States",
+            "rating": "A",
+            "liquidity_tier": "High",
+            "held_since_date": "2024-01-15",
+            "market_price": "102.35",
+            "cost_basis_reporting_currency": "500000.00",
             "market_value": "600000.00",
             "unrealized_pnl": "100000.00",
+            "unrealized_pnl_pct": "20.00%",
             "ytd_contribution_pct": "3.50%",
+            "ytd_average_weight_pct": "55.00%",
+            "ytd_total_return_pct": "8.40%",
+        }
+    ]
+    assert report_data["transactions"] == [
+        {
+            "category": "Trading",
+            "asset_class": "Equity",
+            "transaction_category": "Trading",
+            "display_label": "Sell",
+            "cash_leg": "No",
+            "transaction_id": "TXN-1",
+            "trade_date": "2026-04-18",
+            "transaction_type": "SELL",
+            "instrument_id": "INST-1",
+            "security_id": "EQ-1",
+            "amount": "25000.00",
+            "gross_amount_reporting_currency": "25000.00",
+            "realized_pnl_reporting_currency": "1250.00",
+            "realized_pnl_local": "1250.00",
+            "net_interest_amount_reporting_currency": "0.00",
+            "withholding_tax_amount_reporting_currency": "0.00",
+            "income_or_tax_reporting_currency": "0.00",
         }
     ]
     assert report_data["governance_summary"] == {
