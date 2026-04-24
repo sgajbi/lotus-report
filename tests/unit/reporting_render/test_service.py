@@ -737,14 +737,18 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
             "held_since_date": "2024-01-15",
             "market_price": "102.35",
             "cost_basis_reporting_currency": "500000.00",
+            "cost_basis_local": "Not available",
             "market_value": "600000.00",
+            "market_value_local": "Not available",
             "unrealized_pnl": "100000.00",
+            "unrealized_pnl_local": "Not available",
             "unrealized_pnl_pct": "20.00%",
             "ytd_contribution_pct": "3.50%",
             "ytd_average_weight_pct": "55.00%",
             "ytd_total_return_pct": "8.40%",
         }
     ]
+    assert report_data["positions"] == report_data["top_holdings"]
     assert report_data["transactions"] == [
         {
             "category": "Trading",

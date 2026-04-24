@@ -274,6 +274,7 @@ def _build_render_package(
             ),
         },
         "top_holdings": _top_holdings(snapshot),
+        "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
         "governance_summary": {
             "source_services": [
@@ -423,7 +424,7 @@ def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     return periods
 
 
-def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     grouped_holdings = _as_dict(snapshot.get("holdings")).get("holdingsByAssetClass")
     if not isinstance(grouped_holdings, dict):
         return []
@@ -458,8 +459,11 @@ def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                     "cost_basis_reporting_currency": _decimal_text(
                         item.get("cost_basis_reporting_currency")
                     ),
+                    "cost_basis_local": _decimal_text(item.get("cost_basis_local")),
                     "market_value": _decimal_text(item.get("market_value_reporting_currency")),
+                    "market_value_local": _decimal_text(item.get("market_value_local")),
                     "unrealized_pnl": _decimal_text(item.get("unrealized_pnl_reporting_currency")),
+                    "unrealized_pnl_local": _decimal_text(item.get("unrealized_pnl_local")),
                     "unrealized_pnl_pct": _percent_text(item.get("unrealized_pnl_pct")),
                     "ytd_contribution_pct": _percent_text(item.get("ytd_contribution_pct")),
                     "ytd_average_weight_pct": _percent_text(item.get("ytd_average_weight_pct")),
@@ -469,9 +473,9 @@ def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                 }
             )
     flattened.sort(key=lambda item: item["_sort_value"], reverse=True)
-    top_holdings: list[dict[str, str]] = []
-    for item in flattened[:5]:
-        top_holdings.append(
+    positions: list[dict[str, str]] = []
+    for item in flattened:
+        positions.append(
             {
                 "asset_class": item["asset_class"],
                 "security_name": item["security_name"],
@@ -490,15 +494,22 @@ def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                 "held_since_date": item["held_since_date"],
                 "market_price": item["market_price"],
                 "cost_basis_reporting_currency": item["cost_basis_reporting_currency"],
+                "cost_basis_local": item["cost_basis_local"],
                 "market_value": item["market_value"],
+                "market_value_local": item["market_value_local"],
                 "unrealized_pnl": item["unrealized_pnl"],
+                "unrealized_pnl_local": item["unrealized_pnl_local"],
                 "unrealized_pnl_pct": item["unrealized_pnl_pct"],
                 "ytd_contribution_pct": item["ytd_contribution_pct"],
                 "ytd_average_weight_pct": item["ytd_average_weight_pct"],
                 "ytd_total_return_pct": item["ytd_total_return_pct"],
             }
         )
-    return top_holdings
+    return positions
+
+
+def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    return _positions(snapshot)[:5]
 
 
 def _transactions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
