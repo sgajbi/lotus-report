@@ -7,8 +7,7 @@ from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerCon
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render import service as render_service
-from app.reporting_render.service import (
-    PortfolioReviewRenderOrchestrationService,
+from app.reporting_render.package_builder import (
     _build_render_package,
     _holding_observation,
     _optional_decimal,
@@ -16,6 +15,9 @@ from app.reporting_render.service import (
     _optional_str,
     _performance_observation,
     _risk_observation,
+)
+from app.reporting_render.service import (
+    PortfolioReviewRenderOrchestrationService,
 )
 
 
