@@ -83,8 +83,10 @@ Primary areas:
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
 10. `src/app/reporting_render/`
-    render-package composition and lotus-render orchestration for PDF-capable report jobs,
-    including persisted render metadata and render failure mapping.
+    render-package composition and lotus-render orchestration for PDF-capable report jobs.
+    `package_builder.py` owns the source-backed portfolio-review render package contract, while
+    `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
+    and render failure mapping.
 
 ## Runtime And Integration Boundaries
 
