@@ -336,6 +336,36 @@ def test_report_job_ledger_marks_rendering_and_completed(tmp_path):
     assert completed.render_artifact_sha256 == "sha256:artifact"
     assert completed.completed_at is not None
 
+    archiving = ledger.mark_archiving(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id="corr-archive-start",
+        trace_id="trace-archive-start",
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+    )
+    assert archiving.status == "archiving"
+    assert archiving.archive_request_id == f"arch_rdr_{ready.job_id}_pdf"
+
+    archived = ledger.mark_archived(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id="corr-archive-complete",
+        trace_id="trace-archive-complete",
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+        archive_document_id="doc_123",
+    )
+    assert archived.status == "archived"
+    assert archived.archive_document_id == "doc_123"
+    assert archived.archive_completed_at is not None
+    assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
+        "accepted",
+        "data_ready",
+        "rendering",
+        "completed",
+        "archiving",
+        "archived",
+    ]
+
 
 def test_report_job_ledger_transition_helper_handles_not_found_same_status_and_invalid_path(
     tmp_path,

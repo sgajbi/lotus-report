@@ -37,6 +37,8 @@ It depends on:
   risk analytics derived from reporting review flows
 - `lotus-render`
   deterministic PDF rendering for governed report packages
+- `lotus-archive`
+  rendered document archival after successful PDF render completion
 - `lotus-gateway`
   primary product-facing consumer for front-office reporting workflows
 
@@ -62,8 +64,10 @@ Boundary rules that matter:
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` provide the
    durable job-ledger foundation for gateway-first report initiation, operator-safe job search,
    product-safe status, append-only event history, database-backed idempotency, immutable snapshot
-   and lineage capture, lotus-render submission for PDF output, and bounded cancellation before the
-   job reaches `rendering`. Archive and retention workflows remain out of scope.
+   and lineage capture, lotus-render submission for PDF output, `lotus-archive` handoff after
+   successful render completion, and bounded cancellation before the job reaches `rendering`.
+   Archive retrieval, retention execution, legal hold, purge, and document distribution remain owned
+   by `lotus-archive`.
 5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 6. Request conventions are governed by the Lotus API vocabulary standard. Public query,
@@ -149,7 +153,7 @@ Key code areas:
   durable report request/job/status-event ledger, idempotency, render metadata, and bounded
   cancellation
 - `src/app/reporting_render/`
-  governed render-package assembly and lotus-render orchestration
+  governed render-package assembly, lotus-render orchestration, and post-render archive handoff
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
@@ -271,6 +275,7 @@ Cross-app upstream defaults in local runtime:
 - `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
 - `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
+- `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
 - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
 
 When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
@@ -279,6 +284,7 @@ container uses host-reachable upstream URLs instead:
 - `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
 - `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
 - `RISK_BASE_URL=http://host.docker.internal:8130`
+- `LOTUS_ARCHIVE_BASE_URL=http://host.docker.internal:8150`
 - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report`
 
 This keeps `report.dev.lotus` stable for callers while allowing the containerized report service to

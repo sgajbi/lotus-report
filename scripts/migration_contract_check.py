@@ -25,6 +25,9 @@ REQUIRED_PHRASES = (
     "report_status_event",
     "report_input_snapshot",
     "report_upstream_call",
+    "archive_request_id",
+    "archive_document_id",
+    "archive_completed_at",
 )
 
 
@@ -97,6 +100,7 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_job_created',
                   'idx_report_job_completed',
                   'idx_report_job_request',
+                  'idx_report_job_archive_document',
                   'idx_report_status_event_job_created',
                   'idx_report_input_snapshot_created',
                   'idx_report_input_snapshot_supportability',
@@ -118,6 +122,7 @@ def run_ledger_schema_checks() -> int:
             "idx_report_job_created",
             "idx_report_job_completed",
             "idx_report_job_request",
+            "idx_report_job_archive_document",
             "idx_report_status_event_job_created",
             "idx_report_input_snapshot_created",
             "idx_report_input_snapshot_supportability",
@@ -171,6 +176,10 @@ def run_ledger_schema_checks() -> int:
             "timeout",
             "cancelled",
             "operator_intervention_required",
+            "archive_validation_failed",
+            "archive_conflict",
+            "archive_storage_failed",
+            "archive_execution_failed",
         ):
             if category not in failure_category_constraint:
                 print(
@@ -178,6 +187,52 @@ def run_ledger_schema_checks() -> int:
                     f"is missing {category}."
                 )
                 return 1
+
+        status_rows = connection.execute(
+            """
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid = 'report_job'::regclass
+              AND conname = 'report_job_status_check'
+            """
+        ).fetchall()
+        if not status_rows:
+            print("Ledger schema smoke failed: report job status check constraint is missing.")
+            return 1
+        status_constraint = str(status_rows[0][0])
+        for status in ("archiving", "archived"):
+            if status not in status_constraint:
+                print(
+                    "Ledger schema smoke failed: report job status check constraint "
+                    f"is missing {status}."
+                )
+                return 1
+
+        archive_column_rows = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'report_job'
+              AND column_name IN (
+                  'archive_request_id',
+                  'archive_document_id',
+                  'archive_completed_at'
+              )
+            """
+        ).fetchall()
+        archive_columns = {row[0] for row in archive_column_rows}
+        missing_archive_columns = {
+            "archive_request_id",
+            "archive_document_id",
+            "archive_completed_at",
+        } - archive_columns
+        if missing_archive_columns:
+            print(
+                "Ledger schema smoke failed: missing archive columns "
+                f"{sorted(missing_archive_columns)}"
+            )
+            return 1
 
         snapshot_constraint_rows = connection.execute(
             """

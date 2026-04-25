@@ -38,6 +38,22 @@ class _RenderClientSuccess:
             "runtime_engine": "typst",
             "runtime_engine_version": "0.14.2",
             "render_duration_ms": 812,
+            "artifact_base64": "JVBERi0xLjQKJQ==",
+        }
+
+
+class _RenderClientSuccessWithoutArtifact:
+    async def submit_render_package(self, payload, correlation_id=None):
+        return 201, {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
         }
 
 
@@ -64,6 +80,47 @@ class _RenderClientConflict:
 class _RenderClientServerError:
     async def submit_render_package(self, payload, correlation_id=None):
         return 503, {"failure_message": "lotus-render unavailable"}
+
+
+class _ArchiveClientSuccess:
+    def __init__(self):
+        self.payloads = []
+
+    async def archive_document(self, payload, **kwargs):
+        self.payloads.append((payload, kwargs))
+        assert kwargs["actor_id"] == "advisor-123"
+        assert kwargs["tenant_id"] == "tenant-sg"
+        assert kwargs["region"] == "APAC"
+        assert payload["metadata"]["report_job_id"].startswith("rjob_")
+        assert payload["metadata"]["snapshot_id"].startswith("rsnap_")
+        assert payload["metadata"]["render_job_id"].startswith("rdr_")
+        assert payload["metadata"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+        assert payload["metadata"]["portfolio_scope"] == (
+            '{"portfolio_ids":["PB_SG_GLOBAL_BAL_001"]}'
+        )
+        assert payload["metadata"]["classification"] == "confidential"
+        assert payload["content_base64"] == "JVBERi0xLjQKJQ=="
+        return 201, {"document_id": "doc_archived"}
+
+
+class _ArchiveClientValidationFailure:
+    async def archive_document(self, payload, **kwargs):
+        return 422, {
+            "detail": {
+                "code": "archive_metadata_invalid",
+                "message": "Archive metadata was invalid.",
+            }
+        }
+
+
+class _ArchiveClientStorageFailure:
+    async def archive_document(self, payload, **kwargs):
+        return 503, {"detail": "archive storage unavailable"}
+
+
+class _ArchiveClientExecutionFailure:
+    async def archive_document(self, payload, **kwargs):
+        return 500, {"detail": "archive execution failed"}
 
 
 def _job_request(**overrides):
@@ -291,24 +348,32 @@ def _seed_data_ready_job(tmp_path):
 @pytest.mark.asyncio
 async def test_render_orchestration_marks_job_completed(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
+    archive_client = _ArchiveClientSuccess()
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientSuccess(),
+        archive_client=archive_client,
         snapshot_store=store,
         job_ledger=ledger,
     )
 
     completed = await service.render_for_job(ready)
 
-    assert completed.status == "completed"
+    assert completed.status == "archived"
     assert completed.render_job_id == f"rdr_{ready.job_id}_pdf"
     assert completed.render_artifact_sha256 == "sha256:artifact"
     assert completed.render_runtime_engine == "typst"
     assert completed.render_duration_ms == 812
+    assert completed.archive_request_id == f"arch_rdr_{ready.job_id}_pdf"
+    assert completed.archive_document_id == "doc_archived"
+    assert completed.archive_completed_at is not None
+    assert archive_client.payloads
     assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
         "accepted",
         "data_ready",
         "rendering",
         "completed",
+        "archiving",
+        "archived",
     ]
 
 
@@ -317,6 +382,7 @@ async def test_render_orchestration_marks_validation_failure(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientFailure(),
+        archive_client=_ArchiveClientSuccess(),
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -339,6 +405,7 @@ async def test_render_orchestration_skips_non_pdf_requests(tmp_path):
     )
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientSuccess(),
+        archive_client=_ArchiveClientSuccess(),
         snapshot_store=object(),
         job_ledger=ledger,
     )
@@ -354,6 +421,7 @@ async def test_render_orchestration_marks_conflict_failure(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientConflict(),
+        archive_client=_ArchiveClientSuccess(),
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -370,6 +438,7 @@ async def test_render_orchestration_marks_retryable_execution_failure(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientServerError(),
+        archive_client=_ArchiveClientSuccess(),
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -380,6 +449,92 @@ async def test_render_orchestration_marks_retryable_execution_failure(tmp_path):
     assert failed.failure_category == "render_execution_failed"
     assert failed.failure_message == "lotus-render unavailable"
     assert failed.retry_eligible is True
+
+
+@pytest.mark.asyncio
+async def test_render_orchestration_marks_missing_artifact_as_archive_validation_failure(
+    tmp_path,
+):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccessWithoutArtifact(),
+        archive_client=_ArchiveClientSuccess(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_validation_failed"
+    assert failed.retry_eligible is False
+    assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
+        "accepted",
+        "data_ready",
+        "rendering",
+        "completed",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_render_orchestration_maps_archive_validation_failure(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccess(),
+        archive_client=_ArchiveClientValidationFailure(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_validation_failed"
+    assert failed.failure_message == "Archive metadata was invalid."
+    assert failed.retry_eligible is False
+
+
+@pytest.mark.asyncio
+async def test_render_orchestration_maps_archive_storage_failure_as_retryable(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccess(),
+        archive_client=_ArchiveClientStorageFailure(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_storage_failed"
+    assert failed.retry_eligible is True
+
+
+@pytest.mark.asyncio
+async def test_render_orchestration_maps_archive_service_failure(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccess(),
+        archive_client=_ArchiveClientExecutionFailure(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_execution_failed"
+    assert failed.retry_eligible is False
+    assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
+        "accepted",
+        "data_ready",
+        "rendering",
+        "completed",
+        "archiving",
+        "failed",
+    ]
 
 
 def test_build_render_package_uses_fallback_values_for_sparse_snapshot(tmp_path):
@@ -834,10 +989,16 @@ def test_render_service_helpers_cover_fallback_branches(monkeypatch):
         pass
 
     sentinel_client = _SentinelClient()
+    sentinel_archive_client = object()
     sentinel_store = object()
     sentinel_ledger = object()
 
     monkeypatch.setattr(render_service, "RenderClient", lambda **kwargs: sentinel_client)
+    monkeypatch.setattr(
+        render_service,
+        "ArchiveClient",
+        lambda **kwargs: sentinel_archive_client,
+    )
     monkeypatch.setattr(render_service, "get_report_input_snapshot_store", lambda: sentinel_store)
     monkeypatch.setattr(render_service, "get_report_job_ledger", lambda: sentinel_ledger)
     render_service.get_portfolio_review_render_orchestration_service.cache_clear()
@@ -847,5 +1008,6 @@ def test_render_service_helpers_cover_fallback_branches(monkeypatch):
         render_service.get_portfolio_review_render_orchestration_service.cache_clear()
 
     assert service._render_client is sentinel_client
+    assert service._archive_client is sentinel_archive_client
     assert service._snapshot_store is sentinel_store
     assert service._job_ledger is sentinel_ledger

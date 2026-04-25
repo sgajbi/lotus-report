@@ -10,6 +10,8 @@ ReportJobStatus = Literal[
     "data_ready",
     "rendering",
     "completed",
+    "archiving",
+    "archived",
     "completed_with_warnings",
     "failed",
     "cancelled",
@@ -23,6 +25,10 @@ ReportFailureCategory = Literal[
     "render_validation_failed",
     "render_conflict",
     "render_execution_failed",
+    "archive_validation_failed",
+    "archive_conflict",
+    "archive_storage_failed",
+    "archive_execution_failed",
     "timeout",
     "cancelled",
     "operator_intervention_required",
@@ -80,7 +86,7 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_HANDLE_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
-    "status": "completed",
+    "status": "archived",
     "status_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5",
     "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
 }
@@ -91,10 +97,10 @@ REPORT_JOB_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_type": "portfolio_review",
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
-    "status": "completed",
+    "status": "archived",
     "failure_category": None,
     "failure_message": None,
-    "current_step": "completed",
+    "current_step": "archived",
     "retry_eligible": False,
     "cancel_requested": False,
     "created_at": "2026-04-22T09:00:00Z",
@@ -114,6 +120,11 @@ REPORT_JOB_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
         "runtime_engine": "typst",
         "runtime_engine_version": "0.14.2",
         "render_duration_ms": 812,
+    },
+    "archive": {
+        "archive_request_id": "arch_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+        "document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+        "completed_at": "2026-04-22T09:00:04Z",
     },
 }
 
@@ -139,7 +150,7 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
-    "status": "completed",
+    "status": "archived",
     "report_type": "portfolio_review",
     "portfolio_id": "PB_SG_GLOBAL_BAL_001",
     "as_of_date": "2026-04-22",
@@ -162,9 +173,9 @@ REPORT_JOB_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
             "region": "APAC",
             "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
             "as_of_date": "2026-04-22",
-            "status": "completed",
+            "status": "archived",
             "failure_category": None,
-            "current_step": "completed",
+            "current_step": "archived",
             "retry_eligible": False,
             "cancel_requested": False,
             "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
@@ -181,6 +192,11 @@ REPORT_JOB_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
                 "runtime_engine": "typst",
                 "runtime_engine_version": "0.14.2",
                 "render_duration_ms": 812,
+            },
+            "archive": {
+                "archive_request_id": "arch_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+                "document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+                "completed_at": "2026-04-22T09:00:04Z",
             },
         }
     ],
@@ -388,6 +404,24 @@ class ReportJobRenderInfo(BaseModel):
     )
 
 
+class ReportJobArchiveInfo(BaseModel):
+    archive_request_id: str | None = Field(
+        default=None,
+        description="Idempotent archive request identifier used for the rendered document.",
+        examples=["arch_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf"],
+    )
+    document_id: str | None = Field(
+        default=None,
+        description="Archived document identifier returned by lotus-archive.",
+        examples=["doc_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when lotus-archive confirmed document archival.",
+        examples=["2026-04-22T09:00:04Z"],
+    )
+
+
 class ReportJobStatusResponse(BaseModel):
     report_job_id: str = Field(
         ...,
@@ -477,6 +511,10 @@ class ReportJobStatusResponse(BaseModel):
     render: ReportJobRenderInfo | None = Field(
         default=None,
         description="Support-safe render metadata when a rendered artifact was requested.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Support-safe archive metadata when the rendered artifact was archived.",
     )
 
 
@@ -689,6 +727,10 @@ class ReportJobListItem(BaseModel):
         default=None,
         description="Support-safe render summary when a rendered artifact was requested.",
     )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Support-safe archive summary when the rendered artifact was archived.",
+    )
 
 
 class ReportJobListResponse(BaseModel):
@@ -749,3 +791,6 @@ class ReportJobLedgerRecord(BaseModel):
     render_runtime_engine: str | None = None
     render_runtime_engine_version: str | None = None
     render_duration_ms: int | None = None
+    archive_request_id: str | None = None
+    archive_document_id: str | None = None
+    archive_completed_at: datetime | None = None

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import json
+from datetime import date
 from functools import lru_cache
 from typing import Any, Protocol
 
+from app.clients.archive_client import ArchiveClient
 from app.clients.render_client import RenderClient
 from app.config import settings
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
-from app.reporting_render.package_builder import _build_render_package, _optional_int, _optional_str
+from app.reporting_render.package_builder import (
+    _as_dict,
+    _build_render_package,
+    _optional_int,
+    _optional_str,
+)
 
 
 class RenderSnapshotStore(Protocol):
@@ -47,6 +55,27 @@ class RenderJobLedger(Protocol):
         render_duration_ms: int | None,
     ) -> ReportJobLedgerRecord: ...
 
+    def mark_archiving(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_request_id: str,
+    ) -> ReportJobLedgerRecord: ...
+
+    def mark_archived(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_request_id: str,
+        archive_document_id: str,
+    ) -> ReportJobLedgerRecord: ...
+
     def mark_failed(
         self,
         *,
@@ -60,15 +89,32 @@ class RenderJobLedger(Protocol):
     ) -> ReportJobLedgerRecord: ...
 
 
+class RenderArchiveClient(Protocol):
+    async def archive_document(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]: ...
+
+
 class PortfolioReviewRenderOrchestrationService:
     def __init__(
         self,
         *,
         render_client: RenderClient,
+        archive_client: RenderArchiveClient,
         snapshot_store: RenderSnapshotStore,
         job_ledger: RenderJobLedger,
     ) -> None:
         self._render_client = render_client
+        self._archive_client = archive_client
         self._snapshot_store = snapshot_store
         self._job_ledger = job_ledger
 
@@ -105,7 +151,7 @@ class PortfolioReviewRenderOrchestrationService:
             correlation_id=job.correlation_id,
         )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
-            return self._job_ledger.mark_completed(
+            rendered = self._job_ledger.mark_completed(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
@@ -123,6 +169,11 @@ class PortfolioReviewRenderOrchestrationService:
                     response_payload.get("runtime_engine_version")
                 ),
                 render_duration_ms=_optional_int(response_payload.get("render_duration_ms")),
+            )
+            return await self._archive_rendered_job(
+                job=rendered,
+                snapshot=snapshot,
+                render_response=response_payload,
             )
 
         detail = response_payload.get("detail")
@@ -149,6 +200,69 @@ class PortfolioReviewRenderOrchestrationService:
             retry_eligible=retry_eligible,
         )
 
+    async def _archive_rendered_job(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        snapshot: Any,
+        render_response: dict[str, Any],
+    ) -> ReportJobLedgerRecord:
+        artifact_base64 = _optional_str(render_response.get("artifact_base64"))
+        if artifact_base64 is None:
+            return self._job_ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="archive_validation_failed",
+                failure_message="Rendered artifact payload was not available for archive handoff.",
+                retry_eligible=False,
+            )
+
+        archive_request_id = f"arch_{job.render_job_id or job.job_id}"
+        self._job_ledger.mark_archiving(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            archive_request_id=archive_request_id,
+        )
+        status_code, response_payload = await self._archive_client.archive_document(
+            _build_archive_payload(
+                job=job,
+                snapshot=snapshot,
+                render_response=render_response,
+                archive_request_id=archive_request_id,
+                content_base64=artifact_base64,
+            ),
+            actor_id=job.triggered_by,
+            tenant_id=job.tenant_id,
+            region=job.region,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            booking_center_code=job.booking_center_code,
+            role=job.role,
+        )
+        if status_code in {200, 201} and _optional_str(response_payload.get("document_id")):
+            return self._job_ledger.mark_archived(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                archive_request_id=archive_request_id,
+                archive_document_id=str(response_payload["document_id"]),
+            )
+        failure_category, retry_eligible = _archive_failure_posture(status_code, response_payload)
+        return self._job_ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category=failure_category,
+            failure_message=_archive_failure_message(response_payload),
+            retry_eligible=retry_eligible,
+        )
+
 
 @lru_cache(maxsize=1)
 def get_portfolio_review_render_orchestration_service() -> (
@@ -161,6 +275,119 @@ def get_portfolio_review_render_orchestration_service() -> (
             max_retries=settings.upstream_max_retries,
             retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
         ),
+        archive_client=ArchiveClient(
+            base_url=settings.archive_base_url,
+            timeout_seconds=settings.upstream_timeout_seconds,
+            max_retries=settings.upstream_max_retries,
+            retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+        ),
         snapshot_store=get_report_input_snapshot_store(),
         job_ledger=get_report_job_ledger(),
+    )
+
+
+def _build_archive_payload(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: Any,
+    render_response: dict[str, Any],
+    archive_request_id: str,
+    content_base64: str,
+) -> dict[str, Any]:
+    snapshot_payload = _as_dict(snapshot.snapshot_payload)
+    review_period = _as_dict(snapshot_payload.get("reviewPeriod"))
+    identity = _as_dict(_as_dict(snapshot_payload.get("clientProfile")).get("identity"))
+    portfolio_ids = job.portfolio_scope.get("portfolio_ids")
+    portfolio_id = (
+        str(portfolio_ids[0])
+        if isinstance(portfolio_ids, list) and portfolio_ids
+        else "portfolio-not-available"
+    )
+    reporting_period_start = _date_text(
+        review_period.get("start_date")
+        or review_period.get("period_start")
+        or date(job.as_of_date.year, 1, 1)
+    )
+    reporting_period_end = _date_text(
+        review_period.get("end_date") or review_period.get("period_end") or job.as_of_date
+    )
+    metadata = {
+        "archive_request_id": archive_request_id,
+        "report_job_id": job.job_id,
+        "report_request_id": job.request_id,
+        "snapshot_id": snapshot.snapshot_id,
+        "render_job_id": str(render_response.get("render_job_id") or job.render_job_id),
+        "render_attempt_id": str(
+            render_response.get("render_attempt_id")
+            or render_response.get("render_job_id")
+            or job.render_job_id
+            or job.job_id
+        ),
+        "report_type": job.report_type,
+        "portfolio_scope": json.dumps(job.portfolio_scope, sort_keys=True, separators=(",", ":")),
+        "portfolio_id": portfolio_id,
+        "client_reference": _optional_str(identity.get("client_reference"))
+        or _optional_str(identity.get("client_id")),
+        "as_of_date": job.as_of_date.isoformat(),
+        "reporting_period_start": reporting_period_start,
+        "reporting_period_end": reporting_period_end,
+        "frequency": _optional_str(review_period.get("frequency")) or "ad_hoc",
+        "template_id": str(render_response.get("template_id") or job.render_template_id),
+        "template_version": str(
+            render_response.get("template_version") or job.render_template_version
+        ),
+        "render_service_version": _optional_str(render_response.get("runtime_engine_version"))
+        or _optional_str(render_response.get("runtime_engine"))
+        or "unknown",
+        "report_data_contract_version": snapshot.report_data_contract_version,
+        "mime_type": "application/pdf",
+        "output_format": "pdf",
+        "classification": "confidential",
+        "region": job.region,
+        "tenant_id": job.tenant_id,
+        "retention_policy_id": _optional_str(job.options.get("retention_policy_id")),
+        "retention_start_date": job.as_of_date.isoformat(),
+        "retain_until_date": _optional_str(job.options.get("retain_until_date")),
+        "created_by_service": "lotus-report",
+        "created_by_actor": job.triggered_by,
+    }
+    return {"metadata": metadata, "content_base64": content_base64}
+
+
+def _date_text(value: object) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    text = _optional_str(value)
+    if text:
+        return text
+    raise ValueError("date value is required")
+
+
+def _archive_failure_posture(status_code: int, payload: dict[str, Any]) -> tuple[str, bool]:
+    detail = payload.get("detail")
+    detail_payload = detail if isinstance(detail, dict) else {}
+    code = str(detail_payload.get("code") or "")
+    if status_code in {400, 422} or code in {
+        "archive_metadata_invalid",
+        "archive_payload_invalid",
+    }:
+        return "archive_validation_failed", False
+    if status_code == 409 or code == "archive_conflict":
+        return "archive_conflict", False
+    if status_code in {503, 507} or code in {
+        "archive_storage_unavailable",
+        "archive_storage_failed",
+    }:
+        return "archive_storage_failed", True
+    return "archive_execution_failed", False
+
+
+def _archive_failure_message(payload: dict[str, Any]) -> str:
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        return _optional_str(detail.get("message")) or "lotus-archive handoff failed."
+    return (
+        _optional_str(payload.get("failure_message"))
+        or _optional_str(detail)
+        or ("lotus-archive handoff failed.")
     )

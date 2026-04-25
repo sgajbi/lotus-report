@@ -11,9 +11,9 @@ CHECK (
         'data_ready',
         'rendering',
         'completed',
-        'completed_with_warnings',
         'archiving',
         'archived',
+        'completed_with_warnings',
         'failed',
         'cancelled'
     )
@@ -45,31 +45,17 @@ CHECK (
 );
 
 ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_job_id TEXT;
+ADD COLUMN IF NOT EXISTS archive_request_id TEXT;
 
 ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_output_format TEXT;
+ADD COLUMN IF NOT EXISTS archive_document_id TEXT;
 
 ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_template_id TEXT;
+ADD COLUMN IF NOT EXISTS archive_completed_at TIMESTAMPTZ;
 
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_template_version TEXT;
-
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_artifact_sha256 TEXT;
-
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_bounded_determinism_fingerprint TEXT;
-
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_runtime_engine TEXT;
-
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_runtime_engine_version TEXT;
-
-ALTER TABLE report_job
-ADD COLUMN IF NOT EXISTS render_duration_ms INTEGER;
+CREATE INDEX IF NOT EXISTS idx_report_job_archive_document
+ON report_job(archive_document_id)
+WHERE archive_document_id IS NOT NULL;
 
 ALTER TABLE report_status_event
 DROP CONSTRAINT IF EXISTS report_status_event_to_status_check;
@@ -84,9 +70,9 @@ CHECK (
         'data_ready',
         'rendering',
         'completed',
-        'completed_with_warnings',
         'archiving',
         'archived',
+        'completed_with_warnings',
         'failed',
         'cancelled'
     )

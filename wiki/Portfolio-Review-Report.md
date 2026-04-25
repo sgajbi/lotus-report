@@ -11,17 +11,20 @@ renderers can consume without losing source lineage or supportability state.
 
 For asynchronous job initiation, use `POST /reports/portfolio-reviews`. That route creates durable
 request/job/status ledger records, captures the immutable input snapshot and upstream lineage, and
-for PDF requests submits a governed render package to `lotus-render`. Archive and retention remain
-separate concerns and are not part of this route.
+for PDF requests submits a governed render package to `lotus-render`. After successful render
+completion, it hands the rendered artifact and source-backed metadata to `lotus-archive` and records
+the archive outcome separately from render completion.
 
 The render handoff posture is explicit:
 
 - `lotus-report` owns data assembly, snapshot capture, lineage, and render-package composition
 - `lotus-render` owns PDF execution, artifact hashing, and support-safe render diagnostics
+- `lotus-archive` owns archived document identity, retrieval, retention execution, legal hold,
+  purge, and storage diagnostics
 - the supported repeatability claim is bounded runtime-envelope determinism via fingerprint, not
   byte-stable PDF identity
-- archive retrieval, legal hold, replay, rerender, regenerate, and document distribution remain
-  outside RFC-0102 scope
+- archive retrieval, legal hold, purge, replay, rerender, regenerate, and document distribution remain
+  outside `lotus-report` handoff scope
 
 ## Product Standard
 

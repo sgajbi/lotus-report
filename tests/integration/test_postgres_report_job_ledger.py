@@ -161,6 +161,82 @@ def test_postgres_report_job_ledger_marks_collecting_data_data_ready_and_failed(
     ]
 
 
+def test_postgres_report_job_ledger_persists_render_and_archive_handoff() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.create_portfolio_review_job(
+        request=request.model_copy(update={"requested_output_formats": ["pdf"]}),
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-archive-{unique_suffix}",
+    )
+
+    ready = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-archive-ready-{unique_suffix}",
+        trace_id=f"trace-pg-archive-ready-{unique_suffix}",
+    )
+    rendering = ledger.mark_rendering(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-archive-rendering-{unique_suffix}",
+        trace_id=f"trace-pg-archive-rendering-{unique_suffix}",
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+    assert rendering.status == "rendering"
+
+    completed = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-archive-complete-{unique_suffix}",
+        trace_id=f"trace-pg-archive-complete-{unique_suffix}",
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    assert completed.status == "completed"
+
+    archiving = ledger.mark_archiving(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-archive-start-{unique_suffix}",
+        trace_id=f"trace-pg-archive-start-{unique_suffix}",
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+    )
+    assert archiving.status == "archiving"
+    assert archiving.archive_request_id == f"arch_rdr_{ready.job_id}_pdf"
+
+    archived = ledger.mark_archived(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id=f"corr-pg-archive-end-{unique_suffix}",
+        trace_id=f"trace-pg-archive-end-{unique_suffix}",
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+        archive_document_id=f"doc_{unique_suffix}",
+    )
+    assert archived.status == "archived"
+    assert archived.archive_document_id == f"doc_{unique_suffix}"
+    assert archived.archive_completed_at is not None
+    assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
+        "accepted",
+        "data_ready",
+        "rendering",
+        "completed",
+        "archiving",
+        "archived",
+    ]
+
+
 def test_postgres_report_job_ledger_transition_helper_branches() -> None:
     ledger = _ledger()
     unique_suffix = uuid4().hex
@@ -306,6 +382,41 @@ def test_postgres_report_job_ledger_check_ready_reports_missing_schema() -> None
     with pytest.raises(
         RuntimeError,
         match="report_job_ledger_schema_missing:report_job,report_status_event",
+    ):
+        ledger.check_ready()
+
+
+def test_postgres_report_job_ledger_check_ready_reports_missing_archive_schema() -> None:
+    ledger = object.__new__(PostgresReportJobLedger)
+
+    class _Cursor:
+        def __init__(self, rows: list[Mapping[str, Any]]):
+            self._rows = rows
+
+        def fetchall(self) -> list[Mapping[str, Any]]:
+            return self._rows
+
+    class _Connection:
+        def execute(self, query: str, *_args: object, **_kwargs: object) -> _Cursor:
+            if "information_schema.tables" in query:
+                return _Cursor(
+                    [
+                        {"table_name": "report_request"},
+                        {"table_name": "report_job"},
+                        {"table_name": "report_status_event"},
+                    ]
+                )
+            return _Cursor([{"column_name": "archive_request_id"}])
+
+    @contextmanager
+    def _connect() -> Iterator[_Connection]:
+        yield _Connection()
+
+    ledger._connect = _connect  # type: ignore[method-assign]
+
+    with pytest.raises(
+        RuntimeError,
+        match="report_job_ledger_archive_schema_missing:archive_completed_at,archive_document_id",
     ):
         ledger.check_ready()
 

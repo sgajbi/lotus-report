@@ -114,6 +114,10 @@ def get_capabilities(
                 "key": "lotus-report.reporting.portfolio_review.render_submission.v1",
                 "enabled": True,
             },
+            {
+                "key": "lotus-report.reporting.portfolio_review.archive_handoff.v1",
+                "enabled": True,
+            },
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},
         ],
         workflows=[
