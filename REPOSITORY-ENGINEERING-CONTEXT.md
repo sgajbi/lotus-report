@@ -49,11 +49,14 @@ Current repository posture:
    RFC-0100 jobs,
 8. RFC-0102 now adds governed render-package assembly, lotus-render submission for PDF jobs,
    persisted render metadata on report-job status, and render-aware completion/failure posture
-   while keeping archive and retention workflows out of scope,
-9. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+   while keeping replay, rerender, regenerate, and distribution out of scope,
+9. RFC-0103 now adds `lotus-archive` handoff after successful PDF render completion, separate
+   `archiving`/`archived` lifecycle states, and archive-aware status/failure posture while keeping
+   retrieval, retention execution, legal hold, purge, and distribution owned by `lotus-archive`,
+10. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-10. CI is standardized but still lighter than some core domain services,
-11. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+11. CI is standardized but still lighter than some core domain services,
+12. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -83,10 +86,11 @@ Primary areas:
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
 10. `src/app/reporting_render/`
-    render-package composition and lotus-render orchestration for PDF-capable report jobs.
+    render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
+    PDF-capable report jobs.
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
-    and render failure mapping.
+    archive handoff, and render/archive failure mapping.
 
 ## Runtime And Integration Boundaries
 
@@ -94,7 +98,8 @@ Runtime model:
 
 1. FastAPI reporting service,
 2. consumed through `lotus-gateway` and reporting-oriented flows,
-3. depends on `lotus-core`, `lotus-performance`, `lotus-risk`, and `lotus-render` for PDF jobs.
+3. depends on `lotus-core`, `lotus-performance`, `lotus-risk`, `lotus-render`, and
+   `lotus-archive` for PDF jobs.
 
 Boundary rules:
 

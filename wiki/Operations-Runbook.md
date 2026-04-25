@@ -60,6 +60,7 @@ sequenceDiagram
     participant REPORT as lotus-report
     participant PG as lotus-report-postgres
     participant RENDER as lotus-render
+    participant ARCHIVE as lotus-archive
 
     WB->>GW: POST /api/v1/reports/portfolio-reviews
     GW->>REPORT: POST /reports/portfolio-reviews
@@ -134,6 +135,10 @@ sequenceDiagram
     REPORT->>RENDER: POST /renders
     RENDER-->>REPORT: rendered artifact metadata or failure
     REPORT->>PG: mark job completed or failed
+    REPORT->>PG: mark job archiving
+    REPORT->>ARCHIVE: POST /documents
+    ARCHIVE-->>REPORT: archive document id or failure
+    REPORT->>PG: mark job archived or failed
     REPORT-->>GW: 202 job handle with current status
 ```
 
@@ -199,8 +204,10 @@ ORDER BY captured_at, upstream_call_id;
 ```
 
 Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
-ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention, rerender,
-reissue, and archive housekeeping belong to later reporting architecture RFCs.
+ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention,
+retrieval, rerender, reissue, and archive housekeeping belong to `lotus-archive` or later
+reporting architecture RFCs. `lotus-report` records only the archive handoff request id, document
+id, completion timestamp, and truthful archive failure posture.
 
 ## Practical probes
 
@@ -246,8 +253,9 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
 
 The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
 `status_url`, and `idempotency_key`. JSON-only requests typically advance the handle to
-`data_ready` before the response returns. PDF requests may continue through `rendering` to
-`completed` before the response returns when the render handoff succeeds synchronously. Use
+`data_ready` before the response returns. PDF requests may continue through `rendering`,
+`completed`, `archiving`, and `archived` before the response returns when render and archive
+handoffs succeed synchronously. Use
 `GET /api/v1/report-jobs?portfolioId=...&tenantId=...` for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
 `GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
 `POST /api/v1/report-jobs/{job_id}/cancel` only before the job reaches `rendering`, archive, or completion.

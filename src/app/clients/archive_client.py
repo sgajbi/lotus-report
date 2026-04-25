@@ -1,0 +1,52 @@
+from typing import Any
+
+from app.clients.http_resilience import post_with_retry
+
+
+class ArchiveClient:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: float,
+        max_retries: int,
+        retry_backoff_seconds: float,
+    ):
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+        self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
+
+    async def archive_document(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Actor-Id": actor_id,
+            "X-Caller-Application": "lotus-report",
+            "X-Tenant-Id": tenant_id,
+            "X-Region": region,
+            "X-Correlation-ID": correlation_id,
+            "X-Trace-ID": trace_id,
+        }
+        if booking_center_code:
+            headers["X-Booking-Center-Code"] = booking_center_code
+        if role:
+            headers["X-Role"] = role
+        return await post_with_retry(
+            url=f"{self._base_url}/documents",
+            timeout_seconds=self._timeout_seconds,
+            json_body=payload,
+            headers=headers,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )

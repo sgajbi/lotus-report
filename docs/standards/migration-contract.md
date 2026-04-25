@@ -12,7 +12,9 @@
   `report_status_event`, `report_input_snapshot`, and `report_upstream_call`, verifies required
   operational indexes, and verifies database-level idempotency uniqueness on
   `report_request.idempotency_key` plus the single-snapshot-per-job uniqueness posture on
-  `report_input_snapshot.report_job_id`.
+  `report_input_snapshot.report_job_id`. It also verifies the archive handoff fields
+  `archive_request_id`, `archive_document_id`, and `archive_completed_at`, the archive document
+  lookup index, and the archive-aware status/failure-category constraints used by PDF report jobs.
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
 - Local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to a file
   database. SQLite is retained only as an isolated unit-test adapter for fast ledger behavior tests.
@@ -38,7 +40,8 @@ The first-wave ledger must keep these query paths indexed:
 9. append-only event history by job and event creation time,
 10. snapshot lookup by job and recent snapshot support diagnostics,
 11. upstream-lineage lookup by snapshot id,
-12. upstream service and endpoint diagnostics by supportability posture and creation time.
+12. upstream service and endpoint diagnostics by supportability posture and creation time,
+13. archive document lookup for support diagnostics after successful `lotus-archive` handoff.
 
 `make migration-smoke` checks that the implementation-backed indexes exist.
 
@@ -52,9 +55,11 @@ idempotency registry table or a governed partition-aware idempotency strategy.
 
 The ledger is partition-ready because it uses deterministic IDs, time-based operational indexes,
 append-only event records, and forward-only migrations. The first wave does not provide a destructive
-purge endpoint, legal-hold handling, or document-retention semantics; those belong with archive and
-retention RFCs. Future housekeeping jobs must preserve request/job/event lineage and must not delete
-records needed for audit, reconciliation, idempotency, or support diagnostics.
+purge endpoint, legal-hold handling, or document-retention semantics; those remain owned by
+`lotus-archive`. The report ledger records only archive handoff request/document identifiers and
+truthful success/failure posture. Future housekeeping jobs must preserve request/job/event lineage
+and must not delete records needed for audit, reconciliation, idempotency, archive lookup, or
+support diagnostics.
 
 ## Future Upgrade Path
 

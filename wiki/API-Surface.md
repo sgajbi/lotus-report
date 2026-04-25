@@ -67,10 +67,13 @@ front-office consumers.
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
-- PDF-capable report jobs submit a governed render package to `lotus-render`; archive and retention
-  workflows remain out of scope
+- PDF-capable report jobs submit a governed render package to `lotus-render`; after successful
+  render completion they hand the artifact and source-backed metadata to `lotus-archive`
 - successful job initiation captures a durable snapshot and upstream lineage before the job reaches
-  `data_ready`, and PDF jobs may then advance through `rendering` to `completed`
+  `data_ready`, and PDF jobs may then advance through `rendering`, `completed`, `archiving`, and
+  `archived`
+- archive retrieval, retention execution, legal hold, purge, and document distribution remain owned
+  by `lotus-archive`
 - snapshot and lineage endpoints are support-safe evidence APIs; they return hashes, posture, and
   summary metadata instead of raw upstream payload internals
 
@@ -160,7 +163,7 @@ curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" \
 Report job operational search:
 
 ```bash
-curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=completed&limit=25" \
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=archived&limit=25" \
   -H "X-Actor-Id: support-operator-1" \
   -H "X-Tenant-Id: tenant-sg" \
   -H "X-Region: APAC"

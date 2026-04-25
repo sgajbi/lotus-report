@@ -267,7 +267,7 @@ def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
 
         class _CompletingRenderService:
             async def render_for_job(self, job):
-                return ledger.mark_completed(
+                rendered = ledger.mark_completed(
                     job_id=job.job_id,
                     actor=job.triggered_by,
                     correlation_id=job.correlation_id,
@@ -282,6 +282,21 @@ def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
                     runtime_engine_version="0.14.2",
                     render_duration_ms=812,
                 )
+                ledger.mark_archiving(
+                    job_id=job.job_id,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                    archive_request_id=f"arch_rdr_{job.job_id}_pdf",
+                )
+                return ledger.mark_archived(
+                    job_id=rendered.job_id,
+                    actor=rendered.triggered_by,
+                    correlation_id=rendered.correlation_id,
+                    trace_id=rendered.trace_id,
+                    archive_request_id=f"arch_rdr_{job.job_id}_pdf",
+                    archive_document_id="doc_report_job_pdf",
+                )
 
         app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
             _CompletingRenderService()
@@ -291,14 +306,16 @@ def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
 
         assert response.status_code == 202
         handle = response.json()
-        assert handle["status"] == "completed"
+        assert handle["status"] == "archived"
 
         status_response = client.get(f"/reports/jobs/{handle['report_job_id']}", headers=_headers())
         assert status_response.status_code == 200
         body = status_response.json()
-        assert body["status"] == "completed"
+        assert body["status"] == "archived"
         assert body["render"]["render_job_id"] == f"rdr_{handle['report_job_id']}_pdf"
         assert body["render"]["artifact_sha256"] == "sha256:artifact"
+        assert body["archive"]["archive_request_id"] == f"arch_rdr_{handle['report_job_id']}_pdf"
+        assert body["archive"]["document_id"] == "doc_report_job_pdf"
     finally:
         _clear_overrides()
 
@@ -470,8 +487,9 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
-    assert status_example["status"] == "completed"
+    assert status_example["status"] == "archived"
     assert status_example["render"]["render_job_id"].startswith("rdr_")
+    assert status_example["archive"]["document_id"].startswith("doc_")
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
     assert "Report Jobs" in list_get["tags"]

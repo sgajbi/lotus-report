@@ -23,6 +23,7 @@ services:
       LOTUS_CORE_QUERY_BASE_URL: http://host.docker.internal:8201
       LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002
       RISK_BASE_URL: http://host.docker.internal:8130
+      LOTUS_ARCHIVE_BASE_URL: http://host.docker.internal:8150
       REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
     depends_on:
       lotus-report-postgres:

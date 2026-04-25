@@ -70,9 +70,34 @@ class PostgresReportJobLedger:
                 """
             ).fetchall()
             present = {str(row["table_name"]) for row in rows}
-        missing = {"report_request", "report_job", "report_status_event"} - present
-        if missing:
-            raise RuntimeError(f"report_job_ledger_schema_missing:{','.join(sorted(missing))}")
+            missing = {"report_request", "report_job", "report_status_event"} - present
+            if missing:
+                raise RuntimeError(f"report_job_ledger_schema_missing:{','.join(sorted(missing))}")
+
+            archive_column_rows = connection.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'report_job'
+                  AND column_name IN (
+                      'archive_request_id',
+                      'archive_document_id',
+                      'archive_completed_at'
+                  )
+                """
+            ).fetchall()
+            archive_columns = {str(row["column_name"]) for row in archive_column_rows}
+            missing_archive_columns = {
+                "archive_request_id",
+                "archive_document_id",
+                "archive_completed_at",
+            } - archive_columns
+            if missing_archive_columns:
+                raise RuntimeError(
+                    "report_job_ledger_archive_schema_missing:"
+                    f"{','.join(sorted(missing_archive_columns))}"
+                )
 
     def create_portfolio_review_job(
         self,
@@ -153,12 +178,13 @@ class PostgresReportJobLedger:
                         cancelled_at, render_job_id, render_output_format, render_template_id,
                         render_template_version, render_artifact_sha256,
                         render_bounded_determinism_fingerprint, render_runtime_engine,
-                        render_runtime_engine_version, render_duration_ms
+                        render_runtime_engine_version, render_duration_ms,
+                        archive_request_id, archive_document_id, archive_completed_at
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -174,6 +200,9 @@ class PostgresReportJobLedger:
                         False,
                         now,
                         now,
+                        None,
+                        None,
+                        None,
                         None,
                         None,
                         None,
@@ -325,7 +354,10 @@ class PostgresReportJobLedger:
                 job.render_bounded_determinism_fingerprint,
                 job.render_runtime_engine,
                 job.render_runtime_engine_version,
-                job.render_duration_ms
+                job.render_duration_ms,
+                job.archive_request_id,
+                job.archive_document_id,
+                job.archive_completed_at
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE {" AND ".join(where_clauses)}
@@ -372,6 +404,9 @@ class PostgresReportJobLedger:
                 render_runtime_engine=None,
                 render_runtime_engine_version=None,
                 render_duration_ms=None,
+                archive_request_id=None,
+                archive_document_id=None,
+                archive_completed_at=None,
             )
 
     def mark_data_ready(
@@ -408,6 +443,9 @@ class PostgresReportJobLedger:
                 render_runtime_engine=None,
                 render_runtime_engine_version=None,
                 render_duration_ms=None,
+                archive_request_id=None,
+                archive_document_id=None,
+                archive_completed_at=None,
             )
 
     def mark_rendering(
@@ -448,6 +486,9 @@ class PostgresReportJobLedger:
                 render_runtime_engine=None,
                 render_runtime_engine_version=None,
                 render_duration_ms=None,
+                archive_request_id=None,
+                archive_document_id=None,
+                archive_completed_at=None,
             )
 
     def mark_completed(
@@ -493,6 +534,90 @@ class PostgresReportJobLedger:
                 render_runtime_engine=runtime_engine,
                 render_runtime_engine_version=runtime_engine_version,
                 render_duration_ms=render_duration_ms,
+                archive_request_id=None,
+                archive_document_id=None,
+                archive_completed_at=None,
+            )
+
+    def mark_archiving(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_request_id: str,
+    ) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            return self._transition_job(
+                connection=connection,
+                job_id=job_id,
+                allowed_from={"completed"},
+                to_status="archiving",
+                failure_category=None,
+                failure_message=None,
+                current_step="archiving",
+                retry_eligible=False,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                event_type="job_archiving",
+                event_message="Portfolio review archive handoff started.",
+                set_started_at=True,
+                set_completed_at=False,
+                render_job_id=None,
+                render_output_format=None,
+                render_template_id=None,
+                render_template_version=None,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
+                archive_request_id=archive_request_id,
+                archive_document_id=None,
+                archive_completed_at=None,
+            )
+
+    def mark_archived(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_request_id: str,
+        archive_document_id: str,
+    ) -> ReportJobLedgerRecord:
+        with self._connect() as connection:
+            return self._transition_job(
+                connection=connection,
+                job_id=job_id,
+                allowed_from={"completed", "archiving"},
+                to_status="archived",
+                failure_category=None,
+                failure_message=None,
+                current_step="archived",
+                retry_eligible=False,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                event_type="job_archived",
+                event_message="Portfolio review archived successfully.",
+                set_started_at=True,
+                set_completed_at=False,
+                render_job_id=None,
+                render_output_format=None,
+                render_template_id=None,
+                render_template_version=None,
+                render_artifact_sha256=None,
+                render_bounded_determinism_fingerprint=None,
+                render_runtime_engine=None,
+                render_runtime_engine_version=None,
+                render_duration_ms=None,
+                archive_request_id=archive_request_id,
+                archive_document_id=archive_document_id,
+                archive_completed_at=utc_now(),
             )
 
     def mark_failed(
@@ -510,7 +635,14 @@ class PostgresReportJobLedger:
             return self._transition_job(
                 connection=connection,
                 job_id=job_id,
-                allowed_from={"accepted", "collecting_data", "data_ready", "rendering"},
+                allowed_from={
+                    "accepted",
+                    "collecting_data",
+                    "data_ready",
+                    "rendering",
+                    "completed",
+                    "archiving",
+                },
                 to_status="failed",
                 failure_category=failure_category,
                 failure_message=failure_message,
@@ -532,6 +664,9 @@ class PostgresReportJobLedger:
                 render_runtime_engine=None,
                 render_runtime_engine_version=None,
                 render_duration_ms=None,
+                archive_request_id=None,
+                archive_document_id=None,
+                archive_completed_at=None,
             )
 
     def cancel_job(
@@ -550,7 +685,14 @@ class PostgresReportJobLedger:
             if not existing:
                 raise ReportJobNotFoundError("report_job_not_found")
             current_status = str(existing["status"])
-            if current_status in {"rendering", "completed", "completed_with_warnings", "cancelled"}:
+            if current_status in {
+                "rendering",
+                "completed",
+                "archiving",
+                "archived",
+                "completed_with_warnings",
+                "cancelled",
+            }:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_cancelled")
 
             now = utc_now()
@@ -666,6 +808,9 @@ class PostgresReportJobLedger:
         render_runtime_engine: str | None,
         render_runtime_engine_version: str | None,
         render_duration_ms: int | None,
+        archive_request_id: str | None,
+        archive_document_id: str | None,
+        archive_completed_at: datetime | None,
     ) -> ReportJobLedgerRecord:
         existing = connection.execute(
             "SELECT status, started_at FROM report_job WHERE report_job_id = %s FOR UPDATE",
@@ -703,7 +848,10 @@ class PostgresReportJobLedger:
                 ),
                 render_runtime_engine = COALESCE(%s, render_runtime_engine),
                 render_runtime_engine_version = COALESCE(%s, render_runtime_engine_version),
-                render_duration_ms = COALESCE(%s, render_duration_ms)
+                render_duration_ms = COALESCE(%s, render_duration_ms),
+                archive_request_id = COALESCE(%s, archive_request_id),
+                archive_document_id = COALESCE(%s, archive_document_id),
+                archive_completed_at = COALESCE(%s, archive_completed_at)
             WHERE report_job_id = %s
             """,
             (
@@ -724,6 +872,9 @@ class PostgresReportJobLedger:
                 render_runtime_engine,
                 render_runtime_engine_version,
                 render_duration_ms,
+                archive_request_id,
+                archive_document_id,
+                archive_completed_at,
                 job_id,
             ),
         )
@@ -794,7 +945,10 @@ class PostgresReportJobLedger:
                 job.render_bounded_determinism_fingerprint,
                 job.render_runtime_engine,
                 job.render_runtime_engine_version,
-                job.render_duration_ms
+                job.render_duration_ms,
+                job.archive_request_id,
+                job.archive_document_id,
+                job.archive_completed_at
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = %s
@@ -861,6 +1015,9 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportJobLedgerRecord:
         render_runtime_engine=row.get("render_runtime_engine"),
         render_runtime_engine_version=row.get("render_runtime_engine_version"),
         render_duration_ms=row.get("render_duration_ms"),
+        archive_request_id=row.get("archive_request_id"),
+        archive_document_id=row.get("archive_document_id"),
+        archive_completed_at=_dt_from_value(row.get("archive_completed_at")),
     )
 
 

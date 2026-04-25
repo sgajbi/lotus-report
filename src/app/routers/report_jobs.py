@@ -19,6 +19,7 @@ from app.reporting_jobs.models import (
     ApiErrorResponse,
     PortfolioReviewJobRequest,
     ReportCallerContext,
+    ReportJobArchiveInfo,
     ReportJobHandleResponse,
     ReportJobLedgerRecord,
     ReportJobListFilters,
@@ -170,6 +171,20 @@ def _record_to_render(record: ReportJobLedgerRecord) -> ReportJobRenderInfo | No
     )
 
 
+def _record_to_archive(record: ReportJobLedgerRecord) -> ReportJobArchiveInfo | None:
+    if (
+        record.archive_request_id is None
+        and record.archive_document_id is None
+        and record.archive_completed_at is None
+    ):
+        return None
+    return ReportJobArchiveInfo(
+        archive_request_id=record.archive_request_id,
+        document_id=record.archive_document_id,
+        completed_at=record.archive_completed_at,
+    )
+
+
 def _record_to_status(record: ReportJobLedgerRecord) -> ReportJobStatusResponse:
     return ReportJobStatusResponse(
         report_job_id=record.job_id,
@@ -190,6 +205,7 @@ def _record_to_status(record: ReportJobLedgerRecord) -> ReportJobStatusResponse:
         correlation_id=record.correlation_id,
         trace_id=record.trace_id,
         render=_record_to_render(record),
+        archive=_record_to_archive(record),
     )
 
 
@@ -212,6 +228,7 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
         created_at=record.created_at,
         updated_at=record.updated_at,
         render=_record_to_render(record),
+        archive=_record_to_archive(record),
     )
 
 
@@ -271,7 +288,9 @@ def _caller_context(
         "endpoint when a caller wants asynchronous report orchestration with idempotent request "
         "identity. The endpoint persists the request/job/event ledger, captures the immutable "
         "report snapshot and upstream lineage, and when `pdf` is requested submits a governed "
-        "render package to lotus-render. Archive and retention workflows remain out of scope."
+        "render package to lotus-render before handing successful render artifacts to "
+        "lotus-archive. Retrieval, retention execution, legal hold, purge, and distribution remain "
+        "owned by lotus-archive."
     ),
     openapi_extra={
         "requestBody": {
@@ -725,8 +744,9 @@ async def get_report_job_events(
     description=(
         "Cancels a report job only while it is still before render, archive, or completion "
         "phases. Use this endpoint only when an accepted or in-flight pre-render job must be "
-        "stopped. Render, archive, rerender, and reissue semantics are owned by later reporting "
-        "waves."
+        "stopped. Render and archive handoff outcomes are recorded in the job ledger; retrieval, "
+        "retention execution, legal hold, purge, rerender, and reissue semantics are outside this "
+        "endpoint."
     ),
     openapi_extra={
         "responses": {
