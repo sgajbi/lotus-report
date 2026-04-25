@@ -1,0 +1,146 @@
+{
+  "snapshot_id": "rsnap_rfc_0102_proof_v1",
+  "portfolioName": "PB SG Global Balanced",
+  "reviewPeriod": {
+    "label": "YTD"
+  },
+  "readiness": {
+    "status": "ready"
+  },
+  "reportingCurrency": "USD",
+  "clientProfile": {
+    "identity": {
+      "client_name": "Alex Tan",
+      "advisor_id": "RM_SG_001",
+      "booking_center_code": "Singapore"
+    },
+    "mandate_profile": {
+      "risk_exposure": "balanced"
+    }
+  },
+  "overview": {
+    "currency": "USD",
+    "total_market_value": 15234567.89
+  },
+  "performance": {
+    "summary": {
+      "1M": {
+        "net_cumulative_return": 1.1,
+        "benchmark_cumulative_return": 0.9,
+        "benchmark_relative_return": 0.2
+      },
+      "YTD": {
+        "net_cumulative_return": 4.1,
+        "benchmark_cumulative_return": 3.4,
+        "benchmark_relative_return": 0.7
+      },
+      "5Y": {
+        "net_cumulative_return": 12.0,
+        "benchmark_cumulative_return": 10.8,
+        "benchmark_relative_return": 1.2
+      }
+    }
+  },
+  "riskAnalytics": {
+    "summary": {
+      "YTD": {
+        "volatility": 12.0,
+        "beta": 0.82,
+        "tracking_error": 4.0,
+        "information_ratio": 0.72,
+        "value_at_risk": -2.0
+      }
+    }
+  },
+  "holdings": {
+    "holdingsByAssetClass": {
+      "Equity": [
+        {
+          "security_id": "EQ-001",
+          "instrument_name": "Global Equity Sleeve",
+          "weight": 60.0,
+          "market_value_reporting_currency": 9140740.73,
+          "unrealized_pnl_reporting_currency": 1032450.22,
+          "ytd_contribution_pct": 3.5
+        }
+      ],
+      "Fixed Income": [
+        {
+          "security_id": "FI-001",
+          "instrument_name": "Global Bond Allocation",
+          "weight": 28.0,
+          "market_value_reporting_currency": 4265680.61,
+          "unrealized_pnl_reporting_currency": 148220.3,
+          "ytd_contribution_pct": 0.8
+        }
+      ],
+      "Cash": [
+        {
+          "security_id": "CASH-001",
+          "instrument_name": "Liquidity Reserve",
+          "weight": 1.64,
+          "market_value_reporting_currency": 250000.0,
+          "unrealized_pnl_reporting_currency": 0.0,
+          "ytd_contribution_pct": 0.0
+        }
+      ]
+    }
+  },
+  "reviewObservations": [
+    {
+      "observation_id": "obs-1",
+      "summary": "Equity positioning remained the main contributor to year-to-date performance."
+    },
+    {
+      "observation_id": "obs-2",
+      "summary": "Risk posture stayed within the monitored balanced mandate range."
+    },
+    {
+      "observation_id": "obs-3",
+      "summary": "Cash reserves remained available for near-term client liquidity needs."
+    }
+  ],
+  "evidence": {
+    "source_services": [
+      "lotus-core",
+      "lotus-performance",
+      "lotus-risk"
+    ],
+    "trust_metadata": {
+      "completeness_status": "complete",
+      "data_quality_status": "quality_passed"
+    }
+  },
+  "keyFigures": {
+    "client_profile": {
+      "objective": "Long-term real wealth growth with controlled income and liquidity."
+    },
+    "portfolio_value": {
+      "invested_market_value_reporting_currency": 14984567.89,
+      "cash_balance_reporting_currency": 250000.0,
+      "cash_weight_pct": 1.64
+    },
+    "allocation": {
+      "name": "Equity",
+      "weight_pct": 60.0,
+      "market_value_reporting_currency": 9140740.73,
+      "position_count": 8
+    },
+    "performance": {
+      "largest_positive_contributor": {
+        "security_name": "Global Equity Sleeve",
+        "total_contribution_pct": 3.5
+      },
+      "benchmark_comparison_status": "available"
+    },
+    "risk": {
+      "ytd_volatility_pct": 12.0,
+      "ytd_beta": 0.82,
+      "ytd_tracking_error_pct": 4.0,
+      "ytd_information_ratio": 0.72
+    },
+    "holdings": {
+      "position_count": 12
+    }
+  }
+}

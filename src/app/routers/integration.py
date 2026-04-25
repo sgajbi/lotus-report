@@ -110,6 +110,10 @@ def get_capabilities(
                 "key": "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
                 "enabled": True,
             },
+            {
+                "key": "lotus-report.reporting.portfolio_review.render_submission.v1",
+                "enabled": True,
+            },
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},
         ],
         workflows=[

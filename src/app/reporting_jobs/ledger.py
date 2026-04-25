@@ -130,6 +130,15 @@ class ReportJobLedger:
                     started_at TEXT,
                     completed_at TEXT,
                     cancelled_at TEXT,
+                    render_job_id TEXT,
+                    render_output_format TEXT,
+                    render_template_id TEXT,
+                    render_template_version TEXT,
+                    render_artifact_sha256 TEXT,
+                    render_bounded_determinism_fingerprint TEXT,
+                    render_runtime_engine TEXT,
+                    render_runtime_engine_version TEXT,
+                    render_duration_ms INTEGER,
                     FOREIGN KEY(report_request_id) REFERENCES report_request(report_request_id)
                 )
                 """
@@ -335,6 +344,16 @@ class ReportJobLedger:
                     job.started_at,
                     job.completed_at,
                     job.cancelled_at
+                    ,
+                    job.render_job_id,
+                    job.render_output_format,
+                    job.render_template_id,
+                    job.render_template_version,
+                    job.render_artifact_sha256,
+                    job.render_bounded_determinism_fingerprint,
+                    job.render_runtime_engine,
+                    job.render_runtime_engine_version,
+                    job.render_duration_ms
                 FROM report_request req
                 JOIN report_job job ON job.report_request_id = req.report_request_id
                 ORDER BY job.created_at DESC, job.report_job_id DESC
@@ -370,6 +389,16 @@ class ReportJobLedger:
                     event_type="job_collecting_data",
                     event_message="Portfolio review input capture started.",
                     set_started_at=True,
+                    set_completed_at=False,
+                    render_job_id=None,
+                    render_output_format=None,
+                    render_template_id=None,
+                    render_template_version=None,
+                    render_artifact_sha256=None,
+                    render_bounded_determinism_fingerprint=None,
+                    render_runtime_engine=None,
+                    render_runtime_engine_version=None,
+                    render_duration_ms=None,
                 )
 
     def mark_data_ready(
@@ -397,6 +426,103 @@ class ReportJobLedger:
                     event_type="job_data_ready",
                     event_message="Portfolio review snapshot and lineage captured.",
                     set_started_at=True,
+                    set_completed_at=False,
+                    render_job_id=None,
+                    render_output_format=None,
+                    render_template_id=None,
+                    render_template_version=None,
+                    render_artifact_sha256=None,
+                    render_bounded_determinism_fingerprint=None,
+                    render_runtime_engine=None,
+                    render_runtime_engine_version=None,
+                    render_duration_ms=None,
+                )
+
+    def mark_rendering(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        render_job_id: str,
+        output_format: str,
+        template_id: str,
+        template_version: str,
+    ) -> ReportJobLedgerRecord:
+        with self._lock:
+            with self._connect() as connection:
+                return self._transition_job(
+                    connection=connection,
+                    job_id=job_id,
+                    allowed_from={"data_ready"},
+                    to_status="rendering",
+                    failure_category=None,
+                    failure_message=None,
+                    current_step="rendering",
+                    retry_eligible=0,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    event_type="job_rendering",
+                    event_message="Portfolio review render started.",
+                    set_started_at=True,
+                    set_completed_at=False,
+                    render_job_id=render_job_id,
+                    render_output_format=output_format,
+                    render_template_id=template_id,
+                    render_template_version=template_version,
+                    render_artifact_sha256=None,
+                    render_bounded_determinism_fingerprint=None,
+                    render_runtime_engine=None,
+                    render_runtime_engine_version=None,
+                    render_duration_ms=None,
+                )
+
+    def mark_completed(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        render_job_id: str,
+        output_format: str,
+        template_id: str,
+        template_version: str,
+        artifact_sha256: str | None,
+        bounded_determinism_fingerprint: str | None,
+        runtime_engine: str | None,
+        runtime_engine_version: str | None,
+        render_duration_ms: int | None,
+    ) -> ReportJobLedgerRecord:
+        with self._lock:
+            with self._connect() as connection:
+                return self._transition_job(
+                    connection=connection,
+                    job_id=job_id,
+                    allowed_from={"data_ready", "rendering"},
+                    to_status="completed",
+                    failure_category=None,
+                    failure_message=None,
+                    current_step="completed",
+                    retry_eligible=0,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    event_type="job_completed",
+                    event_message="Portfolio review render completed.",
+                    set_started_at=True,
+                    set_completed_at=True,
+                    render_job_id=render_job_id,
+                    render_output_format=output_format,
+                    render_template_id=template_id,
+                    render_template_version=template_version,
+                    render_artifact_sha256=artifact_sha256,
+                    render_bounded_determinism_fingerprint=bounded_determinism_fingerprint,
+                    render_runtime_engine=runtime_engine,
+                    render_runtime_engine_version=runtime_engine_version,
+                    render_duration_ms=render_duration_ms,
                 )
 
     def mark_failed(
@@ -415,7 +541,7 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"accepted", "collecting_data"},
+                    allowed_from={"accepted", "collecting_data", "data_ready", "rendering"},
                     to_status="failed",
                     failure_category=failure_category,
                     failure_message=failure_message,
@@ -427,6 +553,16 @@ class ReportJobLedger:
                     event_type="job_failed",
                     event_message=failure_message,
                     set_started_at=True,
+                    set_completed_at=True,
+                    render_job_id=None,
+                    render_output_format=None,
+                    render_template_id=None,
+                    render_template_version=None,
+                    render_artifact_sha256=None,
+                    render_bounded_determinism_fingerprint=None,
+                    render_runtime_engine=None,
+                    render_runtime_engine_version=None,
+                    render_duration_ms=None,
                 )
 
     def cancel_job(
@@ -446,7 +582,12 @@ class ReportJobLedger:
                 if not existing:
                     raise ReportJobNotFoundError("report_job_not_found")
                 current_status = existing["status"]
-                if current_status in {"completed", "completed_with_warnings", "cancelled"}:
+                if current_status in {
+                    "rendering",
+                    "completed",
+                    "completed_with_warnings",
+                    "cancelled",
+                }:
                     raise InvalidReportJobTransitionError("report_job_cannot_be_cancelled")
 
                 now = utc_now()
@@ -541,6 +682,16 @@ class ReportJobLedger:
         event_type: str,
         event_message: str | None,
         set_started_at: bool,
+        set_completed_at: bool,
+        render_job_id: str | None,
+        render_output_format: str | None,
+        render_template_id: str | None,
+        render_template_version: str | None,
+        render_artifact_sha256: str | None,
+        render_bounded_determinism_fingerprint: str | None,
+        render_runtime_engine: str | None,
+        render_runtime_engine_version: str | None,
+        render_duration_ms: int | None,
     ) -> ReportJobLedgerRecord:
         existing = connection.execute(
             "SELECT status, started_at FROM report_job WHERE report_job_id = ?",
@@ -562,11 +713,24 @@ class ReportJobLedger:
         now = utc_now()
         now_text = _dt_to_text(now)
         started_at = existing["started_at"] or (now_text if set_started_at else None)
+        completed_at = now_text if set_completed_at else None
         connection.execute(
             """
             UPDATE report_job
             SET status = ?, failure_category = ?, failure_message = ?, current_step = ?,
-                retry_eligible = ?, updated_at = ?, started_at = ?
+                retry_eligible = ?, updated_at = ?, started_at = ?, completed_at = ?,
+                render_job_id = COALESCE(?, render_job_id),
+                render_output_format = COALESCE(?, render_output_format),
+                render_template_id = COALESCE(?, render_template_id),
+                render_template_version = COALESCE(?, render_template_version),
+                render_artifact_sha256 = COALESCE(?, render_artifact_sha256),
+                render_bounded_determinism_fingerprint = COALESCE(
+                    ?,
+                    render_bounded_determinism_fingerprint
+                ),
+                render_runtime_engine = COALESCE(?, render_runtime_engine),
+                render_runtime_engine_version = COALESCE(?, render_runtime_engine_version),
+                render_duration_ms = COALESCE(?, render_duration_ms)
             WHERE report_job_id = ?
             """,
             (
@@ -577,6 +741,16 @@ class ReportJobLedger:
                 retry_eligible,
                 now_text,
                 started_at,
+                completed_at,
+                render_job_id,
+                render_output_format,
+                render_template_id,
+                render_template_version,
+                render_artifact_sha256,
+                render_bounded_determinism_fingerprint,
+                render_runtime_engine,
+                render_runtime_engine_version,
+                render_duration_ms,
                 job_id,
             ),
         )
@@ -638,7 +812,16 @@ class ReportJobLedger:
                 job.updated_at,
                 job.started_at,
                 job.completed_at,
-                job.cancelled_at
+                job.cancelled_at,
+                job.render_job_id,
+                job.render_output_format,
+                job.render_template_id,
+                job.render_template_version,
+                job.render_artifact_sha256,
+                job.render_bounded_determinism_fingerprint,
+                job.render_runtime_engine,
+                job.render_runtime_engine_version,
+                job.render_duration_ms
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = ?
@@ -692,7 +875,26 @@ def _record_from_row(row: sqlite3.Row) -> ReportJobLedgerRecord:
         cancelled_at=_dt_from_text(row["cancelled_at"]),
         correlation_id=row["correlation_id"],
         trace_id=row["trace_id"],
+        render_job_id=_optional_row_value(row, "render_job_id"),
+        render_output_format=_optional_row_value(row, "render_output_format"),
+        render_template_id=_optional_row_value(row, "render_template_id"),
+        render_template_version=_optional_row_value(row, "render_template_version"),
+        render_artifact_sha256=_optional_row_value(row, "render_artifact_sha256"),
+        render_bounded_determinism_fingerprint=_optional_row_value(
+            row,
+            "render_bounded_determinism_fingerprint",
+        ),
+        render_runtime_engine=_optional_row_value(row, "render_runtime_engine"),
+        render_runtime_engine_version=_optional_row_value(row, "render_runtime_engine_version"),
+        render_duration_ms=_optional_row_value(row, "render_duration_ms"),
     )
+
+
+def _optional_row_value(row: sqlite3.Row, key: str) -> Any | None:
+    keys = row.keys() if hasattr(row, "keys") else row
+    if key not in keys:
+        return None
+    return row[key]
 
 
 def _event_from_row(row: sqlite3.Row) -> ReportStatusEvent:

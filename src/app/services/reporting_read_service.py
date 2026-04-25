@@ -19,6 +19,14 @@ BENCHMARK_CODE_ALIASES = {
 CLIENT_ID_KEYS = ("client_id",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 BENCHMARK_RISK_METRICS = ("BETA", "TRACKING_ERROR", "INFORMATION_RATIO")
+PERFORMANCE_REVIEW_PERIODS: tuple[dict[str, object], ...] = (
+    {"period": "1M", "frequencies": ["daily"]},
+    {"period": "3M", "frequencies": ["daily"]},
+    {"period": "YTD", "frequencies": ["daily", "monthly"]},
+    {"period": "1Y", "frequencies": ["daily", "monthly"]},
+    {"period": "5Y", "frequencies": ["daily", "yearly"]},
+    {"period": "SI", "frequencies": ["daily", "yearly"]},
+)
 REVIEW_SECTION_DEFINITIONS = (
     ("CLIENT_PROFILE", "client_profile", "Client And Mandate Profile", "clientProfile"),
     ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
@@ -247,7 +255,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     as_of_date=as_of_date,
                     request_payload=request_payload,
-                    periods=["1M", "3M", "YTD", "5Y", "SI"],
+                    periods=PERFORMANCE_REVIEW_PERIODS,
                 )
             )
             if self._workspace_summary_ready(performance_status, performance_payload):
@@ -1711,6 +1719,21 @@ class ReportingReadService:
             }
         return {
             "summary": summary,
+            "monthly_history": self._workspace_performance_history(
+                results_by_period=results_by_period,
+                period_name="1Y",
+                frequency="monthly",
+            ),
+            "annual_history": self._workspace_performance_history(
+                results_by_period=results_by_period,
+                period_name="5Y",
+                frequency="yearly",
+            )
+            or self._workspace_performance_history(
+                results_by_period=results_by_period,
+                period_name="SI",
+                frequency="yearly",
+            ),
             "benchmark": self._performance_benchmark_context(
                 request_payload,
                 available=benchmark_available,
@@ -1747,14 +1770,14 @@ class ReportingReadService:
         portfolio_id: str,
         as_of_date: str,
         request_payload: dict[str, object],
-        periods: list[str],
+        periods: list[str] | tuple[dict[str, object], ...],
     ) -> dict[str, object]:
         request: dict[str, object] = {
             "portfolio_id": portfolio_id,
             "report_end_date": as_of_date,
             "input_mode": "stateful",
             "stateful_input": {},
-            "periods": [{"period": period, "frequencies": ["daily"]} for period in periods],
+            "periods": [self._workspace_period_request(period) for period in periods],
         }
         reporting_currency = self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS)
         if reporting_currency:
@@ -1772,6 +1795,17 @@ class ReportingReadService:
                 "stateful_input": {},
             }
         return request
+
+    def _workspace_period_request(self, period: str | dict[str, object]) -> dict[str, object]:
+        if isinstance(period, str):
+            return {"period": period, "frequencies": ["daily"]}
+        period_name = self._safe_str(period.get("period"))
+        frequencies = [
+            frequency
+            for frequency in self._as_list(period.get("frequencies"))
+            if isinstance(frequency, str) and frequency
+        ]
+        return {"period": period_name, "frequencies": frequencies or ["daily"]}
 
     def _build_contribution_request(
         self,
@@ -1944,11 +1978,64 @@ class ReportingReadService:
         return end_date if isinstance(end_date, str) and end_date else None
 
     def _workspace_daily_breakdowns(self, period_payload: dict[str, object]) -> list[object]:
+        return self._workspace_breakdowns(period_payload, frequency="daily")
+
+    def _workspace_breakdowns(
+        self, period_payload: dict[str, object], *, frequency: str
+    ) -> list[object]:
         portfolio_twr = self._as_dict(period_payload.get("portfolio_twr"))
         net_block = self._as_dict(portfolio_twr.get("net"))
         breakdowns = self._as_dict(net_block.get("breakdowns"))
-        daily = breakdowns.get("daily")
-        return daily if isinstance(daily, list) else []
+        items = breakdowns.get(frequency)
+        return items if isinstance(items, list) else []
+
+    def _workspace_performance_history(
+        self,
+        *,
+        results_by_period: dict[str, object],
+        period_name: str,
+        frequency: str,
+    ) -> list[dict[str, object]]:
+        period_payload = self._as_dict(results_by_period.get(period_name))
+        history: list[dict[str, object]] = []
+        cumulative_value = 0.0
+        for item in self._workspace_breakdowns(period_payload, frequency=frequency):
+            row = self._as_dict(item)
+            economics = self._as_dict(row.get("economics"))
+            begin_market_value = self._to_float(economics.get("begin_market_value"))
+            end_market_value = self._to_float(economics.get("end_market_value"))
+            beginning_cash_flow = self._to_float(economics.get("beginning_cash_flow"))
+            ending_cash_flow = self._to_float(economics.get("ending_cash_flow"))
+            net_cash_flow = self._to_float(economics.get("net_cash_flow"))
+            flow_adjusted_end_value = self._to_float(
+                economics.get("flow_adjusted_end_market_value")
+            )
+            performance_value = flow_adjusted_end_value - begin_market_value
+            cumulative_value += performance_value
+            inflows = sum(
+                amount for amount in (beginning_cash_flow, ending_cash_flow) if amount > 0
+            )
+            outflows = sum(
+                amount for amount in (beginning_cash_flow, ending_cash_flow) if amount < 0
+            )
+            history.append(
+                {
+                    "period": self._safe_str(row.get("period")),
+                    "period_start": self._safe_str(row.get("period_start")),
+                    "period_end": self._safe_str(row.get("period_end")),
+                    "begin_market_value": begin_market_value,
+                    "end_market_value": end_market_value,
+                    "inflows": inflows,
+                    "outflows": outflows,
+                    "net_cash_flow": net_cash_flow,
+                    "performance_value": performance_value,
+                    "cumulative_performance_value": cumulative_value,
+                    "twr_pct": self._return_base(row, "period_return"),
+                    "cumulative_twr_pct": self._return_base(row, "cumulative_return"),
+                    "annualized_twr_pct": self._return_base(row, "annualized_return"),
+                }
+            )
+        return history
 
     def _workspace_portfolio_open_date(self, payload: dict[str, object]) -> str | None:
         results_by_period = self._as_dict(payload.get("results_by_period"))
@@ -2217,6 +2304,7 @@ class ReportingReadService:
             "ytd_benchmark_relative_return_pct": self._period_return(
                 summary, "YTD", "benchmark_relative_return"
             ),
+            "one_year_net_return_pct": self._period_return(summary, "1Y", "net_cumulative_return"),
             "five_year_net_annualized_return_pct": self._period_return(
                 summary, "5Y", "net_annualized_return"
             ),

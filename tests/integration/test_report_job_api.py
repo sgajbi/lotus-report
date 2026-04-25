@@ -15,6 +15,7 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_lineage.store import ReportInputSnapshotStore
+from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.report_jobs import get_report_lineage_store
 
 
@@ -25,6 +26,9 @@ def _client(tmp_path):
     app.dependency_overrides[get_report_lineage_store] = lambda: lineage_store
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _FakeCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _FakeRenderService()
     )
     return TestClient(app), ledger, lineage_store
 
@@ -138,6 +142,11 @@ class _FakeCaptureService:
         )
 
 
+class _FakeRenderService:
+    async def render_for_job(self, job):
+        return job
+
+
 def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
     client, ledger, _lineage_store = _client(tmp_path)
     try:
@@ -246,6 +255,50 @@ def test_portfolio_review_job_submit_is_idempotent(tmp_path):
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json() == first.json()
+    finally:
+        _clear_overrides()
+
+
+def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        payload = _payload()
+        payload["requested_output_formats"] = ["pdf"]
+
+        class _CompletingRenderService:
+            async def render_for_job(self, job):
+                return ledger.mark_completed(
+                    job_id=job.job_id,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                    render_job_id=f"rdr_{job.job_id}_pdf",
+                    output_format="pdf",
+                    template_id="portfolio-review",
+                    template_version="v1",
+                    artifact_sha256="sha256:artifact",
+                    bounded_determinism_fingerprint="fingerprint",
+                    runtime_engine="typst",
+                    runtime_engine_version="0.14.2",
+                    render_duration_ms=812,
+                )
+
+        app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+            _CompletingRenderService()
+        )
+
+        response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
+
+        assert response.status_code == 202
+        handle = response.json()
+        assert handle["status"] == "completed"
+
+        status_response = client.get(f"/reports/jobs/{handle['report_job_id']}", headers=_headers())
+        assert status_response.status_code == 200
+        body = status_response.json()
+        assert body["status"] == "completed"
+        assert body["render"]["render_job_id"] == f"rdr_{handle['report_job_id']}_pdf"
+        assert body["render"]["artifact_sha256"] == "sha256:artifact"
     finally:
         _clear_overrides()
 
@@ -417,7 +470,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
-    assert status_example["status"] == "data_ready"
+    assert status_example["status"] == "completed"
+    assert status_example["render"]["render_job_id"].startswith("rdr_")
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
     assert "Report Jobs" in list_get["tags"]

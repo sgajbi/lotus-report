@@ -8,6 +8,7 @@ ReportJobStatus = Literal[
     "queued",
     "collecting_data",
     "data_ready",
+    "rendering",
     "completed",
     "completed_with_warnings",
     "failed",
@@ -19,6 +20,9 @@ ReportFailureCategory = Literal[
     "validation_failed",
     "upstream_data_failed",
     "data_incomplete",
+    "render_validation_failed",
+    "render_conflict",
+    "render_execution_failed",
     "timeout",
     "cancelled",
     "operator_intervention_required",
@@ -39,10 +43,10 @@ class PortfolioReviewJobRequest(BaseModel):
     requested_output_formats: list[str] = Field(
         default_factory=lambda: ["json"],
         description=(
-            "Requested output formats. The first job-ledger wave accepts job intent only; "
-            "PDF is not rendered."
+            "Requested output formats. The current wave supports JSON-only jobs that stop at "
+            "`data_ready` and PDF jobs that submit a governed render package to lotus-render."
         ),
-        examples=[["json"]],
+        examples=[["json"], ["pdf"]],
     )
     reporting_currency: str | None = Field(
         default=None,
@@ -64,7 +68,7 @@ class PortfolioReviewJobRequest(BaseModel):
 PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
     "as_of_date": "2026-04-22",
-    "requested_output_formats": ["json"],
+    "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",
     "options": {
         "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS"],
@@ -76,7 +80,7 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_HANDLE_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
-    "status": "data_ready",
+    "status": "completed",
     "status_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5",
     "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
 }
@@ -87,19 +91,30 @@ REPORT_JOB_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
     "report_request_id": "rrq_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
     "report_type": "portfolio_review",
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
-    "status": "data_ready",
+    "status": "completed",
     "failure_category": None,
     "failure_message": None,
-    "current_step": "data_ready",
+    "current_step": "completed",
     "retry_eligible": False,
     "cancel_requested": False,
     "created_at": "2026-04-22T09:00:00Z",
-    "updated_at": "2026-04-22T09:00:00Z",
+    "updated_at": "2026-04-22T09:00:03Z",
     "started_at": None,
-    "completed_at": None,
+    "completed_at": "2026-04-22T09:00:03Z",
     "cancelled_at": None,
     "correlation_id": "corr-portfolio-review-1",
     "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "render": {
+        "render_job_id": "rdr_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review",
+        "bounded_determinism_fingerprint": "typst-0.14.2:a4c71e5d",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 812,
+    },
 }
 
 
@@ -124,7 +139,7 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
-    "status": "data_ready",
+    "status": "completed",
     "report_type": "portfolio_review",
     "portfolio_id": "PB_SG_GLOBAL_BAL_001",
     "as_of_date": "2026-04-22",
@@ -147,15 +162,26 @@ REPORT_JOB_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
             "region": "APAC",
             "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
             "as_of_date": "2026-04-22",
-            "status": "data_ready",
+            "status": "completed",
             "failure_category": None,
-            "current_step": "data_ready",
+            "current_step": "completed",
             "retry_eligible": False,
             "cancel_requested": False,
             "idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
             "correlation_id": "corr-portfolio-review-1",
             "created_at": "2026-04-22T09:00:00Z",
-            "updated_at": "2026-04-22T09:00:00Z",
+            "updated_at": "2026-04-22T09:00:03Z",
+            "render": {
+                "render_job_id": "rdr_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+                "output_format": "pdf",
+                "template_id": "portfolio-review",
+                "template_version": "v1",
+                "artifact_sha256": "sha256:artifact-portfolio-review",
+                "bounded_determinism_fingerprint": "typst-0.14.2:a4c71e5d",
+                "runtime_engine": "typst",
+                "runtime_engine_version": "0.14.2",
+                "render_duration_ms": 812,
+            },
         }
     ],
 }
@@ -314,6 +340,54 @@ class ReportJobHandleResponse(BaseModel):
     )
 
 
+class ReportJobRenderInfo(BaseModel):
+    render_job_id: str | None = Field(
+        default=None,
+        description="Opaque lotus-render job identifier when rendering was requested.",
+        examples=["rdr_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf"],
+    )
+    output_format: str | None = Field(
+        default=None,
+        description="Rendered output format when rendering was requested.",
+        examples=["pdf"],
+    )
+    template_id: str | None = Field(
+        default=None,
+        description="Template identifier used by lotus-render.",
+        examples=["portfolio-review"],
+    )
+    template_version: str | None = Field(
+        default=None,
+        description="Template version used by lotus-render.",
+        examples=["v1"],
+    )
+    artifact_sha256: str | None = Field(
+        default=None,
+        description="Rendered artifact hash when rendering completed successfully.",
+        examples=["sha256:2f817e5d665db6c709e1a9f2332ff7fa609d7304c55ba921f97d9b2d71b0679d"],
+    )
+    bounded_determinism_fingerprint: str | None = Field(
+        default=None,
+        description="Bounded determinism fingerprint when rendering completed successfully.",
+        examples=["376a56c2eae1ccd6a1e09f8c51b190d098b7b7221e266c86dcc524132b745140"],
+    )
+    runtime_engine: str | None = Field(
+        default=None,
+        description="Render engine reported by lotus-render.",
+        examples=["typst"],
+    )
+    runtime_engine_version: str | None = Field(
+        default=None,
+        description="Render engine version reported by lotus-render.",
+        examples=["0.14.2"],
+    )
+    render_duration_ms: int | None = Field(
+        default=None,
+        description="Measured render duration in milliseconds when available.",
+        examples=[842],
+    )
+
+
 class ReportJobStatusResponse(BaseModel):
     report_job_id: str = Field(
         ...,
@@ -399,6 +473,10 @@ class ReportJobStatusResponse(BaseModel):
         ...,
         description="Distributed trace identifier captured at request creation.",
         examples=["4bf92f3577b34da6a3ce929d0e0e4736"],
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Support-safe render metadata when a rendered artifact was requested.",
     )
 
 
@@ -607,6 +685,10 @@ class ReportJobListItem(BaseModel):
         description="UTC timestamp when the job was last updated.",
         examples=["2026-04-22T09:00:00Z"],
     )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Support-safe render summary when a rendered artifact was requested.",
+    )
 
 
 class ReportJobListResponse(BaseModel):
@@ -658,3 +740,12 @@ class ReportJobLedgerRecord(BaseModel):
     cancelled_at: datetime | None = None
     correlation_id: str
     trace_id: str
+    render_job_id: str | None = None
+    render_output_format: str | None = None
+    render_template_id: str | None = None
+    render_template_version: str | None = None
+    render_artifact_sha256: str | None = None
+    render_bounded_determinism_fingerprint: str | None = None
+    render_runtime_engine: str | None = None
+    render_runtime_engine_version: str | None = None
+    render_duration_ms: int | None = None

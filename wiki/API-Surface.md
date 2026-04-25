@@ -17,8 +17,8 @@
 - `POST /reports/portfolios/{portfolio_id}/review`
   machine-readable portfolio review report payload for client/advisor meetings
 - `POST /reports/portfolio-reviews`
-  internal durable portfolio review report job initiation; returns a job handle, not a rendered
-  document
+  internal durable portfolio review report job initiation; returns a job handle and, for PDF jobs,
+  may advance through render completion before the response returns
 - `GET /reports/jobs`
   internal operator-safe bounded search for report jobs by tenant, region, status, report type,
   portfolio id, as-of date, idempotency key, correlation id, and created-at window
@@ -67,9 +67,10 @@ front-office consumers.
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
-- report job endpoints do not render PDFs or archive documents
-- successful first-wave job initiation captures a durable snapshot and upstream lineage before the
-  job reaches `data_ready`
+- PDF-capable report jobs submit a governed render package to `lotus-render`; archive and retention
+  workflows remain out of scope
+- successful job initiation captures a durable snapshot and upstream lineage before the job reaches
+  `data_ready`, and PDF jobs may then advance through `rendering` to `completed`
 - snapshot and lineage endpoints are support-safe evidence APIs; they return hashes, posture, and
   summary metadata instead of raw upstream payload internals
 
@@ -127,7 +128,7 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" \
   -H "X-Booking-Center-Code: SG" \
   -H "X-Role: advisor" \
   -H "X-Correlation-ID: portfolio-review-job-local-proof" \
-  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"json\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
+  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
 ```
 
 Report job status:
@@ -159,7 +160,7 @@ curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" \
 Report job operational search:
 
 ```bash
-curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=data_ready&limit=25" \
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=completed&limit=25" \
   -H "X-Actor-Id: support-operator-1" \
   -H "X-Tenant-Id: tenant-sg" \
   -H "X-Region: APAC"
@@ -190,7 +191,7 @@ includes deterministic `report_structure`, `advisor_briefing`, guarded `ai_readi
 `upstream_capability_audit` metadata so front-office consumers can organize a review meeting without
 treating report gaps as advice or silently losing upstream dependency gaps.
 Portfolio review capability keys are published through `GET /integration/capabilities`.
-Report job capability keys are also published there once implementation-backed.
+Report job capability keys and PDF render-submission posture are also published there once implementation-backed.
 
 Detailed response-family guidance lives in [Portfolio Review Report](Portfolio-Review-Report).
 

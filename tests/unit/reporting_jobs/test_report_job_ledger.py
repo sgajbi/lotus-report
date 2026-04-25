@@ -290,6 +290,53 @@ def test_report_job_ledger_marks_collecting_data_data_ready_and_failed(tmp_path)
     ]
 
 
+def test_report_job_ledger_marks_rendering_and_completed(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(requested_output_formats=["pdf"]),
+        caller_context=_caller(correlation_id="corr-render"),
+        idempotency_key="idem-rendering",
+    )
+    ready = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor="advisor-123",
+        correlation_id="corr-render-ready",
+        trace_id="trace-render-ready",
+    )
+
+    rendering = ledger.mark_rendering(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id="corr-rendering",
+        trace_id="trace-rendering",
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+    assert rendering.status == "rendering"
+    assert rendering.render_job_id == f"rdr_{ready.job_id}_pdf"
+
+    completed = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor="advisor-123",
+        correlation_id="corr-render-complete",
+        trace_id="trace-render-complete",
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    assert completed.status == "completed"
+    assert completed.render_artifact_sha256 == "sha256:artifact"
+    assert completed.completed_at is not None
+
+
 def test_report_job_ledger_transition_helper_handles_not_found_same_status_and_invalid_path(
     tmp_path,
 ):

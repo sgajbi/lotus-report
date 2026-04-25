@@ -10,8 +10,8 @@
   advisor-only separation, AI-readiness guardrails, and evidence lineage before treating the output
   as meeting-ready
 - for report job evidence, verify idempotency behavior, operator-safe search, product-safe status,
-  append-only status events, durable snapshot evidence, upstream lineage evidence, and bounded
-  cancellation before render/archive/completion
+  append-only status events, durable snapshot evidence, upstream lineage evidence, render metadata,
+  and bounded cancellation before `rendering`/archive/completion
 
 ## Health and readiness surfaces
 
@@ -59,6 +59,7 @@ sequenceDiagram
     participant GW as lotus-gateway
     participant REPORT as lotus-report
     participant PG as lotus-report-postgres
+    participant RENDER as lotus-render
 
     WB->>GW: POST /api/v1/reports/portfolio-reviews
     GW->>REPORT: POST /reports/portfolio-reviews
@@ -129,6 +130,10 @@ sequenceDiagram
     REPORT->>PG: insert report_input_snapshot
     REPORT->>PG: insert report_upstream_call rows
     REPORT->>PG: mark job data_ready or failed
+    REPORT->>PG: mark job rendering
+    REPORT->>RENDER: POST /renders
+    RENDER-->>REPORT: rendered artifact metadata or failure
+    REPORT->>PG: mark job completed or failed
     REPORT-->>GW: 202 job handle with current status
 ```
 
@@ -236,15 +241,16 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
   -H "X-Booking-Center-Code: SG" `
   -H "X-Role: advisor" `
   -H "X-Correlation-ID: portfolio-review-job-local-proof" `
-  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"json\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
+  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
 ```
 
 The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
-`status_url`, and `idempotency_key`. In the current first-wave implementation, synchronous capture
-typically advances the handle to `data_ready` before the response returns. Use
+`status_url`, and `idempotency_key`. JSON-only requests typically advance the handle to
+`data_ready` before the response returns. PDF requests may continue through `rendering` to
+`completed` before the response returns when the render handoff succeeds synchronously. Use
 `GET /api/v1/report-jobs?portfolioId=...&tenantId=...` for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
 `GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
-`POST /api/v1/report-jobs/{job_id}/cancel` only before render/archive/completion phases.
+`POST /api/v1/report-jobs/{job_id}/cancel` only before the job reaches `rendering`, archive, or completion.
 
 When testing `lotus-report` directly for service-owned diagnostics, use the equivalent internal
 paths `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,

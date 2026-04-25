@@ -267,6 +267,64 @@ class _PerformanceClientSuccess:
                     },
                     "money_weighted_return": {"start_date": "2026-01-01", "end_date": "2026-02-24"},
                 },
+                "1Y": {
+                    "portfolio_twr": {
+                        "net": {
+                            "summary": {
+                                "cumulative_return": {"base": 7.08},
+                                "annualized_return": {"base": 7.08},
+                            },
+                            "breakdowns": {
+                                "daily": [
+                                    {
+                                        "period": "2026-02-24",
+                                        "period_end": "2026-02-24",
+                                        "period_return": {"base": 1.0},
+                                    }
+                                ],
+                                "monthly": [
+                                    {
+                                        "period": "2026-01",
+                                        "period_start": "2026-01-01",
+                                        "period_end": "2026-01-31",
+                                        "economics": {
+                                            "begin_market_value": 5_000_000.0,
+                                            "end_market_value": 5_214_639.0,
+                                            "beginning_cash_flow": 5_841_778.0,
+                                            "ending_cash_flow": -5_841_749.0,
+                                            "net_cash_flow": 29.0,
+                                            "flow_adjusted_end_market_value": 5_129_000.0,
+                                        },
+                                        "period_return": {"base": -1.64},
+                                        "cumulative_return": {"base": -1.64},
+                                    },
+                                    {
+                                        "period": "2026-02",
+                                        "period_start": "2026-02-01",
+                                        "period_end": "2026-02-24",
+                                        "economics": {
+                                            "begin_market_value": 5_214_639.0,
+                                            "end_market_value": 5_296_856.0,
+                                            "beginning_cash_flow": 4_722_497.0,
+                                            "ending_cash_flow": -4_858_311.0,
+                                            "net_cash_flow": -135_814.0,
+                                            "flow_adjusted_end_market_value": 5_298_774.0,
+                                        },
+                                        "period_return": {"base": 1.59},
+                                        "cumulative_return": {"base": -0.08},
+                                    },
+                                ],
+                            },
+                        }
+                    },
+                    "benchmark": {
+                        "summary": {"cumulative_return": {"base": 6.6}},
+                        "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
+                        "return_source": "calculated",
+                    },
+                    "active": {"net": {"cumulative_return": {"base": 0.48}}},
+                    "money_weighted_return": {"start_date": "2025-02-24", "end_date": "2026-02-24"},
+                },
                 "5Y": {
                     "portfolio_twr": {
                         "net": {
@@ -281,7 +339,41 @@ class _PerformanceClientSuccess:
                                         "period_end": "2026-02-24",
                                         "period_return": {"base": 1.0},
                                     }
-                                ]
+                                ],
+                                "yearly": [
+                                    {
+                                        "period": "2024",
+                                        "period_start": "2024-01-01",
+                                        "period_end": "2024-12-31",
+                                        "economics": {
+                                            "begin_market_value": 4_800_000.0,
+                                            "end_market_value": 5_010_000.0,
+                                            "beginning_cash_flow": 100_000.0,
+                                            "ending_cash_flow": -50_000.0,
+                                            "net_cash_flow": 50_000.0,
+                                            "flow_adjusted_end_market_value": 4_960_000.0,
+                                        },
+                                        "period_return": {"base": 3.4},
+                                        "cumulative_return": {"base": 8.2},
+                                        "annualized_return": {"base": 2.7},
+                                    },
+                                    {
+                                        "period": "2025",
+                                        "period_start": "2025-01-01",
+                                        "period_end": "2025-12-31",
+                                        "economics": {
+                                            "begin_market_value": 5_010_000.0,
+                                            "end_market_value": 5_296_856.0,
+                                            "beginning_cash_flow": 80_000.0,
+                                            "ending_cash_flow": -20_000.0,
+                                            "net_cash_flow": 60_000.0,
+                                            "flow_adjusted_end_market_value": 5_236_856.0,
+                                        },
+                                        "period_return": {"base": 4.5},
+                                        "cumulative_return": {"base": 12.0},
+                                        "annualized_return": {"base": 3.9},
+                                    },
+                                ],
                             },
                         },
                         "gross": {
@@ -711,6 +803,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["keyFigures"]["performance"]["benchmark_comparison_status"] == "available"
     assert response["keyFigures"]["performance"]["ytd_benchmark_return_pct"] == 3.4
     assert response["keyFigures"]["performance"]["ytd_benchmark_relative_return_pct"] == 0.7
+    assert response["keyFigures"]["performance"]["one_year_net_return_pct"] == 7.08
     assert response["keyFigures"]["performance"]["contribution_status"] == "present"
     assert response["keyFigures"]["performance"]["largest_positive_contributor"] == {
         "security_id": "EQ-1",
@@ -769,10 +862,35 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["upstreamCapabilityAudit"]["report_side_findings"] == []
     assert response["methodology"]["benchmark_code"] == "BMK_PB_GLOBAL_BALANCED_60_40"
     assert response["methodology"]["return_methodology"] == "time_weighted_return"
+    assert len(response["performance"]["monthly_history"]) == 2
+    assert response["performance"]["monthly_history"][1] == {
+        "period": "2026-02",
+        "period_start": "2026-02-01",
+        "period_end": "2026-02-24",
+        "begin_market_value": 5214639.0,
+        "end_market_value": 5296856.0,
+        "inflows": 4722497.0,
+        "outflows": -4858311.0,
+        "net_cash_flow": -135814.0,
+        "performance_value": 84135.0,
+        "cumulative_performance_value": 213135.0,
+        "twr_pct": 1.59,
+        "cumulative_twr_pct": -0.08,
+        "annualized_twr_pct": None,
+    }
+    assert len(response["performance"]["annual_history"]) == 2
+    assert response["performance"]["annual_history"][1]["period"] == "2025"
+    assert response["performance"]["annual_history"][1]["annualized_twr_pct"] == 3.9
     requested_periods = [
         period["period"] for period in performance_client.seen_payloads[0]["periods"]
     ]
-    assert requested_periods == ["1M", "3M", "YTD", "5Y", "SI"]
+    assert requested_periods == ["1M", "3M", "YTD", "1Y", "5Y", "SI"]
+    requested_frequencies = {
+        period["period"]: period["frequencies"]
+        for period in performance_client.seen_payloads[0]["periods"]
+    }
+    assert requested_frequencies["1Y"] == ["daily", "monthly"]
+    assert requested_frequencies["5Y"] == ["daily", "yearly"]
     assert performance_client.seen_payloads[0]["include_benchmark"] is True
     assert performance_client.seen_payloads[0]["benchmark"] == {
         "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
