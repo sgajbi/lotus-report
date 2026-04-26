@@ -358,12 +358,14 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Validation on 2026-04-26:
     - `python -m pytest tests/unit/report_batch_orchestrator/test_process.py
       tests/unit/report_batch_orchestrator/test_boundary.py tests/unit/test_config_defaults.py
-      tests/unit/test_docker_compose_runtime.py -q` passed with 8 tests.
+      tests/unit/test_docker_compose_runtime.py -q` passed with 11 tests.
     - `python -m ruff check src/app/report_batch_orchestrator/process.py
       tests/unit/report_batch_orchestrator/test_process.py src/app/config.py
       tests/unit/test_config_defaults.py tests/unit/test_docker_compose_runtime.py` passed.
-    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and 309
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and 312
       unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make test-coverage` passed with 99% combined coverage.
     - PostgreSQL-backed validation passed with
       `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
       for `python -m pytest tests/integration/test_postgres_report_batch_ledger.py -q` and

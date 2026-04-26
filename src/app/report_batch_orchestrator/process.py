@@ -182,5 +182,5 @@ def main() -> None:
     asyncio.run(run_batch_worker_process(max_iterations=max_iterations))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

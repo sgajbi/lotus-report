@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sys
+
 from app.config import Settings
+from app.report_batch_orchestrator import process as process_module
 from app.report_batch_orchestrator.models import BatchDispatchPolicy
 from app.report_batch_orchestrator.process import (
     BatchWorkerProcess,
@@ -135,3 +138,68 @@ async def test_batch_worker_process_can_stop_after_current_pass() -> None:
     await process.run()
 
     assert len(runtime.calls) == 1
+
+
+async def test_run_batch_worker_process_builds_config_and_runs_runtime() -> None:
+    runtime = _Runtime()
+    source = Settings(
+        _env_file=None,
+        REPORT_BATCH_WORKER_ID="worker-main-1",
+        REPORT_BATCH_WORKER_INTERVAL_SECONDS=0.1,
+        REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS=9,
+        REPORT_BATCH_WORKER_TENANT_ID="tenant-main",
+        REPORT_BATCH_WORKER_REGION="APAC",
+        REPORT_BATCH_WORKER_BOOKING_CENTER_CODE="SG",
+        REPORT_BATCH_WORKER_ROLE="operations",
+    )
+
+    await process_module.run_batch_worker_process(
+        runtime=runtime,
+        source_settings=source,
+        max_iterations=1,
+    )
+
+    assert len(runtime.calls) == 1
+    call = runtime.calls[0]
+    assert call["worker_id"] == "worker-main-1"
+    assert call["max_batches"] == 9
+    assert isinstance(call["caller_context"], ReportCallerContext)
+    assert call["caller_context"].tenant_id == "tenant-main"
+
+
+def test_main_maps_once_flag_to_single_iteration(monkeypatch) -> None:
+    calls: list[int | None] = []
+
+    async def _run_batch_worker_process(*, max_iterations: int | None = None) -> None:
+        calls.append(max_iterations)
+
+    monkeypatch.setattr(sys, "argv", ["process.py", "--once"])
+    monkeypatch.setattr(process_module, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        process_module,
+        "run_batch_worker_process",
+        _run_batch_worker_process,
+    )
+
+    process_module.main()
+
+    assert calls == [1]
+
+
+def test_main_accepts_explicit_max_iterations(monkeypatch) -> None:
+    calls: list[int | None] = []
+
+    async def _run_batch_worker_process(*, max_iterations: int | None = None) -> None:
+        calls.append(max_iterations)
+
+    monkeypatch.setattr(sys, "argv", ["process.py", "--max-iterations", "3"])
+    monkeypatch.setattr(process_module, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        process_module,
+        "run_batch_worker_process",
+        _run_batch_worker_process,
+    )
+
+    process_module.main()
+
+    assert calls == [3]
