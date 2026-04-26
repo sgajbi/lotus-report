@@ -269,9 +269,9 @@ This document provides explicit implementation evidence pointers for active RFCs
     non-runnable skipped batches, product-safe not-found and inconsistent-state errors, and OpenAPI
     request/response examples for the new models.
   - `docs/supported-features.md`, `wiki/API-Surface.md`, and `wiki/Operations-Runbook.md` promote
-    only the bounded internal run-once API. Scheduler loops, background worker runtime, gateway
-    exposure, Workbench surfaces, broad replay, rerender, regenerate, and runtime dashboards remain
-    future RFC-0104/RFC-0105 scope.
+    only the bounded internal run-once API. Scheduler loops, daemonized background worker runtime,
+    gateway exposure, Workbench surfaces, broad replay, rerender, regenerate, and runtime
+    dashboards remain future RFC-0104/RFC-0105 scope.
   - Validation on 2026-04-26:
     - `python -m pytest tests/integration/test_report_batch_api.py
       tests/unit/report_batch_orchestrator/test_worker.py
@@ -304,3 +304,41 @@ This document provides explicit implementation evidence pointers for active RFCs
       -CheckOnly -Repository lotus-report` reported expected branch-local publication drift for
       `API-Surface.md`, `Operations-Runbook.md`, and `RFC-Index.md`. Publish after merge.
     - Pending in this branch: GitHub Feature Lane / PR Merge Gate.
+- Slice 12 bounded runtime pass evidence:
+  - `src/app/report_batch_orchestrator/runtime.py` adds `ReportBatchRuntime.run_pass`, an internal
+    bounded runtime primitive that scans a limited ordered set of runnable durable batches and
+    advances each through the existing single-batch worker.
+  - `ReportBatchLedger.list_runnable_batch_ids` and
+    `PostgresReportBatchLedger.list_runnable_batch_ids` define the durable scan. Runnable means the
+    batch is `materialized` or `running` and has at least one materialized, recovery-pending,
+    waiting, expired leased, or due retryable item. Paused and terminal batches are excluded.
+  - The runtime pass stops after the first no-progress back-pressure result instead of spinning
+    through later batches under the same runtime pressure snapshot.
+  - This slice deliberately does not introduce a daemon, process supervisor, continuous scheduler
+    loop, gateway route, Workbench surface, RFC-0105 operations dashboard, or RFC-0106 entitlement
+    certification.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_runtime.py
+      tests/unit/report_batch_orchestrator/test_worker.py -q` passed with 6 tests.
+    - `$env:REPORT_JOB_LEDGER_DATABASE_URL='postgresql://lotus_report:lotus_report@localhost:5439/lotus_report';
+      python -m pytest tests/integration/test_postgres_report_batch_ledger.py -q` passed with 13
+      PostgreSQL-backed tests.
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and 305
+      unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make migration-smoke` passed.
+    - Targeted Docker refresh: `docker compose up -d --build lotus-report` rebuilt and restarted
+      only the changed `lotus-report` service while preserving the running support stack.
+    - Live runtime-pass proof against the local Docker stack created
+      `batch_id=rbch_c2dc42940622452cbe00c4dac1cb834b` with
+      `correlation_id=corr-batch-runtime-live-8152dfb9`; the runtime pass scanned exactly that
+      batch, moved it from `materialized` to `completed`, leased/dispatched/executed one item, and
+      linked `report_job_id=rjob_a62777e85fb4487091c9cae0e23490d8`.
+    - Live database proof reconciled `report_batch.status=completed`,
+      `report_batch_item.status=succeeded`, `report_job.status=archived`,
+      `report_input_snapshot.snapshot_id=rsnap_5d0ace57f7e54de298c0eb914aedb947`,
+      `report_input_snapshot.supportability_status=complete`, and
+      `archive_document_id=doc_f6db8cba0ba843bbbf2553dadb79b4d4`.
+    - Live render logs carried `corr-batch-runtime-live-8152dfb9` through `lotus-render`; archive
+      binary retrieval for `doc_f6db8cba0ba843bbbf2553dadb79b4d4` returned `200 OK`,
+      `content-type=application/pdf`, `content-length=231518`, and SHA-256 checksum headers.

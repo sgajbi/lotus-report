@@ -2,8 +2,9 @@
 
 RFC-0104 currently provides durable batch materialization, deterministic cycle
 identity, internal dispatch/control primitives, internal bounded worker
-execution, and certified materialization, status, and control APIs. Scheduler
-loops and public worker runtime remain future slices.
+execution, a bounded runtime-pass primitive, and certified materialization,
+status, and control APIs. Scheduler loops, daemonized worker processes, and
+public runtime surfaces remain future slices.
 """
 
 from app.report_batch_orchestrator.contracts import (
@@ -44,6 +45,7 @@ from app.report_batch_orchestrator.models import (
     ReportBatchItemRecord,
     ReportBatchRecord,
 )
+from app.report_batch_orchestrator.runtime import BatchRuntimePassResult, ReportBatchRuntime
 from app.report_batch_orchestrator.schedule import (
     BatchScheduleValidationError,
     materialize_cycle,
@@ -74,6 +76,7 @@ __all__ = [
     "BatchItemStatusResponse",
     "BatchRecoveryResponse",
     "BatchRuntimeLoad",
+    "BatchRuntimePassResult",
     "BatchScheduleValidationError",
     "BatchSelectorValidationError",
     "BatchStatusResponse",
@@ -86,6 +89,7 @@ __all__ = [
     "ReportBatchDispatcher",
     "ReportBatchExecutionService",
     "ReportBatchWorker",
+    "ReportBatchRuntime",
     "ReportBatchItemRecord",
     "ReportBatchLedger",
     "ReportBatchRecord",

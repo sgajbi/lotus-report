@@ -604,6 +604,52 @@ class PostgresReportBatchLedger:
             ).fetchone()
         return int(row["count"])
 
+    def list_runnable_batch_ids(
+        self,
+        *,
+        limit: int = 10,
+        now: Any | None = None,
+    ) -> list[str]:
+        if limit < 1:
+            return []
+
+        scan_at = now or utc_now()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT report_batch.batch_id, report_batch.created_at
+                FROM report_batch
+                JOIN report_batch_item
+                  ON report_batch_item.batch_id = report_batch.batch_id
+                WHERE report_batch.status IN ('materialized', 'running')
+                  AND (
+                    report_batch_item.status IN (
+                      'materialized',
+                      'recovery_pending',
+                      'waiting_on_report_job'
+                    )
+                    OR (
+                      report_batch_item.status = 'leased'
+                      AND report_batch_item.report_job_id IS NULL
+                      AND report_batch_item.lease_expires_at IS NOT NULL
+                      AND report_batch_item.lease_expires_at < %s
+                    )
+                    OR (
+                      report_batch_item.status = 'failed_retryable'
+                      AND report_batch_item.retry_eligible IS TRUE
+                      AND (
+                        report_batch_item.next_retry_at IS NULL
+                        OR report_batch_item.next_retry_at <= %s
+                      )
+                    )
+                  )
+                ORDER BY report_batch.created_at, report_batch.batch_id
+                LIMIT %s
+                """,
+                (scan_at, scan_at, limit),
+            ).fetchall()
+        return [str(row["batch_id"]) for row in rows]
+
     def get_batch(self, batch_id: str) -> ReportBatchRecord:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
