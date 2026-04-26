@@ -182,7 +182,7 @@ class _CaptureService:
 
 
 class _RenderClientSuccess:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         assert payload["report_job_id"].startswith("rjob_")
         assert payload["snapshot_id"].startswith("snapshot-for-rjob_")
         assert payload["report_data"]["client_name"] == "Alex Tan"
@@ -201,7 +201,7 @@ class _RenderClientSuccess:
 
 
 class _RenderClientValidationFailure:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 422, {
             "detail": {
                 "code": "render_package_invalid",
