@@ -258,6 +258,14 @@ def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
         assert run_body["materialized"][0]["schedule_id"] == "monthly-sg-global-bal-api"
         assert run_body["materialized"][0]["item_count"] == 1
         assert run_body["materialized"][0]["idempotency_key"].startswith("scheduled-batch-")
+        metrics_body = client.get("/metrics").text
+        assert (
+            'lotus_report_operations_total{failure_category="none",'
+            'operation="batch_scheduler_pass",status="completed"}'
+        ) in metrics_body
+        assert (
+            'lotus_report_batch_scheduler_last_schedules{outcome="attempted"} 1.0'
+        ) in metrics_body
 
         status_response = client.get(
             f"/reports/batches/{run_body['materialized'][0]['batch_id']}",
@@ -421,6 +429,12 @@ def test_report_batch_run_once_endpoint_returns_operator_safe_result(tmp_path):
             }
         ]
         assert body["status_url"] == f"/reports/batches/{batch_id}"
+        metrics_body = client.get("/metrics").text
+        assert (
+            'lotus_report_operations_total{failure_category="none",'
+            'operation="batch_worker_run",status="completed"}'
+        ) in metrics_body
+        assert 'lotus_report_batch_runtime_last_items{item_state="executed"} 1.0' in metrics_body
     finally:
         _clear_overrides()
 

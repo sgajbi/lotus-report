@@ -20,6 +20,14 @@ from app.observability import (
     setup_logging,
     trace_id_var,
 )
+from app.reporting_metrics import (
+    FORBIDDEN_METRIC_LABELS,
+    IMPLEMENTED_REPORTING_OPERATIONS,
+    REPORTING_METRIC_CONTRACTS,
+    RESERVED_REPORTING_OPERATIONS,
+    record_report_operation,
+    validate_reporting_metric_contracts,
+)
 
 
 def _request_with_headers(headers: dict[str, str]) -> Request:
@@ -140,3 +148,37 @@ def test_setup_logging_initializes_handler_when_root_has_no_handlers():
         root_logger.removeHandler(handler)
     setup_logging()
     assert root_logger.hasHandlers()
+
+
+def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
+    validate_reporting_metric_contracts()
+    implemented_names = {
+        contract.name for contract in REPORTING_METRIC_CONTRACTS if contract.implemented
+    }
+    reserved_names = {
+        contract.name for contract in REPORTING_METRIC_CONTRACTS if not contract.implemented
+    }
+
+    assert "lotus_report_operations_total" in implemented_names
+    assert "lotus_report_replay_operations_total" in reserved_names
+    assert {"report_job_submission", "snapshot_capture", "render_handoff", "archive_handoff"} <= (
+        IMPLEMENTED_REPORTING_OPERATIONS
+    )
+    assert {"replay_command", "rerender_command", "regenerate_command"} <= (
+        RESERVED_REPORTING_OPERATIONS
+    )
+    for contract in REPORTING_METRIC_CONTRACTS:
+        assert not (set(contract.labels) & FORBIDDEN_METRIC_LABELS)
+        assert "correlation_id" not in contract.labels
+        assert "trace_id" not in contract.labels
+        assert "portfolio_id" not in contract.labels
+        assert "client_name" not in contract.labels
+
+
+def test_record_report_operation_rejects_unimplemented_reserved_operation():
+    try:
+        record_report_operation(operation="replay_command", status="failed")
+    except ValueError as exc:
+        assert "unsupported_reporting_metric_operation" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("reserved replay metrics must not be emitted before implementation")

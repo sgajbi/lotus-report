@@ -20,6 +20,7 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from app.reporting_lineage.store import canonical_json_dumps
+from app.reporting_metrics import record_report_operation
 from app.services.reporting_read_service import ReportingReadService
 
 
@@ -461,6 +462,7 @@ class PortfolioReviewSnapshotCaptureService:
         self._job_ledger = job_ledger
 
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+        started_at = perf_counter()
         if job.status in {
             "data_ready",
             "failed",
@@ -564,7 +566,7 @@ class PortfolioReviewSnapshotCaptureService:
         )
 
         if failure_message:
-            return self._job_ledger.mark_failed(
+            failed_job = self._job_ledger.mark_failed(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
@@ -573,12 +575,25 @@ class PortfolioReviewSnapshotCaptureService:
                 failure_message=failure_message,
                 retry_eligible=retry_eligible,
             )
-        return self._job_ledger.mark_data_ready(
+            record_report_operation(
+                operation="snapshot_capture",
+                status=failed_job.status,
+                failure_category=failed_job.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed_job
+        data_ready_job = self._job_ledger.mark_data_ready(
             job_id=job.job_id,
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
+        record_report_operation(
+            operation="snapshot_capture",
+            status=data_ready_job.status,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return data_ready_job
 
 
 def _first_portfolio_id(job: ReportJobLedgerRecord) -> str:

@@ -122,6 +122,14 @@ def get_capabilities(
                 "key": "lotus-report.reporting.portfolio_review.archive_handoff.v1",
                 "enabled": True,
             },
+            {
+                "key": "lotus-report.reporting.observability.traceability.v1",
+                "enabled": True,
+            },
+            {
+                "key": "lotus-report.reporting.observability.metrics.v1",
+                "enabled": True,
+            },
             {"key": BATCH_MATERIALIZATION_API_CAPABILITY_KEY, "enabled": True},
             {"key": BATCH_CONTROL_API_CAPABILITY_KEY, "enabled": True},
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},

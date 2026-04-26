@@ -11,6 +11,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.reporting_metrics import validate_reporting_metric_contracts
+
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
@@ -134,6 +136,7 @@ def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
 
 def setup_observability(app: FastAPI) -> None:
     setup_logging()
+    validate_reporting_metric_contracts()
     Instrumentator().instrument(app).expose(app)
 
     @app.middleware("http")

@@ -60,10 +60,13 @@ Current repository posture:
    config-backed scheduler administration APIs, gateway exposure, and Workbench explicit
    single-portfolio batch operation. Schedule CRUD, Workbench scheduler-management, and
    entitlement-certified public scheduler runtime remain future scope,
-11. RFC-0105 implementation has started with observability structure cleanup. Runtime correlation,
-   request, trace, structured-log, and safe operator lookup field vocabulary is owned in
-   `src/app/observability.py`; later RFC-0105 slices must extend that owner rather than adding
-   one-off literal fields in routers, clients, dashboards, or operator APIs,
+11. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
+   propagation, and first-wave report metrics. Runtime correlation, request, trace, structured-log,
+   and safe operator lookup field vocabulary is owned in `src/app/observability.py`; bounded
+   Prometheus metric vocabulary, reserved replay/rerender/regenerate metric posture, and
+   high-cardinality label rejection are owned in `src/app/reporting_metrics.py`; later RFC-0105
+   slices must extend those owners rather than adding one-off literal fields in routers, clients,
+   dashboards, or operator APIs,
 12. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 13. CI is standardized but still lighter than some core domain services,
@@ -78,34 +81,37 @@ Primary areas:
 2. `src/app/observability.py`
    runtime correlation/request/trace propagation, structured log fields, and safe RFC-0105
    operator lookup field vocabulary.
-3. `scripts/`
+3. `src/app/reporting_metrics.py`
+   RFC-0105 bounded Prometheus metric vocabulary, report operation metrics, batch worker/scheduler
+   gauges, reserved replay/rerender/regenerate metric posture, and metric label governance.
+4. `scripts/`
    migration, OpenAPI, and monetary-float governance.
-4. `tests/`
+5. `tests/`
    unit, integration, and e2e validation.
-5. `docs/standards/`
+6. `docs/standards/`
    local standards and ownership guidance.
-6. `wiki/`
+7. `wiki/`
    canonical authored source for repository wiki publication and reporting operator onboarding summaries.
-7. `contracts/domain-data-products/`
+8. `contracts/domain-data-products/`
    repo-native producer and consumer declarations for governed upstream domain data products and
    reporting evidence products.
-8. `contracts/trust-telemetry/`
+9. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
-9. `src/app/reporting_jobs/`
+10. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, and bounded cancellation for the first
    asynchronous reporting wave.
-10. `src/app/reporting_lineage/`
+11. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
-11. `src/app/reporting_render/`
+12. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
-12. `src/app/report_batch_orchestrator/`
+13. `src/app/report_batch_orchestrator/`
     RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
     validation, durable batch/batch-item materialization, deterministic schedule-cycle
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure
@@ -225,6 +231,8 @@ Update this document when:
 10. current-state rollout posture changes,
 11. RFC-0104 batch orchestration module, selector materialization, support posture, or
     planned-vocabulary scope changes.
+12. RFC-0105 observability, metrics, dashboard, alert, operator API, replay, rerender, or
+    regenerate support posture changes.
 
 ## Cross-Links
 

@@ -154,6 +154,10 @@ Key code areas:
   and bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, and post-render archive handoff
+- `src/app/reporting_metrics.py`
+  RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
+  archive, batch worker, and scheduler operations, with reserved replay/rerender/regenerate posture
+  and high-cardinality label rejection
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
@@ -335,6 +339,9 @@ Current orchestration model:
   compatibility before changing response formatting
 - preserve observability, correlation, request, and trace behavior on reporting endpoints,
   especially when debugging summary, review, batch, render, or archive flows
+- treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
+  dashboard, alert, and label-governance contract; replay, rerender, regenerate, stuck-state, and
+  SLA scan metrics remain reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
 - use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before
