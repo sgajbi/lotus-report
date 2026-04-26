@@ -40,5 +40,6 @@
   `lotus-report`. Internal item execution can advance a dispatched batch item through the existing
   report-job, snapshot, render, and archive handoff path and reconcile the final batch-item state.
   An internal bounded single-batch worker run primitive now combines expired-lease recovery,
-  dispatch, and waiting-item execution. No batch scheduler loop, public worker runtime, dispatch
-  operator API, gateway exposure, or Workbench batch surface is shipped yet
+  dispatch, and waiting-item execution. A certified internal `run-once` operator API exposes one
+  bounded worker pass for an explicit batch. No batch scheduler loop, background worker process,
+  gateway exposure, or Workbench batch surface is shipped yet

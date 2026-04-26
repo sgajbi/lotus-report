@@ -72,12 +72,14 @@ class ReportBatchDispatcher:
         caller_context: ReportCallerContext,
         worker_id: str,
         runtime_load: BatchRuntimeLoad | None = None,
+        policy: BatchDispatchPolicy | None = None,
     ) -> BatchDispatchResult:
+        dispatch_policy = policy or self._policy
         batch = self._batch_ledger.get_batch(batch_id)
         load = self._runtime_load_for_batch(batch=batch, runtime_load=runtime_load)
         back_pressure_reasons = evaluate_back_pressure(
             load,
-            self._policy,
+            dispatch_policy,
         )
         if back_pressure_reasons:
             return BatchDispatchResult(
@@ -88,12 +90,12 @@ class ReportBatchDispatcher:
                 back_pressure_reasons=back_pressure_reasons,
             )
 
-        dispatch_capacity = self._policy.max_active_items - load.active_items
+        dispatch_capacity = dispatch_policy.max_active_items - load.active_items
         leased_items = self._batch_ledger.acquire_dispatch_items(
             batch_id=batch_id,
             worker_id=worker_id,
-            lease_seconds=self._policy.lease_seconds,
-            limit=min(self._policy.max_active_items, dispatch_capacity),
+            lease_seconds=dispatch_policy.lease_seconds,
+            limit=min(dispatch_policy.max_active_items, dispatch_capacity),
         )
         report_job_ids: list[str] = []
         for item in leased_items:

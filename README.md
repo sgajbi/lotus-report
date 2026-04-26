@@ -160,9 +160,10 @@ Key code areas:
   pause/resume, cancellation-boundary, expired-lease recovery primitives, and certified
   materialization/status/control APIs. Internal item execution can reuse the existing report-job,
   snapshot, render, and archive handoff path, and an internal bounded worker run primitive can
-  combine recovery, dispatch, and waiting-item execution for one batch. No batch scheduler loop,
-  public worker process, dispatch operator API, gateway exposure, or Workbench batch surface is
-  implemented yet
+  combine recovery, dispatch, and waiting-item execution for one batch. `POST
+  /reports/batches/{batch_id}:run-once` exposes that bounded worker pass as an internal
+  operator-controlled API. No batch scheduler loop, background worker process, gateway exposure,
+  or Workbench batch surface is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
@@ -332,8 +333,8 @@ Current orchestration model:
   inspecting database rows directly
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
   internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
-  recover-expired-leases controls are direct `lotus-report` APIs and are not yet gateway or
-  Workbench surfaces
+  recover-expired-leases controls plus the bounded `run-once` operator action are direct
+  `lotus-report` APIs and are not yet gateway or Workbench surfaces
 
 ## Documentation Map
 

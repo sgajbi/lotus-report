@@ -6,8 +6,9 @@ Slice 4 adds internal dispatch, lease, and back-pressure primitives. Slice 5 add
 bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. Slice 6
 adds certified materialization, status, and control APIs. Slice 7 adds an internal item execution
 bridge over existing report-job, snapshot, render, and archive handoff paths. Slice 10 adds an
-internal bounded single-batch worker run primitive. Scheduler loops and public worker runtime
-remain later slices.
+internal bounded single-batch worker run primitive. Slice 11 exposes that bounded worker pass
+through an internal operator `run-once` API. Scheduler loops, background worker runtime, gateway
+exposure, and Workbench surfaces remain later slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |
@@ -61,6 +62,9 @@ remain later slices.
 | `worker_dispatched_count` | Number of batch items linked to report jobs in one bounded run | `lotus-report` derived runtime state | `BatchWorkerRunResult.dispatched_count` | Available and used internally |
 | `worker_executed_count` | Number of waiting batch items advanced through execution in one bounded run | `lotus-report` derived runtime state | `BatchWorkerRunResult.executed_count` | Available and used internally |
 | `worker_back_pressure_reasons` | Safe reasons that new dispatch was skipped during one bounded run | `lotus-report` derived runtime state | `BatchWorkerRunResult.back_pressure_reasons` | Available and used internally |
+| `run_once_worker_id` | Operator-supplied worker identity for one bounded API-triggered pass | `lotus-report` caller request | `BatchWorkerRunRequest.worker_id` and `POST /reports/batches/{batch_id}:run-once` | Available and used |
+| `run_once_dispatch_policy` | Optional explicit dispatch limits for one bounded API-triggered pass | `lotus-report` caller request | `BatchWorkerRunRequest.dispatch_policy` | Available and used |
+| `run_once_execution_results` | Product-safe item execution outcomes returned to the operator | `lotus-report` derived runtime state | `BatchWorkerRunResponse.execution_results` | Available and used |
 | `batch_id` | Opaque durable batch identifier for status and control APIs | `lotus-report` derived composition | `POST /reports/batches` response and `GET /reports/batches/{batch_id}` | Available and used |
 | `status_url` | Relative URL for batch status lookup | `lotus-report` derived composition | `BatchHandleResponse.status_url`, `BatchControlResponse.status_url` | Available and used |
 | `status_counts` | Product-safe count of batch items by item status | `lotus-report` derived composition | `BatchStatusResponse.status_counts` | Available and used |
@@ -74,6 +78,6 @@ Source gaps for later slices:
 3. Runtime pressure counts for upstream, render, and archive are accepted by the internal
    dispatcher as `BatchRuntimeLoad`; later worker/API slices must connect those counts to live
    runtime telemetry instead of static caller input.
-4. Batch worker execution is an internal bounded primitive only. A production scheduler loop,
-   executable dispatch operator surface, gateway exposure, and Workbench batch surface remain later
-   slices.
+4. Batch worker execution is exposed only as a bounded single-batch `lotus-report` operator API.
+   A production scheduler loop, background executor process, gateway exposure, and Workbench batch
+   surface remain later slices.

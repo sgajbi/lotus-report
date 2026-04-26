@@ -64,7 +64,8 @@ Current repository posture:
    internal execution bridge that advances dispatched batch items through the existing report-job,
    snapshot, render, and archive handoff path and maps final outcomes back to batch item state.
    Slice 10 adds an internal bounded single-batch worker run primitive over recovery, dispatch,
-   and execution. No batch scheduler loop, public worker process, dispatch operator API, gateway
+   and execution. Slice 11 adds a certified internal `run-once` operator API over the bounded
+   single-batch worker primitive. No batch scheduler loop, background worker process, gateway
    exposure, or Workbench batch surface is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
@@ -113,9 +114,10 @@ Primary areas:
     an internal execution bridge over the existing report-job, snapshot, render, and archive
     handoff pipeline, and an internal single-batch worker run primitive that combines recovery,
     dispatch, and item execution under explicit back-pressure inputs. Certified
-    `POST /reports/batches`, batch status, and batch control APIs expose the
-    materialization/status/control subset while keeping full runtime support disabled until later
-    scheduler, public worker, dispatch, gateway, and Workbench slices are implemented and proven.
+    `POST /reports/batches`, batch status, batch control, and `run-once` APIs expose the
+    materialization/status/control/single-batch-run subset while keeping full runtime support
+    disabled until later scheduler, background worker, gateway, and Workbench slices are
+    implemented and proven.
 
 ## Runtime And Integration Boundaries
 
