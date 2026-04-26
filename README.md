@@ -150,14 +150,14 @@ Key code areas:
 - `src/app/services/aggregation_service.py`
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
-  durable report request/job/status-event ledger, idempotency, render metadata, and bounded
-  cancellation
+  durable report request/job/status-event ledger, idempotency, render metadata, archive metadata,
+  and bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, and post-render archive handoff
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
-  batch/batch-item and deterministic schedule-cycle materialization primitives; no batch scheduler
-  loop, worker, recovery, or runtime API is implemented yet
+  batch/batch-item, deterministic schedule-cycle, dispatch, lease, and back-pressure primitives;
+  no batch scheduler loop, worker process, recovery, or runtime API is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`

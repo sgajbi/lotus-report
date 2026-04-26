@@ -72,3 +72,25 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     no scheduler loop, worker dispatch, retry, pause, resume, or recovery API is shipped by this
     slice.
+- Slice 4 internal dispatch, lease, and back-pressure evidence:
+  - `src/app/report_batch_orchestrator/dispatch.py` implements internal batch-item dispatch under
+    explicit active-batch, active-item, upstream, render, and archive pressure limits.
+  - `src/app/report_batch_orchestrator/ledger.py` and `postgres_ledger.py` persist report-job
+    linkage, lease owner/token/acquired/expires/heartbeat timestamps, dispatch timestamp, active
+    counts, and stale-lease protection.
+  - `migrations/007_report_batch_ledger.sql` adds PostgreSQL dispatch columns and indexes for
+    lease-expiry and report-job lookup.
+  - `tests/unit/report_batch_orchestrator/test_dispatch.py` proves back-pressure reasons, one
+    report job per leased batch item, duplicate dispatch prevention, active batch limits, lease
+    heartbeat/expiry, stale-token rejection, and concurrent worker duplicate prevention.
+  - `tests/integration/test_postgres_report_batch_ledger.py` proves the same dispatch and lease
+    behavior against PostgreSQL when `REPORT_JOB_LEDGER_DATABASE_URL` is available.
+  - `scripts/rfc_0104_slice4_live_evidence.py` produces Docker/PostgreSQL-backed live evidence
+    showing internal dispatch creates exactly one durable report job per batch item.
+  - Live stack proof was run against the canonical Docker front-office topology with
+    `lotus-report` backed by `lotus-report-postgres`, exposed through `report.dev.lotus`, and
+    validated through `lotus-workbench/scripts/live/Start-LotusFrontOfficeCanonical.ps1
+    -CleanCoreState -BuildImages -RunValidation`.
+  - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
+    this slice does not ship a scheduler loop, worker process, operator-facing batch API, retry,
+    pause, resume, cancel, or recovery capability.

@@ -34,5 +34,6 @@
 - RFC-0104 batch reporting is in progress. Internal durable batch and batch-item materialization
   primitives exist for explicit portfolio lists and selected subsets, and deterministic
   schedule-cycle materialization exists for monthly, quarterly, semi-annual, yearly, and explicit
-  cycles. No batch scheduler loop, API, retry-failed-only, pause, resume, or recovery operator
+  cycles. Internal dispatch, lease, report-job creation/reuse, and back-pressure primitives now
+  exist. No batch scheduler loop, API, retry-failed-only, pause, resume, or recovery operator
   capability is shipped yet
