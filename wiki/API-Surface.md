@@ -83,9 +83,10 @@ front-office consumers.
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
-- batch materialization and control APIs are internal `lotus-report` APIs; full batch scheduling,
-  worker execution, dispatch operator APIs, gateway exposure, and Workbench batch surfaces are not
-  yet implementation-backed
+- batch materialization and control APIs are internal `lotus-report` APIs; an internal bounded
+  single-batch worker run primitive exists, but full batch scheduling, public worker runtime,
+  dispatch operator APIs, gateway exposure, and Workbench batch surfaces are not yet
+  implementation-backed
 - PDF-capable report jobs submit a governed render package to `lotus-render`; after successful
   render completion they hand the artifact and source-backed metadata to `lotus-archive`
 - successful job initiation captures a durable snapshot and upstream lineage before the job reaches

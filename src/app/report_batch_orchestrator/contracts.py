@@ -1,7 +1,8 @@
 """RFC-0104 batch reporting vocabulary and support posture.
 
-This module centralizes future batch-orchestration vocabulary without exposing
-runtime behavior before the durable ledger, scheduler, worker, and APIs exist.
+This module centralizes batch-orchestration vocabulary without claiming full
+runtime support before the scheduler, public worker runtime, gateway, and
+Workbench surfaces exist.
 """
 
 from typing import Final, Literal

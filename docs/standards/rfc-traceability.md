@@ -224,3 +224,33 @@ This document provides explicit implementation evidence pointers for active RFCs
       make ci` passed with lint, format, monetary-float guard, mypy, OpenAPI quality, migration
       contract check, 85 integration tests, 6 e2e tests, 298 unit tests, combined 99% coverage, and
       security audit.
+- Slice 10 bounded internal worker run evidence:
+  - `src/app/report_batch_orchestrator/worker.py` implements an internal single-batch worker run
+    primitive over the existing durable ledger, dispatcher, and execution bridge. One run recovers
+    expired pre-dispatch leases, dispatches eligible materialized/recovery/retryable items under
+    the existing back-pressure policy, and advances already waiting report jobs through the
+    execution bridge.
+  - The worker is deliberately not a scheduler loop, background process, public dispatch API,
+    gateway surface, or Workbench surface. `BATCH_RUNTIME_SUPPORTED` remains `False` until those
+    operator/runtime contracts are implemented and certified.
+  - `tests/unit/report_batch_orchestrator/test_worker.py` proves runnable-batch dispatch and
+    execution, paused-batch no-op behavior, and execution of already waiting items when new
+    dispatch is blocked by back pressure.
+  - `migrations/001_report_job_ledger.sql` and
+    `002_report_job_failure_category_and_operational_indexes.sql` now allow the full
+    report-job failure-category vocabulary emitted by render and archive lifecycle code, matching
+    the later render/archive migrations and preventing live runtime schema drift.
+  - `tests/unit/reporting_jobs/test_migration_failure_categories.py` prevents future drift
+    between the `ReportFailureCategory` model vocabulary and the report-job ledger migrations.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_worker.py -q` passed.
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_dispatch.py
+      tests/unit/report_batch_orchestrator/test_execution.py -q` passed.
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and
+      302 unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make migration-smoke` passed.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      python -m pytest tests/integration/test_report_batch_execution.py
+      tests/integration/test_report_batch_api.py tests/integration/test_postgres_report_batch_ledger.py
+      -q` passed with 23 PostgreSQL-backed tests.

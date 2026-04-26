@@ -1,8 +1,9 @@
 """Batch reporting orchestration boundary.
 
 RFC-0104 currently provides durable batch materialization, deterministic cycle
-identity, internal dispatch/control primitives, and certified materialization,
-status, and control APIs. Scheduler and worker runtime remain future slices.
+identity, internal dispatch/control primitives, internal bounded worker
+execution, and certified materialization, status, and control APIs. Scheduler
+loops and public worker runtime remain future slices.
 """
 
 from app.report_batch_orchestrator.contracts import (
@@ -49,6 +50,7 @@ from app.report_batch_orchestrator.selector import (
     BatchSelectorValidationError,
     materialize_portfolios,
 )
+from app.report_batch_orchestrator.worker import BatchWorkerRunResult, ReportBatchWorker
 
 __all__ = [
     "BATCH_CAPABILITY_KEY",
@@ -72,10 +74,12 @@ __all__ = [
     "BatchScheduleValidationError",
     "BatchSelectorValidationError",
     "BatchStatusResponse",
+    "BatchWorkerRunResult",
     "MissingBatchIdempotencyKeyError",
     "PortfolioBatchCandidate",
     "ReportBatchDispatcher",
     "ReportBatchExecutionService",
+    "ReportBatchWorker",
     "ReportBatchItemRecord",
     "ReportBatchLedger",
     "ReportBatchRecord",

@@ -39,5 +39,6 @@
   primitives now exist. Certified batch materialization, status, and control APIs now exist in
   `lotus-report`. Internal item execution can advance a dispatched batch item through the existing
   report-job, snapshot, render, and archive handoff path and reconcile the final batch-item state.
-  No batch scheduler loop, worker runtime, dispatch operator API, gateway exposure, or Workbench
-  batch surface is shipped yet
+  An internal bounded single-batch worker run primitive now combines expired-lease recovery,
+  dispatch, and waiting-item execution. No batch scheduler loop, public worker runtime, dispatch
+  operator API, gateway exposure, or Workbench batch surface is shipped yet

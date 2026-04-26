@@ -62,9 +62,10 @@ Current repository posture:
    bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. Slice
    6 adds certified materialization, status, and control APIs for durable batches. Slice 7 adds an
    internal execution bridge that advances dispatched batch items through the existing report-job,
-   snapshot, render, and archive handoff path and maps final outcomes back to batch item state. No
-   batch scheduler loop, worker process, dispatch operator API, gateway exposure, or Workbench
-   batch surface is implemented yet,
+   snapshot, render, and archive handoff path and maps final outcomes back to batch item state.
+   Slice 10 adds an internal bounded single-batch worker run primitive over recovery, dispatch,
+   and execution. No batch scheduler loop, public worker process, dispatch operator API, gateway
+   exposure, or Workbench batch surface is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,
@@ -109,11 +110,12 @@ Primary areas:
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure
     primitives, report-job creation/reuse for leased items, idempotent duplicate prevention,
     internal bounded retry, pause/resume, cancellation-boundary, expired-lease recovery primitives,
-    and an internal execution bridge over the existing report-job, snapshot, render, and archive
-    handoff pipeline. Certified `POST /reports/batches`, batch status, and batch control APIs
-    expose the materialization/status/control subset while keeping full runtime support disabled
-    until later scheduler, worker, dispatch, gateway, and Workbench slices are implemented and
-    proven.
+    an internal execution bridge over the existing report-job, snapshot, render, and archive
+    handoff pipeline, and an internal single-batch worker run primitive that combines recovery,
+    dispatch, and item execution under explicit back-pressure inputs. Certified
+    `POST /reports/batches`, batch status, and batch control APIs expose the
+    materialization/status/control subset while keeping full runtime support disabled until later
+    scheduler, public worker, dispatch, gateway, and Workbench slices are implemented and proven.
 
 ## Runtime And Integration Boundaries
 

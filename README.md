@@ -159,8 +159,10 @@ Key code areas:
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
   pause/resume, cancellation-boundary, expired-lease recovery primitives, and certified
   materialization/status/control APIs. Internal item execution can reuse the existing report-job,
-  snapshot, render, and archive handoff path; no batch scheduler loop, worker process, dispatch
-  operator API, gateway exposure, or Workbench batch surface is implemented yet
+  snapshot, render, and archive handoff path, and an internal bounded worker run primitive can
+  combine recovery, dispatch, and waiting-item execution for one batch. No batch scheduler loop,
+  public worker process, dispatch operator API, gateway exposure, or Workbench batch surface is
+  implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
