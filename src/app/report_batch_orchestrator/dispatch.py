@@ -89,14 +89,6 @@ class ReportBatchDispatcher:
             )
 
         dispatch_capacity = self._policy.max_active_items - load.active_items
-        if dispatch_capacity < 1:
-            return BatchDispatchResult(
-                batch_id=batch_id,
-                leased_count=0,
-                dispatched_count=0,
-                report_job_ids=[],
-                back_pressure_reasons=["max_active_items"],
-            )
         leased_items = self._batch_ledger.acquire_dispatch_items(
             batch_id=batch_id,
             worker_id=worker_id,

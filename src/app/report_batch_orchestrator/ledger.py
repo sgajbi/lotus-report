@@ -392,8 +392,6 @@ class ReportBatchLedger:
                     "SELECT * FROM report_batch_item WHERE batch_item_id = ?",
                     (batch_item_id,),
                 ).fetchone()
-                if row is None:
-                    raise ValueError("report_batch_item_not_found")
                 return _item_from_row(row)
 
     def mark_item_waiting_on_report_job(
@@ -430,8 +428,6 @@ class ReportBatchLedger:
                     "SELECT * FROM report_batch_item WHERE batch_item_id = ?",
                     (batch_item_id,),
                 ).fetchone()
-                if row is None:
-                    raise ValueError("report_batch_item_not_found")
                 return _item_from_row(row)
 
     def count_active_batches(self) -> int:

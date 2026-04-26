@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
+from psycopg.errors import UniqueViolation
 
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
-from app.report_batch_orchestrator.ledger import BatchIdempotencyConflictError
+from app.report_batch_orchestrator.ledger import (
+    BatchIdempotencyConflictError,
+    MissingBatchIdempotencyKeyError,
+)
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchDispatchPolicy,
@@ -17,6 +23,65 @@ from app.report_batch_orchestrator.models import (
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
+
+
+class _FakeRows:
+    def __init__(self, rows: list[dict[str, Any]]):
+        self._rows = rows
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return self._rows
+
+    def fetchone(self) -> dict[str, Any] | None:
+        if not self._rows:
+            return None
+        return self._rows[0]
+
+
+class _MissingSchemaConnection:
+    def execute(self, query: str, params: object = None) -> _FakeRows:
+        return _FakeRows([{"table_name": "report_batch"}])
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+class _UniqueViolationInsertConnection:
+    def execute(self, query: str, params: object = None) -> _FakeRows:
+        if "SELECT batch_id, request_hash" in query:
+            return _FakeRows([])
+        if "INSERT INTO report_batch" in query:
+            raise UniqueViolation("duplicate key")
+        return _FakeRows([])
+
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def _postgres_ledger_with_connections(
+    *connections: object,
+) -> PostgresReportBatchLedger:
+    ledger = PostgresReportBatchLedger.__new__(PostgresReportBatchLedger)
+    connection_iter = iter(connections)
+
+    @contextmanager
+    def _connect():
+        yield next(connection_iter)
+
+    ledger._connect = _connect  # type: ignore[method-assign]
+    return ledger
 
 
 def _database_url() -> str:
@@ -78,6 +143,28 @@ def _multi_request(unique_suffix: str, portfolio_ids: list[str]) -> BatchCreateR
     )
 
 
+def test_postgres_check_ready_reports_missing_schema_tables() -> None:
+    ledger = _postgres_ledger_with_connections(_MissingSchemaConnection())
+
+    with pytest.raises(RuntimeError, match="report_batch_ledger_schema_missing:report_batch_item"):
+        ledger.check_ready()
+
+
+def test_postgres_unique_violation_without_existing_batch_is_conflict() -> None:
+    unique_suffix = uuid4().hex
+    ledger = _postgres_ledger_with_connections(
+        _UniqueViolationInsertConnection(),
+        _UniqueViolationInsertConnection(),
+    )
+
+    with pytest.raises(BatchIdempotencyConflictError, match="batch_idempotency_unique_violation"):
+        ledger.create_batch(
+            request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
+            caller_context=_caller(unique_suffix),
+            idempotency_key=f"batch-pg-unique-race-{unique_suffix}",
+        )
+
+
 def test_postgres_batch_ledger_persists_idempotent_materialized_batch() -> None:
     unique_suffix = uuid4().hex
     ledger = PostgresReportBatchLedger(_database_url())
@@ -106,6 +193,25 @@ def test_postgres_batch_ledger_persists_idempotent_materialized_batch() -> None:
             caller_context=caller,
             idempotency_key=f"batch-pg-{unique_suffix}",
         )
+
+
+def test_postgres_batch_rejects_missing_idempotency_key() -> None:
+    unique_suffix = uuid4().hex
+    ledger = PostgresReportBatchLedger(_database_url())
+
+    with pytest.raises(MissingBatchIdempotencyKeyError, match="missing_batch_idempotency_key"):
+        ledger.create_batch(
+            request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
+            caller_context=_caller(unique_suffix),
+            idempotency_key=" ",
+        )
+
+
+def test_postgres_batch_get_missing_batch_raises_not_found() -> None:
+    ledger = PostgresReportBatchLedger(_database_url())
+
+    with pytest.raises(ValueError, match="report_batch_not_found"):
+        ledger.get_batch(f"rbch_missing_{uuid4().hex}")
 
 
 def test_postgres_batch_dispatch_persists_report_jobs_and_item_state() -> None:
@@ -190,6 +296,17 @@ def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
     )
     t0 = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
 
+    assert (
+        batch_ledger.acquire_dispatch_items(
+            batch_id=batch.batch_id,
+            worker_id=f"pg-worker-a-{unique_suffix}",
+            lease_seconds=60,
+            limit=0,
+            now=t0,
+        )
+        == []
+    )
+
     [leased] = batch_ledger.acquire_dispatch_items(
         batch_id=batch.batch_id,
         worker_id=f"pg-worker-a-{unique_suffix}",
@@ -221,6 +338,13 @@ def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
             batch_item_id=leased.batch_item_id,
             lease_token="stale-token",
             report_job_id=f"rjob_stale_{unique_suffix}",
+        )
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        batch_ledger.heartbeat_item_lease(
+            batch_item_id=leased.batch_item_id,
+            lease_token="stale-token",
+            lease_seconds=60,
+            now=t0 + timedelta(seconds=40),
         )
 
     [takeover] = batch_ledger.acquire_dispatch_items(

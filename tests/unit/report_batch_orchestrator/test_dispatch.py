@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -16,9 +16,11 @@ from app.report_batch_orchestrator.models import (
     BatchDispatchPolicy,
     BatchRuntimeLoad,
     PortfolioBatchCandidate,
+    ReportBatchItemRecord,
+    ReportBatchRecord,
 )
 from app.reporting_jobs.ledger import ReportJobLedger
-from app.reporting_jobs.models import ReportCallerContext
+from app.reporting_jobs.models import ReportCallerContext, ReportJobLedgerRecord
 
 
 def _caller(**overrides) -> ReportCallerContext:
@@ -73,6 +75,73 @@ def _batch(
         caller_context=_caller(),
         idempotency_key=idempotency_key,
     )
+
+
+class _LeaseTokenMissingBatchLedger:
+    def get_batch(self, batch_id: str) -> ReportBatchRecord:
+        return ReportBatchRecord(
+            batch_id=batch_id,
+            selector_mode="explicit_portfolio_list",
+            tenant_id="tenant-sg",
+            region="APAC",
+            materialized_portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+            as_of_date=date(2026, 4, 22),
+            requested_output_formats=["pdf"],
+            reporting_currency="USD",
+            options={},
+            idempotency_key="batch-missing-lease-token",
+            request_hash="hash",
+            status="materialized",
+            item_count=1,
+            created_at=datetime(2026, 4, 22, tzinfo=UTC),
+            correlation_id="corr-missing-lease-token",
+            trace_id="trace-missing-lease-token",
+            items=[],
+        )
+
+    def count_active_batches(self) -> int:
+        return 0
+
+    def count_active_items(self) -> int:
+        return 0
+
+    def acquire_dispatch_items(
+        self,
+        *,
+        batch_id: str,
+        worker_id: str,
+        lease_seconds: int,
+        limit: int,
+    ) -> list[ReportBatchItemRecord]:
+        return [
+            ReportBatchItemRecord(
+                batch_item_id="rbit_missing_lease_token",
+                batch_id=batch_id,
+                item_position=1,
+                portfolio_id="PB_SG_GLOBAL_BAL_001",
+                item_idempotency_key="batch-missing-lease-token:2026-04-22:1",
+                status="leased",
+                source_system="lotus-core",
+                source_object="PortfolioScope",
+                created_at=datetime(2026, 4, 22, tzinfo=UTC),
+                lease_owner=worker_id,
+                lease_token=None,
+            )
+        ]
+
+    def mark_item_waiting_on_report_job(
+        self,
+        *,
+        batch_item_id: str,
+        lease_token: str,
+        report_job_id: str,
+    ) -> ReportBatchItemRecord:
+        raise AssertionError("items without lease tokens must not be marked dispatched")
+
+
+class _UnusedReportJobLedger:
+    def create_portfolio_review_job(self, **kwargs) -> ReportJobLedgerRecord:
+        raise AssertionError("items without lease tokens must not create report jobs")
 
 
 def test_back_pressure_reasons_cover_runtime_pressure_domains() -> None:
@@ -133,6 +202,21 @@ def test_dispatch_creates_one_report_job_per_leased_batch_item(tmp_path) -> None
     assert all(
         job.requested_output_formats == sorted(batch.requested_output_formats) for job in jobs
     )
+
+
+def test_dispatch_rejects_leased_item_without_lease_token() -> None:
+    dispatcher = ReportBatchDispatcher(
+        batch_ledger=_LeaseTokenMissingBatchLedger(),
+        report_job_ledger=_UnusedReportJobLedger(),
+        policy=BatchDispatchPolicy(max_active_items=5),
+    )
+
+    with pytest.raises(RuntimeError, match="batch_item_missing_lease_token"):
+        dispatcher.dispatch_batch(
+            batch_id="rbch_missing_lease_token",
+            caller_context=_caller(),
+            worker_id="worker-a",
+        )
 
 
 def test_dispatch_is_idempotent_after_items_have_report_jobs(tmp_path) -> None:
@@ -235,6 +319,17 @@ def test_lease_acquisition_blocks_active_lease_and_allows_expired_takeover(tmp_p
     batch = _batch(ledger, idempotency_key="batch-lease-expiry", portfolio_count=1)
     t0 = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
 
+    assert (
+        ledger.acquire_dispatch_items(
+            batch_id=batch.batch_id,
+            worker_id="worker-a",
+            lease_seconds=60,
+            limit=0,
+            now=t0,
+        )
+        == []
+    )
+
     first = ledger.acquire_dispatch_items(
         batch_id=batch.batch_id,
         worker_id="worker-a",
@@ -300,6 +395,62 @@ def test_stale_lease_token_cannot_mark_item_dispatched(tmp_path) -> None:
             lease_token="stale-token",
             report_job_id="rjob_123",
         )
+
+
+def test_stale_lease_token_cannot_heartbeat_item(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = _batch(ledger, idempotency_key="batch-stale-heartbeat-token", portfolio_count=1)
+    [item] = ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-a",
+        lease_seconds=60,
+        limit=1,
+    )
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.heartbeat_item_lease(
+            batch_item_id=item.batch_item_id,
+            lease_token="stale-token",
+            lease_seconds=60,
+        )
+
+
+def test_sqlite_schema_upgrade_adds_dispatch_columns_to_existing_batch_item_table(
+    tmp_path,
+) -> None:
+    import sqlite3
+
+    db_path = tmp_path / "legacy-batch.sqlite3"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE report_batch_item (
+                batch_item_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                item_position INTEGER NOT NULL,
+                portfolio_id TEXT NOT NULL,
+                item_idempotency_key TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                source_system TEXT NOT NULL,
+                source_object TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+    ReportBatchLedger(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(report_batch_item)")}
+    assert {
+        "report_job_id",
+        "lease_owner",
+        "lease_token",
+        "lease_acquired_at",
+        "lease_expires_at",
+        "last_heartbeat_at",
+        "dispatched_at",
+    }.issubset(columns)
 
 
 def test_concurrent_workers_do_not_duplicate_item_dispatch(tmp_path) -> None:
