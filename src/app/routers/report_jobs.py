@@ -18,7 +18,6 @@ from app.reporting_jobs.models import (
     REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
     ApiErrorResponse,
     PortfolioReviewJobRequest,
-    ReportCallerContext,
     ReportJobArchiveInfo,
     ReportJobHandleResponse,
     ReportJobLedgerRecord,
@@ -41,6 +40,7 @@ from app.reporting_lineage.service import (
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
+from app.routers.caller_context import caller_context_from_headers
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 jobs_router = APIRouter(prefix="/reports/jobs", tags=["Report Jobs"])
@@ -232,52 +232,6 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
     )
 
 
-def _caller_context(
-    *,
-    triggered_by: str | None,
-    caller_application: str | None,
-    tenant_id: str | None,
-    region: str | None,
-    booking_center_code: str | None,
-    role: str | None,
-    correlation_id: str | None,
-    trace_id: str | None,
-) -> ReportCallerContext:
-    missing = [
-        name
-        for name, value in {
-            "X-Actor-Id": triggered_by,
-            "X-Caller-Application": caller_application,
-            "X-Tenant-Id": tenant_id,
-            "X-Region": region,
-        }.items()
-        if not value or not value.strip()
-    ]
-    if missing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "missing_caller_context",
-                "message": "Required caller context headers are missing.",
-                "missing_headers": missing,
-            },
-        )
-    assert triggered_by is not None
-    assert caller_application is not None
-    assert tenant_id is not None
-    assert region is not None
-    return ReportCallerContext(
-        triggered_by=triggered_by.strip(),
-        caller_application=caller_application.strip(),
-        tenant_id=tenant_id.strip(),
-        region=region.strip(),
-        booking_center_code=booking_center_code,
-        role=role,
-        correlation_id=correlation_id or "",
-        trace_id=trace_id or "",
-    )
-
-
 @router.post(
     "/portfolio-reviews",
     response_model=ReportJobHandleResponse,
@@ -392,7 +346,7 @@ async def submit_portfolio_review_job(
     try:
         record = ledger.create_portfolio_review_job(
             request=request,
-            caller_context=_caller_context(
+            caller_context=caller_context_from_headers(
                 triggered_by=actor_id,
                 caller_application=caller_application,
                 tenant_id=tenant_id,
@@ -533,7 +487,7 @@ async def list_report_jobs(
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
 ) -> ReportJobListResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -641,7 +595,7 @@ async def get_report_job_status(
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
 ) -> ReportJobStatusResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -714,7 +668,7 @@ async def get_report_job_events(
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
 ) -> ReportJobStatusEventsResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -810,7 +764,7 @@ async def cancel_report_job(
         Header(alias="X-Trace-ID", description="Distributed trace identifier."),
     ] = None,
 ) -> ReportJobStatusResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -880,7 +834,7 @@ async def get_report_job_snapshot(
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
 ) -> ReportInputSnapshotRecord:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -935,7 +889,7 @@ async def get_report_job_lineage(
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
 ) -> ReportSnapshotLineageResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -994,7 +948,7 @@ async def get_snapshot(
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
 ) -> ReportInputSnapshotRecord:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -1052,7 +1006,7 @@ async def get_snapshot_lineage(
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
 ) -> ReportSnapshotLineageResponse:
-    _caller_context(
+    caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,

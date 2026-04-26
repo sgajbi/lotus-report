@@ -49,18 +49,54 @@
 
 ## RFC-0104 batch reporting posture
 
-Batch reporting is not an implemented operator capability yet. RFC-0104 current slices add internal
-durable batch and batch-item materialization primitives for explicit portfolio lists and selected
-subsets, plus deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
-yearly, and explicit cycles. There is no operator-facing batch API, scheduler loop, worker, or
-recovery runtime.
+RFC-0104 first-wave batch support is implemented for internal `lotus-report`
+materialization/status/control operations. Certified APIs exist for:
 
-Until later RFC-0104 slices add the scheduler, worker, APIs, and proof:
+- `POST /reports/batches`
+- `GET /reports/batches/{batch_id}`
+- `POST /reports/batches/{batch_id}:pause`
+- `POST /reports/batches/{batch_id}:resume`
+- `POST /reports/batches/{batch_id}:cancel`
+- `POST /reports/batches/{batch_id}:retry-failed`
+- `POST /reports/batches/{batch_id}:recover-expired-leases`
 
-- use individual report-job APIs for portfolio review report initiation and status
-- do not present batch scheduler, retry-failed-only, pause, resume, or recovery as supported
-- keep any batch planning language in RFC or planned-feature material, not implementation-backed
-  product documentation
+Current implemented semantics:
+
+- batch creation is idempotent through `Idempotency-Key`
+- explicit portfolio lists and selected subsets are supported when source-backed eligible
+  candidates are provided
+- batch status returns product-safe item summaries, lifecycle timestamps, status counts,
+  correlation id, and trace id
+- pause/resume/cancel/retry/recovery controls operate on the durable batch ledger and preserve
+  already-created report jobs
+- internal dispatch can lease batch items, create or reuse one report job per item, and apply
+  active-batch, active-item, upstream, render, and archive back-pressure
+- internal item execution can advance a dispatched item through the existing report-job, snapshot,
+  render, and archive handoff path, then reconcile final item state
+
+Still not supported:
+
+- scheduled batch execution loop
+- background executor process
+- dispatch operator API
+- gateway exposure
+- Workbench batch surface
+- broad replay, rerender, regenerate, or document distribution controls
+
+Use individual report-job APIs for production portfolio-review initiation until later RFC-0104
+slices ship the scheduler/runtime surface. Use `lotus-report` batch APIs only for the certified
+materialization/status/control subset and internal support proof.
+
+Observability floor for this wave:
+
+- every batch API requires caller context headers and carries correlation/trace identifiers into
+  durable batch state
+- status responses expose product-safe failure category and summary without SQL or raw stack traces
+- readiness remains database-aware through `/health/ready`
+- PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
+  unit-test adapter
+- RFC-0105 remains responsible for richer operational dashboards, replay tooling, alert policy,
+  and long-running batch runtime telemetry
 
 ## RFC-0100 gateway-first job flow
 

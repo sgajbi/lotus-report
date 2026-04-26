@@ -22,6 +22,10 @@ BatchFrequency = Literal[
 ]
 
 BATCH_CAPABILITY_KEY: Final = "lotus-report.reporting.batch_orchestration.v1"
+BATCH_MATERIALIZATION_API_CAPABILITY_KEY: Final = (
+    "lotus-report.reporting.batch_materialization_api.v1"
+)
+BATCH_CONTROL_API_CAPABILITY_KEY: Final = "lotus-report.reporting.batch_control_api.v1"
 
 BATCH_SELECTOR_MODES: Final[tuple[BatchSelectorMode, ...]] = (
     "explicit_portfolio_list",

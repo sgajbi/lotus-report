@@ -36,6 +36,21 @@
   internal durable report input snapshot lookup by snapshot id
 - `GET /reports/snapshots/{snapshot_id}/lineage`
   internal durable upstream-call lineage lookup by snapshot id
+- `POST /reports/batches`
+  internal durable batch materialization from a governed portfolio selector; returns a batch handle
+  and status URL
+- `GET /reports/batches/{batch_id}`
+  internal product-safe batch status, item summary, and status counts
+- `POST /reports/batches/{batch_id}:pause`
+  internal batch pause control before pending items are leased
+- `POST /reports/batches/{batch_id}:resume`
+  internal batch resume control for paused batches
+- `POST /reports/batches/{batch_id}:cancel`
+  internal batch cancellation before pending items are leased
+- `POST /reports/batches/{batch_id}:retry-failed`
+  internal bounded retry control for failed batch items
+- `POST /reports/batches/{batch_id}:recover-expired-leases`
+  internal expired-lease recovery control for batch items
 
 ## Product-facing boundary
 
@@ -67,6 +82,10 @@ front-office consumers.
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
+- batch materialization requires `Idempotency-Key` and governed caller context headers
+- batch materialization and control APIs are internal `lotus-report` APIs; full batch scheduling,
+  worker execution, dispatch operator APIs, gateway exposure, and Workbench batch surfaces are not
+  yet implementation-backed
 - PDF-capable report jobs submit a governed render package to `lotus-render`; after successful
   render completion they hand the artifact and source-backed metadata to `lotus-archive`
 - successful job initiation captures a durable snapshot and upstream lineage before the job reaches
@@ -183,6 +202,70 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/canc
   -H "X-Actor-Id: advisor-123" \
   -H "X-Correlation-ID: portfolio-review-job-cancel"
 ```
+
+Internal batch materialization:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: batch-PB_SG_GLOBAL_BAL_001-2026-04-22" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC" \
+  -d "{\"selector_mode\":\"explicit_portfolio_list\",\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"],\"source_candidates\":[{\"portfolio_id\":\"PB_SG_GLOBAL_BAL_001\",\"tenant_id\":\"tenant-sg\",\"region\":\"APAC\",\"active\":true,\"selected\":true,\"source_system\":\"lotus-core\",\"source_object\":\"PortfolioScope\"}],\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\"}"
+```
+
+Internal batch status:
+
+```bash
+curl "http://127.0.0.1:8300/reports/batches/rbatch_example" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+Internal batch control:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:pause" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+The other certified controls use the same governed caller-context headers:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:resume" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:cancel" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:retry-failed" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expired-leases" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+Current batch APIs are direct `lotus-report` internal APIs. Gateway routes, Workbench batch
+surfaces, scheduled execution, and long-running runtime telemetry remain future scope.
 
 The review response is a typed report contract. It separates client-ready `client_sections` from
 advisor-only `advisor_sections`, carries explicit section readiness states including

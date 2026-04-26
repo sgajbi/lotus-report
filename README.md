@@ -150,14 +150,17 @@ Key code areas:
 - `src/app/services/aggregation_service.py`
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
-  durable report request/job/status-event ledger, idempotency, render metadata, and bounded
-  cancellation
+  durable report request/job/status-event ledger, idempotency, render metadata, archive metadata,
+  and bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, and post-render archive handoff
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
-  batch/batch-item and deterministic schedule-cycle materialization primitives; no batch scheduler
-  loop, worker, recovery, or runtime API is implemented yet
+  batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
+  pause/resume, cancellation-boundary, expired-lease recovery primitives, and certified
+  materialization/status/control APIs. Internal item execution can reuse the existing report-job,
+  snapshot, render, and archive handoff path; no batch scheduler loop, worker process, dispatch
+  operator API, gateway exposure, or Workbench batch surface is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
@@ -325,6 +328,10 @@ Current orchestration model:
   PostgreSQL ledger or mandatory schema is not reachable
 - use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before
   inspecting database rows directly
+- use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
+  internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
+  recover-expired-leases controls are direct `lotus-report` APIs and are not yet gateway or
+  Workbench surfaces
 
 ## Documentation Map
 

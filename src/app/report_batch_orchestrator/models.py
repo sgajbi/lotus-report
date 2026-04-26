@@ -7,8 +7,25 @@ from pydantic import BaseModel, Field
 
 from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
 
-BatchStatus = Literal["materialized"]
-BatchItemStatus = Literal["materialized"]
+BatchStatus = Literal[
+    "materialized",
+    "running",
+    "paused",
+    "cancelled",
+    "completed",
+    "completed_with_failures",
+    "failed",
+]
+BatchItemStatus = Literal[
+    "materialized",
+    "leased",
+    "waiting_on_report_job",
+    "succeeded",
+    "failed_retryable",
+    "failed_terminal",
+    "cancelled",
+    "recovery_pending",
+]
 
 
 class PortfolioBatchCandidate(BaseModel):
@@ -114,6 +131,21 @@ class ReportBatchItemRecord(BaseModel):
     source_system: str
     source_object: str
     created_at: datetime
+    report_job_id: str | None = None
+    lease_owner: str | None = None
+    lease_token: str | None = None
+    lease_acquired_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    dispatched_at: datetime | None = None
+    attempt_count: int = 0
+    retry_eligible: bool = False
+    next_retry_at: datetime | None = None
+    last_error_category: str | None = None
+    last_error_summary: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
 
 
 class ReportBatchRecord(BaseModel):
@@ -131,9 +163,389 @@ class ReportBatchRecord(BaseModel):
     status: BatchStatus
     item_count: int
     created_at: datetime
+    updated_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    failed_at: datetime | None = None
     correlation_id: str
     trace_id: str
     items: list[ReportBatchItemRecord]
+
+
+class BatchRetryPolicy(BaseModel):
+    max_attempts: int = Field(
+        3,
+        ge=1,
+        description="Maximum attempts allowed before a retryable batch item becomes terminal.",
+        examples=[3],
+    )
+
+
+class BatchControlResult(BaseModel):
+    batch_id: str
+    affected_count: int
+    batch_status: BatchStatus
+
+
+class BatchRecoveryResult(BaseModel):
+    batch_id: str
+    recovered_count: int
+    recovery_pending_item_ids: list[str] = Field(default_factory=list)
+
+
+BATCH_CREATE_REQUEST_EXAMPLE: dict[str, Any] = {
+    "selector_mode": "explicit_portfolio_list",
+    "portfolio_ids": ["PB_SG_GLOBAL_BAL_001", "PB_SG_GLOBAL_BAL_002"],
+    "source_candidates": [
+        {
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "tenant_id": "tenant-sg",
+            "region": "APAC",
+            "active": True,
+            "selected": True,
+            "source_system": "lotus-core",
+            "source_object": "PortfolioScope",
+        },
+        {
+            "portfolio_id": "PB_SG_GLOBAL_BAL_002",
+            "tenant_id": "tenant-sg",
+            "region": "APAC",
+            "active": True,
+            "selected": True,
+            "source_system": "lotus-core",
+            "source_object": "PortfolioScope",
+        },
+    ],
+    "as_of_date": "2026-04-22",
+    "requested_output_formats": ["pdf"],
+    "reporting_currency": "USD",
+    "options": {"sections": ["OVERVIEW", "PERFORMANCE"]},
+    "max_batch_size": 250,
+}
+
+BATCH_HANDLE_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "status": "materialized",
+    "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "idempotency_key": "batch-portfolio-review-2026-04-22",
+    "item_count": 2,
+}
+
+BATCH_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "selector_mode": "explicit_portfolio_list",
+    "tenant_id": "tenant-sg",
+    "region": "APAC",
+    "materialized_portfolio_ids": ["PB_SG_GLOBAL_BAL_001", "PB_SG_GLOBAL_BAL_002"],
+    "as_of_date": "2026-04-22",
+    "requested_output_formats": ["pdf"],
+    "reporting_currency": "USD",
+    "status": "materialized",
+    "item_count": 2,
+    "status_counts": {"materialized": 2},
+    "items": [
+        {
+            "batch_item_id": "rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c",
+            "item_position": 1,
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "status": "materialized",
+            "report_job_id": None,
+            "attempt_count": 0,
+            "retry_eligible": False,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_summary": None,
+            "created_at": "2026-04-22T09:00:00Z",
+            "started_at": None,
+            "completed_at": None,
+            "cancelled_at": None,
+        }
+    ],
+    "created_at": "2026-04-22T09:00:00Z",
+    "updated_at": "2026-04-22T09:00:00Z",
+    "started_at": None,
+    "completed_at": None,
+    "cancelled_at": None,
+    "failed_at": None,
+    "correlation_id": "corr-batch-1",
+    "trace_id": "trace-batch-1",
+}
+
+BATCH_CONTROL_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "status": "paused",
+    "affected_count": 1,
+    "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+}
+
+BATCH_RECOVERY_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "status": "running",
+    "recovered_count": 1,
+    "recovery_pending_item_ids": ["rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"],
+    "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+}
+
+
+class BatchHandleResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier used for batch status and control.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    status: BatchStatus = Field(
+        ...,
+        description="Current product-safe batch status.",
+        examples=["materialized"],
+    )
+    status_url: str = Field(
+        ...,
+        description="Relative URL where callers can retrieve product-safe batch status.",
+        examples=["/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key associated with this batch request.",
+        examples=["batch-portfolio-review-2026-04-22"],
+    )
+    item_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of materialized portfolio report items in the batch.",
+        examples=[2],
+    )
+
+
+class BatchItemStatusResponse(BaseModel):
+    batch_item_id: str = Field(
+        ...,
+        description="Opaque durable batch item identifier.",
+        examples=["rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"],
+    )
+    item_position: int = Field(
+        ...,
+        ge=1,
+        description="Deterministic item ordering within the batch.",
+        examples=[1],
+    )
+    portfolio_id: str = Field(
+        ...,
+        description="Portfolio identifier represented by this batch item.",
+        examples=["PB_SG_GLOBAL_BAL_001"],
+    )
+    status: BatchItemStatus = Field(
+        ...,
+        description="Current product-safe batch item status.",
+        examples=["materialized"],
+    )
+    report_job_id: str | None = Field(
+        default=None,
+        description="Linked report job identifier after dispatch creates or reuses a job.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    attempt_count: int = Field(
+        0,
+        ge=0,
+        description="Number of recorded attempts for this batch item.",
+        examples=[0],
+    )
+    retry_eligible: bool = Field(
+        False,
+        description="Whether this failed item is eligible for bounded retry.",
+        examples=[False],
+    )
+    next_retry_at: datetime | None = Field(
+        default=None,
+        description="Earliest retry timestamp when bounded retry is available.",
+        examples=["2026-04-22T09:05:00Z"],
+    )
+    last_error_category: str | None = Field(
+        default=None,
+        description="Support-safe machine-readable failure category for the latest item failure.",
+        examples=["upstream_data_collection_failure"],
+    )
+    last_error_summary: str | None = Field(
+        default=None,
+        description="Support-safe summary for the latest item failure.",
+        examples=["Source system returned a transient failure."],
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the item was materialized.",
+        examples=["2026-04-22T09:00:00Z"],
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when item execution first started.",
+        examples=["2026-04-22T09:01:00Z"],
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when item execution reached a terminal outcome.",
+        examples=["2026-04-22T09:04:00Z"],
+    )
+    cancelled_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the item was cancelled.",
+        examples=["2026-04-22T09:02:00Z"],
+    )
+
+
+class BatchStatusResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    selector_mode: BatchSelectorMode = Field(
+        ...,
+        description="Portfolio selector mode used to materialize the batch.",
+        examples=["explicit_portfolio_list"],
+    )
+    tenant_id: str = Field(
+        ...,
+        description="Tenant ownership boundary for the batch.",
+        examples=["tenant-sg"],
+    )
+    region: str = Field(
+        ...,
+        description="Regional ownership boundary for the batch.",
+        examples=["APAC"],
+    )
+    materialized_portfolio_ids: list[str] = Field(
+        ...,
+        description="Portfolio identifiers materialized into durable batch items.",
+        examples=[["PB_SG_GLOBAL_BAL_001", "PB_SG_GLOBAL_BAL_002"]],
+    )
+    as_of_date: date = Field(
+        ...,
+        description="Business as-of date applied to all batch items.",
+        examples=["2026-04-22"],
+    )
+    requested_output_formats: list[str] = Field(
+        ...,
+        description="Output formats requested for future item-level report jobs.",
+        examples=[["pdf"]],
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Reporting currency requested for item-level report jobs.",
+        examples=["USD"],
+    )
+    status: BatchStatus = Field(
+        ...,
+        description="Current product-safe batch status.",
+        examples=["materialized"],
+    )
+    item_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of materialized items in the batch.",
+        examples=[2],
+    )
+    status_counts: dict[str, int] = Field(
+        ...,
+        description="Counts of batch items by current item status.",
+        examples=[{"materialized": 2}],
+    )
+    items: list[BatchItemStatusResponse] = Field(
+        ...,
+        description="Ordered product-safe batch item status details.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the batch was materialized.",
+        examples=["2026-04-22T09:00:00Z"],
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the batch was last updated.",
+        examples=["2026-04-22T09:00:00Z"],
+    )
+    started_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the batch first started dispatch processing.",
+        examples=["2026-04-22T09:01:00Z"],
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the batch reached a completed outcome.",
+        examples=["2026-04-22T09:10:00Z"],
+    )
+    cancelled_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the batch was cancelled.",
+        examples=["2026-04-22T09:03:00Z"],
+    )
+    failed_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the batch entered failed posture.",
+        examples=["2026-04-22T09:04:00Z"],
+    )
+    correlation_id: str = Field(
+        ...,
+        description="End-to-end correlation identifier captured at batch creation.",
+        examples=["corr-batch-1"],
+    )
+    trace_id: str = Field(
+        ...,
+        description="Distributed trace identifier captured at batch creation.",
+        examples=["trace-batch-1"],
+    )
+
+
+class BatchControlResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    status: BatchStatus = Field(
+        ...,
+        description="Batch status after the control operation.",
+        examples=["paused"],
+    )
+    affected_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of batch or item records affected by the control operation.",
+        examples=[1],
+    )
+    status_url: str = Field(
+        ...,
+        description="Relative URL where callers can retrieve product-safe batch status.",
+        examples=["/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+
+
+class BatchRecoveryResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    status: BatchStatus = Field(
+        ...,
+        description="Batch status after expired-lease recovery.",
+        examples=["running"],
+    )
+    recovered_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of expired unjobbed item leases moved to recovery-pending posture.",
+        examples=[1],
+    )
+    recovery_pending_item_ids: list[str] = Field(
+        default_factory=list,
+        description="Batch item identifiers moved to recovery-pending posture.",
+        examples=[["rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"]],
+    )
+    status_url: str = Field(
+        ...,
+        description="Relative URL where callers can retrieve product-safe batch status.",
+        examples=["/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
 
 
 class BatchCycleRequest(BaseModel):
@@ -186,3 +598,58 @@ class BatchCycle(BaseModel):
     template_version: str
     render_package_version: str
     idempotency_scope: str
+
+
+class BatchDispatchPolicy(BaseModel):
+    max_active_batches: int = Field(
+        1,
+        ge=1,
+        description="Maximum number of active batches allowed for this dispatch attempt.",
+        examples=[1],
+    )
+    max_active_items: int = Field(
+        5,
+        ge=1,
+        description="Maximum number of items leased by one dispatch attempt.",
+        examples=[5],
+    )
+    max_active_upstream_jobs: int = Field(
+        3,
+        ge=1,
+        description="Maximum active upstream data-collection work allowed before back-pressure.",
+        examples=[3],
+    )
+    max_active_render_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active render work allowed before back-pressure.",
+        examples=[2],
+    )
+    max_active_archive_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active archive work allowed before back-pressure.",
+        examples=[2],
+    )
+    lease_seconds: int = Field(
+        300,
+        ge=1,
+        description="Lease duration for in-flight batch item dispatch.",
+        examples=[300],
+    )
+
+
+class BatchRuntimeLoad(BaseModel):
+    active_batches: int = Field(0, ge=0)
+    active_items: int = Field(0, ge=0)
+    active_upstream_jobs: int = Field(0, ge=0)
+    active_render_jobs: int = Field(0, ge=0)
+    active_archive_jobs: int = Field(0, ge=0)
+
+
+class BatchDispatchResult(BaseModel):
+    batch_id: str
+    leased_count: int
+    dispatched_count: int
+    report_job_ids: list[str]
+    back_pressure_reasons: list[str] = Field(default_factory=list)

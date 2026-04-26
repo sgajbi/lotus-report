@@ -16,7 +16,12 @@
   `report_input_snapshot.report_job_id` and batch idempotency uniqueness on
   `report_batch.idempotency_key`. It also verifies the archive handoff fields
   `archive_request_id`, `archive_document_id`, and `archive_completed_at`, the archive document
-  lookup index, and the archive-aware status/failure-category constraints used by PDF report jobs.
+  lookup index, the archive-aware status/failure-category constraints used by PDF report jobs, and
+  RFC-0104 batch dispatch fields `report_job_id`, `lease_owner`, `lease_token`,
+  `lease_acquired_at`, `lease_expires_at`, `last_heartbeat_at`, and `dispatched_at`, plus
+  RFC-0104 batch control/recovery fields `attempt_count`, `retry_eligible`, `next_retry_at`,
+  `last_error_category`, `last_error_summary`, lifecycle timestamps, expanded batch/item status
+  constraints, and retry lookup indexing.
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
 - Local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to a file
   database. SQLite is retained only as an isolated unit-test adapter for fast ledger behavior tests.
@@ -48,7 +53,10 @@ The first-wave ledger must keep these query paths indexed:
 15. batch tenant/region/time filtering for operations,
 16. batch item ordering by batch,
 17. batch item portfolio diagnostics,
-18. batch item status scans.
+18. batch item status scans,
+19. batch item lease-expiry scans for stale in-flight work,
+20. batch item report-job lookup for dispatch reconciliation,
+21. batch item retry eligibility and due-time scans for bounded recovery.
 
 `make migration-smoke` checks that the implementation-backed indexes exist.
 

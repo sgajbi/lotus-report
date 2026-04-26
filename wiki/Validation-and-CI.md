@@ -18,6 +18,13 @@
   local alias for the full repo CI gate
 - `make docker-build`
   container build validation
+- `scripts/rfc_0104_slice4_live_evidence.py`
+  PostgreSQL-backed live evidence for internal RFC-0104 batch dispatch primitives; requires
+  `REPORT_JOB_LEDGER_DATABASE_URL`
+- canonical Docker front-office proof
+  run from `lotus-workbench` with
+  `scripts/live/Start-LotusFrontOfficeCanonical.ps1 -CleanCoreState -BuildImages -RunValidation`
+  when a change must be proven against the production-shaped local stack.
 
 ## What the gates protect
 
