@@ -13,8 +13,10 @@ Slice 13 adds the daemonized internal `lotus-report-batch-worker` process over t
 Slice 14 adds the daemonized internal `lotus-report-batch-scheduler` process that reads governed
 schedule configuration and materializes durable idempotent scheduled batches for the worker to
 execute. Slice 15 extends scheduler materialization to explicit portfolio-list, all-active, and
-inline manifest selector modes. Workbench surfaces, gateway-facing scheduler administration, and
-entitlement-certified public scheduler runtime remain later slices.
+inline manifest selector modes. Slice 16 adds config-backed scheduler administration APIs for
+listing schedules and running one bounded materialization pass. Schedule CRUD, Workbench
+scheduler-management surfaces, and entitlement-certified public scheduler runtime remain later
+slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |

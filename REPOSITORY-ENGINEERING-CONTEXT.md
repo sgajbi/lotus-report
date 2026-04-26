@@ -71,8 +71,10 @@ Current repository posture:
    and Docker Compose service over that runtime pass. Slice 14 adds a daemonized internal
    config-backed scheduler process that reads governed schedules, resolves explicit, all-active,
    and inline manifest schedule selectors through `lotus-core` or governed schedule manifest
-   metadata, and creates durable idempotent scheduled batches for the worker to execute. No
-   Workbench batch surface or entitlement-certified public scheduler runtime is implemented yet,
+   metadata, and creates durable idempotent scheduled batches for the worker to execute. Slice 16
+   adds config-backed scheduler administration APIs to list configured schedules and run one
+   bounded materialization pass. Schedule CRUD, Workbench scheduler-management, and
+   entitlement-certified public scheduler runtime remain future scope,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,
@@ -123,11 +125,12 @@ Primary areas:
     scan durable runnable batches and invoke that worker primitive for a bounded batch count, and
     the `lotus-report-batch-worker` process runs that pass continuously under configured interval,
     batch-count, lease, and back-pressure limits. The `lotus-report-batch-scheduler` process reads
-    governed schedule configuration and materializes explicit-portfolio scheduled batches through
-    the durable ledger. Certified
-    `POST /reports/batches`, batch status, batch control, and `run-once` APIs expose the
-    materialization/status/control/single-batch-run subset while keeping full product runtime
-    support disabled until later gateway and Workbench slices are implemented and proven.
+    governed schedule configuration and materializes explicit-portfolio, all-active, and inline
+    manifest scheduled batches through the durable ledger. Certified `POST /reports/batches`,
+    batch status, batch control, `run-once`, schedule list, and schedule `run-due` APIs expose the
+    materialization/status/control/single-batch-run/config-backed-scheduler subset while keeping
+    full product runtime support disabled until later scheduler-management and certification slices
+    are implemented and proven.
 
 ## Runtime And Integration Boundaries
 

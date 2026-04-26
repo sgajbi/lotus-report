@@ -168,8 +168,10 @@ Key code areas:
   background worker process. The `lotus-report-batch-scheduler` Docker Compose service reads
   governed `REPORT_BATCH_SCHEDULES_JSON`, resolves explicit, all-active, and inline manifest
   schedule selectors through `lotus-core` or governed schedule manifest metadata, and creates
-  durable idempotent scheduled batches for the worker to execute. No Workbench batch surface or
-  entitlement-certified public scheduler runtime is implemented yet
+  durable idempotent scheduled batches for the worker to execute. `GET /reports/batch-schedules`
+  and `POST /reports/batch-schedules:run-due` expose config-backed scheduler inspection and a
+  bounded scheduler materialization pass; schedule CRUD and entitlement-certified public scheduler
+  runtime remain future scope
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`

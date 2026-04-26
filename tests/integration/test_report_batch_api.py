@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -6,11 +8,18 @@ from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
     ReportBatchLedger,
 )
+from app.report_batch_orchestrator.scheduler import (
+    BatchScheduleDefinition,
+    BatchSchedulerConfig,
+    ReportBatchScheduler,
+)
 from app.report_batch_orchestrator.service import (
     get_report_batch_ledger,
+    get_report_batch_scheduler,
     get_report_batch_worker,
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
+from app.routers.report_batches import get_report_batch_scheduler_config
 
 
 def _client(tmp_path):
@@ -107,6 +116,67 @@ class _WorkerRunPaused:
         )
 
 
+class _PortfolioSource:
+    async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "status": "active",
+        }
+
+    async def list_portfolios(self, correlation_id=None):
+        return 200, {
+            "portfolios": [
+                {
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "status": "active",
+                }
+            ]
+        }
+
+
+class _SchedulerForApi:
+    def __init__(self, ledger):
+        self._scheduler = ReportBatchScheduler(
+            batch_ledger=ledger,
+            portfolio_source=_PortfolioSource(),
+        )
+
+    async def run_due_schedules(self, **kwargs):
+        return await self._scheduler.run_due_schedules(**kwargs)
+
+
+def _scheduler_config() -> BatchSchedulerConfig:
+    return BatchSchedulerConfig(
+        scheduler_id="scheduler-api-unit",
+        interval_seconds=60.0,
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="system",
+        schedules=(
+            BatchScheduleDefinition(
+                schedule_id="monthly-sg-global-bal-api",
+                enabled=True,
+                selector_mode="explicit_portfolio_list",
+                frequency="monthly",
+                as_of_date=date(2026, 4, 22),
+                portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW"]},
+            ),
+            BatchScheduleDefinition(
+                schedule_id="disabled-schedule-api",
+                enabled=False,
+                selector_mode="explicit_portfolio_list",
+                frequency="monthly",
+                as_of_date=date(2026, 4, 22),
+                portfolio_ids=["PB_SG_GLOBAL_BAL_002"],
+            ),
+        ),
+    )
+
+
 def test_report_batch_create_status_and_control_endpoints(tmp_path):
     client, _ledger = _client(tmp_path)
     try:
@@ -149,6 +219,48 @@ def test_report_batch_create_status_and_control_endpoints(tmp_path):
         assert cancel_response.json()["affected_count"] == 2
         assert cancelled_status["status"] == "cancelled"
         assert cancelled_status["status_counts"] == {"cancelled": 2}
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
+    client, ledger = _client(tmp_path)
+    app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
+    app.dependency_overrides[get_report_batch_scheduler] = lambda: _SchedulerForApi(ledger)
+    try:
+        list_response = client.get("/reports/batch-schedules", headers=_headers())
+        run_response = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 7},
+            headers=_headers("scheduler-run-api"),
+        )
+
+        assert list_response.status_code == 200
+        list_body = list_response.json()
+        assert list_body["scheduler_id"] == "scheduler-api-unit"
+        assert list_body["schedule_count"] == 2
+        assert list_body["enabled_schedule_count"] == 1
+        assert list_body["schedules"][0]["schedule_id"] == "monthly-sg-global-bal-api"
+        assert list_body["schedules"][0]["option_keys"] == ["sections"]
+
+        assert run_response.status_code == 200
+        run_body = run_response.json()
+        assert run_body["scheduler_id"] == "scheduler-api-unit"
+        assert run_body["attempted_count"] == 1
+        assert run_body["materialized_count"] == 1
+        assert run_body["correlation_id"].startswith("corr-batch-scheduler-7-")
+        assert run_body["materialized"][0]["schedule_id"] == "monthly-sg-global-bal-api"
+        assert run_body["materialized"][0]["item_count"] == 1
+        assert run_body["materialized"][0]["idempotency_key"].startswith("scheduled-batch-")
+
+        status_response = client.get(
+            f"/reports/batches/{run_body['materialized'][0]['batch_id']}",
+            headers=_headers("scheduler-status-api"),
+        )
+        assert status_response.status_code == 200
+        status_body = status_response.json()
+        assert status_body["materialized_portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
+        assert status_body["status_counts"] == {"materialized": 1}
     finally:
         _clear_overrides()
 
@@ -468,21 +580,41 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     run_once_post = schema["paths"]["/reports/batches/{batch_id}:run-once"]["post"]
     run_once_request = run_once_post["requestBody"]["content"]["application/json"]["example"]
     run_once_response = run_once_post["responses"]["200"]["content"]["application/json"]["example"]
+    schedule_list_get = schema["paths"]["/reports/batch-schedules"]["get"]
+    schedule_list_response = schedule_list_get["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
+    schedule_run_post = schema["paths"]["/reports/batch-schedules:run-due"]["post"]
+    schedule_run_request = schedule_run_post["requestBody"]["content"]["application/json"][
+        "example"
+    ]
+    schedule_run_response = schedule_run_post["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
 
     assert create_example["selector_mode"] == "explicit_portfolio_list"
     assert handle_example["batch_id"].startswith("rbch_")
     assert status_example["status_counts"] == {"materialized": 2}
     assert run_once_request["worker_id"] == "lotus-report-batch-worker-1"
     assert run_once_response["executed_count"] == 2
+    assert schedule_list_response["schedule_count"] == 1
+    assert schedule_run_request["pass_sequence"] == 1
+    assert schedule_run_response["materialized_count"] == 1
     assert "Report Batches" in create_post["tags"]
+    assert "Report Batch Schedules" in schedule_list_get["tags"]
     assert "Use this endpoint" in create_post["description"]
     assert "retryable failed batch items" in retry_post["description"]
     assert "single-batch operator action" in run_once_post["description"]
+    assert "config-backed" in schedule_list_get["description"]
+    assert "operator-triggered scheduler pass" in schedule_run_post["description"]
     assert "RFC-" not in str(create_example)
     assert "RFC-" not in str(handle_example)
     assert "RFC-" not in str(status_example)
     assert "RFC-" not in str(run_once_request)
     assert "RFC-" not in str(run_once_response)
+    assert "RFC-" not in str(schedule_list_response)
+    assert "RFC-" not in str(schedule_run_request)
+    assert "RFC-" not in str(schedule_run_response)
     for schema_name in [
         "BatchHandleResponse",
         "BatchStatusResponse",
@@ -492,6 +624,11 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
         "BatchWorkerRunRequest",
         "BatchWorkerRunResponse",
         "BatchWorkerItemExecutionResponse",
+        "BatchScheduleListResponse",
+        "BatchScheduleSummaryResponse",
+        "BatchSchedulerRunRequest",
+        "BatchSchedulerRunResponse",
+        "BatchSchedulerMaterializationResponse",
     ]:
         properties = schema["components"]["schemas"][schema_name]["properties"]
         for property_contract in properties.values():

@@ -27,13 +27,32 @@ from app.report_batch_orchestrator.models import (
     BatchWorkerRunResponse,
     ReportBatchRecord,
 )
+from app.report_batch_orchestrator.scheduler import (
+    BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE,
+    BATCH_SCHEDULER_RUN_REQUEST_EXAMPLE,
+    BATCH_SCHEDULER_RUN_RESPONSE_EXAMPLE,
+    BatchScheduleConfigError,
+    BatchScheduleListResponse,
+    BatchSchedulerConfig,
+    BatchSchedulerRunRequest,
+    BatchSchedulerRunResponse,
+    batch_schedule_list_response,
+    batch_scheduler_caller_context,
+    batch_scheduler_config_from_settings,
+    batch_scheduler_run_response,
+)
 from app.report_batch_orchestrator.selector import BatchSelectorValidationError
-from app.report_batch_orchestrator.service import get_report_batch_ledger, get_report_batch_worker
+from app.report_batch_orchestrator.service import (
+    get_report_batch_ledger,
+    get_report_batch_scheduler,
+    get_report_batch_worker,
+)
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
 from app.routers.caller_context import caller_context_dependency
 
 router = APIRouter(prefix="/reports/batches", tags=["Report Batches"])
+schedules_router = APIRouter(prefix="/reports/batch-schedules", tags=["Report Batch Schedules"])
 
 
 class ReportBatchLedgerPort(Protocol):
@@ -74,6 +93,15 @@ class ReportBatchWorkerPort(Protocol):
         dispatch_policy: Any | None = None,
         recover_expired_leases: bool = True,
     ) -> BatchWorkerRunResult: ...
+
+
+class ReportBatchSchedulerPort(Protocol):
+    async def run_due_schedules(
+        self,
+        *,
+        config: BatchSchedulerConfig,
+        caller_context: ReportCallerContext,
+    ) -> Any: ...
 
 
 BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
@@ -119,6 +147,18 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report batch run could not be completed.",
         }
     },
+    "invalid_batch_scheduler_config": {
+        "detail": {
+            "code": "invalid_batch_scheduler_config",
+            "message": "Configured report batch schedules could not be loaded.",
+        }
+    },
+    "batch_scheduler_run_failed": {
+        "detail": {
+            "code": "batch_scheduler_run_failed",
+            "message": "Report batch scheduler pass could not be completed.",
+        }
+    },
 }
 
 
@@ -143,6 +183,13 @@ def _error_response(
 
 def _status_url(batch_id: str) -> str:
     return f"/reports/batches/{batch_id}"
+
+
+def get_report_batch_scheduler_config() -> BatchSchedulerConfig:
+    try:
+        return batch_scheduler_config_from_settings()
+    except BatchScheduleConfigError as exc:
+        raise _scheduler_config_error(exc) from exc
 
 
 def _record_to_handle(record: ReportBatchRecord) -> BatchHandleResponse:
@@ -238,6 +285,141 @@ def _worker_run_response(result: BatchWorkerRunResult) -> BatchWorkerRunResponse
         ],
         status_url=_status_url(result.batch_id),
     )
+
+
+def _scheduler_config_error(exc: BatchScheduleConfigError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+        },
+    )
+
+
+@schedules_router.get(
+    "",
+    response_model=BatchScheduleListResponse,
+    summary="List governed report batch schedules",
+    description=(
+        "Returns the currently configured report batch schedules from the governed scheduler "
+        "configuration source. This endpoint is read-only: schedules remain config-backed and "
+        "are not created, edited, or deleted through the API."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "configured_schedules": {
+                                "summary": "Configured schedules",
+                                "value": BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="invalid_batch_scheduler_config",
+            description="Returned when the configured scheduler JSON cannot be loaded.",
+        )
+    },
+)
+async def list_report_batch_schedules(
+    config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
+    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchScheduleListResponse:
+    try:
+        return batch_schedule_list_response(config)
+    except BatchScheduleConfigError as exc:
+        raise _scheduler_config_error(exc) from exc
+
+
+@schedules_router.post(
+    ":run-due",
+    response_model=BatchSchedulerRunResponse,
+    summary="Run one bounded report batch scheduler pass",
+    description=(
+        "Runs one bounded operator-triggered scheduler pass over enabled configured schedules. "
+        "The pass resolves configured schedule selectors, materializes durable idempotent batches, "
+        "and returns product-safe materialization results. It does not execute batch items; the "
+        "batch worker remains responsible for dispatch, render, archive, and reconciliation."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": BATCH_SCHEDULER_RUN_REQUEST_EXAMPLE,
+                    "examples": {
+                        "run_due": {
+                            "summary": "Run due configured schedules once",
+                            "value": BATCH_SCHEDULER_RUN_REQUEST_EXAMPLE,
+                        }
+                    },
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": BATCH_SCHEDULER_RUN_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "materialized": {
+                                "summary": "Materialized scheduled batch",
+                                "value": BATCH_SCHEDULER_RUN_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        },
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="invalid_batch_scheduler_config",
+            description="Returned when the configured scheduler JSON cannot be loaded.",
+        ),
+        **_error_response(
+            409,
+            example_key="batch_scheduler_run_failed",
+            description="Returned when the scheduler pass cannot safely materialize schedules.",
+        ),
+    },
+)
+async def run_due_report_batch_schedules(
+    request: BatchSchedulerRunRequest,
+    scheduler: ReportBatchSchedulerPort = Depends(get_report_batch_scheduler),
+    config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
+    _operator_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchSchedulerRunResponse:
+    scheduler_context = batch_scheduler_caller_context(
+        config,
+        pass_sequence=request.pass_sequence,
+    )
+    try:
+        result = await scheduler.run_due_schedules(
+            config=config,
+            caller_context=scheduler_context,
+        )
+    except BatchScheduleConfigError as exc:
+        raise _scheduler_config_error(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "batch_scheduler_run_failed",
+                "message": "Report batch scheduler pass could not be completed.",
+            },
+        ) from exc
+    return batch_scheduler_run_response(result=result, caller_context=scheduler_context)
 
 
 def _not_found_error(exc: ValueError) -> HTTPException:

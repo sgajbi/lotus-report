@@ -46,5 +46,6 @@
   `lotus-report-batch-worker` service now runs that pass as a daemonized internal background
   worker process. The `lotus-report-batch-scheduler` service now materializes configured
   explicit-portfolio, all-active, and inline manifest schedules into durable idempotent batches
-  for that worker to execute. No Workbench batch surface, gateway-facing scheduler
-  administration, or entitlement-certified public scheduler runtime is shipped yet
+  for that worker to execute. Config-backed scheduler administration APIs now list configured
+  schedules and run one bounded scheduler materialization pass. Schedule CRUD, Workbench
+  scheduler-management, and entitlement-certified public scheduler runtime remain future scope

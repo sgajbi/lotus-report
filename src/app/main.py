@@ -12,6 +12,7 @@ from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
 from app.routers.integration import router as integration_router
 from app.routers.report_batches import router as report_batches_router
+from app.routers.report_batches import schedules_router as report_batch_schedules_router
 from app.routers.report_jobs import evidence_router as report_evidence_router
 from app.routers.report_jobs import jobs_router as report_jobs_router
 from app.routers.report_jobs import router as report_job_submission_router
@@ -50,6 +51,10 @@ app = FastAPI(
             "description": "Operational report-batch materialization, status, and control APIs.",
         },
         {
+            "name": "Report Batch Schedules",
+            "description": "Governed report-batch scheduler configuration and run APIs.",
+        },
+        {
             "name": "Report Evidence",
             "description": "Support-safe snapshot and upstream-lineage evidence APIs.",
         },
@@ -66,5 +71,6 @@ app.include_router(aggregations_router)
 app.include_router(report_job_submission_router)
 app.include_router(reports_router)
 app.include_router(report_batches_router)
+app.include_router(report_batch_schedules_router)
 app.include_router(report_jobs_router)
 app.include_router(report_evidence_router)
