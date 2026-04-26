@@ -70,6 +70,7 @@ def scheduled_batch_idempotency_key(
     caller_context: ReportCallerContext,
     selector_mode: BatchSelectorMode,
     cycle: BatchCycle,
+    selector_identity: str | None = None,
 ) -> str:
     payload = {
         "tenant_id": caller_context.tenant_id,
@@ -77,6 +78,8 @@ def scheduled_batch_idempotency_key(
         "selector_mode": selector_mode,
         "cycle": cycle.idempotency_scope,
     }
+    if selector_identity is not None:
+        payload["selector_identity"] = selector_identity
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:32]
     return f"scheduled-batch-{digest}"
 

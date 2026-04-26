@@ -56,5 +56,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  lotus-report-batch-scheduler:
+    build: .
+    image: lotus-report:local
+    container_name: lotus-report-batch-scheduler
+    command: ["python", "-m", "app.report_batch_orchestrator.scheduler_process"]
+    environment:
+      <<: *lotus-report-service-environment
+      REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local
+      REPORT_BATCH_SCHEDULER_INTERVAL_SECONDS: "30"
+      REPORT_BATCH_SCHEDULES_JSON: "[]"
+    depends_on:
+      lotus-report-postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   lotus-report-postgres-data:

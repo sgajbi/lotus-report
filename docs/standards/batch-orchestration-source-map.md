@@ -10,7 +10,11 @@ internal bounded single-batch worker run primitive. Slice 11 exposes that bounde
 through an internal operator `run-once` API. Slice 12 adds an internal bounded runtime pass that
 scans durable runnable batches and invokes the single-batch worker for a limited number of batches.
 Slice 13 adds the daemonized internal `lotus-report-batch-worker` process over that runtime pass.
-Scheduler loops, gateway exposure, and Workbench surfaces remain later slices.
+Slice 14 adds the daemonized internal `lotus-report-batch-scheduler` process that reads governed
+schedule configuration, resolves configured explicit portfolio ids through `lotus-core`, and
+materializes durable idempotent scheduled batches for the worker to execute. Gateway exposure,
+Workbench surfaces, all-active scheduler materialization, and manifest scheduler materialization
+remain later slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |
@@ -73,6 +77,12 @@ Scheduler loops, gateway exposure, and Workbench surfaces remain later slices.
 | `worker_process_id` | Stable daemonized worker identity recorded on item leases and worker logs | `lotus-report` worker configuration | `REPORT_BATCH_WORKER_ID` and `BatchWorkerProcessConfig.worker_id` | Available and used internally |
 | `worker_process_interval_seconds` | Delay between daemonized worker passes | `lotus-report` worker configuration | `REPORT_BATCH_WORKER_INTERVAL_SECONDS` and `BatchWorkerProcess.run` | Available and used internally |
 | `worker_process_max_batches_per_pass` | Maximum candidate batches advanced by one daemonized worker pass | `lotus-report` worker configuration | `REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS` and `BatchWorkerProcessConfig.max_batches_per_pass` | Available and used internally |
+| `batch_schedule_id` | Governed schedule identity persisted into each scheduled batch option set | `lotus-report` scheduler configuration | `BatchScheduleDefinition.schedule_id` and `REPORT_BATCH_SCHEDULES_JSON` | Available and used internally |
+| `batch_schedule_enabled` | Whether a configured schedule should be materialized during a scheduler pass | `lotus-report` scheduler configuration | `BatchScheduleDefinition.enabled` | Available and used internally |
+| `batch_schedule_portfolio_ids` | Explicit portfolio ids selected for a configured scheduled batch | `lotus-report` scheduler configuration resolved through `lotus-core` | `BatchScheduleDefinition.portfolio_ids` and `CoreQueryClient.get_portfolio_detail` | Available and used internally |
+| `scheduler_process_id` | Stable scheduler identity used as scheduled batch caller identity and logs | `lotus-report` scheduler configuration | `REPORT_BATCH_SCHEDULER_ID` and `BatchSchedulerConfig.scheduler_id` | Available and used internally |
+| `scheduler_process_interval_seconds` | Delay between daemonized scheduler passes | `lotus-report` scheduler configuration | `REPORT_BATCH_SCHEDULER_INTERVAL_SECONDS` and `BatchSchedulerProcess.run` | Available and used internally |
+| `scheduler_process_materialized_batch_ids` | Durable batch ids created or idempotently reused by one scheduler pass | `lotus-report` derived runtime state | `BatchSchedulerRunResult.materialized` and scheduler pass logs | Available and used internally |
 | `batch_id` | Opaque durable batch identifier for status and control APIs | `lotus-report` derived composition | `POST /reports/batches` response and `GET /reports/batches/{batch_id}` | Available and used |
 | `status_url` | Relative URL for batch status lookup | `lotus-report` derived composition | `BatchHandleResponse.status_url`, `BatchControlResponse.status_url` | Available and used |
 | `status_counts` | Product-safe count of batch items by item status | `lotus-report` derived composition | `BatchStatusResponse.status_counts` | Available and used |
@@ -86,6 +96,6 @@ Source gaps for later slices:
 3. Runtime pressure counts for upstream, render, and archive are accepted by the internal
    dispatcher as `BatchRuntimeLoad`; later worker/API slices must connect those counts to live
    runtime telemetry instead of static caller input.
-4. Batch runtime execution is limited to internal bounded worker, runtime-pass, and daemonized
-   worker-process primitives plus the bounded single-batch `lotus-report` operator API. A
-   production scheduler loop, gateway exposure, and Workbench batch surface remain later slices.
+4. Batch runtime execution is limited to internal bounded worker, runtime-pass, daemonized
+   worker-process, and daemonized scheduler-process primitives plus the bounded single-batch
+   `lotus-report` operator API. Gateway exposure and Workbench batch surface remain later slices.

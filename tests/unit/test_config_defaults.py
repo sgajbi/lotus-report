@@ -27,3 +27,10 @@ def test_settings_default_to_canonical_service_identities(monkeypatch) -> None:
     assert settings.batch_worker_role == "system"
     assert settings.batch_worker_max_active_batches == 1
     assert settings.batch_worker_max_active_items == 5
+    assert settings.batch_scheduler_id == "lotus-report-batch-scheduler-1"
+    assert settings.batch_scheduler_interval_seconds == 60.0
+    assert settings.batch_scheduler_tenant_id == "tenant-sg"
+    assert settings.batch_scheduler_region == "APAC"
+    assert settings.batch_scheduler_booking_center_code == "SG"
+    assert settings.batch_scheduler_role == "system"
+    assert settings.batch_schedules_json == "[]"

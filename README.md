@@ -165,8 +165,11 @@ Key code areas:
   operator-controlled API. A bounded internal runtime pass can scan durable runnable batches and
   invoke that worker primitive for a limited number of batches. The
   `lotus-report-batch-worker` Docker Compose service runs that pass as a daemonized internal
-  background worker process. No batch scheduler loop, gateway exposure, or Workbench batch surface
-  is implemented yet
+  background worker process. The `lotus-report-batch-scheduler` Docker Compose service reads
+  governed `REPORT_BATCH_SCHEDULES_JSON`, resolves configured explicit portfolio ids through
+  `lotus-core`, and creates durable idempotent scheduled batches for the worker to execute. No
+  gateway exposure, Workbench batch surface, all-active scheduler, or manifest scheduler is
+  implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
@@ -338,7 +341,7 @@ Current orchestration model:
   internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
   recover-expired-leases controls plus the bounded `run-once` operator action are direct
   `lotus-report` APIs and are not yet gateway or Workbench surfaces. The internal runtime pass and
-  daemonized worker process are `lotus-report` service primitives, not public APIs
+  daemonized worker/scheduler processes are `lotus-report` service primitives, not public APIs
 
 ## Documentation Map
 

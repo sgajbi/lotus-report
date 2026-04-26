@@ -44,5 +44,7 @@
   bounded worker pass for an explicit batch. An internal bounded runtime pass now scans durable
   runnable batches and invokes the same worker primitive for a limited number of batches. The
   `lotus-report-batch-worker` service now runs that pass as a daemonized internal background
-  worker process. No batch scheduler loop, gateway exposure, or Workbench batch surface is shipped
-  yet
+  worker process. The `lotus-report-batch-scheduler` service now materializes configured
+  explicit-portfolio schedules into durable idempotent batches for that worker to execute. No
+  gateway exposure, Workbench batch surface, all-active scheduler, or manifest scheduler is
+  shipped yet
