@@ -39,6 +39,8 @@ async def test_archive_document_posts_to_archive_endpoint(monkeypatch):
         "json_body": {"archive_request_id": "arch_123"},
         "headers": {
             "Content-Type": "application/json",
+            "X-Caller-Service": "lotus-report",
+            "X-Actor-Type": "service",
             "X-Actor-Id": "advisor-123",
             "X-Caller-Application": "lotus-report",
             "X-Tenant-Id": "tenant-sg",
@@ -80,6 +82,8 @@ async def test_archive_document_omits_optional_headers_when_absent(monkeypatch):
 
     assert captured_headers == {
         "Content-Type": "application/json",
+        "X-Caller-Service": "lotus-report",
+        "X-Actor-Type": "service",
         "X-Actor-Id": "advisor-456",
         "X-Caller-Application": "lotus-report",
         "X-Tenant-Id": "tenant-us",

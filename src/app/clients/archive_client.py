@@ -31,6 +31,8 @@ class ArchiveClient:
     ) -> tuple[int, dict[str, Any]]:
         headers = {
             "Content-Type": "application/json",
+            "X-Caller-Service": "lotus-report",
+            "X-Actor-Type": "service",
             "X-Actor-Id": actor_id,
             "X-Caller-Application": "lotus-report",
             "X-Tenant-Id": tenant_id,
