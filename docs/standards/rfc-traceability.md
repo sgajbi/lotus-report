@@ -404,3 +404,74 @@ This document provides explicit implementation evidence pointers for active RFCs
       `2cc8a04f0d314ecccf2b05713503176d4bb49015126ecfc70ab41f25bb68f55b`.
     - Archive binary retrieval returned `200 OK`, `content-type=application/pdf`, 231518 bytes,
       `%PDF-1.7`, and a local SHA-256 matching archive metadata.
+- Slice 14 daemonized scheduler process evidence:
+  - `src/app/report_batch_orchestrator/scheduler.py` adds a config-backed internal scheduler that
+    parses governed `REPORT_BATCH_SCHEDULES_JSON`, builds deterministic system caller context,
+    resolves configured explicit portfolio ids through `lotus-core`, derives cycle metadata
+    through `materialize_cycle`, and creates durable idempotent scheduled batches through the
+    existing batch ledger.
+  - `src/app/report_batch_orchestrator/scheduler_process.py` adds the daemonized internal
+    scheduler entrypoint: `python -m app.report_batch_orchestrator.scheduler_process`.
+  - `docker-compose.yml` adds `lotus-report-batch-scheduler` with the same PostgreSQL and
+    host-reachable upstream wiring as `lotus-report` and `lotus-report-batch-worker`.
+  - This slice deliberately does not introduce a gateway-facing scheduler API, Workbench surface,
+    all-active scheduler materialization, manifest scheduler materialization, RFC-0105 operations
+    dashboards, RFC-0106 entitlement certification, or RFC-0107 production certification.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_boundary.py
+      tests/unit/report_batch_orchestrator/test_schedule.py
+      tests/unit/report_batch_orchestrator/test_scheduler.py
+      tests/unit/report_batch_orchestrator/test_scheduler_process.py
+      tests/unit/test_config_defaults.py tests/unit/test_docker_compose_runtime.py -q` passed
+      with 32 tests.
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and 327
+      unit tests.
+    - PostgreSQL-backed validation passed with
+      `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
+      for `make migration-smoke` and
+      `python -m pytest tests/integration/test_postgres_report_batch_ledger.py -q`.
+    - `PYTHONPATH=src python -W error::RuntimeWarning -m
+      app.report_batch_orchestrator.scheduler_process --help` passed, proving the scheduler module
+      can be invoked with `python -m` without the package-import `runpy` warning.
+    - `docker compose config --quiet` passed.
+    - `docker compose build lotus-report lotus-report-batch-worker
+      lotus-report-batch-scheduler` built the production-shaped local images.
+    - Targeted Docker refresh restarted only `lotus-report` against healthy
+      `lotus-report-postgres`.
+    - Live canonical-stack proof ran the scheduler process once with
+      `schedule_id=monthly-sg-global-bal-live-52f574aa`; it called
+      `GET /portfolios/PB_SG_GLOBAL_BAL_001` on `lotus-core` with
+      `correlation_id=corr-batch-scheduler-1-0665a4e49459` and materialized
+      `batch_id=rbch_d2c627362ddf497d9c37487c0f0fc82d`.
+    - PostgreSQL proof showed the scheduled batch persisted with
+      `idempotency_key=scheduled-batch-d975c77f7c2f2d35e931977db152e34d`,
+      `materialized_portfolio_ids_json=["PB_SG_GLOBAL_BAL_001"]`, and options containing
+      `batch_schedule_id=monthly-sg-global-bal-live-52f574aa`,
+      `batch_frequency=monthly`, `batch_period_start=2026-04-01`, and
+      `batch_period_end=2026-04-22`.
+    - The daemonized worker process then scanned exactly that batch in runtime pass
+      `corr-batch-worker-1-a9ccd39ad5cc`, leased, dispatched, and executed one item, and logged
+      `batch_worker.pass_completed` with recovered `0`, leased `1`, dispatched `1`, executed `1`,
+      and no back-pressure stop.
+    - API status proof returned `batch.status=completed`, `status_counts={"succeeded":1}`,
+      `report_job_id=rjob_d3ab17b0f9d642a0b6913d5fd21ee49f`, and item `status=succeeded`.
+    - PostgreSQL reconciliation for the same batch showed `report_batch.status=completed`,
+      `report_batch_item.status=succeeded`, `report_job.status=archived`,
+      `report_job.current_step=archived`,
+      `report_input_snapshot.snapshot_id=rsnap_1399f1a6df1e4f758d47389d32d8edfa`,
+      `report_input_snapshot.supportability_status=complete`,
+      `report_input_snapshot.completeness_status=complete`,
+      `render_job_id=rdr_rjob_d3ab17b0f9d642a0b6913d5fd21ee49f_pdf`, and
+      `archive_document_id=doc_89b380fd820f4f9f962ff93ddc633edd`.
+    - Archive metadata for `doc_89b380fd820f4f9f962ff93ddc633edd` reconciled
+      `report_job_id=rjob_d3ab17b0f9d642a0b6913d5fd21ee49f`,
+      `snapshot_id=rsnap_1399f1a6df1e4f758d47389d32d8edfa`,
+      `render_job_id=rdr_rjob_d3ab17b0f9d642a0b6913d5fd21ee49f_pdf`,
+      `portfolio_id=PB_SG_GLOBAL_BAL_001`, `mime_type=application/pdf`, `size_bytes=231518`, and
+      SHA-256 checksum `28b2cb5138e1035d013264d12625079bd63ce90f977763a249db698993cea0ac`.
+    - Archive binary retrieval returned `200 OK`, `content-type=application/pdf`, 231518 bytes,
+      `%PDF-1.7`, and a local SHA-256 matching archive metadata.
+    - Rerunning the same scheduler config returned the same
+      `batch_id=rbch_d2c627362ddf497d9c37487c0f0fc82d`; PostgreSQL count for
+      `batch_schedule_id=monthly-sg-global-bal-live-52f574aa` remained `1`, proving scheduled
+      idempotency against the live durable ledger.

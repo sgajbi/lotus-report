@@ -82,17 +82,21 @@ Current implemented semantics:
 - the `lotus-report-batch-worker` Docker Compose service runs the bounded runtime pass as a
   daemonized internal background worker process under configured interval, batch-count, lease, and
   back-pressure limits
+- the `lotus-report-batch-scheduler` Docker Compose service reads governed
+  `REPORT_BATCH_SCHEDULES_JSON`, verifies configured explicit portfolio ids through `lotus-core`,
+  and materializes durable idempotent scheduled batches for the worker process to execute
 
 Still not supported:
 
-- scheduled batch execution loop
 - gateway exposure
 - Workbench batch surface
+- all-active or manifest scheduler materialization
 - broad replay, rerender, regenerate, or document distribution controls
 
 Use individual report-job APIs for production portfolio-review initiation until later RFC-0104
-slices ship the scheduler/runtime surface. Use `lotus-report` batch APIs only for the certified
-materialization/status/control/run-once subset and internal support proof.
+slices ship gateway and Workbench surfaces. Use `lotus-report` batch APIs and internal
+worker/scheduler services only for the certified materialization/status/control/run-once and
+service-runtime subset.
 
 Observability floor for this wave:
 

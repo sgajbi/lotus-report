@@ -42,5 +42,6 @@ def test_supported_features_do_not_claim_batch_runtime_support() -> None:
     )[0]
 
     assert BATCH_CAPABILITY_KEY not in implementation_backed
-    assert "batch scheduler" not in implementation_backed.lower()
+    assert "`lotus-report.reporting.batch_scheduler.v1`" not in implementation_backed
+    assert "`lotus-report.reporting.batch_scheduler_process.v1`" in implementation_backed
     assert "worker runtime" not in implementation_backed.lower()

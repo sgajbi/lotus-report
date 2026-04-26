@@ -1,8 +1,7 @@
 """RFC-0104 batch reporting vocabulary and support posture.
 
 This module centralizes batch-orchestration vocabulary without claiming full
-runtime support before the scheduler, public worker runtime, gateway, and
-Workbench surfaces exist.
+product runtime support before gateway and Workbench surfaces exist.
 """
 
 from typing import Final, Literal

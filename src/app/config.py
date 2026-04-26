@@ -79,6 +79,23 @@ class Settings(BaseSettings):
         ge=1,
         alias="REPORT_BATCH_WORKER_LEASE_SECONDS",
     )
+    batch_scheduler_id: str = Field(
+        "lotus-report-batch-scheduler-1",
+        alias="REPORT_BATCH_SCHEDULER_ID",
+    )
+    batch_scheduler_interval_seconds: float = Field(
+        60.0,
+        ge=0.1,
+        alias="REPORT_BATCH_SCHEDULER_INTERVAL_SECONDS",
+    )
+    batch_scheduler_tenant_id: str = Field("tenant-sg", alias="REPORT_BATCH_SCHEDULER_TENANT_ID")
+    batch_scheduler_region: str = Field("APAC", alias="REPORT_BATCH_SCHEDULER_REGION")
+    batch_scheduler_booking_center_code: str | None = Field(
+        "SG",
+        alias="REPORT_BATCH_SCHEDULER_BOOKING_CENTER_CODE",
+    )
+    batch_scheduler_role: str = Field("system", alias="REPORT_BATCH_SCHEDULER_ROLE")
+    batch_schedules_json: str = Field("[]", alias="REPORT_BATCH_SCHEDULES_JSON")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

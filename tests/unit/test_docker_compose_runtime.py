@@ -19,3 +19,8 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local" in compose
     assert "REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS" in compose
     assert "REPORT_BATCH_WORKER_MAX_ACTIVE_ITEMS" in compose
+    assert "lotus-report-batch-scheduler:" in compose
+    assert 'command: ["python", "-m", "app.report_batch_orchestrator.scheduler_process"]' in compose
+    assert "REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local" in compose
+    assert "REPORT_BATCH_SCHEDULES_JSON:" in compose
+    assert 'REPORT_BATCH_SCHEDULES_JSON: "[]"' in compose

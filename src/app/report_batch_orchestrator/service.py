@@ -1,10 +1,12 @@
 from functools import lru_cache
 
+from app.clients.core_query_client import CoreQueryClient
 from app.config import settings
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
 from app.report_batch_orchestrator.execution import ReportBatchExecutionService
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
 from app.report_batch_orchestrator.runtime import ReportBatchRuntime
+from app.report_batch_orchestrator.scheduler import ReportBatchScheduler
 from app.report_batch_orchestrator.worker import ReportBatchWorker
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
@@ -51,5 +53,17 @@ def get_report_batch_runtime() -> ReportBatchRuntime:
                 capture_service=get_portfolio_review_snapshot_capture_service(),
                 render_service=get_portfolio_review_render_orchestration_service(),
             ),
+        ),
+    )
+
+
+def get_report_batch_scheduler() -> ReportBatchScheduler:
+    return ReportBatchScheduler(
+        batch_ledger=get_report_batch_ledger(),
+        portfolio_source=CoreQueryClient(
+            base_url=settings.core_query_base_url,
+            timeout_seconds=settings.upstream_timeout_seconds,
+            max_retries=settings.upstream_max_retries,
+            retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
         ),
     )
