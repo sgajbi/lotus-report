@@ -31,3 +31,6 @@
   presented as shipped product capability
 - repo-local wiki pages should stay concise and operator-facing; RFC implementation detail belongs
   in `rfcs/` and implementation-backed feature truth belongs in `docs/supported-features.md`
+- RFC-0104 batch reporting is in progress only at the module-boundary/planned-vocabulary layer;
+  no batch scheduler, durable batch ledger, retry-failed-only, pause, resume, or recovery operator
+  capability is shipped yet

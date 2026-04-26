@@ -53,6 +53,17 @@ exist.
 | `lotus-report.aggregation.portfolio_snapshot` | `GET /aggregations/portfolios/{portfolio_id}` | `src/app/routers/aggregations.py`, `src/app/services/aggregation_service.py`, `tests/unit/test_aggregation_service.py`, `tests/integration/test_api.py` | Current reporting aggregation snapshot capability. |
 | `lotus-report.integration.capabilities` | `GET /integration/capabilities` | `src/app/routers/integration.py`, `src/app/models/contracts.py`, `tests/integration/test_api.py` | Publishes current feature and workflow posture for downstream consumers. |
 
+## Planned RFC-0104 Feature Candidates
+
+These rows are planning markers, not shipped product capability. They must not be moved to
+implementation-backed until the durable batch ledger, scheduler, worker behavior, APIs, tests,
+OpenAPI evidence, operator guidance, and live proof exist.
+
+| Feature key | Planned surface | State | Notes |
+| --- | --- | --- | --- |
+| `lotus-report.reporting.batch_orchestration.v1` | Future `POST /reports/batches` and related status/control APIs | `planned` | RFC-0104 batch reporting orchestration is not shipped yet. Slice 1 only creates the module boundary in `src/app/report_batch_orchestrator/` and centralizes future selector/frequency vocabulary. |
+| `lotus-report.reporting.batch_scheduler.v1` | Future scheduled monthly, quarterly, semi-annual, yearly, and explicit production cycles | `planned` | No scheduler loop, schedule materialization, recovery scanner, or operator-facing batch API exists yet. Continue to use individual report-job APIs for implemented reporting workflows. |
+
 ## Planned RFC-0002 Feature Candidates
 
 No RFC-0002 feature candidates remain in planned state after RFC-0002 implementation. Future

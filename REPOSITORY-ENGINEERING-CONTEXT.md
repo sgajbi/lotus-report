@@ -53,10 +53,14 @@ Current repository posture:
 9. RFC-0103 now adds `lotus-archive` handoff after successful PDF render completion, separate
    `archiving`/`archived` lifecycle states, and archive-aware status/failure posture while keeping
    retrieval, retention execution, legal hold, purge, and distribution owned by `lotus-archive`,
-10. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+10. RFC-0104 is in progress. Slice 1 adds the `src/app/report_batch_orchestrator/` module boundary
+   and planned batch selector/frequency vocabulary only. No batch scheduler, durable batch ledger,
+   worker, API, retry-failed-only, pause, resume, or recovery operator capability is implemented
+   yet,
+11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-11. CI is standardized but still lighter than some core domain services,
-12. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+12. CI is standardized but still lighter than some core domain services,
+13. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -91,6 +95,10 @@ Primary areas:
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
+11. `src/app/report_batch_orchestrator/`
+    RFC-0104 batch reporting orchestration boundary. Slice 1 centralizes planned selector and
+    frequency vocabulary while keeping runtime support disabled until later ledger, scheduler,
+    worker, API, and recovery slices are implemented and proven.
 
 ## Runtime And Integration Boundaries
 
@@ -190,7 +198,8 @@ Update this document when:
 8. render-package composition, lotus-render integration, persisted render metadata, or job
    lifecycle semantics change,
 9. report ledger database, readiness, migration, or CI proof posture changes,
-10. current-state rollout posture changes.
+10. current-state rollout posture changes,
+11. RFC-0104 batch orchestration module, support posture, or planned-vocabulary scope changes.
 
 ## Cross-Links
 
