@@ -79,11 +79,13 @@ Current implemented semantics:
   linked report job ids, back-pressure reasons, skip reasons, and per-item execution outcomes
 - internal runtime passes can scan durable runnable batches and invoke the single-batch worker for
   a limited number of batches; this is a service primitive only and is not a public API or daemon
+- the `lotus-report-batch-worker` Docker Compose service runs the bounded runtime pass as a
+  daemonized internal background worker process under configured interval, batch-count, lease, and
+  back-pressure limits
 
 Still not supported:
 
 - scheduled batch execution loop
-- daemonized background executor process
 - gateway exposure
 - Workbench batch surface
 - broad replay, rerender, regenerate, or document distribution controls

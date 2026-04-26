@@ -67,7 +67,8 @@ Current repository posture:
    and execution. Slice 11 adds a certified internal `run-once` operator API over the bounded
    single-batch worker primitive. Slice 12 adds an internal bounded runtime pass that scans the
    durable ledger for runnable batches and invokes the single-batch worker for a limited number of
-   batches. No batch scheduler loop, daemonized background worker process, gateway exposure, or
+   batches. Slice 13 adds the daemonized internal `lotus-report-batch-worker` process entrypoint
+   and Docker Compose service over that runtime pass. No batch scheduler loop, gateway exposure, or
    Workbench batch surface is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
@@ -116,12 +117,12 @@ Primary areas:
     an internal execution bridge over the existing report-job, snapshot, render, and archive
     handoff pipeline, and an internal single-batch worker run primitive that combines recovery,
     dispatch, and item execution under explicit back-pressure inputs. The internal runtime pass can
-    scan durable runnable batches and invoke that worker primitive for a bounded batch count.
-    Certified
+    scan durable runnable batches and invoke that worker primitive for a bounded batch count, and
+    the `lotus-report-batch-worker` process runs that pass continuously under configured interval,
+    batch-count, lease, and back-pressure limits. Certified
     `POST /reports/batches`, batch status, batch control, and `run-once` APIs expose the
     materialization/status/control/single-batch-run subset while keeping full runtime support
-    disabled until later scheduler loop, daemonized background worker, gateway, and Workbench
-    slices are implemented and proven.
+    disabled until later scheduler loop, gateway, and Workbench slices are implemented and proven.
 
 ## Runtime And Integration Boundaries
 

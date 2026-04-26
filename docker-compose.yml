@@ -1,3 +1,11 @@
+x-lotus-report-service-environment: &lotus-report-service-environment
+  LOTUS_CORE_QUERY_BASE_URL: http://host.docker.internal:8201
+  LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002
+  RISK_BASE_URL: http://host.docker.internal:8130
+  LOTUS_RENDER_BASE_URL: http://host.docker.internal:8310
+  LOTUS_ARCHIVE_BASE_URL: http://host.docker.internal:8150
+  REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
+
 services:
   lotus-report-postgres:
     image: postgres:16-alpine
@@ -18,14 +26,10 @@ services:
 
   lotus-report:
     build: .
+    image: lotus-report:local
     container_name: lotus-report
     environment:
-      LOTUS_CORE_QUERY_BASE_URL: http://host.docker.internal:8201
-      LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002
-      RISK_BASE_URL: http://host.docker.internal:8130
-      LOTUS_RENDER_BASE_URL: http://host.docker.internal:8310
-      LOTUS_ARCHIVE_BASE_URL: http://host.docker.internal:8150
-      REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
+      <<: *lotus-report-service-environment
     depends_on:
       lotus-report-postgres:
         condition: service_healthy
@@ -33,6 +37,24 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8300:8300"
+
+  lotus-report-batch-worker:
+    build: .
+    image: lotus-report:local
+    container_name: lotus-report-batch-worker
+    command: ["python", "-m", "app.report_batch_orchestrator.process"]
+    environment:
+      <<: *lotus-report-service-environment
+      REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local
+      REPORT_BATCH_WORKER_INTERVAL_SECONDS: "5"
+      REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS: "25"
+      REPORT_BATCH_WORKER_MAX_ACTIVE_BATCHES: "1000"
+      REPORT_BATCH_WORKER_MAX_ACTIVE_ITEMS: "1000"
+    depends_on:
+      lotus-report-postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   lotus-report-postgres-data:

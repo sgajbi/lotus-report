@@ -28,6 +28,57 @@ class Settings(BaseSettings):
         "postgresql://lotus_report:lotus_report@localhost:5439/lotus_report",
         alias="REPORT_JOB_LEDGER_DATABASE_URL",
     )
+    batch_worker_id: str = Field(
+        "lotus-report-batch-worker-1",
+        alias="REPORT_BATCH_WORKER_ID",
+    )
+    batch_worker_interval_seconds: float = Field(
+        5.0,
+        ge=0.1,
+        alias="REPORT_BATCH_WORKER_INTERVAL_SECONDS",
+    )
+    batch_worker_max_batches_per_pass: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS",
+    )
+    batch_worker_tenant_id: str = Field("tenant-sg", alias="REPORT_BATCH_WORKER_TENANT_ID")
+    batch_worker_region: str = Field("APAC", alias="REPORT_BATCH_WORKER_REGION")
+    batch_worker_booking_center_code: str | None = Field(
+        "SG",
+        alias="REPORT_BATCH_WORKER_BOOKING_CENTER_CODE",
+    )
+    batch_worker_role: str = Field("system", alias="REPORT_BATCH_WORKER_ROLE")
+    batch_worker_max_active_batches: int = Field(
+        1,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_ACTIVE_BATCHES",
+    )
+    batch_worker_max_active_items: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_ACTIVE_ITEMS",
+    )
+    batch_worker_max_active_upstream_jobs: int = Field(
+        3,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_ACTIVE_UPSTREAM_JOBS",
+    )
+    batch_worker_max_active_render_jobs: int = Field(
+        2,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_ACTIVE_RENDER_JOBS",
+    )
+    batch_worker_max_active_archive_jobs: int = Field(
+        2,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_MAX_ACTIVE_ARCHIVE_JOBS",
+    )
+    batch_worker_lease_seconds: int = Field(
+        300,
+        ge=1,
+        alias="REPORT_BATCH_WORKER_LEASE_SECONDS",
+    )
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

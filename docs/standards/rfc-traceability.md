@@ -342,3 +342,65 @@ This document provides explicit implementation evidence pointers for active RFCs
     - Live render logs carried `corr-batch-runtime-live-8152dfb9` through `lotus-render`; archive
       binary retrieval for `doc_f6db8cba0ba843bbbf2553dadb79b4d4` returned `200 OK`,
       `content-type=application/pdf`, `content-length=231518`, and SHA-256 checksum headers.
+- Slice 13 daemonized background worker process evidence:
+  - `src/app/report_batch_orchestrator/process.py` adds a daemonized internal worker process
+    entrypoint: `python -m app.report_batch_orchestrator.process`.
+  - The process builds its worker identity, pass interval, maximum batches per pass, caller
+    context, lease duration, and back-pressure policy from `REPORT_BATCH_WORKER_*` configuration.
+  - Each pass uses the existing `ReportBatchRuntime.run_pass` and logs product-safe worker evidence
+    including scanned batch ids, recovered/leased/dispatched/executed counts, and back-pressure
+    posture. It does not expose lease tokens, SQL, stack traces, or raw upstream payloads.
+  - `docker-compose.yml` adds a `lotus-report-batch-worker` service using the same image and
+    upstream/database wiring as `lotus-report`, without exposing HTTP ports.
+  - This slice deliberately does not introduce schedule-cycle materialization automation, gateway
+    routes, Workbench surfaces, RFC-0105 operations dashboards, RFC-0106 entitlement
+    certification, or RFC-0107 production certification.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_process.py
+      tests/unit/report_batch_orchestrator/test_boundary.py tests/unit/test_config_defaults.py
+      tests/unit/test_docker_compose_runtime.py -q` passed with 11 tests.
+    - `python -m ruff check src/app/report_batch_orchestrator/process.py
+      tests/unit/report_batch_orchestrator/test_process.py src/app/config.py
+      tests/unit/test_config_defaults.py tests/unit/test_docker_compose_runtime.py` passed.
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and 312
+      unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make test-coverage` passed with 99% combined coverage.
+    - PostgreSQL-backed validation passed with
+      `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
+      for `python -m pytest tests/integration/test_postgres_report_batch_ledger.py -q` and
+      `make migration-smoke`.
+    - `python -W error::RuntimeWarning -m app.report_batch_orchestrator.process --help` passed
+      with `PYTHONPATH=src`, proving the daemon module can be invoked with `python -m` without the
+      package-import `runpy` warning.
+    - Targeted Docker refresh rebuilt and restarted only `lotus-report` and
+      `lotus-report-batch-worker`.
+    - Live canonical-stack proof created
+      `batch_id=rbch_93e51832cec949138d2b7b76194acd69` through `POST /reports/batches` with
+      `correlation_id=corr-batch-worker-process-live-75267893`, then the daemonized
+      `lotus-report-batch-worker` service scanned that batch in runtime pass
+      `corr-batch-worker-1-2cacc4d7fe30` and completed it without invoking the one-shot
+      `:run-once` API.
+    - API status proof returned `batch.status=completed`, `status_counts={"succeeded":1}`,
+      `report_job_id=rjob_0aad4adaf9744c4bbc3fdb6ed564ea05`, and item
+      `status=succeeded`.
+    - PostgreSQL reconciliation for the same batch showed `report_batch.status=completed`,
+      `report_batch_item.status=succeeded`, `report_job.status=archived`,
+      `report_job.current_step=archived`,
+      `report_input_snapshot.snapshot_id=rsnap_d982fc2ec35c4c37abedea42a5529c96`,
+      `report_input_snapshot.supportability_status=complete`,
+      `report_input_snapshot.completeness_status=complete`, and
+      `archive_document_id=doc_6529f8c0cf304d41868455c3554a88bb`.
+    - Worker logs showed successful upstream calls to `lotus-core`, `lotus-performance`,
+      `lotus-render`, and `lotus-archive`, including `POST /renders` returning `201 Created` and
+      `POST /documents` returning `201 Created`, with correlation
+      `corr-batch-worker-1-2cacc4d7fe30`.
+    - Archive metadata for `doc_6529f8c0cf304d41868455c3554a88bb` reconciled
+      `report_job_id=rjob_0aad4adaf9744c4bbc3fdb6ed564ea05`,
+      `snapshot_id=rsnap_d982fc2ec35c4c37abedea42a5529c96`,
+      `render_job_id=rdr_rjob_0aad4adaf9744c4bbc3fdb6ed564ea05_pdf`,
+      `portfolio_id=PB_SG_GLOBAL_BAL_001`, `mime_type=application/pdf`, `size_bytes=231518`,
+      and SHA-256 checksum
+      `2cc8a04f0d314ecccf2b05713503176d4bb49015126ecfc70ab41f25bb68f55b`.
+    - Archive binary retrieval returned `200 OK`, `content-type=application/pdf`, 231518 bytes,
+      `%PDF-1.7`, and a local SHA-256 matching archive metadata.
