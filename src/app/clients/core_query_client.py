@@ -107,6 +107,21 @@ class CoreQueryClient:
             backoff_seconds=self._retry_backoff_seconds,
         )
 
+    async def list_portfolios(
+        self,
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        url = f"{self._base_url}/portfolios/"
+        headers = self._headers(correlation_id)
+        return await get_with_retry(
+            url=url,
+            timeout_seconds=self._timeout_seconds,
+            params={},
+            headers=headers,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+
     async def get_portfolio_review(
         self,
         portfolio_id: str,

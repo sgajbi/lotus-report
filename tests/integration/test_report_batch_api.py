@@ -153,6 +153,64 @@ def test_report_batch_create_status_and_control_endpoints(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_create_accepts_all_active_and_manifest_selectors(tmp_path):
+    client, _ledger = _client(tmp_path)
+    try:
+        all_active_payload = _payload()
+        all_active_payload["selector_mode"] = "all_active_portfolios"
+        all_active_payload["portfolio_ids"] = []
+        all_active_response = client.post(
+            "/reports/batches",
+            json=all_active_payload,
+            headers=_headers("batch-all-active-api"),
+        )
+
+        manifest_payload = _payload()
+        manifest_payload["selector_mode"] = "batch_manifest"
+        manifest_payload["portfolio_ids"] = ["PB_SG_GLOBAL_BAL_001"]
+        manifest_payload["source_candidates"] = [
+            {
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "tenant_id": "tenant-sg",
+                "region": "APAC",
+                "active": True,
+                "selected": True,
+                "source_system": "lotus-operations",
+                "source_object": "BatchManifest",
+            }
+        ]
+        manifest_payload["options"] = {
+            "batch_manifest_source": "ops-manifest-apac-monthly",
+            "batch_manifest_hash": "manifest-hash-001",
+        }
+        manifest_response = client.post(
+            "/reports/batches",
+            json=manifest_payload,
+            headers=_headers("batch-manifest-api"),
+        )
+
+        assert all_active_response.status_code == 202
+        all_active_status = client.get(
+            all_active_response.json()["status_url"],
+            headers=_headers("batch-all-active-status"),
+        ).json()
+        assert all_active_status["selector_mode"] == "all_active_portfolios"
+        assert all_active_status["materialized_portfolio_ids"] == [
+            "PB_SG_GLOBAL_BAL_001",
+            "PB_SG_GLOBAL_BAL_002",
+        ]
+
+        assert manifest_response.status_code == 202
+        manifest_status = client.get(
+            manifest_response.json()["status_url"],
+            headers=_headers("batch-manifest-status"),
+        ).json()
+        assert manifest_status["selector_mode"] == "batch_manifest"
+        assert manifest_status["materialized_portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_run_once_endpoint_returns_operator_safe_result(tmp_path):
     client, _ledger = _client(tmp_path)
     app.dependency_overrides[get_report_batch_worker] = lambda: _WorkerRunSuccess()

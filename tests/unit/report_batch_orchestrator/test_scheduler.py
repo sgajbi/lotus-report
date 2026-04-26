@@ -16,9 +16,16 @@ from app.reporting_jobs.models import ReportCallerContext
 
 
 class _PortfolioSource:
-    def __init__(self, payloads: dict[str, tuple[int, dict[str, object]]]) -> None:
+    def __init__(
+        self,
+        payloads: dict[str, tuple[int, dict[str, object]]],
+        *,
+        list_payload: tuple[int, dict[str, object]] | None = None,
+    ) -> None:
         self.payloads = payloads
+        self.list_payload = list_payload or (200, {"portfolios": []})
         self.calls: list[tuple[str, str | None]] = []
+        self.list_calls: list[str | None] = []
 
     async def get_portfolio_detail(
         self,
@@ -27,6 +34,13 @@ class _PortfolioSource:
     ) -> tuple[int, dict[str, object]]:
         self.calls.append((portfolio_id, correlation_id))
         return self.payloads.get(portfolio_id, (404, {}))
+
+    async def list_portfolios(
+        self,
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        self.list_calls.append(correlation_id)
+        return self.list_payload
 
 
 def _caller_context() -> ReportCallerContext:
@@ -97,8 +111,55 @@ def test_batch_scheduler_config_from_settings_parses_schedule_json() -> None:
     assert config.schedules[0].schedule_id == "monthly-emea"
 
 
+def test_batch_scheduler_config_parses_manifest_schedule_json() -> None:
+    source = Settings(
+        _env_file=None,
+        REPORT_BATCH_SCHEDULES_JSON=(
+            '[{"schedule_id":"monthly-manifest","selector_mode":"batch_manifest",'
+            '"frequency":"monthly","as_of_date":"2026-04-30",'
+            '"manifest_source":"ops-batch-2026-04","manifest_entries":['
+            '{"portfolio_id":"P1","source_system":"lotus-operations",'
+            '"source_object":"BatchManifest"}]}]'
+        ),
+    )
+
+    config = batch_scheduler_config_from_settings(source)
+
+    assert config.schedules[0].selector_mode == "batch_manifest"
+    assert config.schedules[0].manifest_entries[0].portfolio_id == "P1"
+
+
 @pytest.mark.parametrize("raw", ["{}", "{"])
 def test_batch_scheduler_config_rejects_invalid_json(raw: str) -> None:
+    source = Settings(_env_file=None, REPORT_BATCH_SCHEDULES_JSON=raw)
+
+    with pytest.raises(BatchScheduleConfigError):
+        batch_scheduler_config_from_settings(source)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        (
+            '[{"schedule_id":"missing-ids","selector_mode":"explicit_portfolio_list",'
+            '"frequency":"monthly","as_of_date":"2026-04-30"}]'
+        ),
+        (
+            '[{"schedule_id":"unsupported-subset","selector_mode":"selected_subset",'
+            '"frequency":"monthly","as_of_date":"2026-04-30"}]'
+        ),
+        (
+            '[{"schedule_id":"missing-manifest","selector_mode":"batch_manifest",'
+            '"frequency":"monthly","as_of_date":"2026-04-30"}]'
+        ),
+        (
+            '[{"schedule_id":"duplicate-manifest","selector_mode":"batch_manifest",'
+            '"frequency":"monthly","as_of_date":"2026-04-30","manifest_entries":['
+            '{"portfolio_id":"P1"},{"portfolio_id":"P1"}]}]'
+        ),
+    ],
+)
+def test_batch_scheduler_config_rejects_unsupported_schedule_sources(raw: str) -> None:
     source = Settings(_env_file=None, REPORT_BATCH_SCHEDULES_JSON=raw)
 
     with pytest.raises(BatchScheduleConfigError):
@@ -144,8 +205,206 @@ async def test_scheduler_materializes_due_schedule_from_core_candidates(tmp_path
     assert batch.status == "materialized"
     assert batch.materialized_portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
     assert batch.options["batch_schedule_id"] == "monthly-sg-global-bal"
+    assert batch.options["batch_selector_mode"] == "explicit_portfolio_list"
     assert batch.options["batch_frequency"] == "monthly"
     assert source.calls == [("PB_SG_GLOBAL_BAL_001", "corr-scheduler-unit")]
+
+
+async def test_scheduler_materializes_all_active_schedule_from_core_list(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {},
+        list_payload=(
+            200,
+            {
+                "portfolios": [
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+                    {"portfolio_id": "PB_SG_CLOSED_001", "status": "closed"},
+                ]
+            },
+        ),
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
+        caller_context=_caller_context(),
+    )
+
+    batch = ledger.get_batch(result.materialized[0].batch_id)
+    assert batch.selector_mode == "all_active_portfolios"
+    assert batch.materialized_portfolio_ids == [
+        "PB_SG_GLOBAL_BAL_001",
+        "PB_SG_GLOBAL_BAL_002",
+    ]
+    assert batch.options["batch_selector_mode"] == "all_active_portfolios"
+    assert source.calls == []
+    assert source.list_calls == ["corr-scheduler-unit"]
+
+
+async def test_scheduler_materializes_all_active_schedule_from_items_fallback(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {},
+        list_payload=(
+            200,
+            {
+                "items": [
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
+                    {"portfolio_id": "", "status": "active"},
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+                    "not-a-portfolio",
+                ]
+            },
+        ),
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
+        caller_context=_caller_context(),
+    )
+
+    batch = ledger.get_batch(result.materialized[0].batch_id)
+    assert batch.materialized_portfolio_ids == [
+        "PB_SG_GLOBAL_BAL_001",
+        "PB_SG_GLOBAL_BAL_002",
+    ]
+
+
+@pytest.mark.parametrize(
+    "list_payload",
+    [
+        (503, {}),
+        (200, {"portfolios": "not-a-list"}),
+    ],
+)
+async def test_scheduler_skips_all_active_schedule_without_source_candidates(
+    tmp_path,
+    list_payload: tuple[int, dict[str, object]],
+) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource({}, list_payload=list_payload)
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
+        caller_context=_caller_context(),
+    )
+
+    assert result.materialized == ()
+    assert result.skipped_schedule_ids == ("monthly-sg-global-bal",)
+
+
+async def test_scheduler_materializes_manifest_schedule_with_provenance(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+            ),
+            "PB_SG_GLOBAL_BAL_002": (
+                200,
+                {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
+            ),
+        }
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(
+            _schedule(
+                selector_mode="batch_manifest",
+                portfolio_ids=[],
+                manifest_source="ops-manifest-apac-monthly",
+                manifest_version="2026-04",
+                manifest_entries=[
+                    {
+                        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                        "source_system": "lotus-operations",
+                        "source_object": "BatchManifest",
+                    },
+                    {
+                        "portfolio_id": "PB_SG_GLOBAL_BAL_002",
+                        "source_system": "lotus-operations",
+                        "source_object": "BatchManifest",
+                    },
+                ],
+            )
+        ),
+        caller_context=_caller_context(),
+    )
+
+    batch = ledger.get_batch(result.materialized[0].batch_id)
+    assert batch.selector_mode == "batch_manifest"
+    assert batch.materialized_portfolio_ids == [
+        "PB_SG_GLOBAL_BAL_001",
+        "PB_SG_GLOBAL_BAL_002",
+    ]
+    assert batch.options["batch_manifest_source"] == "ops-manifest-apac-monthly"
+    assert batch.options["batch_manifest_version"] == "2026-04"
+    assert len(batch.options["batch_manifest_hash"]) == 32
+
+
+async def test_scheduler_preserves_supplied_manifest_hash(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+            )
+        }
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(
+            _schedule(
+                selector_mode="batch_manifest",
+                portfolio_ids=[],
+                manifest_hash="operator-signed-hash-001",
+                manifest_entries=[{"portfolio_id": "PB_SG_GLOBAL_BAL_001"}],
+            )
+        ),
+        caller_context=_caller_context(),
+    )
+
+    batch = ledger.get_batch(result.materialized[0].batch_id)
+    assert batch.options["batch_manifest_hash"] == "operator-signed-hash-001"
+
+
+async def test_scheduler_skips_manifest_schedule_without_verified_candidates(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_DIFFERENT_001", "status": "active"},
+            ),
+            "PB_SG_GLOBAL_BAL_002": (503, {}),
+        }
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(
+            _schedule(
+                selector_mode="batch_manifest",
+                portfolio_ids=[],
+                manifest_entries=[
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001"},
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002"},
+                ],
+            )
+        ),
+        caller_context=_caller_context(),
+    )
+
+    assert result.materialized == ()
+    assert result.skipped_schedule_ids == ("monthly-sg-global-bal",)
 
 
 async def test_scheduler_is_idempotent_for_same_schedule(tmp_path) -> None:
@@ -179,6 +438,27 @@ async def test_scheduler_skips_missing_portfolios(tmp_path) -> None:
     )
 
     assert result.attempted_count == 1
+    assert result.materialized == ()
+    assert result.skipped_schedule_ids == ("monthly-sg-global-bal",)
+
+
+async def test_scheduler_skips_mismatched_portfolio_payloads(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_DIFFERENT_001", "status": "active"},
+            )
+        }
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(
+        config=_config(_schedule()),
+        caller_context=_caller_context(),
+    )
+
     assert result.materialized == ()
     assert result.skipped_schedule_ids == ("monthly-sg-global-bal",)
 

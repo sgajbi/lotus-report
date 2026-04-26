@@ -11,10 +11,10 @@ through an internal operator `run-once` API. Slice 12 adds an internal bounded r
 scans durable runnable batches and invokes the single-batch worker for a limited number of batches.
 Slice 13 adds the daemonized internal `lotus-report-batch-worker` process over that runtime pass.
 Slice 14 adds the daemonized internal `lotus-report-batch-scheduler` process that reads governed
-schedule configuration, resolves configured explicit portfolio ids through `lotus-core`, and
-materializes durable idempotent scheduled batches for the worker to execute. Gateway exposure,
-Workbench surfaces, all-active scheduler materialization, and manifest scheduler materialization
-remain later slices.
+schedule configuration and materializes durable idempotent scheduled batches for the worker to
+execute. Slice 15 extends scheduler materialization to explicit portfolio-list, all-active, and
+inline manifest selector modes. Workbench surfaces, gateway-facing scheduler administration, and
+entitlement-certified public scheduler runtime remain later slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |
@@ -80,6 +80,8 @@ remain later slices.
 | `batch_schedule_id` | Governed schedule identity persisted into each scheduled batch option set | `lotus-report` scheduler configuration | `BatchScheduleDefinition.schedule_id` and `REPORT_BATCH_SCHEDULES_JSON` | Available and used internally |
 | `batch_schedule_enabled` | Whether a configured schedule should be materialized during a scheduler pass | `lotus-report` scheduler configuration | `BatchScheduleDefinition.enabled` | Available and used internally |
 | `batch_schedule_portfolio_ids` | Explicit portfolio ids selected for a configured scheduled batch | `lotus-report` scheduler configuration resolved through `lotus-core` | `BatchScheduleDefinition.portfolio_ids` and `CoreQueryClient.get_portfolio_detail` | Available and used internally |
+| `batch_schedule_selector_mode` | Selector mode selected for a configured scheduled batch | `lotus-report` scheduler configuration | `BatchScheduleDefinition.selector_mode` | Available and used internally for explicit-list, all-active, and inline manifest schedules |
+| `batch_schedule_manifest_entries` | Operator-authored inline manifest entries for a governed scheduled batch | `lotus-report` scheduler configuration with `lotus-core` eligibility verification | `BatchScheduleDefinition.manifest_entries`, `manifest_source`, `manifest_version`, and computed or supplied manifest hash | Available and used internally |
 | `scheduler_process_id` | Stable scheduler identity used as scheduled batch caller identity and logs | `lotus-report` scheduler configuration | `REPORT_BATCH_SCHEDULER_ID` and `BatchSchedulerConfig.scheduler_id` | Available and used internally |
 | `scheduler_process_interval_seconds` | Delay between daemonized scheduler passes | `lotus-report` scheduler configuration | `REPORT_BATCH_SCHEDULER_INTERVAL_SECONDS` and `BatchSchedulerProcess.run` | Available and used internally |
 | `scheduler_process_materialized_batch_ids` | Durable batch ids created or idempotently reused by one scheduler pass | `lotus-report` derived runtime state | `BatchSchedulerRunResult.materialized` and scheduler pass logs | Available and used internally |
@@ -87,12 +89,14 @@ remain later slices.
 | `status_url` | Relative URL for batch status lookup | `lotus-report` derived composition | `BatchHandleResponse.status_url`, `BatchControlResponse.status_url` | Available and used |
 | `status_counts` | Product-safe count of batch items by item status | `lotus-report` derived composition | `BatchStatusResponse.status_counts` | Available and used |
 
-Source gaps for later slices:
+Source constraints for later slices:
 
-1. `all_active_portfolios` needs a certified `lotus-core` portfolio search contract with tenant,
-   region, active status, entitlement, and maximum-size controls.
-2. `batch_manifest` needs a governed manifest upload or manifest-reference contract before it can
-   be materialized.
+1. `all_active_portfolios` scheduler materialization uses the canonical `lotus-core /portfolios`
+   discovery contract, filters active portfolios, and still relies on scheduler tenant/region
+   configuration until RFC-0106 entitlement certification adds final tenant/region controls.
+2. `batch_manifest` scheduler materialization supports inline governed schedule manifests with
+   manifest source, version, entry source metadata, and content hash; upload-backed or
+   reference-backed manifests remain future work.
 3. Runtime pressure counts for upstream, render, and archive are accepted by the internal
    dispatcher as `BatchRuntimeLoad`; later worker/API slices must connect those counts to live
    runtime telemetry instead of static caller input.

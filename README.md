@@ -166,10 +166,10 @@ Key code areas:
   invoke that worker primitive for a limited number of batches. The
   `lotus-report-batch-worker` Docker Compose service runs that pass as a daemonized internal
   background worker process. The `lotus-report-batch-scheduler` Docker Compose service reads
-  governed `REPORT_BATCH_SCHEDULES_JSON`, resolves configured explicit portfolio ids through
-  `lotus-core`, and creates durable idempotent scheduled batches for the worker to execute. No
-  gateway exposure, Workbench batch surface, all-active scheduler, or manifest scheduler is
-  implemented yet
+  governed `REPORT_BATCH_SCHEDULES_JSON`, resolves explicit, all-active, and inline manifest
+  schedule selectors through `lotus-core` or governed schedule manifest metadata, and creates
+  durable idempotent scheduled batches for the worker to execute. No Workbench batch surface or
+  entitlement-certified public scheduler runtime is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
