@@ -47,6 +47,18 @@
 - Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger
   parity; do not use a file database for runtime or integration evidence
 
+## RFC-0104 batch reporting posture
+
+Batch reporting is not an implemented operator capability yet. RFC-0104 Slice 1 creates the
+`src/app/report_batch_orchestrator/` module boundary and planned vocabulary only.
+
+Until later RFC-0104 slices add the durable batch ledger, scheduler, worker, APIs, and proof:
+
+- use individual report-job APIs for portfolio review report initiation and status
+- do not present batch scheduler, retry-failed-only, pause, resume, or recovery as supported
+- keep any batch planning language in RFC or planned-feature material, not implementation-backed
+  product documentation
+
 ## RFC-0100 gateway-first job flow
 
 Front-office report job initiation is gateway-first. Workbench and other product surfaces should

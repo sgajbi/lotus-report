@@ -33,3 +33,18 @@ This document provides explicit implementation evidence pointers for active RFCs
     implementation evidence exists
   - repo-local wiki usage examples
   - closure context updates in `REPOSITORY-ENGINEERING-CONTEXT.md`, `README.md`, and `wiki/`
+
+## RFC-0104 - Batch Reporting Scheduler, Concurrency, And Recovery
+
+- Slice 1 cleanup and structure evidence:
+  - `src/app/report_batch_orchestrator/` is the dedicated future batch orchestration module
+    boundary.
+  - `src/app/report_batch_orchestrator/contracts.py` centralizes RFC-0104 selector and frequency
+    vocabulary while keeping `BATCH_RUNTIME_SUPPORTED` false.
+  - `tests/unit/report_batch_orchestrator/test_boundary.py` verifies the boundary vocabulary and
+    prevents `docs/supported-features.md` from claiming implementation-backed batch runtime
+    support before the durable ledger, scheduler, worker, APIs, and proof exist.
+  - `docs/supported-features.md` records RFC-0104 batch orchestration and batch scheduler rows as
+    `planned`, not implementation-backed.
+  - `wiki/Operations-Runbook.md` records that operators must continue to use individual report-job
+    APIs until RFC-0104 runtime slices are implemented and proven.
