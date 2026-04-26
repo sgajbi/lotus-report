@@ -186,3 +186,23 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     this slice does not ship a scheduler loop, background executor, dispatch operator API, gateway
     exposure, or Workbench UI.
+- Slice 8 documentation, runbook, and supportability-floor evidence:
+  - `README.md` now summarizes the certified internal batch materialization/status/control APIs,
+    the internal item execution bridge, and the current unsupported scheduler/runtime/gateway/UI
+    scope.
+  - `wiki/Operations-Runbook.md` now gives direct operator posture for creating, inspecting,
+    pausing, resuming, cancelling, retrying, and recovering internal batches, plus the
+    observability floor and RFC-0105 deferrals.
+  - `wiki/API-Surface.md` now includes copy-paste examples for all certified batch control
+    endpoints and explicitly keeps gateway, Workbench, scheduling, and long-running runtime
+    telemetry out of current scope.
+  - `docs/supported-features.md` remains split between implementation-backed batch
+    materialization/control/internal execution bridge features and planned scheduler/orchestration
+    features.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/unit/report_batch_orchestrator/test_boundary.py -q` passed.
+    - `git diff --check` passed.
+    - `powershell -ExecutionPolicy Bypass -File ..\lotus-platform\automation\Sync-RepoWikis.ps1
+      -CheckOnly -Repository lotus-report` reported expected publication drift for
+      `API-Surface.md`, `Operations-Runbook.md`, `RFC-Index.md`, and pre-existing
+      `Validation-and-CI.md`; wiki publication remains a post-merge action.

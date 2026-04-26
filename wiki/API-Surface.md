@@ -236,6 +236,37 @@ curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:pause" \
   -H "X-Region: APAC"
 ```
 
+The other certified controls use the same governed caller-context headers:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:resume" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:cancel" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:retry-failed" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expired-leases" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+Current batch APIs are direct `lotus-report` internal APIs. Gateway routes, Workbench batch
+surfaces, scheduled execution, and long-running runtime telemetry remain future scope.
+
 The review response is a typed report contract. It separates client-ready `client_sections` from
 advisor-only `advisor_sections`, carries explicit section readiness states including
 `not_applicable` for requested supporting sections with no applicable activity, includes
