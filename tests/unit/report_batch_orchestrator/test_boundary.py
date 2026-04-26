@@ -6,6 +6,7 @@ from app.report_batch_orchestrator import (
     BATCH_FREQUENCIES,
     BATCH_MATERIALIZATION_API_CAPABILITY_KEY,
     BATCH_RUNTIME_SUPPORTED,
+    BATCH_SCHEDULER_ADMIN_API_CAPABILITY_KEY,
     BATCH_SELECTOR_MODES,
 )
 
@@ -19,6 +20,10 @@ def test_batch_orchestrator_boundary_matches_rfc_0104_first_wave_vocabulary() ->
         == "lotus-report.reporting.batch_materialization_api.v1"
     )
     assert BATCH_CONTROL_API_CAPABILITY_KEY == "lotus-report.reporting.batch_control_api.v1"
+    assert (
+        BATCH_SCHEDULER_ADMIN_API_CAPABILITY_KEY
+        == "lotus-report.reporting.batch_scheduler_admin_api.v1"
+    )
     assert BATCH_RUNTIME_SUPPORTED is False
     assert BATCH_SELECTOR_MODES == (
         "explicit_portfolio_list",
@@ -43,5 +48,6 @@ def test_supported_features_do_not_claim_batch_runtime_support() -> None:
 
     assert BATCH_CAPABILITY_KEY not in implementation_backed
     assert "`lotus-report.reporting.batch_scheduler.v1`" not in implementation_backed
+    assert "`lotus-report.reporting.batch_scheduler_admin_api.v1`" in implementation_backed
     assert "`lotus-report.reporting.batch_scheduler_process.v1`" in implementation_backed
     assert "worker runtime" not in implementation_backed.lower()

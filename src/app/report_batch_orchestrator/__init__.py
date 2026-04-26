@@ -14,6 +14,7 @@ from app.report_batch_orchestrator.contracts import (
     BATCH_FREQUENCIES,
     BATCH_MATERIALIZATION_API_CAPABILITY_KEY,
     BATCH_RUNTIME_SUPPORTED,
+    BATCH_SCHEDULER_ADMIN_API_CAPABILITY_KEY,
     BATCH_SELECTOR_MODES,
 )
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher, evaluate_back_pressure
@@ -70,6 +71,7 @@ __all__ = [
     "BATCH_FREQUENCIES",
     "BATCH_MATERIALIZATION_API_CAPABILITY_KEY",
     "BATCH_RUNTIME_SUPPORTED",
+    "BATCH_SCHEDULER_ADMIN_API_CAPABILITY_KEY",
     "BATCH_SELECTOR_MODES",
     "BatchCreateRequest",
     "BatchControlResponse",

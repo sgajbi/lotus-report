@@ -100,6 +100,274 @@ class BatchSchedulerRunResult:
     skipped_schedule_ids: tuple[str, ...]
 
 
+class BatchScheduleSummaryResponse(BaseModel):
+    schedule_id: str = Field(
+        ...,
+        description="Governed schedule identifier from REPORT_BATCH_SCHEDULES_JSON.",
+        examples=["monthly-sg-global-bal"],
+    )
+    enabled: bool = Field(
+        ...,
+        description="Whether this configured schedule is eligible for a scheduler pass.",
+        examples=[True],
+    )
+    selector_mode: BatchSelectorMode = Field(
+        ...,
+        description="Configured selector mode for this schedule.",
+        examples=["explicit_portfolio_list"],
+    )
+    frequency: BatchFrequency = Field(
+        ...,
+        description="Configured production cycle frequency.",
+        examples=["monthly"],
+    )
+    as_of_date: date = Field(
+        ...,
+        description="Business as-of date used to materialize the configured cycle.",
+        examples=["2026-04-22"],
+    )
+    portfolio_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of explicit portfolio identifiers configured on the schedule.",
+        examples=[1],
+    )
+    manifest_entry_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of inline manifest entries configured on the schedule.",
+        examples=[0],
+    )
+    requested_output_formats: list[str] = Field(
+        ...,
+        description="Output formats requested for every batch item materialized by this schedule.",
+        examples=[["pdf"]],
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Optional reporting currency configured for materialized batch items.",
+        examples=["USD"],
+    )
+    max_batch_size: int = Field(
+        ...,
+        ge=1,
+        description="Maximum materialized item count allowed for this schedule.",
+        examples=[250],
+    )
+    template_id: str = Field(
+        ...,
+        description="Report template identifier used by the scheduled batch.",
+        examples=["portfolio-review"],
+    )
+    template_version: str = Field(
+        ...,
+        description="Report template version used by the scheduled batch.",
+        examples=["v1"],
+    )
+    render_package_version: str = Field(
+        ...,
+        description="Render package contract version used by the scheduled batch.",
+        examples=["portfolio-review.v1"],
+    )
+    manifest_source: str | None = Field(
+        default=None,
+        description="Governed inline manifest source when selector_mode is batch_manifest.",
+        examples=["ops-manifest-apac-monthly"],
+    )
+    manifest_version: str | None = Field(
+        default=None,
+        description="Governed inline manifest version when selector_mode is batch_manifest.",
+        examples=["2026-04"],
+    )
+    manifest_hash: str | None = Field(
+        default=None,
+        description="Stable manifest hash supplied or computed for inline manifest schedules.",
+        examples=["manifest-hash-001"],
+    )
+    option_keys: list[str] = Field(
+        default_factory=list,
+        description="Sorted option keys configured for this schedule without exposing values.",
+        examples=[["sections", "benchmark_code"]],
+    )
+
+
+class BatchScheduleListResponse(BaseModel):
+    scheduler_id: str = Field(
+        ...,
+        description="Stable scheduler identity used for configured scheduler passes.",
+        examples=["lotus-report-batch-scheduler-1"],
+    )
+    interval_seconds: float = Field(
+        ...,
+        ge=0,
+        description="Configured daemon interval for the internal scheduler process.",
+        examples=[60.0],
+    )
+    tenant_id: str = Field(
+        ...,
+        description="Tenant context used when materializing configured schedules.",
+        examples=["tenant-sg"],
+    )
+    region: str = Field(
+        ...,
+        description="Region context used when materializing configured schedules.",
+        examples=["APAC"],
+    )
+    booking_center_code: str | None = Field(
+        default=None,
+        description="Optional booking-center context used when materializing configured schedules.",
+        examples=["SG"],
+    )
+    schedule_count: int = Field(
+        ...,
+        ge=0,
+        description="Total configured schedule count.",
+        examples=[1],
+    )
+    enabled_schedule_count: int = Field(
+        ...,
+        ge=0,
+        description="Configured schedule count eligible for a scheduler pass.",
+        examples=[1],
+    )
+    schedules: list[BatchScheduleSummaryResponse] = Field(
+        ...,
+        description="Configured report batch schedules.",
+    )
+
+
+class BatchSchedulerRunRequest(BaseModel):
+    pass_sequence: int = Field(
+        1,
+        ge=1,
+        description=(
+            "Deterministic pass sequence used to derive scheduler correlation and trace ids for "
+            "this bounded operator-triggered scheduler pass."
+        ),
+        examples=[1],
+    )
+
+
+class BatchSchedulerMaterializationResponse(BaseModel):
+    schedule_id: str = Field(
+        ...,
+        description="Configured schedule that produced or reused this durable batch.",
+        examples=["monthly-sg-global-bal"],
+    )
+    batch_id: str = Field(
+        ...,
+        description="Durable report batch identifier.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Deterministic scheduled batch idempotency key.",
+        examples=["scheduled-batch-2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    item_count: int = Field(
+        ...,
+        ge=0,
+        description="Materialized item count for this schedule.",
+        examples=[1],
+    )
+    status: str = Field(
+        ...,
+        description="Batch status after materialization or idempotent reuse.",
+        examples=["materialized"],
+    )
+
+
+class BatchSchedulerRunResponse(BaseModel):
+    scheduler_id: str = Field(
+        ...,
+        description="Stable scheduler identity used for the bounded pass.",
+        examples=["lotus-report-batch-scheduler-1"],
+    )
+    attempted_count: int = Field(
+        ...,
+        ge=0,
+        description="Enabled schedule count attempted during this pass.",
+        examples=[1],
+    )
+    materialized_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of durable batches materialized or idempotently reused.",
+        examples=[1],
+    )
+    skipped_schedule_ids: list[str] = Field(
+        default_factory=list,
+        description="Enabled schedule ids skipped because no eligible candidates were resolved.",
+        examples=[[]],
+    )
+    materialized: list[BatchSchedulerMaterializationResponse] = Field(
+        default_factory=list,
+        description="Durable batch materialization results for this pass.",
+    )
+    correlation_id: str = Field(
+        ...,
+        description="Scheduler correlation id used for this bounded pass.",
+        examples=["corr-batch-scheduler-1-abc123def456"],
+    )
+    trace_id: str = Field(
+        ...,
+        description="Scheduler trace id used for this bounded pass.",
+        examples=["trace1234567890abcdef1234567890ab"],
+    )
+
+
+BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "scheduler_id": "lotus-report-batch-scheduler-1",
+    "interval_seconds": 60.0,
+    "tenant_id": "tenant-sg",
+    "region": "APAC",
+    "booking_center_code": "SG",
+    "schedule_count": 1,
+    "enabled_schedule_count": 1,
+    "schedules": [
+        {
+            "schedule_id": "monthly-sg-global-bal",
+            "enabled": True,
+            "selector_mode": "explicit_portfolio_list",
+            "frequency": "monthly",
+            "as_of_date": "2026-04-22",
+            "portfolio_count": 1,
+            "manifest_entry_count": 0,
+            "requested_output_formats": ["pdf"],
+            "reporting_currency": "USD",
+            "max_batch_size": 250,
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "render_package_version": "portfolio-review.v1",
+            "manifest_source": None,
+            "manifest_version": None,
+            "manifest_hash": None,
+            "option_keys": ["sections"],
+        }
+    ],
+}
+
+BATCH_SCHEDULER_RUN_REQUEST_EXAMPLE: dict[str, Any] = {"pass_sequence": 1}
+
+BATCH_SCHEDULER_RUN_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "scheduler_id": "lotus-report-batch-scheduler-1",
+    "attempted_count": 1,
+    "materialized_count": 1,
+    "skipped_schedule_ids": [],
+    "materialized": [
+        {
+            "schedule_id": "monthly-sg-global-bal",
+            "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+            "idempotency_key": "scheduled-batch-2f6d1a8f2ef24f019e7d7f37507f352c",
+            "item_count": 1,
+            "status": "materialized",
+        }
+    ],
+    "correlation_id": "corr-batch-scheduler-1-abc123def456",
+    "trace_id": "trace1234567890abcdef1234567890ab",
+}
+
+
 class CorePortfolioSource(Protocol):
     async def get_portfolio_detail(
         self,
@@ -133,6 +401,45 @@ def batch_scheduler_config_from_settings(source: Settings = settings) -> BatchSc
         booking_center_code=source.batch_scheduler_booking_center_code,
         role=source.batch_scheduler_role,
         schedules=tuple(schedules),
+    )
+
+
+def batch_schedule_list_response(config: BatchSchedulerConfig) -> BatchScheduleListResponse:
+    schedules = [_schedule_summary(schedule) for schedule in config.schedules]
+    return BatchScheduleListResponse(
+        scheduler_id=config.scheduler_id,
+        interval_seconds=config.interval_seconds,
+        tenant_id=config.tenant_id,
+        region=config.region,
+        booking_center_code=config.booking_center_code,
+        schedule_count=len(schedules),
+        enabled_schedule_count=sum(1 for schedule in config.schedules if schedule.enabled),
+        schedules=schedules,
+    )
+
+
+def batch_scheduler_run_response(
+    *,
+    result: BatchSchedulerRunResult,
+    caller_context: ReportCallerContext,
+) -> BatchSchedulerRunResponse:
+    return BatchSchedulerRunResponse(
+        scheduler_id=result.scheduler_id,
+        attempted_count=result.attempted_count,
+        materialized_count=len(result.materialized),
+        skipped_schedule_ids=list(result.skipped_schedule_ids),
+        materialized=[
+            BatchSchedulerMaterializationResponse(
+                schedule_id=item.schedule_id,
+                batch_id=item.batch_id,
+                idempotency_key=item.idempotency_key,
+                item_count=item.item_count,
+                status=item.status,
+            )
+            for item in result.materialized
+        ],
+        correlation_id=caller_context.correlation_id,
+        trace_id=caller_context.trace_id,
     )
 
 
@@ -363,6 +670,30 @@ def _parse_schedule_definitions(raw: str) -> list[BatchScheduleDefinition]:
             "invalid_batch_schedule_definition",
             "REPORT_BATCH_SCHEDULES_JSON contains an invalid schedule definition.",
         ) from exc
+
+
+def _schedule_summary(schedule: BatchScheduleDefinition) -> BatchScheduleSummaryResponse:
+    return BatchScheduleSummaryResponse(
+        schedule_id=schedule.schedule_id,
+        enabled=schedule.enabled,
+        selector_mode=schedule.selector_mode,
+        frequency=schedule.frequency,
+        as_of_date=schedule.as_of_date,
+        portfolio_count=len(schedule.portfolio_ids),
+        manifest_entry_count=len(schedule.manifest_entries),
+        requested_output_formats=schedule.requested_output_formats,
+        reporting_currency=schedule.reporting_currency,
+        max_batch_size=schedule.max_batch_size,
+        template_id=schedule.template_id,
+        template_version=schedule.template_version,
+        render_package_version=schedule.render_package_version,
+        manifest_source=schedule.manifest_source,
+        manifest_version=schedule.manifest_version,
+        manifest_hash=_manifest_hash(schedule)
+        if schedule.selector_mode == "batch_manifest"
+        else None,
+        option_keys=sorted(schedule.options),
+    )
 
 
 def _cycle_request(schedule: BatchScheduleDefinition) -> BatchCycleRequest:

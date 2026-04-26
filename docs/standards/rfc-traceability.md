@@ -511,3 +511,15 @@ This document provides explicit implementation evidence pointers for active RFCs
     - This slice does not introduce a gateway-facing scheduler API, Workbench surface, RFC-0105
       operations dashboards, RFC-0106 entitlement certification, or RFC-0107 production
       certification.
+
+  - Slice 16 scheduler administration API evidence:
+    - `src/app/routers/report_batches.py` exposes `GET /reports/batch-schedules` and
+      `POST /reports/batch-schedules:run-due` over governed `REPORT_BATCH_SCHEDULES_JSON`.
+    - `src/app/report_batch_orchestrator/scheduler.py` adds product-safe schedule list and
+      scheduler run response contracts with OpenAPI examples.
+    - `tests/integration/test_report_batch_api.py` proves the list endpoint returns configured
+      enabled/disabled schedules, and the run-due endpoint invokes the existing scheduler
+      materialization path to create a durable idempotent batch.
+    - This slice deliberately keeps schedules config-backed. It does not introduce schedule CRUD,
+      item execution, RFC-0105 operations dashboards, RFC-0106 entitlement certification, or
+      RFC-0107 production certification.

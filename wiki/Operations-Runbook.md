@@ -86,18 +86,21 @@ Current implemented semantics:
   `REPORT_BATCH_SCHEDULES_JSON`, verifies explicit, all-active, and inline manifest schedule
   selectors through `lotus-core` or governed schedule manifest metadata, and materializes durable
   idempotent scheduled batches for the worker process to execute
+- `GET /reports/batch-schedules` lists the configured schedules, and
+  `POST /reports/batch-schedules:run-due` runs one bounded scheduler materialization pass over
+  enabled schedules without executing batch items
 
 Still not supported:
 
-- Workbench batch surface
-- gateway-facing scheduler administration
+- Workbench scheduler-management surface
+- schedule CRUD or persisted scheduler registry management
 - entitlement-certified public scheduler runtime
 - broad replay, rerender, regenerate, or document distribution controls
 
 Use individual report-job APIs for production portfolio-review initiation until later RFC-0104
-slices ship Workbench surfaces. Use `lotus-report` batch APIs and internal
-worker/scheduler services only for the certified materialization/status/control/run-once and
-service-runtime subset.
+slices ship the remaining scheduler-management surfaces. Use `lotus-report` batch APIs and internal
+worker/scheduler services only for the certified materialization/status/control/run-once,
+config-backed scheduler-administration, and service-runtime subset.
 
 Observability floor for this wave:
 
