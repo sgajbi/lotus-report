@@ -1,13 +1,15 @@
 """Batch reporting orchestration boundary.
 
 RFC-0104 currently provides durable batch materialization, deterministic cycle
-identity, and internal dispatch primitives. Operator-facing APIs, retry, and
-recovery remain future slices.
+identity, internal dispatch/control primitives, and certified materialization,
+status, and control APIs. Scheduler and worker runtime remain future slices.
 """
 
 from app.report_batch_orchestrator.contracts import (
     BATCH_CAPABILITY_KEY,
+    BATCH_CONTROL_API_CAPABILITY_KEY,
     BATCH_FREQUENCIES,
+    BATCH_MATERIALIZATION_API_CAPABILITY_KEY,
     BATCH_RUNTIME_SUPPORTED,
     BATCH_SELECTOR_MODES,
 )
@@ -19,12 +21,17 @@ from app.report_batch_orchestrator.ledger import (
     compute_batch_request_hash,
 )
 from app.report_batch_orchestrator.models import (
+    BatchControlResponse,
     BatchCreateRequest,
     BatchCycle,
     BatchCycleRequest,
     BatchDispatchPolicy,
     BatchDispatchResult,
+    BatchHandleResponse,
+    BatchItemStatusResponse,
+    BatchRecoveryResponse,
     BatchRuntimeLoad,
+    BatchStatusResponse,
     PortfolioBatchCandidate,
     ReportBatchItemRecord,
     ReportBatchRecord,
@@ -41,18 +48,25 @@ from app.report_batch_orchestrator.selector import (
 
 __all__ = [
     "BATCH_CAPABILITY_KEY",
+    "BATCH_CONTROL_API_CAPABILITY_KEY",
     "BATCH_FREQUENCIES",
+    "BATCH_MATERIALIZATION_API_CAPABILITY_KEY",
     "BATCH_RUNTIME_SUPPORTED",
     "BATCH_SELECTOR_MODES",
     "BatchCreateRequest",
+    "BatchControlResponse",
     "BatchCycle",
     "BatchCycleRequest",
     "BatchDispatchPolicy",
     "BatchDispatchResult",
     "BatchIdempotencyConflictError",
+    "BatchHandleResponse",
+    "BatchItemStatusResponse",
+    "BatchRecoveryResponse",
     "BatchRuntimeLoad",
     "BatchScheduleValidationError",
     "BatchSelectorValidationError",
+    "BatchStatusResponse",
     "MissingBatchIdempotencyKeyError",
     "PortfolioBatchCandidate",
     "ReportBatchDispatcher",

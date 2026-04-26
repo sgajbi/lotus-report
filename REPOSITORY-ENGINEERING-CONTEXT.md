@@ -59,9 +59,10 @@ Current repository posture:
    adds internal deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
    yearly, and explicit cycles plus scheduled idempotency identity. Slice 4 adds internal
    dispatch, lease, report-job creation/reuse, and back-pressure primitives. Slice 5 adds internal
-   bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. No
-   batch scheduler loop, worker process, operator-facing API, or certified recovery operator
-   capability is implemented yet,
+   bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. Slice
+   6 adds certified materialization, status, and control APIs for durable batches. No batch
+   scheduler loop, worker process, dispatch operator API, gateway exposure, or Workbench batch
+   surface is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,
@@ -106,8 +107,9 @@ Primary areas:
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure
     primitives, report-job creation/reuse for leased items, and idempotent duplicate prevention
     plus internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery
-    primitives while keeping operator-facing runtime support disabled until later scheduler,
-    worker, API, and recovery-operator slices are implemented and proven.
+    primitives. Certified `POST /reports/batches`, batch status, and batch control APIs expose the
+    materialization/status/control subset while keeping full runtime support disabled until later
+    scheduler, worker, dispatch, gateway, and Workbench slices are implemented and proven.
 
 ## Runtime And Integration Boundaries
 

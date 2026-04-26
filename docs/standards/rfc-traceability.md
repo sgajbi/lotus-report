@@ -121,3 +121,36 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     this slice does not ship a scheduler loop, worker process, operator-facing batch API, or
     certified recovery operator capability.
+- Slice 6 certified materialization, status, and control API evidence:
+  - `src/app/routers/report_batches.py` exposes certified `lotus-report` batch APIs for
+    `POST /reports/batches`, `GET /reports/batches/{batch_id}`, `POST
+    /reports/batches/{batch_id}:pause`, `:resume`, `:cancel`, `:retry-failed`, and
+    `:recover-expired-leases`.
+  - `src/app/report_batch_orchestrator/models.py` defines product-safe request/response contracts,
+    full OpenAPI examples, and attribute descriptions for the batch API surface.
+  - `src/app/routers/caller_context.py` centralizes caller-context header validation shared by
+    report-job and report-batch APIs, reducing duplicate error handling.
+  - `src/app/report_batch_orchestrator/service.py` wires the PostgreSQL batch ledger through the
+    same dependency pattern used by report jobs.
+  - `tests/integration/test_report_batch_api.py` proves idempotent batch creation, status lookup,
+    pause/resume/retry/recovery/cancel controls, conflict handling, missing caller context,
+    selector validation errors, not-found errors, and OpenAPI example/description quality.
+  - `tests/integration/test_api.py` proves integration capabilities now publish
+    `lotus-report.reporting.batch_materialization_api.v1` and
+    `lotus-report.reporting.batch_control_api.v1`.
+  - `docs/supported-features.md` promotes only the certified materialization/status/control API
+    keys to implementation-backed. Full batch orchestration and scheduler capability remain
+    planned.
+  - Local PostgreSQL and runtime proof on 2026-04-26:
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report make ci`
+      passed with lint, format, monetary-float guard, mypy, OpenAPI quality, PostgreSQL migration
+      smoke, integration, e2e, 99% coverage, and security audit.
+    - `make docker-build` passed for `lotus-report:ci-test`.
+    - `docker compose up -d --build lotus-report` rebuilt the production-shaped local
+      `lotus-report` container against healthy `lotus-report-postgres`.
+    - Live Docker proof returned OpenAPI paths for `/reports/batches`, `/reports/batches/{batch_id}`,
+      and all control endpoints, then materialized `rbch_b5dc820c412f4763bf9ccb4355755447` for
+      `PB_SG_GLOBAL_BAL_001` with `status_counts={"materialized":1}`.
+  - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
+    this slice does not ship a scheduler loop, worker process, dispatch operator API, gateway
+    exposure, or Workbench UI.

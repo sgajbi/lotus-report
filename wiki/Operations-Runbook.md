@@ -55,14 +55,16 @@ subsets, plus deterministic schedule-cycle materialization for monthly, quarterl
 yearly, and explicit cycles. Internal dispatch can lease batch items, create or reuse one report job
 per item, apply active-batch, active-item, upstream, render, and archive back-pressure, and perform
 internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery decisions.
-There is no operator-facing batch API, scheduler loop, worker process, or certified recovery
-runtime.
+Certified `lotus-report` APIs exist for batch materialization, status lookup, pause, resume,
+cancel, retry-failed, and expired-lease recovery. There is no batch scheduler loop, worker process,
+dispatch operator API, gateway exposure, or Workbench batch surface.
 
 Until later RFC-0104 slices add the scheduler, worker, APIs, and proof:
 
 - use individual report-job APIs for portfolio review report initiation and status
-- do not present batch scheduler, retry-failed-only, pause, resume, or recovery as an operator
-  supported capability
+- use `lotus-report` batch APIs only for the certified materialization/status/control subset
+- do not present batch scheduler, worker execution, dispatch, gateway exposure, or Workbench batch
+  UI as supported capability
 - keep any batch planning language in RFC or planned-feature material, not implementation-backed
   product documentation
 - use PostgreSQL-backed proof for internal dispatch and recovery-control behavior; SQLite is only a

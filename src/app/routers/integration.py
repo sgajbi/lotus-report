@@ -2,6 +2,10 @@ from fastapi import APIRouter, Query
 
 from app.config import settings
 from app.models.contracts import IntegrationCapabilitiesResponse
+from app.report_batch_orchestrator.contracts import (
+    BATCH_CONTROL_API_CAPABILITY_KEY,
+    BATCH_MATERIALIZATION_API_CAPABILITY_KEY,
+)
 
 router = APIRouter(prefix="/integration", tags=["Integration"])
 
@@ -118,6 +122,8 @@ def get_capabilities(
                 "key": "lotus-report.reporting.portfolio_review.archive_handoff.v1",
                 "enabled": True,
             },
+            {"key": BATCH_MATERIALIZATION_API_CAPABILITY_KEY, "enabled": True},
+            {"key": BATCH_CONTROL_API_CAPABILITY_KEY, "enabled": True},
             {"key": "lotus-report.aggregation.portfolio_snapshot", "enabled": True},
         ],
         workflows=[

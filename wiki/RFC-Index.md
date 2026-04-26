@@ -36,5 +36,6 @@
   schedule-cycle materialization exists for monthly, quarterly, semi-annual, yearly, and explicit
   cycles. Internal dispatch, lease, report-job creation/reuse, and back-pressure primitives now
   exist. Internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery
-  primitives now exist. No batch scheduler loop, API, worker runtime, or recovery operator
-  capability is shipped yet
+  primitives now exist. Certified batch materialization, status, and control APIs now exist in
+  `lotus-report`. No batch scheduler loop, worker runtime, dispatch operator API, gateway
+  exposure, or Workbench batch surface is shipped yet

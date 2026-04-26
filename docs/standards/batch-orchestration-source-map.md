@@ -3,8 +3,9 @@
 RFC-0104 batch materialization is source-backed. Slice 2 persists batch and batch-item truth.
 Slice 3 adds deterministic schedule-cycle materialization and scheduled-batch identity primitives.
 Slice 4 adds internal dispatch, lease, and back-pressure primitives. Slice 5 adds internal
-bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. APIs and
-scheduler loops remain later slices.
+bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. Slice 6
+adds certified materialization, status, and control APIs. Scheduler loops and worker runtime remain
+later slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |
@@ -49,6 +50,9 @@ scheduler loops remain later slices.
 | `cancelled_at` | Timestamp when a batch or undispatched item was cancelled | `lotus-report` runtime clock | `cancel_batch` | Available and used internally |
 | `failed_at` | Timestamp when aggregate batch posture became failed | `lotus-report` runtime clock | Batch ledger status reconciliation | Available and used internally |
 | `max_attempts` | Retry ceiling that prevents unbounded item reruns | `lotus-report` configuration | `BatchRetryPolicy.max_attempts` | Available and used internally |
+| `batch_id` | Opaque durable batch identifier for status and control APIs | `lotus-report` derived composition | `POST /reports/batches` response and `GET /reports/batches/{batch_id}` | Available and used |
+| `status_url` | Relative URL for batch status lookup | `lotus-report` derived composition | `BatchHandleResponse.status_url`, `BatchControlResponse.status_url` | Available and used |
+| `status_counts` | Product-safe count of batch items by item status | `lotus-report` derived composition | `BatchStatusResponse.status_counts` | Available and used |
 
 Source gaps for later slices:
 
@@ -59,5 +63,6 @@ Source gaps for later slices:
 3. Runtime pressure counts for upstream, render, and archive are accepted by the internal
    dispatcher as `BatchRuntimeLoad`; later worker/API slices must connect those counts to live
    runtime telemetry instead of static caller input.
-4. Retry failure categories are internally captured today; Slice 6 APIs must certify the public
-   error envelope before operators can rely on these fields through an API surface.
+4. Retry failure categories are API-visible through certified batch status responses, but the
+   failure taxonomy remains report-side until later worker execution integrates live upstream,
+   render, and archive failure propagation.

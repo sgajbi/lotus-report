@@ -157,8 +157,9 @@ Key code areas:
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
-  pause/resume, cancellation-boundary, and expired-lease recovery primitives; no batch scheduler
-  loop, worker process, operator-facing recovery capability, or runtime API is implemented yet
+  pause/resume, cancellation-boundary, expired-lease recovery primitives, and certified
+  materialization/status/control APIs; no batch scheduler loop, worker process, dispatch operator
+  API, gateway exposure, or Workbench batch surface is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
