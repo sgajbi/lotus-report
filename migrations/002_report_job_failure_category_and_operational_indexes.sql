@@ -10,6 +10,13 @@ CHECK (
         'validation_failed',
         'upstream_data_failed',
         'data_incomplete',
+        'render_validation_failed',
+        'render_conflict',
+        'render_execution_failed',
+        'archive_validation_failed',
+        'archive_conflict',
+        'archive_storage_failed',
+        'archive_execution_failed',
         'timeout',
         'cancelled',
         'operator_intervention_required'

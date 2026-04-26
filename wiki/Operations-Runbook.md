@@ -73,11 +73,14 @@ Current implemented semantics:
   active-batch, active-item, upstream, render, and archive back-pressure
 - internal item execution can advance a dispatched item through the existing report-job, snapshot,
   render, and archive handoff path, then reconcile final item state
+- internal bounded worker runs can recover expired pre-dispatch leases, dispatch eligible items,
+  and advance already waiting items for one explicit batch; this is an internal primitive, not a
+  public scheduler or operator API
 
 Still not supported:
 
 - scheduled batch execution loop
-- background executor process
+- public background executor process
 - dispatch operator API
 - gateway exposure
 - Workbench batch surface
