@@ -154,3 +154,35 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     this slice does not ship a scheduler loop, worker process, dispatch operator API, gateway
     exposure, or Workbench UI.
+- Slice 7 report-job, render, and archive integration evidence:
+  - `src/app/report_batch_orchestrator/execution.py` implements the internal execution bridge for
+    a dispatched batch item. It loads the linked RFC-0100 report job, runs the existing RFC-0101
+    snapshot capture path when the job is still accepted, runs the existing RFC-0102 render and
+    RFC-0103 archive handoff path for PDF jobs, and maps the final report-job outcome back to the
+    durable batch item.
+  - `src/app/report_batch_orchestrator/ledger.py` and `postgres_ledger.py` add a successful-item
+    transition that clears lease and retry fields, records completion, and reconciles the aggregate
+    batch status without changing the existing cancellation and retry boundaries.
+  - `tests/unit/report_batch_orchestrator/test_execution.py` proves successful
+    capture-render-archive completion, source-lineage preservation through the captured snapshot,
+    archive metadata handoff, render validation failure propagation, archive storage failure
+    propagation, and json-only data-ready completion.
+  - `tests/integration/test_postgres_report_batch_ledger.py` proves the successful item-to-batch
+    reconciliation path against PostgreSQL.
+  - Local proof on 2026-04-26:
+    - `make check` passed with lint, format, monetary-float guard, mypy, OpenAPI quality, and
+      298 unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report make migration-smoke`
+      passed against the Docker `lotus-report-postgres` service.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report make test-integration`
+      passed with 84 PostgreSQL-backed integration tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report make ci`
+      passed with lint, typecheck, OpenAPI quality, PostgreSQL migration smoke, integration, e2e,
+      combined coverage at 99%, and security audit.
+    - `make docker-build` built `lotus-report:ci-test`.
+    - `docker compose up -d --build lotus-report` rebuilt the production-shaped local
+      `lotus-report` service against healthy `lotus-report-postgres`; `GET /health` returned
+      `{"status":"ok"}` on `localhost:8300`.
+  - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
+    this slice does not ship a scheduler loop, background executor, dispatch operator API, gateway
+    exposure, or Workbench UI.

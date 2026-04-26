@@ -323,6 +323,41 @@ class PostgresReportBatchLedger:
                 raise ValueError("report_batch_item_not_found")
         return _item_from_row(row)
 
+    def mark_item_succeeded(
+        self,
+        *,
+        batch_item_id: str,
+        report_job_id: str,
+        now: Any | None = None,
+    ) -> ReportBatchItemRecord:
+        completed_at = now or utc_now()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                UPDATE report_batch_item
+                SET status = 'succeeded',
+                    retry_eligible = FALSE,
+                    next_retry_at = NULL,
+                    last_error_category = NULL,
+                    last_error_summary = NULL,
+                    lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_acquired_at = NULL,
+                    lease_expires_at = NULL,
+                    last_heartbeat_at = NULL,
+                    completed_at = %s
+                WHERE batch_item_id = %s
+                  AND report_job_id = %s
+                  AND status = 'waiting_on_report_job'
+                RETURNING *
+                """,
+                (completed_at, batch_item_id, report_job_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("report_batch_item_not_found")
+            self._refresh_batch_status(connection, str(row["batch_id"]), now=completed_at)
+        return _item_from_row(row)
+
     def mark_item_failed(
         self,
         *,

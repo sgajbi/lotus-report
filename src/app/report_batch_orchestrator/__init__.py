@@ -14,6 +14,10 @@ from app.report_batch_orchestrator.contracts import (
     BATCH_SELECTOR_MODES,
 )
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher, evaluate_back_pressure
+from app.report_batch_orchestrator.execution import (
+    BatchItemExecutionResult,
+    ReportBatchExecutionService,
+)
 from app.report_batch_orchestrator.ledger import (
     BatchIdempotencyConflictError,
     MissingBatchIdempotencyKeyError,
@@ -60,6 +64,7 @@ __all__ = [
     "BatchDispatchPolicy",
     "BatchDispatchResult",
     "BatchIdempotencyConflictError",
+    "BatchItemExecutionResult",
     "BatchHandleResponse",
     "BatchItemStatusResponse",
     "BatchRecoveryResponse",
@@ -70,6 +75,7 @@ __all__ = [
     "MissingBatchIdempotencyKeyError",
     "PortfolioBatchCandidate",
     "ReportBatchDispatcher",
+    "ReportBatchExecutionService",
     "ReportBatchItemRecord",
     "ReportBatchLedger",
     "ReportBatchRecord",

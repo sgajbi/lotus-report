@@ -37,5 +37,7 @@
   cycles. Internal dispatch, lease, report-job creation/reuse, and back-pressure primitives now
   exist. Internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery
   primitives now exist. Certified batch materialization, status, and control APIs now exist in
-  `lotus-report`. No batch scheduler loop, worker runtime, dispatch operator API, gateway
-  exposure, or Workbench batch surface is shipped yet
+  `lotus-report`. Internal item execution can advance a dispatched batch item through the existing
+  report-job, snapshot, render, and archive handoff path and reconcile the final batch-item state.
+  No batch scheduler loop, worker runtime, dispatch operator API, gateway exposure, or Workbench
+  batch surface is shipped yet

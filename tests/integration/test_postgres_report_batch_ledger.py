@@ -466,6 +466,42 @@ def test_postgres_failed_single_item_batch_reconciles_terminal_and_retryable_sta
     assert batch_ledger.get_batch(retryable_batch.batch_id).status == "failed"
 
 
+def test_postgres_successful_single_item_batch_reconciles_completed_status() -> None:
+    unique_suffix = uuid4().hex
+    batch_ledger = PostgresReportBatchLedger(_database_url())
+    report_job_ledger = PostgresReportJobLedger(_database_url())
+    caller = _caller(unique_suffix)
+    batch = batch_ledger.create_batch(
+        request=_multi_request(unique_suffix, [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]),
+        caller_context=caller,
+        idempotency_key=f"batch-pg-succeeded-{unique_suffix}",
+    )
+    dispatched = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_batches=1000, max_active_items=1000),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=caller,
+        worker_id=f"pg-worker-succeeded-{unique_suffix}",
+    )
+    waiting_item = batch_ledger.get_batch(batch.batch_id).items[0]
+
+    completed = batch_ledger.mark_item_succeeded(
+        batch_item_id=waiting_item.batch_item_id,
+        report_job_id=waiting_item.report_job_id or "",
+        now=datetime(2026, 4, 22, 9, 0, tzinfo=UTC),
+    )
+    refreshed = batch_ledger.get_batch(batch.batch_id)
+
+    assert dispatched.dispatched_count == 1
+    assert completed.status == "succeeded"
+    assert completed.report_job_id == waiting_item.report_job_id
+    assert completed.lease_token is None
+    assert refreshed.status == "completed"
+    assert refreshed.completed_at == datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+
+
 def test_postgres_mark_item_failed_rejects_unknown_item() -> None:
     batch_ledger = PostgresReportBatchLedger(_database_url())
 
