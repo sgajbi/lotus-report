@@ -14,3 +14,8 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "REPORT_JOB_LEDGER_DATABASE_URL: postgresql://" in compose
     assert "condition: service_healthy" in compose
     assert '"host.docker.internal:host-gateway"' in compose
+    assert "lotus-report-batch-worker:" in compose
+    assert 'command: ["python", "-m", "app.report_batch_orchestrator.process"]' in compose
+    assert "REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local" in compose
+    assert "REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS" in compose
+    assert "REPORT_BATCH_WORKER_MAX_ACTIVE_ITEMS" in compose
