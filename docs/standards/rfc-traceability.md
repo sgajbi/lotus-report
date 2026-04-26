@@ -206,3 +206,21 @@ This document provides explicit implementation evidence pointers for active RFCs
       -CheckOnly -Repository lotus-report` reported expected publication drift for
       `API-Surface.md`, `Operations-Runbook.md`, `RFC-Index.md`, and pre-existing
       `Validation-and-CI.md`; wiki publication remains a post-merge action.
+- Slice 9 implementation-proof evidence:
+  - `tests/integration/test_report_batch_execution.py` proves an explicit-list batch item can move
+    through PostgreSQL batch ledger dispatch, RFC-0100 report job creation, RFC-0101 snapshot
+    persistence, RFC-0102 render orchestration, RFC-0103 archive handoff, and final batch-item and
+    batch status reconciliation.
+  - Existing integration and unit proof covers selected-subset materialization, duplicate
+    idempotency, dispatch/back-pressure, pause/resume/cancel, retry-failed, expired-lease
+    recovery, OpenAPI examples, and supported-features guardrails.
+  - Validation on 2026-04-26:
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      python -m pytest tests/integration/test_report_batch_execution.py -q` passed.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make test-integration` passed with PostgreSQL-backed batch, job, snapshot, render, and archive
+      integration coverage.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make ci` passed with lint, format, monetary-float guard, mypy, OpenAPI quality, migration
+      contract check, 85 integration tests, 6 e2e tests, 298 unit tests, combined 99% coverage, and
+      security audit.
