@@ -1,3 +1,4 @@
+from time import perf_counter
 from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
@@ -39,6 +40,7 @@ from app.reporting_lineage.service import (
     get_report_input_snapshot_store,
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
+from app.reporting_metrics import record_report_operation
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
 
@@ -338,7 +340,14 @@ async def submit_portfolio_review_job(
         Header(alias="X-Trace-ID", description="Distributed trace identifier."),
     ] = None,
 ) -> ReportJobHandleResponse:
+    started_at = perf_counter()
     if not idempotency_key or not idempotency_key.strip():
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="missing_idempotency_key",
+            duration_seconds=perf_counter() - started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
@@ -359,11 +368,23 @@ async def submit_portfolio_review_job(
             idempotency_key=idempotency_key,
         )
     except MissingIdempotencyKeyError as exc:
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="missing_idempotency_key",
+            duration_seconds=perf_counter() - started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
         ) from exc
     except IdempotencyConflictError as exc:
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="idempotency_conflict",
+            duration_seconds=perf_counter() - started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -375,6 +396,12 @@ async def submit_portfolio_review_job(
         record = await capture_service.capture_for_job(record)
     if record.status == "data_ready" and "pdf" in request.requested_output_formats:
         record = await render_service.render_for_job(record)
+    record_report_operation(
+        operation="report_job_submission",
+        status=record.status,
+        failure_category=record.failure_category,
+        duration_seconds=perf_counter() - started_at,
+    )
     return _record_to_handle(record)
 
 

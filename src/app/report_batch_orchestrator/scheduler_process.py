@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Awaitable, Callable, Protocol
 
 from app.config import Settings, settings
@@ -21,6 +22,7 @@ from app.report_batch_orchestrator.scheduler import (
 )
 from app.report_batch_orchestrator.service import get_report_batch_scheduler
 from app.reporting_jobs.models import ReportCallerContext
+from app.reporting_metrics import record_batch_scheduler_metrics
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -84,10 +86,17 @@ class BatchSchedulerProcess:
             corr_token = correlation_id_var.set(context.correlation_id)
             req_token = request_id_var.set(f"batch_scheduler_pass_{iteration}")
             trace_token = trace_id_var.set(context.trace_id)
+            started_at = perf_counter()
             try:
                 result = await self._scheduler.run_due_schedules(
                     config=self._config.scheduler_config,
                     caller_context=context,
+                )
+                record_batch_scheduler_metrics(
+                    attempted_count=result.attempted_count,
+                    materialized_count=len(result.materialized),
+                    skipped_count=len(result.skipped_schedule_ids),
+                    duration_seconds=perf_counter() - started_at,
                 )
                 self._log_pass_result(iteration=iteration, result=result)
             finally:

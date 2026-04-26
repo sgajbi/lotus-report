@@ -24,6 +24,17 @@
 - `/metrics`
   observability surface for runtime monitoring
 
+## RFC-0105 metrics contract
+
+- `docs/operations/reporting-observability-metrics.md` records the code-backed first-wave metrics
+  contract, dashboard contract, alert basis, and label restrictions.
+- implemented metrics cover report job submission, snapshot capture, render handoff, archive
+  handoff, batch worker passes, and scheduler passes.
+- replay, rerender, regenerate, stuck-state, and SLA scan metrics are reserved until those command
+  paths are implementation-backed.
+- metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
+  document, report job, batch, trace, correlation, storage, or raw payload fields.
+
 ## Observability vocabulary owner
 
 - `src/app/observability.py` owns runtime correlation, request, trace, structured-log, and safe

@@ -1,3 +1,4 @@
+from time import perf_counter
 from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, status
@@ -49,6 +50,7 @@ from app.report_batch_orchestrator.service import (
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
+from app.reporting_metrics import record_batch_scheduler_metrics, record_batch_worker_metrics
 from app.routers.caller_context import caller_context_dependency
 
 router = APIRouter(prefix="/reports/batches", tags=["Report Batches"])
@@ -400,6 +402,7 @@ async def run_due_report_batch_schedules(
     config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
     _operator_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchSchedulerRunResponse:
+    started_at = perf_counter()
     scheduler_context = batch_scheduler_caller_context(
         config,
         pass_sequence=request.pass_sequence,
@@ -419,6 +422,12 @@ async def run_due_report_batch_schedules(
                 "message": "Report batch scheduler pass could not be completed.",
             },
         ) from exc
+    record_batch_scheduler_metrics(
+        attempted_count=result.attempted_count,
+        materialized_count=len(result.materialized),
+        skipped_count=len(result.skipped_schedule_ids),
+        duration_seconds=perf_counter() - started_at,
+    )
     return batch_scheduler_run_response(result=result, caller_context=scheduler_context)
 
 
@@ -837,6 +846,7 @@ async def run_report_batch_once(
     worker: ReportBatchWorkerPort = Depends(get_report_batch_worker),
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchWorkerRunResponse:
+    started_at = perf_counter()
     try:
         result = await worker.run_once(
             batch_id=batch_id,
@@ -856,4 +866,12 @@ async def run_report_batch_once(
                 "message": "Report batch run could not be completed.",
             },
         ) from exc
+    record_batch_worker_metrics(
+        recovered_count=result.recovered_count,
+        leased_count=result.leased_count,
+        dispatched_count=result.dispatched_count,
+        executed_count=result.executed_count,
+        skipped_reason=result.skipped_reason,
+        duration_seconds=perf_counter() - started_at,
+    )
     return _worker_run_response(result)

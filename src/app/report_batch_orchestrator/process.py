@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Awaitable, Callable, Protocol
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from app.report_batch_orchestrator.models import BatchDispatchPolicy
 from app.report_batch_orchestrator.runtime import BatchRuntimePassResult, ReportBatchRuntime
 from app.report_batch_orchestrator.service import get_report_batch_runtime
 from app.reporting_jobs.models import ReportCallerContext
+from app.reporting_metrics import record_batch_worker_metrics
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -110,6 +112,7 @@ class BatchWorkerProcess:
             corr_token = correlation_id_var.set(context.correlation_id)
             req_token = request_id_var.set(f"batch_worker_pass_{iteration}")
             trace_token = trace_id_var.set(context.trace_id)
+            started_at = perf_counter()
             try:
                 result = await self._runtime.run_pass(
                     caller_context=context,
@@ -117,6 +120,16 @@ class BatchWorkerProcess:
                     max_batches=self._config.max_batches_per_pass,
                     dispatch_policy=self._config.dispatch_policy,
                     recover_expired_leases=True,
+                )
+                record_batch_worker_metrics(
+                    recovered_count=result.recovered_count,
+                    leased_count=result.leased_count,
+                    dispatched_count=result.dispatched_count,
+                    executed_count=result.executed_count,
+                    skipped_reason=(
+                        "back_pressure_stopped" if result.back_pressure_stopped else None
+                    ),
+                    duration_seconds=perf_counter() - started_at,
                 )
                 self._log_pass_result(iteration=iteration, result=result)
             finally:

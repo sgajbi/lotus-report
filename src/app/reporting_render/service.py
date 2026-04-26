@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from functools import lru_cache
+from time import perf_counter
 from typing import Any, Protocol
 
 from app.clients.archive_client import ArchiveClient
@@ -11,6 +12,7 @@ from app.config import settings
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
+from app.reporting_metrics import record_report_operation
 from app.reporting_render.package_builder import (
     _as_dict,
     _build_render_package,
@@ -119,6 +121,7 @@ class PortfolioReviewRenderOrchestrationService:
         self._job_ledger = job_ledger
 
     async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+        started_at = perf_counter()
         if "pdf" not in job.requested_output_formats:
             return job
         if job.status in {"completed", "completed_with_warnings", "failed", "cancelled"}:
@@ -171,11 +174,18 @@ class PortfolioReviewRenderOrchestrationService:
                 ),
                 render_duration_ms=_optional_int(response_payload.get("render_duration_ms")),
             )
-            return await self._archive_rendered_job(
+            archived = await self._archive_rendered_job(
                 job=rendered,
                 snapshot=snapshot,
                 render_response=response_payload,
             )
+            record_report_operation(
+                operation="render_handoff",
+                status=archived.status,
+                failure_category=archived.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return archived
 
         detail = response_payload.get("detail")
         detail_payload = detail if isinstance(detail, dict) else {}
@@ -191,7 +201,7 @@ class PortfolioReviewRenderOrchestrationService:
         elif status_code == 422 or failure_code == "render_package_invalid":
             failure_category = "render_validation_failed"
             retry_eligible = False
-        return self._job_ledger.mark_failed(
+        failed_job = self._job_ledger.mark_failed(
             job_id=job.job_id,
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
@@ -200,6 +210,13 @@ class PortfolioReviewRenderOrchestrationService:
             failure_message=failure_message or "lotus-render execution failed.",
             retry_eligible=retry_eligible,
         )
+        record_report_operation(
+            operation="render_handoff",
+            status=failed_job.status,
+            failure_category=failed_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return failed_job
 
     async def _archive_rendered_job(
         self,
@@ -208,9 +225,10 @@ class PortfolioReviewRenderOrchestrationService:
         snapshot: Any,
         render_response: dict[str, Any],
     ) -> ReportJobLedgerRecord:
+        started_at = perf_counter()
         artifact_base64 = _optional_str(render_response.get("artifact_base64"))
         if artifact_base64 is None:
-            return self._job_ledger.mark_failed(
+            failed_job = self._job_ledger.mark_failed(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
@@ -219,6 +237,13 @@ class PortfolioReviewRenderOrchestrationService:
                 failure_message="Rendered artifact payload was not available for archive handoff.",
                 retry_eligible=False,
             )
+            record_report_operation(
+                operation="archive_handoff",
+                status=failed_job.status,
+                failure_category=failed_job.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed_job
 
         archive_request_id = f"arch_{job.render_job_id or job.job_id}"
         self._job_ledger.mark_archiving(
@@ -245,7 +270,7 @@ class PortfolioReviewRenderOrchestrationService:
             role=job.role,
         )
         if status_code in {200, 201} and _optional_str(response_payload.get("document_id")):
-            return self._job_ledger.mark_archived(
+            archived_job = self._job_ledger.mark_archived(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
@@ -253,8 +278,14 @@ class PortfolioReviewRenderOrchestrationService:
                 archive_request_id=archive_request_id,
                 archive_document_id=str(response_payload["document_id"]),
             )
+            record_report_operation(
+                operation="archive_handoff",
+                status=archived_job.status,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return archived_job
         failure_category, retry_eligible = _archive_failure_posture(status_code, response_payload)
-        return self._job_ledger.mark_failed(
+        failed_job = self._job_ledger.mark_failed(
             job_id=job.job_id,
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
@@ -263,6 +294,13 @@ class PortfolioReviewRenderOrchestrationService:
             failure_message=_archive_failure_message(response_payload),
             retry_eligible=retry_eligible,
         )
+        record_report_operation(
+            operation="archive_handoff",
+            status=failed_job.status,
+            failure_category=failed_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return failed_job
 
 
 @lru_cache(maxsize=1)

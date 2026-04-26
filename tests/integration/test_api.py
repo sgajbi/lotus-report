@@ -207,6 +207,15 @@ def test_metrics_endpoint_available():
     assert "http_requests_total" in response.text or "http_request_duration" in response.text
 
 
+def test_metrics_endpoint_exposes_reporting_metric_contract():
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "lotus_report_operations_total" in response.text
+    assert "lotus_report_operation_duration_seconds" in response.text
+    assert "lotus_report_replay_operations_total" not in response.text
+
+
 def test_load_concurrency_health_live_requests():
     def call_live() -> int:
         return client.get("/health/live").status_code
@@ -271,6 +280,8 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
         "lotus-report.reporting.portfolio_review.render_submission.v1",
         "lotus-report.reporting.portfolio_review.archive_handoff.v1",
+        "lotus-report.reporting.observability.traceability.v1",
+        "lotus-report.reporting.observability.metrics.v1",
         "lotus-report.reporting.batch_materialization_api.v1",
         "lotus-report.reporting.batch_control_api.v1",
     } <= feature_keys
