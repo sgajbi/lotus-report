@@ -4,7 +4,7 @@ import hashlib
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
@@ -116,11 +116,33 @@ class ReportBatchLedger:
                     source_system TEXT NOT NULL,
                     source_object TEXT NOT NULL,
                     created_at TEXT NOT NULL,
+                    report_job_id TEXT,
+                    lease_owner TEXT,
+                    lease_token TEXT,
+                    lease_acquired_at TEXT,
+                    lease_expires_at TEXT,
+                    last_heartbeat_at TEXT,
+                    dispatched_at TEXT,
                     UNIQUE(batch_id, portfolio_id),
                     FOREIGN KEY(batch_id) REFERENCES report_batch(batch_id)
                 )
                 """
             )
+            for column_name, column_type in (
+                ("report_job_id", "TEXT"),
+                ("lease_owner", "TEXT"),
+                ("lease_token", "TEXT"),
+                ("lease_acquired_at", "TEXT"),
+                ("lease_expires_at", "TEXT"),
+                ("last_heartbeat_at", "TEXT"),
+                ("dispatched_at", "TEXT"),
+            ):
+                _add_sqlite_column_if_missing(
+                    connection,
+                    table_name="report_batch_item",
+                    column_name=column_name,
+                    column_type=column_type,
+                )
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_report_batch_tenant_region_created
@@ -137,6 +159,18 @@ class ReportBatchLedger:
                 """
                 CREATE INDEX IF NOT EXISTS idx_report_batch_item_portfolio
                 ON report_batch_item(portfolio_id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_batch_item_lease_expiry
+                ON report_batch_item(status, lease_expires_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_batch_item_report_job
+                ON report_batch_item(report_job_id)
                 """
             )
 
@@ -243,6 +277,185 @@ class ReportBatchLedger:
                     )
                 return self._load_batch(connection, batch_id)
 
+    def acquire_dispatch_items(
+        self,
+        *,
+        batch_id: str,
+        worker_id: str,
+        lease_seconds: int,
+        limit: int,
+        now: datetime | None = None,
+    ) -> list[ReportBatchItemRecord]:
+        if limit < 1:
+            return []
+
+        lease_start = now or utc_now()
+        lease_expiry = lease_start + timedelta(seconds=lease_seconds)
+        lease_token = f"lease_{uuid4().hex}"
+        with self._lock:
+            with self._connect() as connection:
+                item_rows = connection.execute(
+                    """
+                    SELECT *
+                    FROM report_batch_item
+                    WHERE batch_id = ?
+                      AND report_job_id IS NULL
+                      AND (
+                        status = 'materialized'
+                        OR (
+                          status = 'leased'
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at < ?
+                        )
+                      )
+                    ORDER BY item_position
+                    LIMIT ?
+                    """,
+                    (batch_id, _dt_to_text(lease_start), limit),
+                ).fetchall()
+                if not item_rows:
+                    return []
+
+                item_ids = [str(row["batch_item_id"]) for row in item_rows]
+                placeholders = ",".join("?" for _ in item_ids)
+                connection.execute(
+                    f"""
+                    UPDATE report_batch_item
+                    SET status = 'leased',
+                        lease_owner = ?,
+                        lease_token = ?,
+                        lease_acquired_at = ?,
+                        lease_expires_at = ?,
+                        last_heartbeat_at = ?
+                    WHERE batch_item_id IN ({placeholders})
+                    """,
+                    (
+                        worker_id,
+                        lease_token,
+                        _dt_to_text(lease_start),
+                        _dt_to_text(lease_expiry),
+                        _dt_to_text(lease_start),
+                        *item_ids,
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE report_batch
+                    SET status = 'running'
+                    WHERE batch_id = ?
+                      AND status = 'materialized'
+                    """,
+                    (batch_id,),
+                )
+                refreshed_rows = connection.execute(
+                    f"""
+                    SELECT *
+                    FROM report_batch_item
+                    WHERE batch_item_id IN ({placeholders})
+                    ORDER BY item_position
+                    """,
+                    item_ids,
+                ).fetchall()
+                return [_item_from_row(row) for row in refreshed_rows]
+
+    def heartbeat_item_lease(
+        self,
+        *,
+        batch_item_id: str,
+        lease_token: str,
+        lease_seconds: int,
+        now: datetime | None = None,
+    ) -> ReportBatchItemRecord:
+        heartbeat_at = now or utc_now()
+        expires_at = heartbeat_at + timedelta(seconds=lease_seconds)
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET last_heartbeat_at = ?,
+                        lease_expires_at = ?
+                    WHERE batch_item_id = ?
+                      AND lease_token = ?
+                      AND status = 'leased'
+                    """,
+                    (
+                        _dt_to_text(heartbeat_at),
+                        _dt_to_text(expires_at),
+                        batch_item_id,
+                        lease_token,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError("report_batch_item_not_found")
+                row = connection.execute(
+                    "SELECT * FROM report_batch_item WHERE batch_item_id = ?",
+                    (batch_item_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("report_batch_item_not_found")
+                return _item_from_row(row)
+
+    def mark_item_waiting_on_report_job(
+        self,
+        *,
+        batch_item_id: str,
+        lease_token: str,
+        report_job_id: str,
+        now: datetime | None = None,
+    ) -> ReportBatchItemRecord:
+        dispatched_at = now or utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = 'waiting_on_report_job',
+                        report_job_id = ?,
+                        dispatched_at = ?
+                    WHERE batch_item_id = ?
+                      AND lease_token = ?
+                      AND status = 'leased'
+                    """,
+                    (
+                        report_job_id,
+                        _dt_to_text(dispatched_at),
+                        batch_item_id,
+                        lease_token,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError("report_batch_item_not_found")
+                row = connection.execute(
+                    "SELECT * FROM report_batch_item WHERE batch_item_id = ?",
+                    (batch_item_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("report_batch_item_not_found")
+                return _item_from_row(row)
+
+    def count_active_batches(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
+            ).fetchone()
+        return int(row["count"])
+
+    def count_active_items(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM report_batch_item
+                WHERE status IN ('leased', 'waiting_on_report_job')
+                """
+            ).fetchone()
+        return int(row["count"])
+
+    def get_batch(self, batch_id: str) -> ReportBatchRecord:
+        with self._connect() as connection:
+            return self._load_batch(connection, batch_id)
+
     def _load_batch(self, connection: sqlite3.Connection, batch_id: str) -> ReportBatchRecord:
         batch_row = connection.execute(
             "SELECT * FROM report_batch WHERE batch_id = ?",
@@ -298,6 +511,13 @@ def _item_from_row(row: sqlite3.Row) -> ReportBatchItemRecord:
         source_system=str(row["source_system"]),
         source_object=str(row["source_object"]),
         created_at=_dt_from_text(str(row["created_at"])),
+        report_job_id=_nullable_str(row["report_job_id"]),
+        lease_owner=_nullable_str(row["lease_owner"]),
+        lease_token=_nullable_str(row["lease_token"]),
+        lease_acquired_at=_nullable_dt(row["lease_acquired_at"]),
+        lease_expires_at=_nullable_dt(row["lease_expires_at"]),
+        last_heartbeat_at=_nullable_dt(row["last_heartbeat_at"]),
+        dispatched_at=_nullable_dt(row["dispatched_at"]),
     )
 
 
@@ -322,3 +542,30 @@ def _dt_to_text(value: datetime) -> str:
 
 def _dt_from_text(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _nullable_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _nullable_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    return _dt_from_text(str(value))
+
+
+def _add_sqlite_column_if_missing(
+    connection: sqlite3.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    column_type: str,
+) -> None:
+    columns = {
+        str(row["name"])
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")

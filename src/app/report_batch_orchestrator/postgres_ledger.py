@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
@@ -168,6 +169,155 @@ class PostgresReportBatchLedger:
                     return self._existing_or_conflict(connection, existing, request_hash)
             raise BatchIdempotencyConflictError("batch_idempotency_unique_violation") from exc
 
+    def acquire_dispatch_items(
+        self,
+        *,
+        batch_id: str,
+        worker_id: str,
+        lease_seconds: int,
+        limit: int,
+        now: Any | None = None,
+    ) -> list[ReportBatchItemRecord]:
+        if limit < 1:
+            return []
+
+        lease_start = now or utc_now()
+        lease_expiry = lease_start + timedelta(seconds=lease_seconds)
+        lease_token = f"lease_{uuid4().hex}"
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_id = %s
+                  AND report_job_id IS NULL
+                  AND (
+                    status = 'materialized'
+                    OR (
+                      status = 'leased'
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at < %s
+                    )
+                  )
+                ORDER BY item_position
+                FOR UPDATE SKIP LOCKED
+                LIMIT %s
+                """,
+                (batch_id, lease_start, limit),
+            ).fetchall()
+            if not rows:
+                return []
+
+            item_ids = [str(row["batch_item_id"]) for row in rows]
+            connection.execute(
+                """
+                UPDATE report_batch_item
+                SET status = 'leased',
+                    lease_owner = %s,
+                    lease_token = %s,
+                    lease_acquired_at = %s,
+                    lease_expires_at = %s,
+                    last_heartbeat_at = %s
+                WHERE batch_item_id = ANY(%s)
+                """,
+                (worker_id, lease_token, lease_start, lease_expiry, lease_start, item_ids),
+            )
+            connection.execute(
+                """
+                UPDATE report_batch
+                SET status = 'running'
+                WHERE batch_id = %s
+                  AND status = 'materialized'
+                """,
+                (batch_id,),
+            )
+            refreshed_rows = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_item_id = ANY(%s)
+                ORDER BY item_position
+                """,
+                (item_ids,),
+            ).fetchall()
+        return [_item_from_row(row) for row in refreshed_rows]
+
+    def heartbeat_item_lease(
+        self,
+        *,
+        batch_item_id: str,
+        lease_token: str,
+        lease_seconds: int,
+        now: Any | None = None,
+    ) -> ReportBatchItemRecord:
+        heartbeat_at = now or utc_now()
+        expires_at = heartbeat_at + timedelta(seconds=lease_seconds)
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                UPDATE report_batch_item
+                SET last_heartbeat_at = %s,
+                    lease_expires_at = %s
+                WHERE batch_item_id = %s
+                  AND lease_token = %s
+                  AND status = 'leased'
+                RETURNING *
+                """,
+                (heartbeat_at, expires_at, batch_item_id, lease_token),
+            ).fetchone()
+            if not row:
+                raise ValueError("report_batch_item_not_found")
+        return _item_from_row(row)
+
+    def mark_item_waiting_on_report_job(
+        self,
+        *,
+        batch_item_id: str,
+        lease_token: str,
+        report_job_id: str,
+        now: Any | None = None,
+    ) -> ReportBatchItemRecord:
+        dispatched_at = now or utc_now()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                UPDATE report_batch_item
+                SET status = 'waiting_on_report_job',
+                    report_job_id = %s,
+                    dispatched_at = %s
+                WHERE batch_item_id = %s
+                  AND lease_token = %s
+                  AND status = 'leased'
+                RETURNING *
+                """,
+                (report_job_id, dispatched_at, batch_item_id, lease_token),
+            ).fetchone()
+            if not row:
+                raise ValueError("report_batch_item_not_found")
+        return _item_from_row(row)
+
+    def count_active_batches(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
+            ).fetchone()
+        return int(row["count"])
+
+    def count_active_items(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM report_batch_item
+                WHERE status IN ('leased', 'waiting_on_report_job')
+                """
+            ).fetchone()
+        return int(row["count"])
+
+    def get_batch(self, batch_id: str) -> ReportBatchRecord:
+        with self._connect() as connection:
+            return self._load_batch(connection, batch_id)
+
     def _existing_or_conflict(
         self,
         connection: Connection[Mapping[str, Any]],
@@ -276,4 +426,17 @@ def _item_from_row(row: Mapping[str, Any]) -> ReportBatchItemRecord:
         source_system=str(row["source_system"]),
         source_object=str(row["source_object"]),
         created_at=row["created_at"],
+        report_job_id=_nullable_str(row.get("report_job_id")),
+        lease_owner=_nullable_str(row.get("lease_owner")),
+        lease_token=_nullable_str(row.get("lease_token")),
+        lease_acquired_at=row.get("lease_acquired_at"),
+        lease_expires_at=row.get("lease_expires_at"),
+        last_heartbeat_at=row.get("last_heartbeat_at"),
+        dispatched_at=row.get("dispatched_at"),
     )
+
+
+def _nullable_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)

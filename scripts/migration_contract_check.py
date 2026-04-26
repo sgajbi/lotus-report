@@ -131,7 +131,9 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_batch_status_created',
                   'idx_report_batch_item_batch_position',
                   'idx_report_batch_item_portfolio',
-                  'idx_report_batch_item_status_created'
+                  'idx_report_batch_item_status_created',
+                  'idx_report_batch_item_lease_expiry',
+                  'idx_report_batch_item_report_job'
               )
             """
         ).fetchall()
@@ -160,6 +162,8 @@ def run_ledger_schema_checks() -> int:
             "idx_report_batch_item_batch_position",
             "idx_report_batch_item_portfolio",
             "idx_report_batch_item_status_created",
+            "idx_report_batch_item_lease_expiry",
+            "idx_report_batch_item_report_job",
         } - indexes
         if missing_indexes:
             print(f"Ledger schema smoke failed: missing indexes {sorted(missing_indexes)}")
@@ -203,6 +207,40 @@ def run_ledger_schema_checks() -> int:
         ).fetchall()
         if not batch_unique_rows:
             print("Ledger schema smoke failed: report_batch.idempotency_key uniqueness is missing.")
+            return 1
+
+        batch_item_column_rows = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'report_batch_item'
+              AND column_name IN (
+                  'report_job_id',
+                  'lease_owner',
+                  'lease_token',
+                  'lease_acquired_at',
+                  'lease_expires_at',
+                  'last_heartbeat_at',
+                  'dispatched_at'
+              )
+            """
+        ).fetchall()
+        batch_item_columns = {row[0] for row in batch_item_column_rows}
+        missing_batch_item_columns = {
+            "report_job_id",
+            "lease_owner",
+            "lease_token",
+            "lease_acquired_at",
+            "lease_expires_at",
+            "last_heartbeat_at",
+            "dispatched_at",
+        } - batch_item_columns
+        if missing_batch_item_columns:
+            print(
+                "Ledger schema smoke failed: missing batch dispatch columns "
+                f"{sorted(missing_batch_item_columns)}"
+            )
             return 1
 
         failure_category_rows = connection.execute(

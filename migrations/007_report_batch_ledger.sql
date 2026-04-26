@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS report_batch (
     role TEXT,
     idempotency_key TEXT NOT NULL UNIQUE,
     request_hash TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('materialized')),
+    status TEXT NOT NULL CHECK (status IN ('materialized', 'running')),
     item_count INTEGER NOT NULL CHECK (item_count > 0),
     correlation_id TEXT NOT NULL,
     trace_id TEXT NOT NULL,
@@ -35,13 +35,55 @@ CREATE TABLE IF NOT EXISTS report_batch_item (
     item_position INTEGER NOT NULL CHECK (item_position > 0),
     portfolio_id TEXT NOT NULL,
     item_idempotency_key TEXT NOT NULL UNIQUE,
-    status TEXT NOT NULL CHECK (status IN ('materialized')),
+    status TEXT NOT NULL CHECK (status IN ('materialized', 'leased', 'waiting_on_report_job')),
     source_system TEXT NOT NULL,
     source_object TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
+    report_job_id TEXT,
+    lease_owner TEXT,
+    lease_token TEXT,
+    lease_acquired_at TIMESTAMPTZ,
+    lease_expires_at TIMESTAMPTZ,
+    last_heartbeat_at TIMESTAMPTZ,
+    dispatched_at TIMESTAMPTZ,
     UNIQUE(batch_id, portfolio_id),
     UNIQUE(batch_id, item_position)
 );
+
+ALTER TABLE report_batch
+DROP CONSTRAINT IF EXISTS report_batch_status_check;
+
+ALTER TABLE report_batch
+ADD CONSTRAINT report_batch_status_check
+CHECK (status IN ('materialized', 'running'));
+
+ALTER TABLE report_batch_item
+DROP CONSTRAINT IF EXISTS report_batch_item_status_check;
+
+ALTER TABLE report_batch_item
+ADD CONSTRAINT report_batch_item_status_check
+CHECK (status IN ('materialized', 'leased', 'waiting_on_report_job'));
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS report_job_id TEXT;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS lease_owner TEXT;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS lease_token TEXT;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS lease_acquired_at TIMESTAMPTZ;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMPTZ;
+
+ALTER TABLE report_batch_item
+ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_report_batch_created
 ON report_batch(created_at);
@@ -60,3 +102,9 @@ ON report_batch_item(portfolio_id);
 
 CREATE INDEX IF NOT EXISTS idx_report_batch_item_status_created
 ON report_batch_item(status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_report_batch_item_lease_expiry
+ON report_batch_item(status, lease_expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_report_batch_item_report_job
+ON report_batch_item(report_job_id);

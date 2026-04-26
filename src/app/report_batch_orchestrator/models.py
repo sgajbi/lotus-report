@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
 
-BatchStatus = Literal["materialized"]
-BatchItemStatus = Literal["materialized"]
+BatchStatus = Literal["materialized", "running"]
+BatchItemStatus = Literal["materialized", "leased", "waiting_on_report_job"]
 
 
 class PortfolioBatchCandidate(BaseModel):
@@ -114,6 +114,13 @@ class ReportBatchItemRecord(BaseModel):
     source_system: str
     source_object: str
     created_at: datetime
+    report_job_id: str | None = None
+    lease_owner: str | None = None
+    lease_token: str | None = None
+    lease_acquired_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    dispatched_at: datetime | None = None
 
 
 class ReportBatchRecord(BaseModel):
@@ -186,3 +193,58 @@ class BatchCycle(BaseModel):
     template_version: str
     render_package_version: str
     idempotency_scope: str
+
+
+class BatchDispatchPolicy(BaseModel):
+    max_active_batches: int = Field(
+        1,
+        ge=1,
+        description="Maximum number of active batches allowed for this dispatch attempt.",
+        examples=[1],
+    )
+    max_active_items: int = Field(
+        5,
+        ge=1,
+        description="Maximum number of items leased by one dispatch attempt.",
+        examples=[5],
+    )
+    max_active_upstream_jobs: int = Field(
+        3,
+        ge=1,
+        description="Maximum active upstream data-collection work allowed before back-pressure.",
+        examples=[3],
+    )
+    max_active_render_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active render work allowed before back-pressure.",
+        examples=[2],
+    )
+    max_active_archive_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active archive work allowed before back-pressure.",
+        examples=[2],
+    )
+    lease_seconds: int = Field(
+        300,
+        ge=1,
+        description="Lease duration for in-flight batch item dispatch.",
+        examples=[300],
+    )
+
+
+class BatchRuntimeLoad(BaseModel):
+    active_batches: int = Field(0, ge=0)
+    active_items: int = Field(0, ge=0)
+    active_upstream_jobs: int = Field(0, ge=0)
+    active_render_jobs: int = Field(0, ge=0)
+    active_archive_jobs: int = Field(0, ge=0)
+
+
+class BatchDispatchResult(BaseModel):
+    batch_id: str
+    leased_count: int
+    dispatched_count: int
+    report_job_ids: list[str]
+    back_pressure_reasons: list[str] = Field(default_factory=list)

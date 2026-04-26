@@ -1,8 +1,8 @@
 """Batch reporting orchestration boundary.
 
-RFC-0104 Slice 2 provides durable batch and item materialization primitives.
-Operator-facing APIs, scheduling, dispatch, retry, and recovery remain future
-slices.
+RFC-0104 currently provides durable batch materialization, deterministic cycle
+identity, and internal dispatch primitives. Operator-facing APIs, retry, and
+recovery remain future slices.
 """
 
 from app.report_batch_orchestrator.contracts import (
@@ -11,6 +11,7 @@ from app.report_batch_orchestrator.contracts import (
     BATCH_RUNTIME_SUPPORTED,
     BATCH_SELECTOR_MODES,
 )
+from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher, evaluate_back_pressure
 from app.report_batch_orchestrator.ledger import (
     BatchIdempotencyConflictError,
     MissingBatchIdempotencyKeyError,
@@ -21,6 +22,9 @@ from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchCycle,
     BatchCycleRequest,
+    BatchDispatchPolicy,
+    BatchDispatchResult,
+    BatchRuntimeLoad,
     PortfolioBatchCandidate,
     ReportBatchItemRecord,
     ReportBatchRecord,
@@ -43,15 +47,20 @@ __all__ = [
     "BatchCreateRequest",
     "BatchCycle",
     "BatchCycleRequest",
+    "BatchDispatchPolicy",
+    "BatchDispatchResult",
     "BatchIdempotencyConflictError",
+    "BatchRuntimeLoad",
     "BatchScheduleValidationError",
     "BatchSelectorValidationError",
     "MissingBatchIdempotencyKeyError",
     "PortfolioBatchCandidate",
+    "ReportBatchDispatcher",
     "ReportBatchItemRecord",
     "ReportBatchLedger",
     "ReportBatchRecord",
     "compute_batch_request_hash",
+    "evaluate_back_pressure",
     "materialize_cycle",
     "materialize_portfolios",
     "scheduled_batch_idempotency_key",
