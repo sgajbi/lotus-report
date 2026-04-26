@@ -22,6 +22,22 @@ def test_health():
     assert response.headers.get("X-Trace-Id")
 
 
+def test_health_omits_traceparent_for_non_w3c_trace_id():
+    response = client.get("/health", headers={"X-Trace-Id": "trace-human-readable"})
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Trace-Id") == "trace-human-readable"
+    assert "traceparent" not in response.headers
+
+
+def test_health_emits_traceparent_for_valid_w3c_trace_id():
+    trace_id = "0123456789abcdef0123456789abcdef"
+    response = client.get("/health", headers={"X-Trace-Id": trace_id})
+
+    assert response.status_code == 200
+    assert response.headers.get("traceparent") == f"00-{trace_id}-0000000000000001-01"
+
+
 def test_health_live_and_ready():
     live = client.get("/health/live")
     ready = client.get("/health/ready")
