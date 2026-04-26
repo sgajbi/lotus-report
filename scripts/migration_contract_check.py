@@ -12,6 +12,7 @@ sys.path.insert(0, str(SRC))
 
 import psycopg  # noqa: E402
 
+from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger  # noqa: E402
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger  # noqa: E402
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore  # noqa: E402
 
@@ -25,6 +26,8 @@ REQUIRED_PHRASES = (
     "report_status_event",
     "report_input_snapshot",
     "report_upstream_call",
+    "report_batch",
+    "report_batch_item",
     "archive_request_id",
     "archive_document_id",
     "archive_completed_at",
@@ -53,6 +56,8 @@ def run_ledger_schema_checks() -> int:
     ledger.check_ready()
     snapshot_store = PostgresReportInputSnapshotStore(database_url)
     snapshot_store.check_ready()
+    batch_ledger = PostgresReportBatchLedger(database_url)
+    batch_ledger.check_ready()
 
     with psycopg.connect(database_url) as connection:
         table_rows = connection.execute(
@@ -60,11 +65,23 @@ def run_ledger_schema_checks() -> int:
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('report_request', 'report_job', 'report_status_event')
+              AND table_name IN (
+                  'report_request',
+                  'report_job',
+                  'report_status_event',
+                  'report_batch',
+                  'report_batch_item'
+              )
             """
         ).fetchall()
         tables = {row[0] for row in table_rows}
-        missing_tables = {"report_request", "report_job", "report_status_event"} - tables
+        missing_tables = {
+            "report_request",
+            "report_job",
+            "report_status_event",
+            "report_batch",
+            "report_batch_item",
+        } - tables
         if missing_tables:
             print(f"Ledger schema smoke failed: missing tables {sorted(missing_tables)}")
             return 1
@@ -108,7 +125,13 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_upstream_call_snapshot',
                   'idx_report_upstream_call_service_endpoint',
                   'idx_report_upstream_call_supportability',
-                  'idx_report_upstream_call_created'
+                  'idx_report_upstream_call_created',
+                  'idx_report_batch_created',
+                  'idx_report_batch_tenant_region_created',
+                  'idx_report_batch_status_created',
+                  'idx_report_batch_item_batch_position',
+                  'idx_report_batch_item_portfolio',
+                  'idx_report_batch_item_status_created'
               )
             """
         ).fetchall()
@@ -131,6 +154,12 @@ def run_ledger_schema_checks() -> int:
             "idx_report_upstream_call_service_endpoint",
             "idx_report_upstream_call_supportability",
             "idx_report_upstream_call_created",
+            "idx_report_batch_created",
+            "idx_report_batch_tenant_region_created",
+            "idx_report_batch_status_created",
+            "idx_report_batch_item_batch_position",
+            "idx_report_batch_item_portfolio",
+            "idx_report_batch_item_status_created",
         } - indexes
         if missing_indexes:
             print(f"Ledger schema smoke failed: missing indexes {sorted(missing_indexes)}")
@@ -154,6 +183,26 @@ def run_ledger_schema_checks() -> int:
         ).fetchall()
         if not unique_rows:
             print("Ledger schema smoke failed: idempotency_key uniqueness is missing.")
+            return 1
+
+        batch_unique_rows = connection.execute(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'report_batch'::regclass
+              AND contype = 'u'
+              AND conkey = ARRAY[
+                  (
+                      SELECT attnum
+                      FROM pg_attribute
+                      WHERE attrelid = 'report_batch'::regclass
+                        AND attname = 'idempotency_key'
+                  )
+              ]::smallint[]
+            """
+        ).fetchall()
+        if not batch_unique_rows:
+            print("Ledger schema smoke failed: report_batch.idempotency_key uniqueness is missing.")
             return 1
 
         failure_category_rows = connection.execute(
@@ -281,7 +330,7 @@ def run_ledger_schema_checks() -> int:
                 )
                 return 1
 
-    print("Migration contract check passed (PostgreSQL report job ledger schema mode).")
+    print("Migration contract check passed (PostgreSQL report job and batch ledger schema mode).")
     return 0
 
 

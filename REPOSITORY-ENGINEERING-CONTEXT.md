@@ -54,9 +54,10 @@ Current repository posture:
    `archiving`/`archived` lifecycle states, and archive-aware status/failure posture while keeping
    retrieval, retention execution, legal hold, purge, and distribution owned by `lotus-archive`,
 10. RFC-0104 is in progress. Slice 1 adds the `src/app/report_batch_orchestrator/` module boundary
-   and planned batch selector/frequency vocabulary only. No batch scheduler, durable batch ledger,
-   worker, API, retry-failed-only, pause, resume, or recovery operator capability is implemented
-   yet,
+   and planned batch selector/frequency vocabulary. Slice 2 adds internal durable batch and
+   batch-item materialization primitives for explicit portfolio lists and selected subsets. No
+   batch scheduler, worker, API, retry-failed-only, pause, resume, or recovery operator capability
+   is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,
@@ -96,9 +97,10 @@ Primary areas:
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
 11. `src/app/report_batch_orchestrator/`
-    RFC-0104 batch reporting orchestration boundary. Slice 1 centralizes planned selector and
-    frequency vocabulary while keeping runtime support disabled until later ledger, scheduler,
-    worker, API, and recovery slices are implemented and proven.
+    RFC-0104 batch reporting orchestration boundary. Slice 2 owns source-backed selector
+    validation, durable batch/batch-item materialization, and idempotent duplicate prevention
+    while keeping operator-facing runtime support disabled until later scheduler, worker, API, and
+    recovery slices are implemented and proven.
 
 ## Runtime And Integration Boundaries
 
@@ -199,7 +201,8 @@ Update this document when:
    lifecycle semantics change,
 9. report ledger database, readiness, migration, or CI proof posture changes,
 10. current-state rollout posture changes,
-11. RFC-0104 batch orchestration module, support posture, or planned-vocabulary scope changes.
+11. RFC-0104 batch orchestration module, selector materialization, support posture, or
+    planned-vocabulary scope changes.
 
 ## Cross-Links
 
