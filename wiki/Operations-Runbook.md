@@ -59,6 +59,7 @@ materialization/status/control operations. Certified APIs exist for:
 - `POST /reports/batches/{batch_id}:cancel`
 - `POST /reports/batches/{batch_id}:retry-failed`
 - `POST /reports/batches/{batch_id}:recover-expired-leases`
+- `POST /reports/batches/{batch_id}:run-once`
 
 Current implemented semantics:
 
@@ -73,22 +74,21 @@ Current implemented semantics:
   active-batch, active-item, upstream, render, and archive back-pressure
 - internal item execution can advance a dispatched item through the existing report-job, snapshot,
   render, and archive handoff path, then reconcile final item state
-- internal bounded worker runs can recover expired pre-dispatch leases, dispatch eligible items,
-  and advance already waiting items for one explicit batch; this is an internal primitive, not a
-  public scheduler or operator API
+- bounded `run-once` operator calls can recover expired pre-dispatch leases, dispatch eligible
+  items, and advance already waiting items for one explicit batch; the response returns safe counts,
+  linked report job ids, back-pressure reasons, skip reasons, and per-item execution outcomes
 
 Still not supported:
 
 - scheduled batch execution loop
 - public background executor process
-- dispatch operator API
 - gateway exposure
 - Workbench batch surface
 - broad replay, rerender, regenerate, or document distribution controls
 
 Use individual report-job APIs for production portfolio-review initiation until later RFC-0104
 slices ship the scheduler/runtime surface. Use `lotus-report` batch APIs only for the certified
-materialization/status/control subset and internal support proof.
+materialization/status/control/run-once subset and internal support proof.
 
 Observability floor for this wave:
 

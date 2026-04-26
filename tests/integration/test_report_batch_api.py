@@ -1,13 +1,16 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.report_batch_orchestrator.execution import BatchItemExecutionResult
 from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
     ReportBatchLedger,
 )
 from app.report_batch_orchestrator.service import (
     get_report_batch_ledger,
+    get_report_batch_worker,
 )
+from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 
 
 def _client(tmp_path):
@@ -66,6 +69,44 @@ def _payload() -> dict[str, object]:
     }
 
 
+class _WorkerRunSuccess:
+    async def run_once(self, **kwargs):
+        return BatchWorkerRunResult(
+            batch_id=kwargs["batch_id"],
+            batch_status_before="materialized",
+            batch_status_after="completed",
+            recovered_count=0,
+            leased_count=1,
+            dispatched_count=1,
+            executed_count=1,
+            report_job_ids=["rjob_batch_run_once"],
+            back_pressure_reasons=[],
+            execution_results=[
+                BatchItemExecutionResult(
+                    batch_id=kwargs["batch_id"],
+                    batch_item_id="rbci_batch_run_once",
+                    report_job_id="rjob_batch_run_once",
+                    item_status="succeeded",
+                    report_job_status="archived",
+                )
+            ],
+        )
+
+
+class _WorkerRunPaused:
+    async def run_once(self, **kwargs):
+        return BatchWorkerRunResult(
+            batch_id=kwargs["batch_id"],
+            batch_status_before="paused",
+            batch_status_after="paused",
+            recovered_count=0,
+            leased_count=0,
+            dispatched_count=0,
+            executed_count=0,
+            skipped_reason="batch_not_runnable:paused",
+        )
+
+
 def test_report_batch_create_status_and_control_endpoints(tmp_path):
     client, _ledger = _client(tmp_path)
     try:
@@ -108,6 +149,75 @@ def test_report_batch_create_status_and_control_endpoints(tmp_path):
         assert cancel_response.json()["affected_count"] == 2
         assert cancelled_status["status"] == "cancelled"
         assert cancelled_status["status_counts"] == {"cancelled": 2}
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_run_once_endpoint_returns_operator_safe_result(tmp_path):
+    client, _ledger = _client(tmp_path)
+    app.dependency_overrides[get_report_batch_worker] = lambda: _WorkerRunSuccess()
+    try:
+        create_response = client.post("/reports/batches", json=_payload(), headers=_headers())
+        batch_id = create_response.json()["batch_id"]
+
+        response = client.post(
+            f"/reports/batches/{batch_id}:run-once",
+            json={
+                "worker_id": "lotus-report-batch-worker-unit",
+                "recover_expired_leases": True,
+                "runtime_load": {
+                    "active_batches": 0,
+                    "active_items": 0,
+                    "active_upstream_jobs": 0,
+                    "active_render_jobs": 0,
+                    "active_archive_jobs": 0,
+                },
+            },
+            headers=_headers(),
+        )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["status"] == "completed"
+        assert body["batch_status_before"] == "materialized"
+        assert body["batch_status_after"] == "completed"
+        assert body["leased_count"] == 1
+        assert body["dispatched_count"] == 1
+        assert body["executed_count"] == 1
+        assert body["report_job_ids"] == ["rjob_batch_run_once"]
+        assert body["execution_results"] == [
+            {
+                "batch_item_id": "rbci_batch_run_once",
+                "report_job_id": "rjob_batch_run_once",
+                "item_status": "succeeded",
+                "report_job_status": "archived",
+                "failure_category": None,
+                "retry_eligible": False,
+            }
+        ]
+        assert body["status_url"] == f"/reports/batches/{batch_id}"
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_run_once_endpoint_reports_non_runnable_batch(tmp_path):
+    client, _ledger = _client(tmp_path)
+    app.dependency_overrides[get_report_batch_worker] = lambda: _WorkerRunPaused()
+    try:
+        create_response = client.post("/reports/batches", json=_payload(), headers=_headers())
+        batch_id = create_response.json()["batch_id"]
+
+        response = client.post(
+            f"/reports/batches/{batch_id}:run-once",
+            json={"worker_id": "lotus-report-batch-worker-unit"},
+            headers=_headers(),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "paused"
+        assert response.json()["skipped_reason"] == "batch_not_runnable:paused"
+        assert response.json()["dispatched_count"] == 0
+        assert response.json()["executed_count"] == 0
     finally:
         _clear_overrides()
 
@@ -197,6 +307,39 @@ def test_report_batch_status_and_control_return_not_found(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_run_once_maps_worker_failures():
+    class MissingBatchWorker:
+        async def run_once(self, **_kwargs):
+            raise ValueError("report_batch_not_found")
+
+    class InconsistentBatchWorker:
+        async def run_once(self, **_kwargs):
+            raise RuntimeError("batch_item_missing_lease_token")
+
+    client = TestClient(app)
+    try:
+        app.dependency_overrides[get_report_batch_worker] = lambda: MissingBatchWorker()
+        missing = client.post(
+            "/reports/batches/rbch_missing:run-once",
+            json={"worker_id": "lotus-report-batch-worker-unit"},
+            headers=_headers(),
+        )
+
+        app.dependency_overrides[get_report_batch_worker] = lambda: InconsistentBatchWorker()
+        inconsistent = client.post(
+            "/reports/batches/rbch_inconsistent:run-once",
+            json={"worker_id": "lotus-report-batch-worker-unit"},
+            headers=_headers(),
+        )
+
+        assert missing.status_code == 404
+        assert missing.json()["detail"]["code"] == "report_batch_not_found"
+        assert inconsistent.status_code == 409
+        assert inconsistent.json()["detail"]["code"] == "batch_worker_run_failed"
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_status_and_controls_map_unexpected_ledger_errors():
     class UnexpectedLedger:
         def get_batch(self, _batch_id):
@@ -264,22 +407,33 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     status_get = schema["paths"]["/reports/batches/{batch_id}"]["get"]
     status_example = status_get["responses"]["200"]["content"]["application/json"]["example"]
     retry_post = schema["paths"]["/reports/batches/{batch_id}:retry-failed"]["post"]
+    run_once_post = schema["paths"]["/reports/batches/{batch_id}:run-once"]["post"]
+    run_once_request = run_once_post["requestBody"]["content"]["application/json"]["example"]
+    run_once_response = run_once_post["responses"]["200"]["content"]["application/json"]["example"]
 
     assert create_example["selector_mode"] == "explicit_portfolio_list"
     assert handle_example["batch_id"].startswith("rbch_")
     assert status_example["status_counts"] == {"materialized": 2}
+    assert run_once_request["worker_id"] == "lotus-report-batch-worker-1"
+    assert run_once_response["executed_count"] == 2
     assert "Report Batches" in create_post["tags"]
     assert "Use this endpoint" in create_post["description"]
     assert "retryable failed batch items" in retry_post["description"]
+    assert "single-batch operator action" in run_once_post["description"]
     assert "RFC-" not in str(create_example)
     assert "RFC-" not in str(handle_example)
     assert "RFC-" not in str(status_example)
+    assert "RFC-" not in str(run_once_request)
+    assert "RFC-" not in str(run_once_response)
     for schema_name in [
         "BatchHandleResponse",
         "BatchStatusResponse",
         "BatchItemStatusResponse",
         "BatchControlResponse",
         "BatchRecoveryResponse",
+        "BatchWorkerRunRequest",
+        "BatchWorkerRunResponse",
+        "BatchWorkerItemExecutionResponse",
     ]:
         properties = schema["components"]["schemas"][schema_name]["properties"]
         for property_contract in properties.values():

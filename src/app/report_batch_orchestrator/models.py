@@ -287,6 +287,54 @@ BATCH_RECOVERY_RESPONSE_EXAMPLE: dict[str, Any] = {
     "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
 }
 
+BATCH_WORKER_RUN_REQUEST_EXAMPLE: dict[str, Any] = {
+    "worker_id": "lotus-report-batch-worker-1",
+    "recover_expired_leases": True,
+    "dispatch_policy": {
+        "max_active_batches": 1,
+        "max_active_items": 5,
+        "max_active_upstream_jobs": 3,
+        "max_active_render_jobs": 2,
+        "max_active_archive_jobs": 2,
+        "lease_seconds": 300,
+    },
+    "runtime_load": {
+        "active_batches": 0,
+        "active_items": 0,
+        "active_upstream_jobs": 0,
+        "active_render_jobs": 0,
+        "active_archive_jobs": 0,
+    },
+}
+
+BATCH_WORKER_RUN_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "status": "completed",
+    "batch_status_before": "materialized",
+    "batch_status_after": "completed",
+    "recovered_count": 0,
+    "leased_count": 2,
+    "dispatched_count": 2,
+    "executed_count": 2,
+    "report_job_ids": [
+        "rjob_83ca965c50334c40a17d2b8cc94873a5",
+        "rjob_1f7d965c50334c40a17d2b8cc94873a5",
+    ],
+    "back_pressure_reasons": [],
+    "skipped_reason": None,
+    "execution_results": [
+        {
+            "batch_item_id": "rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c",
+            "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+            "item_status": "succeeded",
+            "report_job_status": "archived",
+            "failure_category": None,
+            "retry_eligible": False,
+        }
+    ],
+    "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+}
+
 
 class BatchHandleResponse(BaseModel):
     batch_id: str = Field(
@@ -548,6 +596,186 @@ class BatchRecoveryResponse(BaseModel):
     )
 
 
+class BatchRuntimeLoad(BaseModel):
+    active_batches: int = Field(0, ge=0)
+    active_items: int = Field(0, ge=0)
+    active_upstream_jobs: int = Field(0, ge=0)
+    active_render_jobs: int = Field(0, ge=0)
+    active_archive_jobs: int = Field(0, ge=0)
+
+
+class BatchDispatchPolicy(BaseModel):
+    max_active_batches: int = Field(
+        1,
+        ge=1,
+        description="Maximum number of active batches allowed for this dispatch attempt.",
+        examples=[1],
+    )
+    max_active_items: int = Field(
+        5,
+        ge=1,
+        description="Maximum number of items leased by one dispatch attempt.",
+        examples=[5],
+    )
+    max_active_upstream_jobs: int = Field(
+        3,
+        ge=1,
+        description="Maximum active upstream data-collection work allowed before back-pressure.",
+        examples=[3],
+    )
+    max_active_render_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active render work allowed before back-pressure.",
+        examples=[2],
+    )
+    max_active_archive_jobs: int = Field(
+        2,
+        ge=1,
+        description="Maximum active archive work allowed before back-pressure.",
+        examples=[2],
+    )
+    lease_seconds: int = Field(
+        300,
+        ge=1,
+        description="Lease duration for in-flight batch item dispatch.",
+        examples=[300],
+    )
+
+
+class BatchWorkerRunRequest(BaseModel):
+    worker_id: str = Field(
+        ...,
+        min_length=1,
+        description="Stable operator or service worker identifier recorded on leased items.",
+        examples=["lotus-report-batch-worker-1"],
+    )
+    recover_expired_leases: bool = Field(
+        True,
+        description="Whether this bounded run should recover expired unjobbed item leases first.",
+        examples=[True],
+    )
+    runtime_load: BatchRuntimeLoad | None = Field(
+        default=None,
+        description=(
+            "Optional caller-supplied snapshot of active upstream, render, and archive work used "
+            "for back-pressure decisions. Durable batch and item counts are derived from the "
+            "ledger."
+        ),
+    )
+    dispatch_policy: BatchDispatchPolicy | None = Field(
+        default=None,
+        description=(
+            "Optional explicit dispatch policy for this bounded operator run. Omit to use the "
+            "service default policy."
+        ),
+    )
+
+
+class BatchWorkerItemExecutionResponse(BaseModel):
+    batch_item_id: str = Field(
+        ...,
+        description="Opaque durable batch item identifier that was advanced by this run.",
+        examples=["rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"],
+    )
+    report_job_id: str = Field(
+        ...,
+        description="Report job identifier linked to the batch item.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    item_status: BatchItemStatus = Field(
+        ...,
+        description="Batch item status after this execution attempt.",
+        examples=["succeeded"],
+    )
+    report_job_status: str = Field(
+        ...,
+        description="Report job status observed after this execution attempt.",
+        examples=["archived"],
+    )
+    failure_category: str | None = Field(
+        default=None,
+        description="Product-safe failure category when item execution failed.",
+        examples=["batch_execution_failed"],
+    )
+    retry_eligible: bool = Field(
+        False,
+        description="Whether the failed item remains eligible for bounded retry.",
+        examples=[False],
+    )
+
+
+class BatchWorkerRunResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier processed by this bounded run.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    status: BatchStatus = Field(
+        ...,
+        description="Batch status after the bounded worker run.",
+        examples=["completed"],
+    )
+    batch_status_before: BatchStatus = Field(
+        ...,
+        description="Batch status observed before recovery, dispatch, or execution.",
+        examples=["materialized"],
+    )
+    batch_status_after: BatchStatus = Field(
+        ...,
+        description="Batch status observed after recovery, dispatch, and execution.",
+        examples=["completed"],
+    )
+    recovered_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of expired leases recovered before dispatch.",
+        examples=[0],
+    )
+    leased_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of eligible items leased during dispatch.",
+        examples=[2],
+    )
+    dispatched_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of report jobs created or reused for leased items.",
+        examples=[2],
+    )
+    executed_count: int = Field(
+        ...,
+        ge=0,
+        description="Number of waiting batch items advanced through report execution.",
+        examples=[2],
+    )
+    report_job_ids: list[str] = Field(
+        default_factory=list,
+        description="Report job identifiers linked during this bounded run.",
+        examples=[["rjob_83ca965c50334c40a17d2b8cc94873a5"]],
+    )
+    back_pressure_reasons: list[str] = Field(
+        default_factory=list,
+        description="Product-safe reasons dispatch was skipped or limited.",
+        examples=[["max_active_render_jobs_reached"]],
+    )
+    skipped_reason: str | None = Field(
+        default=None,
+        description="Reason the batch was not runnable, when the run was skipped.",
+        examples=["batch_not_runnable:paused"],
+    )
+    execution_results: list[BatchWorkerItemExecutionResponse] = Field(
+        default_factory=list,
+        description="Per-item execution outcomes produced by this bounded run.",
+    )
+    status_url: str = Field(
+        ...,
+        description="Relative URL where callers can retrieve product-safe batch status.",
+        examples=["/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+
+
 class BatchCycleRequest(BaseModel):
     frequency: BatchFrequency = Field(
         ...,
@@ -598,53 +826,6 @@ class BatchCycle(BaseModel):
     template_version: str
     render_package_version: str
     idempotency_scope: str
-
-
-class BatchDispatchPolicy(BaseModel):
-    max_active_batches: int = Field(
-        1,
-        ge=1,
-        description="Maximum number of active batches allowed for this dispatch attempt.",
-        examples=[1],
-    )
-    max_active_items: int = Field(
-        5,
-        ge=1,
-        description="Maximum number of items leased by one dispatch attempt.",
-        examples=[5],
-    )
-    max_active_upstream_jobs: int = Field(
-        3,
-        ge=1,
-        description="Maximum active upstream data-collection work allowed before back-pressure.",
-        examples=[3],
-    )
-    max_active_render_jobs: int = Field(
-        2,
-        ge=1,
-        description="Maximum active render work allowed before back-pressure.",
-        examples=[2],
-    )
-    max_active_archive_jobs: int = Field(
-        2,
-        ge=1,
-        description="Maximum active archive work allowed before back-pressure.",
-        examples=[2],
-    )
-    lease_seconds: int = Field(
-        300,
-        ge=1,
-        description="Lease duration for in-flight batch item dispatch.",
-        examples=[300],
-    )
-
-
-class BatchRuntimeLoad(BaseModel):
-    active_batches: int = Field(0, ge=0)
-    active_items: int = Field(0, ge=0)
-    active_upstream_jobs: int = Field(0, ge=0)
-    active_render_jobs: int = Field(0, ge=0)
-    active_archive_jobs: int = Field(0, ge=0)
 
 
 class BatchDispatchResult(BaseModel):

@@ -6,6 +6,7 @@ from typing import Protocol
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
 from app.report_batch_orchestrator.execution import BatchItemExecutionResult
 from app.report_batch_orchestrator.models import (
+    BatchDispatchPolicy,
     BatchRecoveryResult,
     BatchRuntimeLoad,
     ReportBatchRecord,
@@ -73,6 +74,7 @@ class ReportBatchWorker:
         caller_context: ReportCallerContext,
         worker_id: str,
         runtime_load: BatchRuntimeLoad | None = None,
+        dispatch_policy: BatchDispatchPolicy | None = None,
         recover_expired_leases: bool = True,
     ) -> BatchWorkerRunResult:
         before = self._batch_ledger.get_batch(batch_id)
@@ -102,6 +104,7 @@ class ReportBatchWorker:
             caller_context=caller_context,
             worker_id=worker_id,
             runtime_load=runtime_load,
+            policy=dispatch_policy,
         )
         execution_results = await self._execute_waiting_items(batch_id=batch_id)
         after = self._batch_ledger.get_batch(batch_id)

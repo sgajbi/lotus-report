@@ -51,6 +51,9 @@
   internal bounded retry control for failed batch items
 - `POST /reports/batches/{batch_id}:recover-expired-leases`
   internal expired-lease recovery control for batch items
+- `POST /reports/batches/{batch_id}:run-once`
+  internal bounded operator-controlled batch run over recovery, dispatch, report-job execution, and
+  batch-item reconciliation for one explicit batch
 
 ## Product-facing boundary
 
@@ -83,9 +86,8 @@ front-office consumers.
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
-- batch materialization and control APIs are internal `lotus-report` APIs; an internal bounded
-  single-batch worker run primitive exists, but full batch scheduling, public worker runtime,
-  dispatch operator APIs, gateway exposure, and Workbench batch surfaces are not yet
+- batch materialization, control, and run-once APIs are internal `lotus-report` APIs; full batch
+  scheduling, background worker runtime, gateway exposure, and Workbench batch surfaces are not yet
   implementation-backed
 - PDF-capable report jobs submit a governed render package to `lotus-render`; after successful
   render completion they hand the artifact and source-backed metadata to `lotus-archive`
@@ -265,8 +267,22 @@ curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expir
   -H "X-Region: APAC"
 ```
 
+Internal bounded batch run:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:run-once" \
+  -H "Content-Type: application/json" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-report-ops" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC" \
+  -H "X-Correlation-ID: batch-run-once-local-proof" \
+  -d "{\"worker_id\":\"lotus-report-batch-worker-1\",\"recover_expired_leases\":true,\"dispatch_policy\":{\"max_active_batches\":1,\"max_active_items\":5,\"max_active_upstream_jobs\":3,\"max_active_render_jobs\":2,\"max_active_archive_jobs\":2,\"lease_seconds\":300},\"runtime_load\":{\"active_batches\":0,\"active_items\":0,\"active_upstream_jobs\":0,\"active_render_jobs\":0,\"active_archive_jobs\":0}}"
+```
+
 Current batch APIs are direct `lotus-report` internal APIs. Gateway routes, Workbench batch
-surfaces, scheduled execution, and long-running runtime telemetry remain future scope.
+surfaces, scheduled execution, background worker runtime, and long-running runtime telemetry remain
+future scope.
 
 The review response is a typed report contract. It separates client-ready `client_sections` from
 advisor-only `advisor_sections`, carries explicit section readiness states including

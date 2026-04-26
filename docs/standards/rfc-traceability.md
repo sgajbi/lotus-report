@@ -254,3 +254,53 @@ This document provides explicit implementation evidence pointers for active RFCs
       python -m pytest tests/integration/test_report_batch_execution.py
       tests/integration/test_report_batch_api.py tests/integration/test_postgres_report_batch_ledger.py
       -q` passed with 23 PostgreSQL-backed tests.
+- Slice 11 bounded run-once operator API evidence:
+  - `POST /reports/batches/{batch_id}:run-once` exposes one operator-controlled bounded batch
+    worker pass over the existing worker primitive. The API accepts a stable `worker_id`, optional
+    runtime-load snapshot, optional explicit dispatch policy, and explicit expired-lease recovery
+    flag.
+  - The response returns product-safe counts, linked report job ids, back-pressure reasons,
+    skipped reason, status URL, and per-item execution outcomes. It does not expose SQL, lease
+    tokens, stack traces, worker topology, or raw upstream payloads.
+  - `src/app/report_batch_orchestrator/service.py` builds the runtime worker from the PostgreSQL
+    batch ledger, report-job ledger, snapshot capture service, and render/archive orchestration
+    service, so the API uses the same RFC-0100 through RFC-0103 path as existing report jobs.
+  - `tests/integration/test_report_batch_api.py` covers successful `run-once` response shape,
+    non-runnable skipped batches, product-safe not-found and inconsistent-state errors, and OpenAPI
+    request/response examples for the new models.
+  - `docs/supported-features.md`, `wiki/API-Surface.md`, and `wiki/Operations-Runbook.md` promote
+    only the bounded internal run-once API. Scheduler loops, background worker runtime, gateway
+    exposure, Workbench surfaces, broad replay, rerender, regenerate, and runtime dashboards remain
+    future RFC-0104/RFC-0105 scope.
+  - Validation on 2026-04-26:
+    - `python -m pytest tests/integration/test_report_batch_api.py
+      tests/unit/report_batch_orchestrator/test_worker.py
+      tests/unit/report_batch_orchestrator/test_dispatch.py -q` passed with 36 tests.
+    - `make check` passed with ruff, format, monetary-float guard, mypy, OpenAPI quality, and
+      302 unit tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      python -m pytest tests/integration/test_report_batch_api.py
+      tests/integration/test_report_batch_execution.py
+      tests/integration/test_postgres_report_batch_ledger.py -q` passed with 26 PostgreSQL-backed
+      tests.
+    - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+      make migration-smoke` passed.
+    - Targeted Docker refresh: `docker compose up -d --build lotus-report` rebuilt and restarted
+      only the changed `lotus-report` service while preserving the running support stack.
+    - Live API proof against `http://127.0.0.1:8300` passed with
+      `batch_id=rbch_3853938b2ae04ae9a3365398af6106b1`,
+      `report_job_id=rjob_1f2e440a983d43f896caf6afd40e2bc2`,
+      `snapshot_id=rsnap_931f2582ba4a49668a2563112d968b32`,
+      `archive_document_id=doc_4dd092d340bc455cb90bf0513b2a3cbc`, and
+      `correlation_id=corr-batch-run-once-live-d09918ec`.
+    - Live database proof reconciled `report_batch.status=completed`,
+      `report_batch_item.status=succeeded`, `report_job.status=archived`, and
+      `report_input_snapshot.supportability_status=complete`.
+    - Live logs carried `corr-batch-run-once-live-d09918ec` through `lotus-core`,
+      `lotus-performance`, `lotus-risk`, `lotus-render`, and `lotus-archive` calls.
+    - Live archive retrieval proof returned metadata for
+      `doc_4dd092d340bc455cb90bf0513b2a3cbc` and downloaded `application/pdf` content.
+    - `powershell -ExecutionPolicy Bypass -File ..\lotus-platform\automation\Sync-RepoWikis.ps1
+      -CheckOnly -Repository lotus-report` reported expected branch-local publication drift for
+      `API-Surface.md`, `Operations-Runbook.md`, and `RFC-Index.md`. Publish after merge.
+    - Pending in this branch: GitHub Feature Lane / PR Merge Gate.

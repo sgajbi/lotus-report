@@ -12,6 +12,8 @@ from app.report_batch_orchestrator.models import (
     BATCH_HANDLE_RESPONSE_EXAMPLE,
     BATCH_RECOVERY_RESPONSE_EXAMPLE,
     BATCH_STATUS_RESPONSE_EXAMPLE,
+    BATCH_WORKER_RUN_REQUEST_EXAMPLE,
+    BATCH_WORKER_RUN_RESPONSE_EXAMPLE,
     BatchControlResponse,
     BatchCreateRequest,
     BatchHandleResponse,
@@ -20,10 +22,14 @@ from app.report_batch_orchestrator.models import (
     BatchRetryPolicy,
     BatchStatus,
     BatchStatusResponse,
+    BatchWorkerItemExecutionResponse,
+    BatchWorkerRunRequest,
+    BatchWorkerRunResponse,
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.selector import BatchSelectorValidationError
-from app.report_batch_orchestrator.service import get_report_batch_ledger
+from app.report_batch_orchestrator.service import get_report_batch_ledger, get_report_batch_worker
+from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
 from app.routers.caller_context import caller_context_dependency
 
@@ -55,6 +61,19 @@ class ReportBatchLedgerPort(Protocol):
     ) -> Any: ...
 
     def recover_expired_leases(self, *, batch_id: str) -> Any: ...
+
+
+class ReportBatchWorkerPort(Protocol):
+    async def run_once(
+        self,
+        *,
+        batch_id: str,
+        caller_context: ReportCallerContext,
+        worker_id: str,
+        runtime_load: Any | None = None,
+        dispatch_policy: Any | None = None,
+        recover_expired_leases: bool = True,
+    ) -> BatchWorkerRunResult: ...
 
 
 BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
@@ -92,6 +111,12 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
         "detail": {
             "code": "report_batch_not_found",
             "message": "Report batch was not found.",
+        }
+    },
+    "batch_worker_run_failed": {
+        "detail": {
+            "code": "batch_worker_run_failed",
+            "message": "Report batch run could not be completed.",
         }
     },
 }
@@ -184,6 +209,34 @@ def _control_response(
         status=status_value,
         affected_count=affected_count,
         status_url=_status_url(batch_id),
+    )
+
+
+def _worker_run_response(result: BatchWorkerRunResult) -> BatchWorkerRunResponse:
+    return BatchWorkerRunResponse(
+        batch_id=result.batch_id,
+        status=result.batch_status_after,
+        batch_status_before=result.batch_status_before,
+        batch_status_after=result.batch_status_after,
+        recovered_count=result.recovered_count,
+        leased_count=result.leased_count,
+        dispatched_count=result.dispatched_count,
+        executed_count=result.executed_count,
+        report_job_ids=result.report_job_ids,
+        back_pressure_reasons=result.back_pressure_reasons,
+        skipped_reason=result.skipped_reason,
+        execution_results=[
+            BatchWorkerItemExecutionResponse(
+                batch_item_id=item.batch_item_id,
+                report_job_id=item.report_job_id,
+                item_status=item.item_status,
+                report_job_status=item.report_job_status,
+                failure_category=item.failure_category,
+                retry_eligible=item.retry_eligible,
+            )
+            for item in result.execution_results
+        ],
+        status_url=_status_url(result.batch_id),
     )
 
 
@@ -537,3 +590,88 @@ async def recover_expired_report_batch_leases(
         recovery_pending_item_ids=result.recovery_pending_item_ids,
         status_url=_status_url(result.batch_id),
     )
+
+
+@router.post(
+    "/{batch_id}:run-once",
+    response_model=BatchWorkerRunResponse,
+    summary="Run one bounded report batch worker pass",
+    description=(
+        "Runs one bounded operator-controlled pass for a durable report batch. The pass can "
+        "recover expired unjobbed leases, dispatch eligible items under back-pressure policy, "
+        "and advance waiting report jobs through snapshot, render, archive, and batch-item "
+        "reconciliation. This is a single-batch operator action, not a scheduler loop, gateway "
+        "surface, or Workbench feature."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": BATCH_WORKER_RUN_REQUEST_EXAMPLE,
+                    "examples": {
+                        "bounded_worker_run": {
+                            "summary": "Bounded worker run",
+                            "value": BATCH_WORKER_RUN_REQUEST_EXAMPLE,
+                        }
+                    },
+                }
+            }
+        },
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": BATCH_WORKER_RUN_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "completed_run": {
+                                "summary": "Completed bounded worker run",
+                                "value": BATCH_WORKER_RUN_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        },
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_batch_not_found",
+            description="Returned when the requested report batch does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="batch_worker_run_failed",
+            description=(
+                "Returned when the bounded worker run cannot complete because durable batch "
+                "state or linked report-job state is inconsistent."
+            ),
+        ),
+    },
+)
+async def run_report_batch_once(
+    request: BatchWorkerRunRequest,
+    batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
+    worker: ReportBatchWorkerPort = Depends(get_report_batch_worker),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchWorkerRunResponse:
+    try:
+        result = await worker.run_once(
+            batch_id=batch_id,
+            caller_context=caller_context,
+            worker_id=request.worker_id,
+            runtime_load=request.runtime_load,
+            dispatch_policy=request.dispatch_policy,
+            recover_expired_leases=request.recover_expired_leases,
+        )
+    except ValueError as exc:
+        raise _not_found_error(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "batch_worker_run_failed",
+                "message": "Report batch run could not be completed.",
+            },
+        ) from exc
+    return _worker_run_response(result)
