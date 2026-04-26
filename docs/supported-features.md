@@ -64,17 +64,30 @@ exist.
 
 ## Planned RFC-0104 Feature Candidates
 
-These rows are planning markers, not shipped product capability. They must not be moved to
-implementation-backed until full orchestration and final live closure proof exist. Current durable batch materialization/status/control APIs, the internal run-once operator
-API, schedule-cycle identity, dispatch/lease/back-pressure, item execution bridge, single-batch
-worker run, bounded runtime-pass, worker process, scheduler process, source-backed scheduler
-selector primitives, and config-backed scheduler administration APIs are
-implementation-backed under separate feature keys.
+These rows are planning markers for future surfaces, not shipped product capability. RFC-0104
+first-wave closure is implementation-backed through the separate feature keys above for durable
+batch materialization/status/control APIs, the internal run-once operator API, schedule-cycle
+identity, dispatch/lease/back-pressure, item execution bridge, single-batch worker run, bounded
+runtime-pass, worker process, scheduler process, source-backed scheduler selector primitives, and
+config-backed scheduler administration APIs.
 
 | Feature key | Planned surface | State | Notes |
 | --- | --- | --- | --- |
 | `lotus-report.reporting.batch_orchestration.v1` | Future full product batch orchestration capability | `planned` | Full product batch reporting orchestration is not shipped yet. Materialization/status/control APIs, the run-once operator API, gateway exposure, Workbench single-portfolio operation, and internal dispatch, item execution, single-batch worker, bounded runtime-pass, worker-process, scheduler-process, and scheduler-admin primitives are implementation-backed under separate feature keys. |
 | `lotus-report.reporting.batch_scheduler.v1` | Future persisted scheduler management API for governed scheduled monthly, quarterly, semi-annual, yearly, and explicit production cycles | `planned` | Internal deterministic schedule-cycle materialization, scheduled idempotency identity, a config-backed internal scheduler process, source-backed explicit/all-active/inline-manifest scheduler selectors, and config-backed list/run-due APIs exist. No schedule CRUD API, entitlement-certified scheduler runtime, or Workbench scheduler-management surface exists yet. Continue to use configured schedules plus certified batch APIs for implemented reporting workflows. |
+
+## Planned RFC-0105 Feature Candidates
+
+These rows are planning markers, not shipped product capability. The current Slice 1 cleanup only
+consolidates observability vocabulary ownership in `src/app/observability.py`; it does not promote
+new operator surfaces.
+
+| Feature key | Planned surface | State | Notes |
+| --- | --- | --- | --- |
+| `lotus-report.reporting.observability.traceability.v1` | Trace/log identifier propagation across report, render, archive, and batch operations | `planned` | Correlation, request, trace, structured-log, and safe operator lookup vocabulary now has one code owner. Promote only after cross-service propagation, redaction tests, docs, and live proof. |
+| `lotus-report.reporting.operations.lookup.v1` | Source-backed operator lookup by job, batch, render, archive, document, correlation, and trace identifiers | `planned` | Existing job, batch, snapshot, lineage, render, and archive identifiers are available through earlier RFCs. RFC-0105 must add a support-safe operator contract before claiming this feature. |
+| `lotus-report.reporting.operations.replay.v1` | Replay, rerender, and regenerate controls | `planned` | No mutating replay/rerender/regenerate API is shipped. Future controls require audit records, idempotency semantics, eligibility checks, and live proof. |
+| `lotus-report.reporting.operations.sla_dashboard.v1` | Stuck-state, SLA, retry-pressure, and dashboard signals | `planned` | `/metrics` exists, but RFC-0105 dashboard definitions, alert thresholds, stuck-state scanners, and SLA contracts are not implemented yet. |
 
 ## Planned RFC-0002 Feature Candidates
 

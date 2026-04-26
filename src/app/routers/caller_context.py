@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import Header, HTTPException, status
 
+from app.observability import CORRELATION_ID_HEADER_ALIAS, TRACE_ID_HEADER_ALIAS
 from app.reporting_jobs.models import ReportCallerContext
 
 
@@ -78,11 +79,11 @@ def caller_context_dependency(
     ] = None,
     correlation_id: Annotated[
         str | None,
-        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+        Header(alias=CORRELATION_ID_HEADER_ALIAS, description="End-to-end correlation identifier."),
     ] = None,
     trace_id: Annotated[
         str | None,
-        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+        Header(alias=TRACE_ID_HEADER_ALIAS, description="Distributed trace identifier."),
     ] = None,
 ) -> ReportCallerContext:
     return caller_context_from_headers(

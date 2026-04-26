@@ -4,6 +4,12 @@ import logging
 from fastapi import Request
 
 from app.observability import (
+    CORRELATION_ID_HEADER,
+    OBSERVABILITY_LOG_FIELDS,
+    REQUEST_ID_HEADER,
+    SAFE_OPERATOR_LOOKUP_FIELDS,
+    TRACE_ID_HEADER,
+    TRACEPARENT_HEADER,
     JsonFormatter,
     correlation_id_var,
     propagation_headers,
@@ -51,6 +57,11 @@ def test_resolve_trace_id_falls_back_to_x_trace_id():
     assert resolve_trace_id(request) == "trace-x"
 
 
+def test_resolve_trace_id_accepts_uppercase_id_alias():
+    request = _request_with_headers({"X-Trace-ID": "trace-alias"})
+    assert resolve_trace_id(request) == "trace-alias"
+
+
 def test_resolve_trace_id_uses_x_trace_id_when_traceparent_malformed():
     request = _request_with_headers(
         {"traceparent": "00-short-0000000000000001-01", "X-Trace-Id": "trace-x"}
@@ -63,10 +74,27 @@ def test_propagation_headers_include_context_values():
     request_id_var.set("req-ctx")
     trace_id_var.set("0123456789abcdef0123456789abcdef")
     headers = propagation_headers()
-    assert headers["X-Correlation-Id"] == "corr-ctx"
-    assert headers["X-Request-Id"] == "req-ctx"
-    assert headers["X-Trace-Id"] == "0123456789abcdef0123456789abcdef"
-    assert headers["traceparent"] == "00-0123456789abcdef0123456789abcdef-0000000000000001-01"
+    assert headers[CORRELATION_ID_HEADER] == "corr-ctx"
+    assert headers[REQUEST_ID_HEADER] == "req-ctx"
+    assert headers[TRACE_ID_HEADER] == "0123456789abcdef0123456789abcdef"
+    assert headers[TRACEPARENT_HEADER] == "00-0123456789abcdef0123456789abcdef-0000000000000001-01"
+
+
+def test_observability_contract_declares_safe_runtime_and_operator_fields():
+    assert {"correlation_id", "request_id", "trace_id", "latency_ms"}.issubset(
+        OBSERVABILITY_LOG_FIELDS
+    )
+    safe_lookup_fields = {
+        "report_job_id",
+        "report_batch_id",
+        "document_id",
+        "correlation_id",
+        "trace_id",
+    }
+    assert safe_lookup_fields.issubset(SAFE_OPERATOR_LOOKUP_FIELDS)
+    assert "portfolio_name" not in SAFE_OPERATOR_LOOKUP_FIELDS
+    assert "client_name" not in SAFE_OPERATOR_LOOKUP_FIELDS
+    assert "raw_upstream_payload" not in SAFE_OPERATOR_LOOKUP_FIELDS
 
 
 def test_json_formatter_emits_structured_payload_with_extra_fields(monkeypatch):
