@@ -149,7 +149,7 @@ class _CaptureService:
 
 
 class _RenderClientSuccess:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",

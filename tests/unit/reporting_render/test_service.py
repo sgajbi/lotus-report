@@ -22,8 +22,9 @@ from app.reporting_render.service import (
 
 
 class _RenderClientSuccess:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         assert correlation_id == "corr-render"
+        assert trace_id == "trace-render"
         assert payload["report_data"]["client_name"] == "Alex Tan"
         assert payload["report_data"]["performance_periods"][0]["period"] == "YTD"
         assert payload["report_data"]["performance_summary_table"][0]["label"] == "Year-to-date"
@@ -43,7 +44,7 @@ class _RenderClientSuccess:
 
 
 class _RenderClientSuccessWithoutArtifact:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -58,7 +59,7 @@ class _RenderClientSuccessWithoutArtifact:
 
 
 class _RenderClientFailure:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 422, {
             "detail": {
                 "code": "render_package_invalid",
@@ -68,7 +69,7 @@ class _RenderClientFailure:
 
 
 class _RenderClientConflict:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 409, {
             "detail": {
                 "code": "render_job_conflict",
@@ -78,7 +79,7 @@ class _RenderClientConflict:
 
 
 class _RenderClientServerError:
-    async def submit_render_package(self, payload, correlation_id=None):
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 503, {"failure_message": "lotus-render unavailable"}
 
 

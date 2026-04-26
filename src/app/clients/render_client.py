@@ -21,10 +21,16 @@ class RenderClient:
         self,
         payload: dict[str, Any],
         correlation_id: str | None = None,
+        trace_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
         headers = {"Content-Type": "application/json"}
         if correlation_id:
             headers["X-Correlation-ID"] = correlation_id
+        if trace_id:
+            headers["X-Trace-ID"] = trace_id
+            traceparent = _traceparent_header(trace_id)
+            if traceparent:
+                headers["traceparent"] = traceparent
         return await post_with_retry(
             url=f"{self._base_url}/renders",
             timeout_seconds=self._timeout_seconds,
@@ -33,3 +39,13 @@ class RenderClient:
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
         )
+
+
+def _traceparent_header(trace_id: str) -> str | None:
+    if len(trace_id) != 32:
+        return None
+    try:
+        int(trace_id, 16)
+    except ValueError:
+        return None
+    return f"00-{trace_id}-0000000000000001-01"

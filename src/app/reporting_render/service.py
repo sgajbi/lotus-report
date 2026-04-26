@@ -149,6 +149,7 @@ class PortfolioReviewRenderOrchestrationService:
         status_code, response_payload = await self._render_client.submit_render_package(
             payload,
             correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
         )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
             rendered = self._job_ledger.mark_completed(

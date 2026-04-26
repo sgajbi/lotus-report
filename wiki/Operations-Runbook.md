@@ -115,6 +115,8 @@ Observability floor for this wave:
 
 - every batch API requires caller context headers and carries correlation/trace identifiers into
   durable batch state
+- report-to-render submission now forwards the report job correlation and trace identifiers to
+  `lotus-render`; archive handoff already forwards both identifiers to `lotus-archive`
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
 - readiness remains database-aware through `/health/ready`
 - PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
