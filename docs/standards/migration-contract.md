@@ -1,18 +1,20 @@
 # Migration Contract Standard
 
 - Service: `lotus-report`
-- Persistence mode: **PostgreSQL report job ledger schema** for durable reporting request, job, and status
-  lifecycle state.
+- Persistence mode: **PostgreSQL report job ledger schema and report batch ledger schema** for
+  durable reporting request, job, status, batch, and batch-item lifecycle state.
 - Migration policy: **forward-only schema management** with deterministic smoke validation.
 
 ## Deterministic Checks
 
 - `make migration-smoke` validates that this contract document exists, applies the versioned
-  PostgreSQL report job ledger schema, checks mandatory tables `report_request`, `report_job`,
-  `report_status_event`, `report_input_snapshot`, and `report_upstream_call`, verifies required
-  operational indexes, and verifies database-level idempotency uniqueness on
+  PostgreSQL report job ledger schema and report batch ledger schema, checks mandatory tables `report_request`,
+  `report_job`, `report_status_event`, `report_input_snapshot`, `report_upstream_call`,
+  `report_batch`, and `report_batch_item`, verifies required operational indexes, and verifies
+  database-level idempotency uniqueness on
   `report_request.idempotency_key` plus the single-snapshot-per-job uniqueness posture on
-  `report_input_snapshot.report_job_id`. It also verifies the archive handoff fields
+  `report_input_snapshot.report_job_id` and batch idempotency uniqueness on
+  `report_batch.idempotency_key`. It also verifies the archive handoff fields
   `archive_request_id`, `archive_document_id`, and `archive_completed_at`, the archive document
   lookup index, and the archive-aware status/failure-category constraints used by PDF report jobs.
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
@@ -42,6 +44,11 @@ The first-wave ledger must keep these query paths indexed:
 11. upstream-lineage lookup by snapshot id,
 12. upstream service and endpoint diagnostics by supportability posture and creation time,
 13. archive document lookup for support diagnostics after successful `lotus-archive` handoff.
+14. batch lookup by creation time and status,
+15. batch tenant/region/time filtering for operations,
+16. batch item ordering by batch,
+17. batch item portfolio diagnostics,
+18. batch item status scans.
 
 `make migration-smoke` checks that the implementation-backed indexes exist.
 

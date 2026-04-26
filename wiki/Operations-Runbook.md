@@ -49,10 +49,11 @@
 
 ## RFC-0104 batch reporting posture
 
-Batch reporting is not an implemented operator capability yet. RFC-0104 Slice 1 creates the
-`src/app/report_batch_orchestrator/` module boundary and planned vocabulary only.
+Batch reporting is not an implemented operator capability yet. RFC-0104 Slice 2 adds internal
+durable batch and batch-item materialization primitives for explicit portfolio lists and selected
+subsets, but there is no operator-facing batch API, scheduler, worker, or recovery runtime.
 
-Until later RFC-0104 slices add the durable batch ledger, scheduler, worker, APIs, and proof:
+Until later RFC-0104 slices add the scheduler, worker, APIs, and proof:
 
 - use individual report-job APIs for portfolio review report initiation and status
 - do not present batch scheduler, retry-failed-only, pause, resume, or recovery as supported

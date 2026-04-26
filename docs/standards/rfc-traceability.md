@@ -48,3 +48,16 @@ This document provides explicit implementation evidence pointers for active RFCs
     `planned`, not implementation-backed.
   - `wiki/Operations-Runbook.md` records that operators must continue to use individual report-job
     APIs until RFC-0104 runtime slices are implemented and proven.
+- Slice 2 batch ledger, selectors, and idempotent materialization evidence:
+  - `src/app/report_batch_orchestrator/models.py`, `selector.py`, `ledger.py`, and
+    `postgres_ledger.py` implement source-backed explicit-list and selected-subset materialization
+    plus duplicate-safe batch creation.
+  - `migrations/007_report_batch_ledger.sql` adds `report_batch` and `report_batch_item` with
+    idempotency uniqueness, batch/item uniqueness, status constraints, and operational indexes.
+  - `tests/unit/report_batch_orchestrator/test_batch_ledger.py` proves selector validation,
+    deterministic materialization order, idempotent duplicate submission, and incompatible-request
+    conflict behavior.
+  - `tests/integration/test_postgres_report_batch_ledger.py` proves PostgreSQL batch ledger parity
+    when `REPORT_JOB_LEDGER_DATABASE_URL` is available.
+  - `docs/standards/batch-orchestration-source-map.md` records the source mapping and remaining
+    source gaps for all-active and manifest selectors.
