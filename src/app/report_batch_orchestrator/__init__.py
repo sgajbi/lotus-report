@@ -19,9 +19,16 @@ from app.report_batch_orchestrator.ledger import (
 )
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
+    BatchCycle,
+    BatchCycleRequest,
     PortfolioBatchCandidate,
     ReportBatchItemRecord,
     ReportBatchRecord,
+)
+from app.report_batch_orchestrator.schedule import (
+    BatchScheduleValidationError,
+    materialize_cycle,
+    scheduled_batch_idempotency_key,
 )
 from app.report_batch_orchestrator.selector import (
     BatchSelectorValidationError,
@@ -34,7 +41,10 @@ __all__ = [
     "BATCH_RUNTIME_SUPPORTED",
     "BATCH_SELECTOR_MODES",
     "BatchCreateRequest",
+    "BatchCycle",
+    "BatchCycleRequest",
     "BatchIdempotencyConflictError",
+    "BatchScheduleValidationError",
     "BatchSelectorValidationError",
     "MissingBatchIdempotencyKeyError",
     "PortfolioBatchCandidate",
@@ -42,5 +52,7 @@ __all__ = [
     "ReportBatchLedger",
     "ReportBatchRecord",
     "compute_batch_request_hash",
+    "materialize_cycle",
     "materialize_portfolios",
+    "scheduled_batch_idempotency_key",
 ]

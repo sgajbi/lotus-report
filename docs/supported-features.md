@@ -57,13 +57,13 @@ exist.
 
 These rows are planning markers, not shipped product capability. They must not be moved to
 implementation-backed until the scheduler, worker behavior, APIs, OpenAPI evidence, operator
-guidance, and live proof exist. Slice 2 durable batch materialization primitives are implemented
-as internal support code only.
+guidance, and live proof exist. Current durable batch materialization and schedule-cycle
+primitives are implemented as internal support code only.
 
 | Feature key | Planned surface | State | Notes |
 | --- | --- | --- | --- |
-| `lotus-report.reporting.batch_orchestration.v1` | Future `POST /reports/batches` and related status/control APIs | `planned` | RFC-0104 batch reporting orchestration is not shipped yet. Slice 2 adds internal durable batch and batch-item materialization primitives for explicit portfolio lists and selected subsets, but no operator-facing API, scheduler, worker, or recovery capability exists yet. |
-| `lotus-report.reporting.batch_scheduler.v1` | Future scheduled monthly, quarterly, semi-annual, yearly, and explicit production cycles | `planned` | No scheduler loop, schedule materialization, recovery scanner, or operator-facing batch API exists yet. Continue to use individual report-job APIs for implemented reporting workflows. |
+| `lotus-report.reporting.batch_orchestration.v1` | Future `POST /reports/batches` and related status/control APIs | `planned` | RFC-0104 batch reporting orchestration is not shipped yet. Internal durable batch and batch-item materialization primitives exist for explicit portfolio lists and selected subsets, but no operator-facing API, scheduler loop, worker, or recovery capability exists yet. |
+| `lotus-report.reporting.batch_scheduler.v1` | Future scheduled monthly, quarterly, semi-annual, yearly, and explicit production cycles | `planned` | Internal deterministic schedule-cycle materialization and scheduled idempotency identity exist for monthly, quarterly, semi-annual, yearly, and explicit cycles. No scheduler loop, recovery scanner, worker dispatch, or operator-facing batch API exists yet. Continue to use individual report-job APIs for implemented reporting workflows. |
 
 ## Planned RFC-0002 Feature Candidates
 

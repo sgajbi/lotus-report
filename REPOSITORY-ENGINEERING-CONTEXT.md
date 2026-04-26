@@ -55,9 +55,11 @@ Current repository posture:
    retrieval, retention execution, legal hold, purge, and distribution owned by `lotus-archive`,
 10. RFC-0104 is in progress. Slice 1 adds the `src/app/report_batch_orchestrator/` module boundary
    and planned batch selector/frequency vocabulary. Slice 2 adds internal durable batch and
-   batch-item materialization primitives for explicit portfolio lists and selected subsets. No
-   batch scheduler, worker, API, retry-failed-only, pause, resume, or recovery operator capability
-   is implemented yet,
+   batch-item materialization primitives for explicit portfolio lists and selected subsets. Slice 3
+   adds internal deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
+   yearly, and explicit cycles plus scheduled idempotency identity. No batch scheduler loop,
+   worker, API, retry-failed-only, pause, resume, or recovery operator capability is implemented
+   yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,
@@ -97,9 +99,10 @@ Primary areas:
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
 11. `src/app/report_batch_orchestrator/`
-    RFC-0104 batch reporting orchestration boundary. Slice 2 owns source-backed selector
-    validation, durable batch/batch-item materialization, and idempotent duplicate prevention
-    while keeping operator-facing runtime support disabled until later scheduler, worker, API, and
+    RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
+    validation, durable batch/batch-item materialization, deterministic schedule-cycle
+    materialization, scheduled idempotency identity, and idempotent duplicate prevention while
+    keeping operator-facing runtime support disabled until later scheduler, worker, API, and
     recovery slices are implemented and proven.
 
 ## Runtime And Integration Boundaries

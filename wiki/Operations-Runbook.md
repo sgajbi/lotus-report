@@ -49,9 +49,11 @@
 
 ## RFC-0104 batch reporting posture
 
-Batch reporting is not an implemented operator capability yet. RFC-0104 Slice 2 adds internal
+Batch reporting is not an implemented operator capability yet. RFC-0104 current slices add internal
 durable batch and batch-item materialization primitives for explicit portfolio lists and selected
-subsets, but there is no operator-facing batch API, scheduler, worker, or recovery runtime.
+subsets, plus deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
+yearly, and explicit cycles. There is no operator-facing batch API, scheduler loop, worker, or
+recovery runtime.
 
 Until later RFC-0104 slices add the scheduler, worker, APIs, and proof:
 
