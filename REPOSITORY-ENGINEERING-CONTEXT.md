@@ -53,32 +53,21 @@ Current repository posture:
 9. RFC-0103 now adds `lotus-archive` handoff after successful PDF render completion, separate
    `archiving`/`archived` lifecycle states, and archive-aware status/failure posture while keeping
    retrieval, retention execution, legal hold, purge, and distribution owned by `lotus-archive`,
-10. RFC-0104 is in progress. Slice 1 adds the `src/app/report_batch_orchestrator/` module boundary
-   and planned batch selector/frequency vocabulary. Slice 2 adds internal durable batch and
-   batch-item materialization primitives for explicit portfolio lists and selected subsets. Slice 3
-   adds internal deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
-   yearly, and explicit cycles plus scheduled idempotency identity. Slice 4 adds internal
-   dispatch, lease, report-job creation/reuse, and back-pressure primitives. Slice 5 adds internal
-   bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. Slice
-   6 adds certified materialization, status, and control APIs for durable batches. Slice 7 adds an
-   internal execution bridge that advances dispatched batch items through the existing report-job,
-   snapshot, render, and archive handoff path and maps final outcomes back to batch item state.
-   Slice 10 adds an internal bounded single-batch worker run primitive over recovery, dispatch,
-   and execution. Slice 11 adds a certified internal `run-once` operator API over the bounded
-   single-batch worker primitive. Slice 12 adds an internal bounded runtime pass that scans the
-   durable ledger for runnable batches and invokes the single-batch worker for a limited number of
-   batches. Slice 13 adds the daemonized internal `lotus-report-batch-worker` process entrypoint
-   and Docker Compose service over that runtime pass. Slice 14 adds a daemonized internal
-   config-backed scheduler process that reads governed schedules, resolves explicit, all-active,
-   and inline manifest schedule selectors through `lotus-core` or governed schedule manifest
-   metadata, and creates durable idempotent scheduled batches for the worker to execute. Slice 16
-   adds config-backed scheduler administration APIs to list configured schedules and run one
-   bounded materialization pass. Schedule CRUD, Workbench scheduler-management, and
+10. RFC-0104 is implemented for first-wave scope. The implemented surface includes durable batch
+   materialization/status/control APIs, deterministic schedule-cycle identity, dispatch/lease/
+   back-pressure primitives, retry/recovery controls, the internal item execution bridge,
+   bounded run-once and runtime-pass primitives, daemonized worker and scheduler processes,
+   config-backed scheduler administration APIs, gateway exposure, and Workbench explicit
+   single-portfolio batch operation. Schedule CRUD, Workbench scheduler-management, and
    entitlement-certified public scheduler runtime remain future scope,
-11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+11. RFC-0105 implementation has started with observability structure cleanup. Runtime correlation,
+   request, trace, structured-log, and safe operator lookup field vocabulary is owned in
+   `src/app/observability.py`; later RFC-0105 slices must extend that owner rather than adding
+   one-off literal fields in routers, clients, dashboards, or operator APIs,
+12. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-12. CI is standardized but still lighter than some core domain services,
-13. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+13. CI is standardized but still lighter than some core domain services,
+14. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -86,34 +75,37 @@ Primary areas:
 
 1. `src/app/`
    reporting API and aggregation logic.
-2. `scripts/`
+2. `src/app/observability.py`
+   runtime correlation/request/trace propagation, structured log fields, and safe RFC-0105
+   operator lookup field vocabulary.
+3. `scripts/`
    migration, OpenAPI, and monetary-float governance.
-3. `tests/`
+4. `tests/`
    unit, integration, and e2e validation.
-4. `docs/standards/`
+5. `docs/standards/`
    local standards and ownership guidance.
-5. `wiki/`
+6. `wiki/`
    canonical authored source for repository wiki publication and reporting operator onboarding summaries.
-6. `contracts/domain-data-products/`
+7. `contracts/domain-data-products/`
    repo-native producer and consumer declarations for governed upstream domain data products and
    reporting evidence products.
-7. `contracts/trust-telemetry/`
+8. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
-8. `src/app/reporting_jobs/`
+9. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, and bounded cancellation for the first
    asynchronous reporting wave.
-9. `src/app/reporting_lineage/`
+10. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
-10. `src/app/reporting_render/`
+11. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
-11. `src/app/report_batch_orchestrator/`
+12. `src/app/report_batch_orchestrator/`
     RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
     validation, durable batch/batch-item materialization, deterministic schedule-cycle
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure

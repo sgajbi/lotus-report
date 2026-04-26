@@ -333,8 +333,8 @@ Current orchestration model:
 - use `127.0.0.1:8300` only for direct local debugging
 - treat reporting errors as orchestration issues first: verify upstream responses and request-shape
   compatibility before changing response formatting
-- preserve observability and correlation behavior on reporting endpoints, especially when debugging
-  summary or review flows
+- preserve observability, correlation, request, and trace behavior on reporting endpoints,
+  especially when debugging summary, review, batch, render, or archive flows
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
 - use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before

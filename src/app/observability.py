@@ -14,6 +14,42 @@ correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
 
+CORRELATION_ID_HEADER = "X-Correlation-Id"
+CORRELATION_ID_HEADER_ALIAS = "X-Correlation-ID"
+REQUEST_ID_HEADER = "X-Request-Id"
+TRACE_ID_HEADER = "X-Trace-Id"
+TRACE_ID_HEADER_ALIAS = "X-Trace-ID"
+TRACEPARENT_HEADER = "traceparent"
+
+OBSERVABILITY_LOG_FIELDS = frozenset(
+    {
+        "correlation_id",
+        "request_id",
+        "trace_id",
+        "http_method",
+        "endpoint",
+        "latency_ms",
+    }
+)
+SAFE_OPERATOR_LOOKUP_FIELDS = frozenset(
+    {
+        "report_job_id",
+        "report_request_id",
+        "report_batch_id",
+        "report_batch_item_id",
+        "snapshot_id",
+        "render_job_id",
+        "archive_request_id",
+        "document_id",
+        "correlation_id",
+        "trace_id",
+        "idempotency_key",
+        "tenant_id",
+        "region",
+        "booking_center_code",
+    }
+)
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -44,22 +80,24 @@ def setup_logging() -> None:
 
 
 def resolve_correlation_id(request: Request) -> str:
-    incoming = request.headers.get("X-Correlation-Id") or request.headers.get("X-Correlation-ID")
+    incoming = request.headers.get(CORRELATION_ID_HEADER) or request.headers.get(
+        CORRELATION_ID_HEADER_ALIAS
+    )
     return incoming if incoming else f"corr_{uuid4().hex[:12]}"
 
 
 def resolve_request_id(request: Request) -> str:
-    incoming = request.headers.get("X-Request-Id")
+    incoming = request.headers.get(REQUEST_ID_HEADER)
     return incoming if incoming else f"req_{uuid4().hex[:12]}"
 
 
 def resolve_trace_id(request: Request) -> str:
-    traceparent = request.headers.get("traceparent")
+    traceparent = request.headers.get(TRACEPARENT_HEADER)
     if isinstance(traceparent, str) and traceparent:
         parts = traceparent.split("-")
         if len(parts) >= 4 and len(parts[1]) == 32:
             return parts[1]
-    incoming = request.headers.get("X-Trace-Id")
+    incoming = request.headers.get(TRACE_ID_HEADER) or request.headers.get(TRACE_ID_HEADER_ALIAS)
     if isinstance(incoming, str) and incoming:
         return incoming
     return uuid4().hex
@@ -71,10 +109,10 @@ def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
         correlation_id or correlation_id_var.get() or f"corr_{uuid4().hex[:12]}"
     )
     return {
-        "X-Correlation-Id": resolved_correlation_id,
-        "X-Request-Id": request_id_var.get() or f"req_{uuid4().hex[:12]}",
-        "X-Trace-Id": resolved_trace,
-        "traceparent": f"00-{resolved_trace}-0000000000000001-01",
+        CORRELATION_ID_HEADER: resolved_correlation_id,
+        REQUEST_ID_HEADER: request_id_var.get() or f"req_{uuid4().hex[:12]}",
+        TRACE_ID_HEADER: resolved_trace,
+        TRACEPARENT_HEADER: f"00-{resolved_trace}-0000000000000001-01",
     }
 
 
@@ -115,8 +153,8 @@ def setup_observability(app: FastAPI) -> None:
             request_id_var.reset(req_token)
             trace_id_var.reset(trace_token)
 
-        response.headers["X-Correlation-Id"] = correlation_id
-        response.headers["X-Request-Id"] = request_id
-        response.headers["X-Trace-Id"] = trace_id
-        response.headers["traceparent"] = f"00-{trace_id}-0000000000000001-01"
+        response.headers[CORRELATION_ID_HEADER] = correlation_id
+        response.headers[REQUEST_ID_HEADER] = request_id
+        response.headers[TRACE_ID_HEADER] = trace_id
+        response.headers[TRACEPARENT_HEADER] = f"00-{trace_id}-0000000000000001-01"
         return response

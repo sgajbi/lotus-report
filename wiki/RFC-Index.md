@@ -31,21 +31,13 @@
   presented as shipped product capability
 - repo-local wiki pages should stay concise and operator-facing; RFC implementation detail belongs
   in `rfcs/` and implementation-backed feature truth belongs in `docs/supported-features.md`
-- RFC-0104 batch reporting is in progress. Internal durable batch and batch-item materialization
-  primitives exist for explicit portfolio lists and selected subsets, and deterministic
-  schedule-cycle materialization exists for monthly, quarterly, semi-annual, yearly, and explicit
-  cycles. Internal dispatch, lease, report-job creation/reuse, and back-pressure primitives now
-  exist. Internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery
-  primitives now exist. Certified batch materialization, status, and control APIs now exist in
-  `lotus-report`. Internal item execution can advance a dispatched batch item through the existing
-  report-job, snapshot, render, and archive handoff path and reconcile the final batch-item state.
-  An internal bounded single-batch worker run primitive now combines expired-lease recovery,
-  dispatch, and waiting-item execution. A certified internal `run-once` operator API exposes one
-  bounded worker pass for an explicit batch. An internal bounded runtime pass now scans durable
-  runnable batches and invokes the same worker primitive for a limited number of batches. The
-  `lotus-report-batch-worker` service now runs that pass as a daemonized internal background
-  worker process. The `lotus-report-batch-scheduler` service now materializes configured
-  explicit-portfolio, all-active, and inline manifest schedules into durable idempotent batches
-  for that worker to execute. Config-backed scheduler administration APIs now list configured
-  schedules and run one bounded scheduler materialization pass. Schedule CRUD, Workbench
-  scheduler-management, and entitlement-certified public scheduler runtime remain future scope
+- RFC-0104 batch reporting is implemented for first-wave scope. Durable batch
+  materialization/status/control APIs, deterministic schedule-cycle identity, dispatch/lease/
+  back-pressure, retry/recovery, item execution, run-once/runtime-pass, daemonized worker and
+  scheduler processes, config-backed scheduler administration, gateway exposure, and Workbench
+  explicit single-portfolio batch operation are implementation-backed. Schedule CRUD, Workbench
+  scheduler-management, and entitlement-certified public scheduler runtime remain future scope.
+- RFC-0105 implementation has started with reporting observability structure cleanup.
+  `src/app/observability.py` owns correlation, request, trace, structured-log, and safe operator
+  lookup field vocabulary. Dashboards, replay, rerender, regenerate, stuck-state APIs, and SLA
+  alerting remain planned until code, tests, documentation, and live evidence prove them.

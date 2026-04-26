@@ -4,7 +4,7 @@
 
 - confirm canonical reporting identity is `report.dev.lotus` before cross-app validation
 - treat upstream client failures as reporting-orchestration issues first, not as local formatting bugs
-- verify correlation and observability headers on reporting endpoints
+- verify correlation, request, trace, and observability headers on reporting endpoints
 - use repo-native gates before inventing ad hoc checks
 - for portfolio review evidence, verify the JSON contract, section readiness, report coverage,
   advisor-only separation, AI-readiness guardrails, and evidence lineage before treating the output
@@ -23,6 +23,15 @@
   readiness probe for traffic acceptance
 - `/metrics`
   observability surface for runtime monitoring
+
+## Observability vocabulary owner
+
+- `src/app/observability.py` owns runtime correlation, request, trace, structured-log, and safe
+  operator lookup field vocabulary.
+- operator docs summarize those fields but must not introduce additional observability identifiers
+  outside the code-owned vocabulary.
+- RFC-0105 dashboards, replay, rerender, regenerate, and stuck-state APIs remain planned until
+  implemented and proven with source-backed runtime evidence.
 
 ## Operational truths
 

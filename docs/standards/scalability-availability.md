@@ -27,6 +27,9 @@ This repository adopts the platform-wide standard defined in lotus-platform/Scal
 ## Scale Signal Metrics Coverage
 
 - lotus-report exposes `/metrics` for request latency/error/throughput and report-path instrumentation.
+- `src/app/observability.py` is the code-owned source for correlation, request, trace, structured-log,
+  and safe operator lookup field vocabulary. RFC-0105 additions must extend that owner before
+  adding dashboards, operator APIs, or replay controls.
 - Platform-shared infrastructure metrics for CPU/memory, DB performance, and queue lag are sourced from:
   - `lotus-platform/platform-stack/prometheus/prometheus.yml`
   - `lotus-platform/platform-stack/docker-compose.yml`
@@ -46,5 +49,3 @@ This repository adopts the platform-wide standard defined in lotus-platform/Scal
 ## Deviation Rule
 
 Any deviation from this standard requires ADR/RFC with remediation timeline.
-
-
