@@ -35,5 +35,6 @@
   primitives exist for explicit portfolio lists and selected subsets, and deterministic
   schedule-cycle materialization exists for monthly, quarterly, semi-annual, yearly, and explicit
   cycles. Internal dispatch, lease, report-job creation/reuse, and back-pressure primitives now
-  exist. No batch scheduler loop, API, retry-failed-only, pause, resume, or recovery operator
+  exist. Internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery
+  primitives now exist. No batch scheduler loop, API, worker runtime, or recovery operator
   capability is shipped yet

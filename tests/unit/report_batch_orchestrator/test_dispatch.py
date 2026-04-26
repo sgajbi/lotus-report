@@ -14,6 +14,7 @@ from app.report_batch_orchestrator.ledger import ReportBatchLedger
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchDispatchPolicy,
+    BatchRetryPolicy,
     BatchRuntimeLoad,
     PortfolioBatchCandidate,
     ReportBatchItemRecord,
@@ -477,3 +478,258 @@ def test_concurrent_workers_do_not_duplicate_item_dispatch(tmp_path) -> None:
     assert sum(result.dispatched_count for result in results) == 4
     assert all(report_job_id is not None for report_job_id in report_job_ids)
     assert len(set(report_job_ids)) == 4
+
+
+def test_pause_blocks_dispatch_until_batch_is_resumed(tmp_path) -> None:
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    batch = _batch(batch_ledger, idempotency_key="batch-pause-resume", portfolio_count=1)
+
+    paused = batch_ledger.pause_batch(batch_id=batch.batch_id)
+    blocked = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_items=5),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=_caller(),
+        worker_id="worker-paused",
+    )
+    paused_item_status = batch_ledger.get_batch(batch.batch_id).items[0].status
+    resumed = batch_ledger.resume_batch(batch_id=batch.batch_id)
+    dispatched = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_items=5),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=_caller(),
+        worker_id="worker-resumed",
+    )
+
+    assert paused.batch_status == "paused"
+    assert blocked.dispatched_count == 0
+    assert paused_item_status == "materialized"
+    assert resumed.batch_status == "materialized"
+    assert dispatched.dispatched_count == 1
+
+
+def test_retry_failed_items_resets_only_retryable_due_items(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = _batch(ledger, idempotency_key="batch-retry-failed-only", portfolio_count=3)
+    due_at = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+    later = due_at + timedelta(minutes=10)
+
+    due_retryable = ledger.mark_item_failed(
+        batch_item_id=batch.items[0].batch_item_id,
+        error_category="upstream_data_collection_failure",
+        error_summary="lotus-performance returned a transient failure",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=due_at,
+        now=due_at - timedelta(minutes=5),
+    )
+    future_retryable = ledger.mark_item_failed(
+        batch_item_id=batch.items[1].batch_item_id,
+        error_category="archive_handoff_failure",
+        error_summary="archive service retry window has not opened yet",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=later,
+        now=due_at - timedelta(minutes=5),
+    )
+    terminal = ledger.mark_item_failed(
+        batch_item_id=batch.items[2].batch_item_id,
+        error_category="selector_validation_failure",
+        error_summary="portfolio is no longer eligible",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=1),
+        next_retry_at=due_at,
+        now=due_at - timedelta(minutes=5),
+    )
+
+    result = ledger.retry_failed_items(
+        batch_id=batch.batch_id,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        now=due_at,
+    )
+    refreshed = ledger.get_batch(batch.batch_id)
+
+    assert due_retryable.status == "failed_retryable"
+    assert future_retryable.status == "failed_retryable"
+    assert terminal.status == "failed_terminal"
+    assert result.affected_count == 1
+    assert refreshed.items[0].status == "materialized"
+    assert refreshed.items[0].attempt_count == 1
+    assert refreshed.items[0].retry_eligible is False
+    assert refreshed.items[1].status == "failed_retryable"
+    assert refreshed.items[2].status == "failed_terminal"
+
+
+def test_retry_failed_items_does_not_requeue_items_with_report_jobs(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = _batch(ledger, idempotency_key="batch-retry-job-boundary", portfolio_count=1)
+    retry_at = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+    [leased] = ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-a",
+        lease_seconds=60,
+        limit=1,
+    )
+    ledger.mark_item_waiting_on_report_job(
+        batch_item_id=leased.batch_item_id,
+        lease_token=leased.lease_token or "",
+        report_job_id="rjob_existing",
+    )
+    failed = ledger.mark_item_failed(
+        batch_item_id=leased.batch_item_id,
+        error_category="render_failure",
+        error_summary="render worker failed after report job creation",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=retry_at,
+        now=retry_at - timedelta(minutes=5),
+    )
+
+    result = ledger.retry_failed_items(
+        batch_id=batch.batch_id,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        now=retry_at,
+    )
+    refreshed = ledger.get_batch(batch.batch_id)
+    dispatch_after_retry = ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-b",
+        lease_seconds=60,
+        limit=1,
+    )
+
+    assert failed.status == "failed_retryable"
+    assert result.affected_count == 0
+    assert refreshed.items[0].status == "failed_retryable"
+    assert refreshed.items[0].report_job_id == "rjob_existing"
+    assert dispatch_after_retry == []
+
+
+def test_cancel_batch_cancels_only_items_without_created_report_jobs(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = _batch(ledger, idempotency_key="batch-cancel-boundary", portfolio_count=2)
+    [first] = ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-a",
+        lease_seconds=60,
+        limit=1,
+    )
+    ledger.mark_item_waiting_on_report_job(
+        batch_item_id=first.batch_item_id,
+        lease_token=first.lease_token or "",
+        report_job_id="rjob_existing",
+    )
+
+    result = ledger.cancel_batch(batch_id=batch.batch_id)
+    refreshed = ledger.get_batch(batch.batch_id)
+    dispatch_after_cancel = ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-b",
+        lease_seconds=60,
+        limit=2,
+    )
+
+    assert result.batch_status == "cancelled"
+    assert result.affected_count == 1
+    assert [item.status for item in refreshed.items] == [
+        "waiting_on_report_job",
+        "cancelled",
+    ]
+    assert refreshed.items[0].report_job_id == "rjob_existing"
+    assert dispatch_after_cancel == []
+
+
+def test_recovery_scanner_is_idempotent_and_allows_safe_redispatch(tmp_path) -> None:
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    batch = _batch(batch_ledger, idempotency_key="batch-expired-lease-recovery", portfolio_count=1)
+    t0 = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+    [leased] = batch_ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-a",
+        lease_seconds=60,
+        limit=1,
+        now=t0,
+    )
+
+    recovered = batch_ledger.recover_expired_leases(
+        batch_id=batch.batch_id,
+        now=t0 + timedelta(seconds=61),
+    )
+    repeated = batch_ledger.recover_expired_leases(
+        batch_id=batch.batch_id,
+        now=t0 + timedelta(seconds=62),
+    )
+    result = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_items=5),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=_caller(),
+        worker_id="worker-b",
+    )
+    refreshed = batch_ledger.get_batch(batch.batch_id)
+
+    assert recovered.recovered_count == 1
+    assert recovered.recovery_pending_item_ids == [leased.batch_item_id]
+    assert repeated.recovered_count == 0
+    assert result.dispatched_count == 1
+    assert refreshed.items[0].status == "waiting_on_report_job"
+    assert refreshed.items[0].last_error_category == "expired_item_lease"
+
+
+def test_failed_single_item_batch_reconciles_terminal_and_retryable_status(tmp_path) -> None:
+    terminal_ledger = ReportBatchLedger(tmp_path / "terminal.sqlite3")
+    terminal_batch = _batch(
+        terminal_ledger,
+        idempotency_key="batch-single-terminal",
+        portfolio_count=1,
+    )
+    retryable_ledger = ReportBatchLedger(tmp_path / "retryable.sqlite3")
+    retryable_batch = _batch(
+        retryable_ledger,
+        idempotency_key="batch-single-retryable",
+        portfolio_count=1,
+    )
+    failed_at = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+
+    terminal_item = terminal_ledger.mark_item_failed(
+        batch_item_id=terminal_batch.items[0].batch_item_id,
+        error_category="selector_validation_failure",
+        error_summary="portfolio is no longer eligible",
+        retryable=False,
+        now=failed_at,
+    )
+    retryable_item = retryable_ledger.mark_item_failed(
+        batch_item_id=retryable_batch.items[0].batch_item_id,
+        error_category="upstream_data_collection_failure",
+        error_summary="source system unavailable",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=failed_at + timedelta(minutes=5),
+        now=failed_at,
+    )
+
+    assert terminal_item.status == "failed_terminal"
+    assert terminal_ledger.get_batch(terminal_batch.batch_id).status == "completed_with_failures"
+    assert retryable_item.status == "failed_retryable"
+    assert retryable_ledger.get_batch(retryable_batch.batch_id).status == "failed"
+
+
+def test_mark_item_failed_rejects_unknown_item(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.mark_item_failed(
+            batch_item_id="missing",
+            error_category="upstream_data_collection_failure",
+            error_summary="missing item",
+            retryable=True,
+        )

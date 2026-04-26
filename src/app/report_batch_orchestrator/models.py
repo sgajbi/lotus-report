@@ -7,8 +7,25 @@ from pydantic import BaseModel, Field
 
 from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
 
-BatchStatus = Literal["materialized", "running"]
-BatchItemStatus = Literal["materialized", "leased", "waiting_on_report_job"]
+BatchStatus = Literal[
+    "materialized",
+    "running",
+    "paused",
+    "cancelled",
+    "completed",
+    "completed_with_failures",
+    "failed",
+]
+BatchItemStatus = Literal[
+    "materialized",
+    "leased",
+    "waiting_on_report_job",
+    "succeeded",
+    "failed_retryable",
+    "failed_terminal",
+    "cancelled",
+    "recovery_pending",
+]
 
 
 class PortfolioBatchCandidate(BaseModel):
@@ -121,6 +138,14 @@ class ReportBatchItemRecord(BaseModel):
     lease_expires_at: datetime | None = None
     last_heartbeat_at: datetime | None = None
     dispatched_at: datetime | None = None
+    attempt_count: int = 0
+    retry_eligible: bool = False
+    next_retry_at: datetime | None = None
+    last_error_category: str | None = None
+    last_error_summary: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
 
 
 class ReportBatchRecord(BaseModel):
@@ -138,9 +163,35 @@ class ReportBatchRecord(BaseModel):
     status: BatchStatus
     item_count: int
     created_at: datetime
+    updated_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    failed_at: datetime | None = None
     correlation_id: str
     trace_id: str
     items: list[ReportBatchItemRecord]
+
+
+class BatchRetryPolicy(BaseModel):
+    max_attempts: int = Field(
+        3,
+        ge=1,
+        description="Maximum attempts allowed before a retryable batch item becomes terminal.",
+        examples=[3],
+    )
+
+
+class BatchControlResult(BaseModel):
+    batch_id: str
+    affected_count: int
+    batch_status: BatchStatus
+
+
+class BatchRecoveryResult(BaseModel):
+    batch_id: str
+    recovered_count: int
+    recovery_pending_item_ids: list[str] = Field(default_factory=list)
 
 
 class BatchCycleRequest(BaseModel):

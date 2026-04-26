@@ -133,7 +133,8 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_batch_item_portfolio',
                   'idx_report_batch_item_status_created',
                   'idx_report_batch_item_lease_expiry',
-                  'idx_report_batch_item_report_job'
+                  'idx_report_batch_item_report_job',
+                  'idx_report_batch_item_retry'
               )
             """
         ).fetchall()
@@ -164,6 +165,7 @@ def run_ledger_schema_checks() -> int:
             "idx_report_batch_item_status_created",
             "idx_report_batch_item_lease_expiry",
             "idx_report_batch_item_report_job",
+            "idx_report_batch_item_retry",
         } - indexes
         if missing_indexes:
             print(f"Ledger schema smoke failed: missing indexes {sorted(missing_indexes)}")
@@ -209,6 +211,36 @@ def run_ledger_schema_checks() -> int:
             print("Ledger schema smoke failed: report_batch.idempotency_key uniqueness is missing.")
             return 1
 
+        batch_column_rows = connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'report_batch'
+              AND column_name IN (
+                  'updated_at',
+                  'started_at',
+                  'completed_at',
+                  'cancelled_at',
+                  'failed_at'
+              )
+            """
+        ).fetchall()
+        batch_columns = {row[0] for row in batch_column_rows}
+        missing_batch_columns = {
+            "updated_at",
+            "started_at",
+            "completed_at",
+            "cancelled_at",
+            "failed_at",
+        } - batch_columns
+        if missing_batch_columns:
+            print(
+                "Ledger schema smoke failed: missing batch lifecycle columns "
+                f"{sorted(missing_batch_columns)}"
+            )
+            return 1
+
         batch_item_column_rows = connection.execute(
             """
             SELECT column_name
@@ -222,7 +254,15 @@ def run_ledger_schema_checks() -> int:
                   'lease_acquired_at',
                   'lease_expires_at',
                   'last_heartbeat_at',
-                  'dispatched_at'
+                  'dispatched_at',
+                  'attempt_count',
+                  'retry_eligible',
+                  'next_retry_at',
+                  'last_error_category',
+                  'last_error_summary',
+                  'started_at',
+                  'completed_at',
+                  'cancelled_at'
               )
             """
         ).fetchall()
@@ -235,6 +275,14 @@ def run_ledger_schema_checks() -> int:
             "lease_expires_at",
             "last_heartbeat_at",
             "dispatched_at",
+            "attempt_count",
+            "retry_eligible",
+            "next_retry_at",
+            "last_error_category",
+            "last_error_summary",
+            "started_at",
+            "completed_at",
+            "cancelled_at",
         } - batch_item_columns
         if missing_batch_item_columns:
             print(
@@ -242,6 +290,63 @@ def run_ledger_schema_checks() -> int:
                 f"{sorted(missing_batch_item_columns)}"
             )
             return 1
+
+        batch_status_rows = connection.execute(
+            """
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid = 'report_batch'::regclass
+              AND conname = 'report_batch_status_check'
+            """
+        ).fetchall()
+        if not batch_status_rows:
+            print("Ledger schema smoke failed: report batch status check constraint is missing.")
+            return 1
+        batch_status_constraint = str(batch_status_rows[0][0])
+        for status in (
+            "materialized",
+            "running",
+            "paused",
+            "cancelled",
+            "completed",
+            "completed_with_failures",
+            "failed",
+        ):
+            if status not in batch_status_constraint:
+                print(
+                    "Ledger schema smoke failed: report batch status check constraint "
+                    f"is missing {status}."
+                )
+                return 1
+
+        batch_item_status_rows = connection.execute(
+            """
+            SELECT pg_get_constraintdef(oid)
+            FROM pg_constraint
+            WHERE conrelid = 'report_batch_item'::regclass
+              AND conname = 'report_batch_item_status_check'
+            """
+        ).fetchall()
+        if not batch_item_status_rows:
+            print("Ledger schema smoke failed: batch item status check constraint is missing.")
+            return 1
+        batch_item_status_constraint = str(batch_item_status_rows[0][0])
+        for status in (
+            "materialized",
+            "leased",
+            "waiting_on_report_job",
+            "succeeded",
+            "failed_retryable",
+            "failed_terminal",
+            "cancelled",
+            "recovery_pending",
+        ):
+            if status not in batch_item_status_constraint:
+                print(
+                    "Ledger schema smoke failed: batch item status check constraint "
+                    f"is missing {status}."
+                )
+                return 1
 
         failure_category_rows = connection.execute(
             """

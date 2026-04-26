@@ -156,8 +156,9 @@ Key code areas:
   governed render-package assembly, lotus-render orchestration, and post-render archive handoff
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
-  batch/batch-item, deterministic schedule-cycle, dispatch, lease, and back-pressure primitives;
-  no batch scheduler loop, worker process, recovery, or runtime API is implemented yet
+  batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
+  pause/resume, cancellation-boundary, and expired-lease recovery primitives; no batch scheduler
+  loop, worker process, operator-facing recovery capability, or runtime API is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`

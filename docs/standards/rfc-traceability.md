@@ -94,3 +94,30 @@ This document provides explicit implementation evidence pointers for active RFCs
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     this slice does not ship a scheduler loop, worker process, operator-facing batch API, retry,
     pause, resume, cancel, or recovery capability.
+- Slice 5 internal retry, control, and recovery evidence:
+  - `src/app/report_batch_orchestrator/models.py` extends the durable batch and item state model
+    with paused, cancelled, completed, completed-with-failures, failed, succeeded,
+    failed-retryable, failed-terminal, cancelled, and recovery-pending states plus attempt,
+    retry, failure, and lifecycle timestamps.
+  - `migrations/007_report_batch_ledger.sql` persists the Slice 5 control and recovery fields in
+    PostgreSQL and adds retry-oriented lookup support without replacing the existing dispatch
+    schema.
+  - `src/app/report_batch_orchestrator/ledger.py` and `postgres_ledger.py` implement bounded
+    retry-failed-only reset, pause, resume, cancellation boundaries, expired-lease recovery, and
+    aggregate batch status reconciliation for the SQLite unit-test adapter and PostgreSQL runtime
+    ledger.
+  - Retry reset is intentionally limited to retryable failed items without an attached
+    `report_job_id`; this prevents duplicate report-job creation when a failure occurs after
+    report-job handoff.
+  - `tests/unit/report_batch_orchestrator/test_dispatch.py` proves pause blocks dispatch until
+    resume, retry resets only due eligible failed items, retry does not requeue items with existing
+    report jobs, cancellation leaves items with created report jobs untouched, and expired-lease
+    recovery is idempotent before redispatch.
+  - `tests/integration/test_postgres_report_batch_ledger.py` proves the same control and recovery
+    primitives against PostgreSQL when `REPORT_JOB_LEDGER_DATABASE_URL` is available.
+  - `docs/standards/batch-orchestration-source-map.md`, `docs/supported-features.md`, this
+    traceability map, and `wiki/Operations-Runbook.md` distinguish internal primitives from
+    operator-supported batch runtime capability.
+  - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
+    this slice does not ship a scheduler loop, worker process, operator-facing batch API, or
+    certified recovery operator capability.

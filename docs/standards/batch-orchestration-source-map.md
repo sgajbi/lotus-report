@@ -2,8 +2,9 @@
 
 RFC-0104 batch materialization is source-backed. Slice 2 persists batch and batch-item truth.
 Slice 3 adds deterministic schedule-cycle materialization and scheduled-batch identity primitives.
-Slice 4 adds internal dispatch, lease, and back-pressure primitives. APIs, scheduler loops, retry,
-and recovery remain later slices.
+Slice 4 adds internal dispatch, lease, and back-pressure primitives. Slice 5 adds internal
+bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery primitives. APIs and
+scheduler loops remain later slices.
 
 | Attribute | Business meaning | Source application | Source object / contract | Current status |
 | --- | --- | --- | --- | --- |
@@ -38,6 +39,16 @@ and recovery remain later slices.
 | `max_active_upstream_jobs` | Back-pressure limit for upstream data-collection work | `lotus-report` configuration / future runtime telemetry | `BatchDispatchPolicy.max_active_upstream_jobs` and `BatchRuntimeLoad.active_upstream_jobs` | Available and used internally |
 | `max_active_render_jobs` | Back-pressure limit for render work | `lotus-report` configuration / future render runtime telemetry | `BatchDispatchPolicy.max_active_render_jobs` and `BatchRuntimeLoad.active_render_jobs` | Available and used internally |
 | `max_active_archive_jobs` | Back-pressure limit for archive work | `lotus-report` configuration / future archive runtime telemetry | `BatchDispatchPolicy.max_active_archive_jobs` and `BatchRuntimeLoad.active_archive_jobs` | Available and used internally |
+| `attempt_count` | Number of dispatch/failure attempts recorded for an item | `lotus-report` derived runtime state | `ReportBatchItemRecord.attempt_count` | Available and used internally |
+| `retry_eligible` | Whether a failed item may be retried by retry-failed-only control logic | `lotus-report` derived runtime state | `mark_item_failed`, `retry_failed_items` | Available and used internally |
+| `next_retry_at` | Earliest retry time for a retryable failed item | `lotus-report` runtime clock and retry policy | `mark_item_failed` | Available and used internally |
+| `last_error_category` | Safe failure category for retry/recovery decisions | `lotus-report` derived runtime state | `mark_item_failed`, `recover_expired_leases` | Available and used internally |
+| `last_error_summary` | Client-safe or operator-safe failure summary without raw stack traces | `lotus-report` derived runtime state | `mark_item_failed`, `recover_expired_leases` | Available and used internally |
+| `started_at` | Timestamp when a batch or item first started execution | `lotus-report` runtime clock | Batch and item ledger runtime fields | Available and used internally |
+| `completed_at` | Timestamp when an item or aggregate batch reached terminal success/failure posture | `lotus-report` runtime clock | Batch and item ledger runtime fields | Available and used internally |
+| `cancelled_at` | Timestamp when a batch or undispatched item was cancelled | `lotus-report` runtime clock | `cancel_batch` | Available and used internally |
+| `failed_at` | Timestamp when aggregate batch posture became failed | `lotus-report` runtime clock | Batch ledger status reconciliation | Available and used internally |
+| `max_attempts` | Retry ceiling that prevents unbounded item reruns | `lotus-report` configuration | `BatchRetryPolicy.max_attempts` | Available and used internally |
 
 Source gaps for later slices:
 
@@ -48,3 +59,5 @@ Source gaps for later slices:
 3. Runtime pressure counts for upstream, render, and archive are accepted by the internal
    dispatcher as `BatchRuntimeLoad`; later worker/API slices must connect those counts to live
    runtime telemetry instead of static caller input.
+4. Retry failure categories are internally captured today; Slice 6 APIs must certify the public
+   error envelope before operators can rely on these fields through an API surface.

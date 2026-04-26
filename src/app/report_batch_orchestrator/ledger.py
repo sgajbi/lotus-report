@@ -10,7 +10,10 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 from app.report_batch_orchestrator.models import (
+    BatchControlResult,
     BatchCreateRequest,
+    BatchRecoveryResult,
+    BatchRetryPolicy,
     MaterializedPortfolio,
     ReportBatchItemRecord,
     ReportBatchRecord,
@@ -100,7 +103,12 @@ class ReportBatchLedger:
                     item_count INTEGER NOT NULL,
                     correlation_id TEXT NOT NULL,
                     trace_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    cancelled_at TEXT,
+                    failed_at TEXT
                 )
                 """
             )
@@ -123,11 +131,32 @@ class ReportBatchLedger:
                     lease_expires_at TEXT,
                     last_heartbeat_at TEXT,
                     dispatched_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    retry_eligible INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at TEXT,
+                    last_error_category TEXT,
+                    last_error_summary TEXT,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    cancelled_at TEXT,
                     UNIQUE(batch_id, portfolio_id),
                     FOREIGN KEY(batch_id) REFERENCES report_batch(batch_id)
                 )
                 """
             )
+            for column_name, column_type in (
+                ("updated_at", "TEXT"),
+                ("started_at", "TEXT"),
+                ("completed_at", "TEXT"),
+                ("cancelled_at", "TEXT"),
+                ("failed_at", "TEXT"),
+            ):
+                _add_sqlite_column_if_missing(
+                    connection,
+                    table_name="report_batch",
+                    column_name=column_name,
+                    column_type=column_type,
+                )
             for column_name, column_type in (
                 ("report_job_id", "TEXT"),
                 ("lease_owner", "TEXT"),
@@ -136,6 +165,14 @@ class ReportBatchLedger:
                 ("lease_expires_at", "TEXT"),
                 ("last_heartbeat_at", "TEXT"),
                 ("dispatched_at", "TEXT"),
+                ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("retry_eligible", "INTEGER NOT NULL DEFAULT 0"),
+                ("next_retry_at", "TEXT"),
+                ("last_error_category", "TEXT"),
+                ("last_error_summary", "TEXT"),
+                ("started_at", "TEXT"),
+                ("completed_at", "TEXT"),
+                ("cancelled_at", "TEXT"),
             ):
                 _add_sqlite_column_if_missing(
                     connection,
@@ -171,6 +208,12 @@ class ReportBatchLedger:
                 """
                 CREATE INDEX IF NOT EXISTS idx_report_batch_item_report_job
                 ON report_batch_item(report_job_id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_batch_item_retry
+                ON report_batch_item(batch_id, status, next_retry_at)
                 """
             )
 
@@ -221,9 +264,9 @@ class ReportBatchLedger:
                         as_of_date, reporting_currency, options_json, trigger_type,
                         triggered_by, caller_application, booking_center_code, role,
                         idempotency_key, request_hash, status, item_count,
-                        correlation_id, trace_id, created_at
+                        correlation_id, trace_id, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         batch_id,
@@ -246,6 +289,7 @@ class ReportBatchLedger:
                         len(materialized),
                         caller_context.correlation_id,
                         caller_context.trace_id,
+                        now_text,
                         now_text,
                     ),
                 )
@@ -300,18 +344,35 @@ class ReportBatchLedger:
                     FROM report_batch_item
                     WHERE batch_id = ?
                       AND report_job_id IS NULL
+                      AND EXISTS (
+                        SELECT 1
+                        FROM report_batch
+                        WHERE report_batch.batch_id = report_batch_item.batch_id
+                          AND report_batch.status IN ('materialized', 'running')
+                      )
                       AND (
                         status = 'materialized'
+                        OR status = 'recovery_pending'
                         OR (
                           status = 'leased'
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at < ?
                         )
+                        OR (
+                          status = 'failed_retryable'
+                          AND retry_eligible = 1
+                          AND (next_retry_at IS NULL OR next_retry_at <= ?)
+                        )
                       )
                     ORDER BY item_position
                     LIMIT ?
                     """,
-                    (batch_id, _dt_to_text(lease_start), limit),
+                    (
+                        batch_id,
+                        _dt_to_text(lease_start),
+                        _dt_to_text(lease_start),
+                        limit,
+                    ),
                 ).fetchall()
                 if not item_rows:
                     return []
@@ -326,7 +387,8 @@ class ReportBatchLedger:
                         lease_token = ?,
                         lease_acquired_at = ?,
                         lease_expires_at = ?,
-                        last_heartbeat_at = ?
+                        last_heartbeat_at = ?,
+                        started_at = COALESCE(started_at, ?)
                     WHERE batch_item_id IN ({placeholders})
                     """,
                     (
@@ -335,17 +397,20 @@ class ReportBatchLedger:
                         _dt_to_text(lease_start),
                         _dt_to_text(lease_expiry),
                         _dt_to_text(lease_start),
+                        _dt_to_text(lease_start),
                         *item_ids,
                     ),
                 )
                 connection.execute(
                     """
                     UPDATE report_batch
-                    SET status = 'running'
+                    SET status = 'running',
+                        updated_at = ?,
+                        started_at = COALESCE(started_at, ?)
                     WHERE batch_id = ?
                       AND status = 'materialized'
                     """,
-                    (batch_id,),
+                    (_dt_to_text(lease_start), _dt_to_text(lease_start), batch_id),
                 )
                 refreshed_rows = connection.execute(
                     f"""
@@ -430,6 +495,231 @@ class ReportBatchLedger:
                 ).fetchone()
                 return _item_from_row(row)
 
+    def mark_item_failed(
+        self,
+        *,
+        batch_item_id: str,
+        error_category: str,
+        error_summary: str,
+        retryable: bool,
+        retry_policy: BatchRetryPolicy | None = None,
+        next_retry_at: datetime | None = None,
+        now: datetime | None = None,
+    ) -> ReportBatchItemRecord:
+        failure_at = now or utc_now()
+        policy = retry_policy or BatchRetryPolicy()
+        with self._lock:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM report_batch_item WHERE batch_item_id = ?",
+                    (batch_item_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("report_batch_item_not_found")
+                attempt_count = int(row["attempt_count"]) + 1
+                status = (
+                    "failed_retryable"
+                    if retryable and attempt_count < policy.max_attempts
+                    else "failed_terminal"
+                )
+                retry_eligible = status == "failed_retryable"
+                updated = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = ?,
+                        attempt_count = ?,
+                        retry_eligible = ?,
+                        next_retry_at = ?,
+                        last_error_category = ?,
+                        last_error_summary = ?,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_acquired_at = NULL,
+                        lease_expires_at = NULL,
+                        last_heartbeat_at = NULL,
+                        completed_at = ?
+                    WHERE batch_item_id = ?
+                    RETURNING *
+                    """,
+                    (
+                        status,
+                        attempt_count,
+                        1 if retry_eligible else 0,
+                        _dt_to_text(next_retry_at) if next_retry_at else None,
+                        error_category,
+                        error_summary,
+                        _dt_to_text(failure_at),
+                        batch_item_id,
+                    ),
+                ).fetchone()
+                if updated is None:
+                    raise ValueError("report_batch_item_not_found")
+                self._refresh_batch_status(connection, str(updated["batch_id"]), now=failure_at)
+                return _item_from_row(updated)
+
+    def retry_failed_items(
+        self,
+        *,
+        batch_id: str,
+        retry_policy: BatchRetryPolicy | None = None,
+        now: datetime | None = None,
+    ) -> BatchControlResult:
+        retry_at = now or utc_now()
+        policy = retry_policy or BatchRetryPolicy()
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = 'materialized',
+                        retry_eligible = 0,
+                        next_retry_at = NULL,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_acquired_at = NULL,
+                        lease_expires_at = NULL,
+                        last_heartbeat_at = NULL
+                    WHERE batch_id = ?
+                      AND status = 'failed_retryable'
+                      AND report_job_id IS NULL
+                      AND retry_eligible = 1
+                      AND attempt_count < ?
+                      AND (next_retry_at IS NULL OR next_retry_at <= ?)
+                    """,
+                    (batch_id, policy.max_attempts, _dt_to_text(retry_at)),
+                )
+                self._refresh_batch_status(connection, batch_id, now=retry_at)
+                batch = self._load_batch(connection, batch_id)
+                return BatchControlResult(
+                    batch_id=batch_id,
+                    affected_count=cursor.rowcount,
+                    batch_status=batch.status,
+                )
+
+    def pause_batch(self, *, batch_id: str, now: datetime | None = None) -> BatchControlResult:
+        paused_at = now or utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch
+                    SET status = 'paused',
+                        updated_at = ?
+                    WHERE batch_id = ?
+                      AND status IN ('materialized', 'running')
+                    """,
+                    (_dt_to_text(paused_at), batch_id),
+                )
+                batch = self._load_batch(connection, batch_id)
+                return BatchControlResult(
+                    batch_id=batch_id,
+                    affected_count=cursor.rowcount,
+                    batch_status=batch.status,
+                )
+
+    def resume_batch(self, *, batch_id: str, now: datetime | None = None) -> BatchControlResult:
+        resumed_at = now or utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch
+                    SET status = 'materialized',
+                        updated_at = ?
+                    WHERE batch_id = ?
+                      AND status = 'paused'
+                    """,
+                    (_dt_to_text(resumed_at), batch_id),
+                )
+                batch = self._load_batch(connection, batch_id)
+                return BatchControlResult(
+                    batch_id=batch_id,
+                    affected_count=cursor.rowcount,
+                    batch_status=batch.status,
+                )
+
+    def cancel_batch(self, *, batch_id: str, now: datetime | None = None) -> BatchControlResult:
+        cancelled_at = now or utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = 'cancelled',
+                        retry_eligible = 0,
+                        next_retry_at = NULL,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_acquired_at = NULL,
+                        lease_expires_at = NULL,
+                        last_heartbeat_at = NULL,
+                        cancelled_at = ?
+                    WHERE batch_id = ?
+                      AND status IN (
+                        'materialized',
+                        'recovery_pending',
+                        'failed_retryable',
+                        'leased'
+                      )
+                      AND report_job_id IS NULL
+                    """,
+                    (_dt_to_text(cancelled_at), batch_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE report_batch
+                    SET status = 'cancelled',
+                        updated_at = ?,
+                        cancelled_at = ?
+                    WHERE batch_id = ?
+                      AND status NOT IN ('completed', 'completed_with_failures', 'failed')
+                    """,
+                    (_dt_to_text(cancelled_at), _dt_to_text(cancelled_at), batch_id),
+                )
+                batch = self._load_batch(connection, batch_id)
+                return BatchControlResult(
+                    batch_id=batch_id,
+                    affected_count=cursor.rowcount,
+                    batch_status=batch.status,
+                )
+
+    def recover_expired_leases(
+        self,
+        *,
+        batch_id: str,
+        now: datetime | None = None,
+    ) -> BatchRecoveryResult:
+        recovery_at = now or utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = 'recovery_pending',
+                        retry_eligible = 1,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_acquired_at = NULL,
+                        lease_expires_at = NULL,
+                        last_heartbeat_at = NULL,
+                        last_error_category = 'expired_item_lease',
+                        last_error_summary = 'Batch item lease expired before report-job dispatch.'
+                    WHERE batch_id = ?
+                      AND status = 'leased'
+                      AND report_job_id IS NULL
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at < ?
+                    RETURNING *
+                    """,
+                    (batch_id, _dt_to_text(recovery_at)),
+                ).fetchall()
+                self._refresh_batch_status(connection, batch_id, now=recovery_at)
+                return BatchRecoveryResult(
+                    batch_id=batch_id,
+                    recovered_count=len(rows),
+                    recovery_pending_item_ids=[str(row["batch_item_id"]) for row in rows],
+                )
+
     def count_active_batches(self) -> int:
         with self._connect() as connection:
             row = connection.execute(
@@ -470,6 +760,62 @@ class ReportBatchLedger:
         ).fetchall()
         return _batch_from_rows(batch_row, item_rows)
 
+    def _refresh_batch_status(
+        self,
+        connection: sqlite3.Connection,
+        batch_id: str,
+        *,
+        now: datetime,
+    ) -> None:
+        rows = connection.execute(
+            "SELECT status FROM report_batch_item WHERE batch_id = ?",
+            (batch_id,),
+        ).fetchall()
+        if not rows:
+            return
+        statuses = {str(row["status"]) for row in rows}
+        if statuses <= {"succeeded", "cancelled"}:
+            status = "completed" if "cancelled" not in statuses else "cancelled"
+        elif statuses <= {"succeeded", "failed_terminal", "cancelled"}:
+            status = "completed_with_failures"
+        elif "failed_retryable" in statuses and statuses <= {"succeeded", "failed_retryable"}:
+            status = "failed"
+        else:
+            return
+        connection.execute(
+            """
+            UPDATE report_batch
+            SET status = ?,
+                updated_at = ?,
+                completed_at = CASE
+                    WHEN ? IN ('completed', 'completed_with_failures')
+                        THEN COALESCE(completed_at, ?)
+                    ELSE completed_at
+                END,
+                cancelled_at = CASE
+                    WHEN ? = 'cancelled' THEN COALESCE(cancelled_at, ?)
+                    ELSE cancelled_at
+                END,
+                failed_at = CASE
+                    WHEN ? = 'failed' THEN COALESCE(failed_at, ?)
+                    ELSE failed_at
+                END
+            WHERE batch_id = ?
+              AND status NOT IN ('paused', 'cancelled')
+            """,
+            (
+                status,
+                _dt_to_text(now),
+                status,
+                _dt_to_text(now),
+                status,
+                _dt_to_text(now),
+                status,
+                _dt_to_text(now),
+                batch_id,
+            ),
+        )
+
 
 def _batch_from_rows(
     batch_row: sqlite3.Row,
@@ -490,6 +836,11 @@ def _batch_from_rows(
         status=batch_row["status"],
         item_count=int(batch_row["item_count"]),
         created_at=_dt_from_text(str(batch_row["created_at"])),
+        updated_at=_nullable_dt(_optional_row_value(batch_row, "updated_at")),
+        started_at=_nullable_dt(_optional_row_value(batch_row, "started_at")),
+        completed_at=_nullable_dt(_optional_row_value(batch_row, "completed_at")),
+        cancelled_at=_nullable_dt(_optional_row_value(batch_row, "cancelled_at")),
+        failed_at=_nullable_dt(_optional_row_value(batch_row, "failed_at")),
         correlation_id=str(batch_row["correlation_id"]),
         trace_id=str(batch_row["trace_id"]),
         items=[_item_from_row(row) for row in item_rows],
@@ -514,6 +865,14 @@ def _item_from_row(row: sqlite3.Row) -> ReportBatchItemRecord:
         lease_expires_at=_nullable_dt(row["lease_expires_at"]),
         last_heartbeat_at=_nullable_dt(row["last_heartbeat_at"]),
         dispatched_at=_nullable_dt(row["dispatched_at"]),
+        attempt_count=int(_optional_row_value(row, "attempt_count") or 0),
+        retry_eligible=bool(_optional_row_value(row, "retry_eligible") or 0),
+        next_retry_at=_nullable_dt(_optional_row_value(row, "next_retry_at")),
+        last_error_category=_nullable_str(_optional_row_value(row, "last_error_category")),
+        last_error_summary=_nullable_str(_optional_row_value(row, "last_error_summary")),
+        started_at=_nullable_dt(_optional_row_value(row, "started_at")),
+        completed_at=_nullable_dt(_optional_row_value(row, "completed_at")),
+        cancelled_at=_nullable_dt(_optional_row_value(row, "cancelled_at")),
     )
 
 
@@ -550,6 +909,12 @@ def _nullable_dt(value: Any) -> datetime | None:
     if value is None:
         return None
     return _dt_from_text(str(value))
+
+
+def _optional_row_value(row: sqlite3.Row, column_name: str) -> Any | None:
+    if column_name not in row.keys():
+        return None
+    return row[column_name]
 
 
 def _add_sqlite_column_if_missing(

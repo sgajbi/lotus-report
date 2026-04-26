@@ -53,16 +53,20 @@ Batch reporting is not an implemented operator capability yet. RFC-0104 current 
 durable batch and batch-item materialization primitives for explicit portfolio lists and selected
 subsets, plus deterministic schedule-cycle materialization for monthly, quarterly, semi-annual,
 yearly, and explicit cycles. Internal dispatch can lease batch items, create or reuse one report job
-per item, and apply active-batch, active-item, upstream, render, and archive back-pressure. There is
-no operator-facing batch API, scheduler loop, worker process, or recovery runtime.
+per item, apply active-batch, active-item, upstream, render, and archive back-pressure, and perform
+internal bounded retry, pause/resume, cancellation-boundary, and expired-lease recovery decisions.
+There is no operator-facing batch API, scheduler loop, worker process, or certified recovery
+runtime.
 
 Until later RFC-0104 slices add the scheduler, worker, APIs, and proof:
 
 - use individual report-job APIs for portfolio review report initiation and status
-- do not present batch scheduler, retry-failed-only, pause, resume, or recovery as supported
+- do not present batch scheduler, retry-failed-only, pause, resume, or recovery as an operator
+  supported capability
 - keep any batch planning language in RFC or planned-feature material, not implementation-backed
   product documentation
-- use PostgreSQL-backed proof for internal dispatch behavior; SQLite is only a unit-test adapter
+- use PostgreSQL-backed proof for internal dispatch and recovery-control behavior; SQLite is only a
+  unit-test adapter
 
 ## RFC-0100 gateway-first job flow
 

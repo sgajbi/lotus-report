@@ -17,6 +17,7 @@ from app.report_batch_orchestrator.ledger import (
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchDispatchPolicy,
+    BatchRetryPolicy,
     BatchRuntimeLoad,
     PortfolioBatchCandidate,
 )
@@ -356,3 +357,122 @@ def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
     )
     assert takeover.lease_owner == f"pg-worker-b-{unique_suffix}"
     assert takeover.lease_token != leased.lease_token
+
+
+def test_postgres_batch_pause_resume_cancel_retry_and_recovery_primitives() -> None:
+    unique_suffix = uuid4().hex
+    batch_ledger = PostgresReportBatchLedger(_database_url())
+    report_job_ledger = PostgresReportJobLedger(_database_url())
+    caller = _caller(unique_suffix)
+    portfolio_ids = [
+        f"PB_SG_GLOBAL_BAL_001_{unique_suffix}",
+        f"PB_SG_GLOBAL_BAL_002_{unique_suffix}",
+        f"PB_SG_GLOBAL_BAL_003_{unique_suffix}",
+    ]
+    batch = batch_ledger.create_batch(
+        request=_multi_request(unique_suffix, portfolio_ids),
+        caller_context=caller,
+        idempotency_key=f"batch-pg-control-{unique_suffix}",
+    )
+    t0 = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+
+    paused = batch_ledger.pause_batch(batch_id=batch.batch_id, now=t0)
+    blocked = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_batches=1000, max_active_items=1000),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=caller,
+        worker_id=f"pg-worker-paused-{unique_suffix}",
+    )
+    resumed = batch_ledger.resume_batch(batch_id=batch.batch_id, now=t0 + timedelta(seconds=1))
+    [leased] = batch_ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id=f"pg-worker-lease-{unique_suffix}",
+        lease_seconds=60,
+        limit=1,
+        now=t0 + timedelta(seconds=2),
+    )
+    recovered = batch_ledger.recover_expired_leases(
+        batch_id=batch.batch_id,
+        now=t0 + timedelta(seconds=63),
+    )
+    retryable = batch_ledger.mark_item_failed(
+        batch_item_id=batch.items[1].batch_item_id,
+        error_category="upstream_data_collection_failure",
+        error_summary="transient source failure",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=t0 + timedelta(seconds=64),
+        now=t0 + timedelta(seconds=3),
+    )
+    retried = batch_ledger.retry_failed_items(
+        batch_id=batch.batch_id,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        now=t0 + timedelta(seconds=64),
+    )
+    cancelled = batch_ledger.cancel_batch(batch_id=batch.batch_id, now=t0 + timedelta(seconds=65))
+    refreshed = batch_ledger.get_batch(batch.batch_id)
+
+    assert paused.batch_status == "paused"
+    assert blocked.dispatched_count == 0
+    assert resumed.batch_status == "materialized"
+    assert recovered.recovered_count == 1
+    assert recovered.recovery_pending_item_ids == [leased.batch_item_id]
+    assert retryable.status == "failed_retryable"
+    assert retried.affected_count == 1
+    assert cancelled.affected_count == 3
+    assert refreshed.status == "cancelled"
+    assert {item.status for item in refreshed.items} == {"cancelled"}
+
+
+def test_postgres_failed_single_item_batch_reconciles_terminal_and_retryable_status() -> None:
+    unique_suffix = uuid4().hex
+    batch_ledger = PostgresReportBatchLedger(_database_url())
+    terminal_batch = batch_ledger.create_batch(
+        request=_multi_request(unique_suffix, [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]),
+        caller_context=_caller(unique_suffix),
+        idempotency_key=f"batch-pg-terminal-{unique_suffix}",
+    )
+    retryable_suffix = uuid4().hex
+    retryable_batch = batch_ledger.create_batch(
+        request=_multi_request(retryable_suffix, [f"PB_SG_GLOBAL_BAL_001_{retryable_suffix}"]),
+        caller_context=_caller(retryable_suffix),
+        idempotency_key=f"batch-pg-retryable-{retryable_suffix}",
+    )
+    failed_at = datetime(2026, 4, 22, 9, 0, tzinfo=UTC)
+
+    terminal_item = batch_ledger.mark_item_failed(
+        batch_item_id=terminal_batch.items[0].batch_item_id,
+        error_category="selector_validation_failure",
+        error_summary="portfolio is no longer eligible",
+        retryable=False,
+        now=failed_at,
+    )
+    retryable_item = batch_ledger.mark_item_failed(
+        batch_item_id=retryable_batch.items[0].batch_item_id,
+        error_category="upstream_data_collection_failure",
+        error_summary="source system unavailable",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+        next_retry_at=failed_at + timedelta(minutes=5),
+        now=failed_at,
+    )
+
+    assert terminal_item.status == "failed_terminal"
+    assert batch_ledger.get_batch(terminal_batch.batch_id).status == "completed_with_failures"
+    assert retryable_item.status == "failed_retryable"
+    assert batch_ledger.get_batch(retryable_batch.batch_id).status == "failed"
+
+
+def test_postgres_mark_item_failed_rejects_unknown_item() -> None:
+    batch_ledger = PostgresReportBatchLedger(_database_url())
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        batch_ledger.mark_item_failed(
+            batch_item_id="missing",
+            error_category="upstream_data_collection_failure",
+            error_summary="missing item",
+            retryable=True,
+        )
