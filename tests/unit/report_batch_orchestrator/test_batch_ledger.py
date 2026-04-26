@@ -129,6 +129,31 @@ def test_selected_subset_materializes_selected_items_in_deterministic_order(tmp_
     ]
 
 
+def test_all_active_materializes_source_backed_active_candidates_in_deterministic_order(
+    tmp_path,
+) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    request = BatchCreateRequest(
+        selector_mode="all_active_portfolios",
+        source_candidates=[
+            _candidate("PB_SG_GLOBAL_BAL_003"),
+            _candidate("PB_SG_GLOBAL_BAL_001"),
+        ],
+        as_of_date="2026-04-22",
+    )
+
+    batch = ledger.create_batch(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="batch-all-active",
+    )
+
+    assert batch.materialized_portfolio_ids == [
+        "PB_SG_GLOBAL_BAL_001",
+        "PB_SG_GLOBAL_BAL_003",
+    ]
+
+
 def test_batch_create_is_idempotent_for_same_key_and_same_materialized_request(tmp_path) -> None:
     ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
     caller = _caller()
@@ -256,10 +281,10 @@ def test_batch_create_requires_idempotency_key(tmp_path) -> None:
         (
             BatchCreateRequest(
                 selector_mode="all_active_portfolios",
-                source_candidates=[_candidate("PB_SG_GLOBAL_BAL_001")],
+                source_candidates=[],
                 as_of_date="2026-04-22",
             ),
-            "unsupported_batch_selector",
+            "empty_batch_selector",
         ),
         (
             BatchCreateRequest(

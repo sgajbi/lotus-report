@@ -69,10 +69,10 @@ Current repository posture:
    durable ledger for runnable batches and invokes the single-batch worker for a limited number of
    batches. Slice 13 adds the daemonized internal `lotus-report-batch-worker` process entrypoint
    and Docker Compose service over that runtime pass. Slice 14 adds a daemonized internal
-   config-backed scheduler process that reads governed schedules, resolves configured explicit
-   portfolio ids through `lotus-core`, and creates durable idempotent scheduled batches for the
-   worker to execute. No gateway exposure, Workbench batch surface, all-active scheduler, or
-   manifest scheduler is implemented yet,
+   config-backed scheduler process that reads governed schedules, resolves explicit, all-active,
+   and inline manifest schedule selectors through `lotus-core` or governed schedule manifest
+   metadata, and creates durable idempotent scheduled batches for the worker to execute. No
+   Workbench batch surface or entitlement-certified public scheduler runtime is implemented yet,
 11. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 12. CI is standardized but still lighter than some core domain services,

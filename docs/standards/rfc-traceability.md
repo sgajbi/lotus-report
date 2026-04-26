@@ -59,8 +59,8 @@ This document provides explicit implementation evidence pointers for active RFCs
     conflict behavior.
   - `tests/integration/test_postgres_report_batch_ledger.py` proves PostgreSQL batch ledger parity
     when `REPORT_JOB_LEDGER_DATABASE_URL` is available.
-  - `docs/standards/batch-orchestration-source-map.md` records the source mapping and remaining
-    source gaps for all-active and manifest selectors.
+  - `docs/standards/batch-orchestration-source-map.md` records the source mapping and current
+    source constraints for selector materialization.
 - Slice 3 deterministic schedule materialization evidence:
   - `src/app/report_batch_orchestrator/schedule.py` materializes monthly, quarterly, semi-annual,
     yearly, and explicit production cycles from a business as-of date and output contract versions.
@@ -68,7 +68,8 @@ This document provides explicit implementation evidence pointers for active RFCs
     the internal schedule contract without exposing an operator-facing scheduler API.
   - `tests/unit/report_batch_orchestrator/test_schedule.py` proves period/as-of semantics,
     unsupported-frequency rejection, explicit-period validation, scheduled-batch idempotency
-    stability, template-version sensitivity, and continued all-active selector gating.
+    stability, template-version sensitivity, and source-backed all-active and inline-manifest
+    selector materialization.
   - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
     no scheduler loop, worker dispatch, retry, pause, resume, or recovery API is shipped by this
     slice.
@@ -475,3 +476,38 @@ This document provides explicit implementation evidence pointers for active RFCs
       `batch_id=rbch_d2c627362ddf497d9c37487c0f0fc82d`; PostgreSQL count for
       `batch_schedule_id=monthly-sg-global-bal-live-52f574aa` remained `1`, proving scheduled
       idempotency against the live durable ledger.
+  - Slice 15 scheduler selector materialization evidence:
+    - `src/app/report_batch_orchestrator/scheduler.py` now supports governed
+      `selector_mode` in `REPORT_BATCH_SCHEDULES_JSON` for `explicit_portfolio_list`,
+      `all_active_portfolios`, and inline `batch_manifest` schedules.
+    - `all_active_portfolios` resolves the canonical `lotus-core /portfolios` discovery contract,
+      filters active portfolios, sorts deterministically, and materializes through the existing
+      durable batch ledger.
+    - `batch_manifest` validates inline manifest entries, records manifest source/version/hash in
+      batch options, verifies manifest portfolio ids through `lotus-core`, and materializes through
+      the existing durable batch ledger.
+    - `selected_subset` remains gated for scheduler configuration until a governed subset source is
+      confirmed.
+    - Live canonical Docker proof on 2026-04-26 used scheduler
+      `scheduler-selector-proof-046580` with correlation
+      `corr-batch-scheduler-1-01b11d726795` and trace
+      `bf22804cad5055c34e00667d3656d562`, materializing all-active batch
+      `rbch_77e5810cf67f4ca3b73eb4e52ebc1258` with six active portfolios and inline-manifest
+      batch `rbch_bddf310c2851405db2d7c45a8ce174f0` with
+      `batch_manifest_source=ops-live-manifest-046580` and
+      `batch_manifest_hash=a321e61217d49e939d05676b7cee8df6`.
+    - The manifest batch was executed through `POST
+      /reports/batches/rbch_bddf310c2851405db2d7c45a8ce174f0:run-once` using correlation
+      `corr-scheduler-selector-worker-046580`, producing report job
+      `rjob_affdcc75a6604b058ab8ec470f265163`, snapshot
+      `rsnap_e442dcd44a41465cb6a8ff78527f9a33`, render
+      `rdr_rjob_affdcc75a6604b058ab8ec470f265163_pdf`, archive request
+      `arch_rdr_rjob_affdcc75a6604b058ab8ec470f265163_pdf`, and archived document
+      `doc_3d53a68bccbd4507849f0b98372d35bd`.
+    - Direct archive retrieval of `doc_3d53a68bccbd4507849f0b98372d35bd` returned a 190486-byte
+      `%PDF-1.7` artifact with SHA-256
+      `67b4d9c2958b5282c43ef19f6268dba1b5e9d5c030c910cb0b4f37381e890682`, matching archive
+      metadata for report job `rjob_affdcc75a6604b058ab8ec470f265163`.
+    - This slice does not introduce a gateway-facing scheduler API, Workbench surface, RFC-0105
+      operations dashboards, RFC-0106 entitlement certification, or RFC-0107 production
+      certification.

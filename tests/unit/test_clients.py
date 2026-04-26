@@ -395,6 +395,27 @@ async def test_core_query_client_get_portfolio_detail_gets_expected_contract(mon
 
 
 @pytest.mark.asyncio
+async def test_core_query_client_list_portfolios_uses_canonical_collection_route(monkeypatch):
+    request_id_var.set("req-5d")
+    trace_id_var.set("abcdef0123456789abcdef0123456789")
+    response = _FakeResponse(status_code=200, payload={"portfolios": []})
+    recorder = _RecordingAsyncClient(response=response)
+    monkeypatch.setattr(
+        "app.clients.core_query_client.httpx.AsyncClient",
+        lambda timeout: recorder,
+    )
+
+    client = CoreQueryClient(base_url="http://performances/", timeout_seconds=3.0)
+    status_code, payload = await client.list_portfolios(correlation_id="corr-5d")
+
+    assert status_code == 200
+    assert payload == {"portfolios": []}
+    assert recorder.calls[0]["url"] == "http://performances/portfolios/"
+    assert recorder.calls[0]["params"] == {}
+    assert recorder.calls[0]["headers"]["X-Correlation-Id"] == "corr-5d"
+
+
+@pytest.mark.asyncio
 async def test_core_query_client_get_portfolio_review_posts_expected_contract(monkeypatch):
     response = _FakeResponse(status_code=200, payload={"portfolio_id": "P4"})
     recorder = _RecordingAsyncClient(response=response)

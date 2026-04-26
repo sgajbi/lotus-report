@@ -20,6 +20,8 @@ class BatchSelectorValidationError(ValueError):
 SUPPORTED_MATERIALIZATION_SELECTORS = {
     "explicit_portfolio_list",
     "selected_subset",
+    "all_active_portfolios",
+    "batch_manifest",
 }
 
 
@@ -38,7 +40,7 @@ def materialize_portfolios(
     if request.selector_mode == "explicit_portfolio_list":
         selected_ids = _explicit_portfolio_ids(request.portfolio_ids)
         selected = [_candidate_for_id(candidates, portfolio_id) for portfolio_id in selected_ids]
-    else:
+    elif request.selector_mode == "selected_subset":
         selected = sorted(
             (candidate for candidate in request.source_candidates if candidate.selected),
             key=lambda candidate: candidate.portfolio_id,
@@ -48,6 +50,19 @@ def materialize_portfolios(
                 "empty_batch_selector",
                 "Selected-subset batch requires at least one selected active portfolio.",
             )
+    elif request.selector_mode == "all_active_portfolios":
+        selected = sorted(
+            request.source_candidates,
+            key=lambda candidate: candidate.portfolio_id,
+        )
+        if not selected:
+            raise BatchSelectorValidationError(
+                "empty_batch_selector",
+                "All-active batch requires at least one source-backed active portfolio candidate.",
+            )
+    else:
+        selected_ids = _explicit_portfolio_ids(request.portfolio_ids)
+        selected = [_candidate_for_id(candidates, portfolio_id) for portfolio_id in selected_ids]
 
     if len(selected) > request.max_batch_size:
         raise BatchSelectorValidationError(

@@ -16,7 +16,6 @@ from app.report_batch_orchestrator.schedule import (
     materialize_cycle,
     scheduled_batch_idempotency_key,
 )
-from app.report_batch_orchestrator.selector import BatchSelectorValidationError
 from app.reporting_jobs.models import ReportCallerContext
 
 
@@ -234,7 +233,7 @@ def test_scheduled_cycle_key_supports_idempotent_batch_materialization(tmp_path)
     assert second == first
 
 
-def test_scheduled_all_active_scope_remains_gated(tmp_path) -> None:
+def test_scheduled_all_active_scope_materializes_source_backed_candidates(tmp_path) -> None:
     caller = _caller()
     cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
     request = BatchCreateRequest(
@@ -251,11 +250,42 @@ def test_scheduled_all_active_scope_remains_gated(tmp_path) -> None:
     )
     ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
 
-    with pytest.raises(BatchSelectorValidationError) as exc_info:
-        ledger.create_batch(
-            request=request,
-            caller_context=caller,
-            idempotency_key="scheduled-all-active",
-        )
+    batch = ledger.create_batch(
+        request=request,
+        caller_context=caller,
+        idempotency_key="scheduled-all-active",
+    )
 
-    assert exc_info.value.code == "unsupported_batch_selector"
+    assert batch.selector_mode == "all_active_portfolios"
+    assert batch.materialized_portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
+
+
+def test_scheduled_manifest_scope_materializes_explicit_manifest_entries(tmp_path) -> None:
+    caller = _caller()
+    cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
+    request = BatchCreateRequest(
+        selector_mode="batch_manifest",
+        portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+        source_candidates=[
+            PortfolioBatchCandidate(
+                portfolio_id="PB_SG_GLOBAL_BAL_001",
+                tenant_id="tenant-sg",
+                region="APAC",
+                active=True,
+                source_system="lotus-operations",
+                source_object="BatchManifest",
+            )
+        ],
+        as_of_date=cycle.as_of_date,
+    )
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+
+    batch = ledger.create_batch(
+        request=request,
+        caller_context=caller,
+        idempotency_key="scheduled-manifest",
+    )
+
+    assert batch.selector_mode == "batch_manifest"
+    assert batch.materialized_portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
+    assert batch.items[0].source_system == "lotus-operations"

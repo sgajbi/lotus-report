@@ -45,6 +45,6 @@
   runnable batches and invokes the same worker primitive for a limited number of batches. The
   `lotus-report-batch-worker` service now runs that pass as a daemonized internal background
   worker process. The `lotus-report-batch-scheduler` service now materializes configured
-  explicit-portfolio schedules into durable idempotent batches for that worker to execute. No
-  gateway exposure, Workbench batch surface, all-active scheduler, or manifest scheduler is
-  shipped yet
+  explicit-portfolio, all-active, and inline manifest schedules into durable idempotent batches
+  for that worker to execute. No Workbench batch surface, gateway-facing scheduler
+  administration, or entitlement-certified public scheduler runtime is shipped yet
