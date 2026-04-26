@@ -41,5 +41,7 @@
   report-job, snapshot, render, and archive handoff path and reconcile the final batch-item state.
   An internal bounded single-batch worker run primitive now combines expired-lease recovery,
   dispatch, and waiting-item execution. A certified internal `run-once` operator API exposes one
-  bounded worker pass for an explicit batch. No batch scheduler loop, background worker process,
-  gateway exposure, or Workbench batch surface is shipped yet
+  bounded worker pass for an explicit batch. An internal bounded runtime pass now scans durable
+  runnable batches and invokes the same worker primitive for a limited number of batches. No batch
+  scheduler loop, daemonized background worker process, gateway exposure, or Workbench batch
+  surface is shipped yet

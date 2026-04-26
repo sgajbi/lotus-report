@@ -286,6 +286,44 @@ def test_postgres_batch_dispatch_honors_external_back_pressure_without_mutation(
     assert batch_ledger.get_batch(batch.batch_id).items[0].status == "materialized"
 
 
+def test_postgres_batch_runtime_scan_returns_only_runnable_batches() -> None:
+    unique_suffix = uuid4().hex
+    batch_ledger = PostgresReportBatchLedger(_database_url())
+    report_job_ledger = PostgresReportJobLedger(_database_url())
+    caller = _caller(unique_suffix)
+    runnable = batch_ledger.create_batch(
+        request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
+        caller_context=caller,
+        idempotency_key=f"batch-pg-runtime-runnable-{unique_suffix}",
+    )
+    paused = batch_ledger.create_batch(
+        request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_002_{unique_suffix}"),
+        caller_context=caller,
+        idempotency_key=f"batch-pg-runtime-paused-{unique_suffix}",
+    )
+    waiting = batch_ledger.create_batch(
+        request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_003_{unique_suffix}"),
+        caller_context=caller,
+        idempotency_key=f"batch-pg-runtime-waiting-{unique_suffix}",
+    )
+    batch_ledger.pause_batch(batch_id=paused.batch_id)
+    ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_batches=1000, max_active_items=1000),
+    ).dispatch_batch(
+        batch_id=waiting.batch_id,
+        caller_context=caller,
+        worker_id=f"pg-runtime-worker-{unique_suffix}",
+    )
+
+    batch_ids = batch_ledger.list_runnable_batch_ids(limit=1000)
+
+    assert runnable.batch_id in batch_ids
+    assert waiting.batch_id in batch_ids
+    assert paused.batch_id not in batch_ids
+
+
 def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
     unique_suffix = uuid4().hex
     batch_ledger = PostgresReportBatchLedger(_database_url())

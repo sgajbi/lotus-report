@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
+from app.report_batch_orchestrator.execution import BatchItemExecutionResult
+from app.report_batch_orchestrator.ledger import ReportBatchLedger
+from app.report_batch_orchestrator.models import (
+    BatchCreateRequest,
+    BatchDispatchPolicy,
+    BatchRuntimeLoad,
+    PortfolioBatchCandidate,
+)
+from app.report_batch_orchestrator.runtime import ReportBatchRuntime
+from app.report_batch_orchestrator.worker import ReportBatchWorker
+from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.models import ReportCallerContext
+
+
+def _caller() -> ReportCallerContext:
+    suffix = uuid4().hex
+    return ReportCallerContext.model_validate(
+        {
+            "triggered_by": "advisor-123",
+            "caller_application": "lotus-report-batch-runtime",
+            "tenant_id": "tenant-sg",
+            "region": "APAC",
+            "booking_center_code": "SG",
+            "role": "advisor",
+            "correlation_id": f"corr-batch-runtime-{suffix}",
+            "trace_id": f"trace-batch-runtime-{suffix}",
+        }
+    )
+
+
+def _candidate(portfolio_id: str) -> PortfolioBatchCandidate:
+    return PortfolioBatchCandidate(
+        portfolio_id=portfolio_id,
+        tenant_id="tenant-sg",
+        region="APAC",
+        active=True,
+        selected=True,
+    )
+
+
+def _request(portfolio_id: str) -> BatchCreateRequest:
+    return BatchCreateRequest(
+        selector_mode="explicit_portfolio_list",
+        portfolio_ids=[portfolio_id],
+        source_candidates=[_candidate(portfolio_id)],
+        as_of_date="2026-04-22",
+        requested_output_formats=["json"],
+        reporting_currency="USD",
+        options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+    )
+
+
+class _SucceedingExecutionService:
+    def __init__(self, *, batch_ledger: ReportBatchLedger) -> None:
+        self._batch_ledger = batch_ledger
+
+    async def execute_item(
+        self,
+        *,
+        batch_id: str,
+        batch_item_id: str,
+    ) -> BatchItemExecutionResult:
+        batch = self._batch_ledger.get_batch(batch_id)
+        item = next(item for item in batch.items if item.batch_item_id == batch_item_id)
+        if item.report_job_id is None:
+            raise AssertionError("runtime should execute only job-linked items")
+        completed = self._batch_ledger.mark_item_succeeded(
+            batch_item_id=batch_item_id,
+            report_job_id=item.report_job_id,
+        )
+        return BatchItemExecutionResult(
+            batch_id=batch_id,
+            batch_item_id=batch_item_id,
+            report_job_id=item.report_job_id,
+            item_status=completed.status,
+            report_job_status="completed",
+        )
+
+
+def _runtime(
+    *,
+    batch_ledger: ReportBatchLedger,
+    report_job_ledger: ReportJobLedger,
+    policy: BatchDispatchPolicy | None = None,
+) -> ReportBatchRuntime:
+    return ReportBatchRuntime(
+        batch_ledger=batch_ledger,
+        worker=ReportBatchWorker(
+            batch_ledger=batch_ledger,
+            dispatcher=ReportBatchDispatcher(
+                batch_ledger=batch_ledger,
+                report_job_ledger=report_job_ledger,
+                policy=policy or BatchDispatchPolicy(max_active_items=5),
+            ),
+            execution_service=_SucceedingExecutionService(batch_ledger=batch_ledger),
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_pass_scans_and_runs_multiple_batches(tmp_path) -> None:
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    caller = _caller()
+    first = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=caller,
+        idempotency_key=f"runtime-first-{uuid4().hex}",
+    )
+    second = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_002"),
+        caller_context=caller,
+        idempotency_key=f"runtime-second-{uuid4().hex}",
+    )
+
+    result = await _runtime(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+    ).run_pass(
+        caller_context=caller,
+        worker_id="runtime-unit-1",
+        max_batches=5,
+    )
+
+    assert result.worker_id == "runtime-unit-1"
+    assert result.scanned_batch_ids == [first.batch_id, second.batch_id]
+    assert [batch_result.batch_id for batch_result in result.batch_results] == [
+        first.batch_id,
+        second.batch_id,
+    ]
+    assert result.dispatched_count == 2
+    assert result.executed_count == 2
+    assert result.back_pressure_stopped is False
+    assert batch_ledger.get_batch(first.batch_id).status == "completed"
+    assert batch_ledger.get_batch(second.batch_id).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_pass_stops_on_back_pressure_without_advancing_later_batches(
+    tmp_path,
+) -> None:
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    caller = _caller()
+    first = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=caller,
+        idempotency_key=f"runtime-pressure-first-{uuid4().hex}",
+    )
+    second = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_002"),
+        caller_context=caller,
+        idempotency_key=f"runtime-pressure-second-{uuid4().hex}",
+    )
+
+    result = await _runtime(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_items=1),
+    ).run_pass(
+        caller_context=caller,
+        worker_id="runtime-unit-1",
+        runtime_load=BatchRuntimeLoad(active_items=1),
+    )
+
+    assert result.scanned_batch_ids == [first.batch_id, second.batch_id]
+    assert [batch_result.batch_id for batch_result in result.batch_results] == [first.batch_id]
+    assert result.back_pressure_stopped is True
+    assert result.back_pressure_reasons == ["max_active_items_reached"]
+    assert result.dispatched_count == 0
+    assert result.executed_count == 0
+    assert batch_ledger.get_batch(first.batch_id).status == "materialized"
+    assert batch_ledger.get_batch(second.batch_id).status == "materialized"
+
+
+@pytest.mark.asyncio
+async def test_runtime_pass_honors_zero_max_batches_without_scanning(tmp_path) -> None:
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    caller = _caller()
+    batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=caller,
+        idempotency_key=f"runtime-zero-{uuid4().hex}",
+    )
+
+    result = await _runtime(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+    ).run_pass(
+        caller_context=caller,
+        worker_id="runtime-unit-1",
+        max_batches=0,
+    )
+
+    assert result.scanned_batch_ids == []
+    assert result.batch_results == []

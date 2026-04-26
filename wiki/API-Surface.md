@@ -86,8 +86,9 @@ front-office consumers.
 - report job creation requires `Idempotency-Key`
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
-- batch materialization, control, and run-once APIs are internal `lotus-report` APIs; full batch
-  scheduling, background worker runtime, gateway exposure, and Workbench batch surfaces are not yet
+- batch materialization, control, and run-once APIs are internal `lotus-report` APIs; the bounded
+  runtime pass is an internal service primitive, not an API; full batch scheduling, daemonized
+  background worker runtime, gateway exposure, and Workbench batch surfaces are not yet
   implementation-backed
 - PDF-capable report jobs submit a governed render package to `lotus-render`; after successful
   render completion they hand the artifact and source-backed metadata to `lotus-archive`
@@ -281,8 +282,8 @@ curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:run-once" \
 ```
 
 Current batch APIs are direct `lotus-report` internal APIs. Gateway routes, Workbench batch
-surfaces, scheduled execution, background worker runtime, and long-running runtime telemetry remain
-future scope.
+surfaces, scheduled execution, daemonized background worker runtime, and long-running runtime
+telemetry remain future scope.
 
 The review response is a typed report contract. It separates client-ready `client_sections` from
 advisor-only `advisor_sections`, carries explicit section readiness states including

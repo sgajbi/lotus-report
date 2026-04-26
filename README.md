@@ -162,8 +162,10 @@ Key code areas:
   snapshot, render, and archive handoff path, and an internal bounded worker run primitive can
   combine recovery, dispatch, and waiting-item execution for one batch. `POST
   /reports/batches/{batch_id}:run-once` exposes that bounded worker pass as an internal
-  operator-controlled API. No batch scheduler loop, background worker process, gateway exposure,
-  or Workbench batch surface is implemented yet
+  operator-controlled API. A bounded internal runtime pass can scan durable runnable batches and
+  invoke that worker primitive for a limited number of batches. No batch scheduler loop,
+  daemonized background worker process, gateway exposure, or Workbench batch surface is implemented
+  yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
@@ -334,7 +336,8 @@ Current orchestration model:
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
   internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
   recover-expired-leases controls plus the bounded `run-once` operator action are direct
-  `lotus-report` APIs and are not yet gateway or Workbench surfaces
+  `lotus-report` APIs and are not yet gateway or Workbench surfaces. The internal runtime pass is
+  a service primitive, not a public API or daemonized worker process
 
 ## Documentation Map
 

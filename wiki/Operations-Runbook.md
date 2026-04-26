@@ -77,11 +77,13 @@ Current implemented semantics:
 - bounded `run-once` operator calls can recover expired pre-dispatch leases, dispatch eligible
   items, and advance already waiting items for one explicit batch; the response returns safe counts,
   linked report job ids, back-pressure reasons, skip reasons, and per-item execution outcomes
+- internal runtime passes can scan durable runnable batches and invoke the single-batch worker for
+  a limited number of batches; this is a service primitive only and is not a public API or daemon
 
 Still not supported:
 
 - scheduled batch execution loop
-- public background executor process
+- daemonized background executor process
 - gateway exposure
 - Workbench batch surface
 - broad replay, rerender, regenerate, or document distribution controls
