@@ -9,6 +9,7 @@ from app.report_batch_orchestrator.ledger import (
     ReportBatchLedger,
 )
 from app.report_batch_orchestrator.scheduler import (
+    BatchScheduleConfigError,
     BatchScheduleDefinition,
     BatchSchedulerConfig,
     ReportBatchScheduler,
@@ -145,6 +146,11 @@ class _SchedulerForApi:
         return await self._scheduler.run_due_schedules(**kwargs)
 
 
+class _SchedulerFailure:
+    async def run_due_schedules(self, **_kwargs):
+        raise ValueError("scheduler_materialization_failed")
+
+
 def _scheduler_config() -> BatchSchedulerConfig:
     return BatchSchedulerConfig(
         scheduler_id="scheduler-api-unit",
@@ -261,6 +267,55 @@ def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
         status_body = status_response.json()
         assert status_body["materialized_portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
         assert status_body["status_counts"] == {"materialized": 1}
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_scheduler_admin_routes_return_product_safe_errors(monkeypatch) -> None:
+    def invalid_config() -> BatchSchedulerConfig:
+        raise BatchScheduleConfigError(
+            code="batch_scheduler_config_invalid",
+            message="Configured report batch schedules could not be loaded.",
+        )
+
+    client = TestClient(app)
+    try:
+        monkeypatch.setattr(
+            "app.routers.report_batches.batch_scheduler_config_from_settings",
+            invalid_config,
+        )
+
+        list_config_error = client.get("/reports/batch-schedules", headers=_headers())
+        run_config_error = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 8},
+            headers=_headers("scheduler-run-invalid-config-api"),
+        )
+
+        monkeypatch.setattr(
+            "app.routers.report_batches.batch_scheduler_config_from_settings",
+            lambda: _scheduler_config(),
+        )
+        app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
+        app.dependency_overrides[get_report_batch_scheduler] = lambda: _SchedulerFailure()
+        run_failure = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 9},
+            headers=_headers("scheduler-run-failure-api"),
+        )
+
+        assert list_config_error.status_code == 400
+        assert list_config_error.json()["detail"] == {
+            "code": "batch_scheduler_config_invalid",
+            "message": "Configured report batch schedules could not be loaded.",
+        }
+        assert run_config_error.status_code == 400
+        assert run_config_error.json()["detail"]["code"] == "batch_scheduler_config_invalid"
+        assert run_failure.status_code == 409
+        assert run_failure.json()["detail"] == {
+            "code": "batch_scheduler_run_failed",
+            "message": "Report batch scheduler pass could not be completed.",
+        }
     finally:
         _clear_overrides()
 
