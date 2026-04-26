@@ -19,6 +19,7 @@ from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchHandleResponse,
     BatchItemStatusResponse,
+    BatchPressureSnapshot,
     BatchRecoveryResponse,
     BatchRetryPolicy,
     BatchStatus,
@@ -50,7 +51,11 @@ from app.report_batch_orchestrator.service import (
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
-from app.reporting_metrics import record_batch_scheduler_metrics, record_batch_worker_metrics
+from app.reporting_metrics import (
+    record_batch_pressure_metrics,
+    record_batch_scheduler_metrics,
+    record_batch_worker_metrics,
+)
 from app.routers.caller_context import caller_context_dependency
 
 router = APIRouter(prefix="/reports/batches", tags=["Report Batches"])
@@ -82,6 +87,8 @@ class ReportBatchLedgerPort(Protocol):
     ) -> Any: ...
 
     def recover_expired_leases(self, *, batch_id: str) -> Any: ...
+
+    def batch_pressure_snapshot(self) -> BatchPressureSnapshot: ...
 
 
 class ReportBatchWorkerPort(Protocol):
@@ -844,6 +851,7 @@ async def run_report_batch_once(
     request: BatchWorkerRunRequest,
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     worker: ReportBatchWorkerPort = Depends(get_report_batch_worker),
+    batch_ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchWorkerRunResponse:
     started_at = perf_counter()
@@ -874,4 +882,5 @@ async def run_report_batch_once(
         skipped_reason=result.skipped_reason,
         duration_seconds=perf_counter() - started_at,
     )
+    record_batch_pressure_metrics(batch_ledger.batch_pressure_snapshot())
     return _worker_run_response(result)

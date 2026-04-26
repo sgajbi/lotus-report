@@ -435,6 +435,13 @@ def test_report_batch_run_once_endpoint_returns_operator_safe_result(tmp_path):
             'operation="batch_worker_run",status="completed"}'
         ) in metrics_body
         assert 'lotus_report_batch_runtime_last_items{item_state="executed"} 1.0' in metrics_body
+        assert (
+            'lotus_report_batch_pressure_last_counts{pressure_state="dispatch_ready_items"} 2.0'
+        ) in metrics_body
+        assert (
+            'lotus_report_batch_pressure_last_counts{pressure_state="active_items"} 0.0'
+            in metrics_body
+        )
     finally:
         _clear_overrides()
 

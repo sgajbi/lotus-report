@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -192,6 +193,16 @@ class BatchRecoveryResult(BaseModel):
     batch_id: str
     recovered_count: int
     recovery_pending_item_ids: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BatchPressureSnapshot:
+    runnable_batches: int = 0
+    active_batches: int = 0
+    active_items: int = 0
+    dispatch_ready_items: int = 0
+    retry_ready_items: int = 0
+    recovery_pending_items: int = 0
 
 
 BATCH_CREATE_REQUEST_EXAMPLE: dict[str, Any] = {

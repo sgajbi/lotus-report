@@ -22,12 +22,14 @@ from app.observability import (
     setup_logging,
     trace_id_var,
 )
+from app.report_batch_orchestrator.models import BatchPressureSnapshot
 from app.reporting_metrics import (
     FORBIDDEN_METRIC_LABELS,
     IMPLEMENTED_REPORTING_OPERATIONS,
     REPORTING_METRIC_CONTRACTS,
     RESERVED_REPORTING_OPERATIONS,
     ReportingMetricContract,
+    record_batch_pressure_metrics,
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
     record_report_operation,
@@ -165,6 +167,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     }
 
     assert "lotus_report_operations_total" in implemented_names
+    assert "lotus_report_batch_pressure_last_counts" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {"report_job_submission", "snapshot_capture", "render_handoff", "archive_handoff"} <= (
         IMPLEMENTED_REPORTING_OPERATIONS
@@ -309,4 +312,17 @@ def test_record_batch_scheduler_metrics_clamps_counts():
         materialized_count=-2,
         skipped_count=-3,
         duration_seconds=0.01,
+    )
+
+
+def test_record_batch_pressure_metrics_clamps_counts() -> None:
+    record_batch_pressure_metrics(
+        BatchPressureSnapshot(
+            runnable_batches=-1,
+            active_batches=2,
+            active_items=-3,
+            dispatch_ready_items=4,
+            retry_ready_items=-5,
+            recovery_pending_items=6,
+        )
     )

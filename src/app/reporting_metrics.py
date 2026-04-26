@@ -5,11 +5,14 @@ from dataclasses import dataclass
 
 from prometheus_client import Counter, Gauge, Histogram
 
+from app.report_batch_orchestrator.models import BatchPressureSnapshot
+
 METRIC_OPERATION_LABEL = "operation"
 METRIC_STATUS_LABEL = "status"
 METRIC_FAILURE_CATEGORY_LABEL = "failure_category"
 METRIC_ITEM_STATE_LABEL = "item_state"
 METRIC_SCHEDULER_OUTCOME_LABEL = "outcome"
+METRIC_PRESSURE_STATE_LABEL = "pressure_state"
 
 REPORTING_METRIC_LABELS = frozenset(
     {
@@ -18,6 +21,7 @@ REPORTING_METRIC_LABELS = frozenset(
         METRIC_FAILURE_CATEGORY_LABEL,
         METRIC_ITEM_STATE_LABEL,
         METRIC_SCHEDULER_OUTCOME_LABEL,
+        METRIC_PRESSURE_STATE_LABEL,
     }
 )
 FORBIDDEN_METRIC_LABELS = frozenset(
@@ -130,6 +134,16 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
         ),
     ),
     ReportingMetricContract(
+        name="lotus_report_batch_pressure_last_counts",
+        metric_type="gauge",
+        labels=(METRIC_PRESSURE_STATE_LABEL,),
+        implemented=True,
+        description=(
+            "Stores bounded durable batch pressure counts from the latest worker or operator pass "
+            "without batch, portfolio, tenant, retry token, or trace identifiers."
+        ),
+    ),
+    ReportingMetricContract(
         name="lotus_report_replay_operations_total",
         metric_type="counter",
         labels=(METRIC_OPERATION_LABEL, METRIC_STATUS_LABEL, METRIC_FAILURE_CATEGORY_LABEL),
@@ -161,6 +175,11 @@ _BATCH_SCHEDULER_LAST_SCHEDULES = Gauge(
     "lotus_report_batch_scheduler_last_schedules",
     REPORTING_METRIC_CONTRACTS[3].description,
     [METRIC_SCHEDULER_OUTCOME_LABEL],
+)
+_BATCH_PRESSURE_LAST_COUNTS = Gauge(
+    "lotus_report_batch_pressure_last_counts",
+    REPORTING_METRIC_CONTRACTS[4].description,
+    [METRIC_PRESSURE_STATE_LABEL],
 )
 
 
@@ -234,6 +253,27 @@ def record_batch_scheduler_metrics(
     _BATCH_SCHEDULER_LAST_SCHEDULES.labels(outcome="attempted").set(max(0, attempted_count))
     _BATCH_SCHEDULER_LAST_SCHEDULES.labels(outcome="materialized").set(max(0, materialized_count))
     _BATCH_SCHEDULER_LAST_SCHEDULES.labels(outcome="skipped").set(max(0, skipped_count))
+
+
+def record_batch_pressure_metrics(snapshot: BatchPressureSnapshot) -> None:
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="runnable_batches").set(
+        max(0, snapshot.runnable_batches)
+    )
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="active_batches").set(
+        max(0, snapshot.active_batches)
+    )
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="active_items").set(
+        max(0, snapshot.active_items)
+    )
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="dispatch_ready_items").set(
+        max(0, snapshot.dispatch_ready_items)
+    )
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="retry_ready_items").set(
+        max(0, snapshot.retry_ready_items)
+    )
+    _BATCH_PRESSURE_LAST_COUNTS.labels(pressure_state="recovery_pending_items").set(
+        max(0, snapshot.recovery_pending_items)
+    )
 
 
 def _validate_labels(labels: Iterable[str]) -> None:

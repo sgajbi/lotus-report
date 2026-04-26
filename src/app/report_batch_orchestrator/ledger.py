@@ -12,6 +12,7 @@ from uuid import uuid4
 from app.report_batch_orchestrator.models import (
     BatchControlResult,
     BatchCreateRequest,
+    BatchPressureSnapshot,
     BatchRecoveryResult,
     BatchRetryPolicy,
     MaterializedPortfolio,
@@ -777,6 +778,113 @@ class ReportBatchLedger:
                 """
             ).fetchone()
         return int(row["count"])
+
+    def batch_pressure_snapshot(self, *, now: datetime | None = None) -> BatchPressureSnapshot:
+        sample_at = now or utc_now()
+        with self._connect() as connection:
+            active_batches = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
+                ).fetchone()["count"]
+            )
+            active_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status IN ('leased', 'waiting_on_report_job')
+                    """
+                ).fetchone()["count"]
+            )
+            dispatch_ready_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE report_job_id IS NULL
+                      AND (
+                        status = 'materialized'
+                        OR status = 'recovery_pending'
+                        OR (
+                          status = 'leased'
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at < ?
+                        )
+                        OR (
+                          status = 'failed_retryable'
+                          AND retry_eligible = 1
+                          AND (next_retry_at IS NULL OR next_retry_at <= ?)
+                        )
+                      )
+                    """,
+                    (_dt_to_text(sample_at), _dt_to_text(sample_at)),
+                ).fetchone()["count"]
+            )
+            retry_ready_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status = 'failed_retryable'
+                      AND retry_eligible = 1
+                      AND (next_retry_at IS NULL OR next_retry_at <= ?)
+                    """,
+                    (_dt_to_text(sample_at),),
+                ).fetchone()["count"]
+            )
+            recovery_pending_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status = 'recovery_pending'
+                    """
+                ).fetchone()["count"]
+            )
+            runnable_batches = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM (
+                        SELECT DISTINCT report_batch.batch_id
+                        FROM report_batch
+                        JOIN report_batch_item
+                          ON report_batch_item.batch_id = report_batch.batch_id
+                        WHERE report_batch.status IN ('materialized', 'running')
+                          AND (
+                            report_batch_item.status IN (
+                              'materialized',
+                              'recovery_pending',
+                              'waiting_on_report_job'
+                            )
+                            OR (
+                              report_batch_item.status = 'leased'
+                              AND report_batch_item.report_job_id IS NULL
+                              AND report_batch_item.lease_expires_at IS NOT NULL
+                              AND report_batch_item.lease_expires_at < ?
+                            )
+                            OR (
+                              report_batch_item.status = 'failed_retryable'
+                              AND report_batch_item.retry_eligible = 1
+                              AND (
+                                report_batch_item.next_retry_at IS NULL
+                                OR report_batch_item.next_retry_at <= ?
+                              )
+                            )
+                          )
+                    )
+                    """,
+                    (_dt_to_text(sample_at), _dt_to_text(sample_at)),
+                ).fetchone()["count"]
+            )
+        return BatchPressureSnapshot(
+            runnable_batches=runnable_batches,
+            active_batches=active_batches,
+            active_items=active_items,
+            dispatch_ready_items=dispatch_ready_items,
+            retry_ready_items=retry_ready_items,
+            recovery_pending_items=recovery_pending_items,
+        )
 
     def list_runnable_batch_ids(
         self,
