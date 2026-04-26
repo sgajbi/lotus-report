@@ -80,6 +80,17 @@ def test_propagation_headers_include_context_values():
     assert headers[TRACEPARENT_HEADER] == "00-0123456789abcdef0123456789abcdef-0000000000000001-01"
 
 
+def test_propagation_headers_omit_invalid_w3c_traceparent():
+    correlation_id_var.set("corr-ctx")
+    request_id_var.set("req-ctx")
+    trace_id_var.set("trace-human-readable")
+
+    headers = propagation_headers()
+
+    assert headers[TRACE_ID_HEADER] == "trace-human-readable"
+    assert TRACEPARENT_HEADER not in headers
+
+
 def test_observability_contract_declares_safe_runtime_and_operator_fields():
     assert {"correlation_id", "request_id", "trace_id", "latency_ms"}.issubset(
         OBSERVABILITY_LOG_FIELDS

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -20,6 +21,8 @@ REQUEST_ID_HEADER = "X-Request-Id"
 TRACE_ID_HEADER = "X-Trace-Id"
 TRACE_ID_HEADER_ALIAS = "X-Trace-ID"
 TRACEPARENT_HEADER = "traceparent"
+
+_W3C_TRACE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 OBSERVABILITY_LOG_FIELDS = frozenset(
     {
@@ -95,7 +98,7 @@ def resolve_trace_id(request: Request) -> str:
     traceparent = request.headers.get(TRACEPARENT_HEADER)
     if isinstance(traceparent, str) and traceparent:
         parts = traceparent.split("-")
-        if len(parts) >= 4 and len(parts[1]) == 32:
+        if len(parts) >= 4 and _is_w3c_trace_id(parts[1]):
             return parts[1]
     incoming = request.headers.get(TRACE_ID_HEADER) or request.headers.get(TRACE_ID_HEADER_ALIAS)
     if isinstance(incoming, str) and incoming:
@@ -103,17 +106,30 @@ def resolve_trace_id(request: Request) -> str:
     return uuid4().hex
 
 
+def _is_w3c_trace_id(trace_id: str) -> bool:
+    return bool(_W3C_TRACE_ID_PATTERN.fullmatch(trace_id))
+
+
+def traceparent_header(trace_id: str) -> str | None:
+    if not _is_w3c_trace_id(trace_id):
+        return None
+    return f"00-{trace_id}-0000000000000001-01"
+
+
 def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
     resolved_trace = trace_id_var.get() or uuid4().hex
     resolved_correlation_id = (
         correlation_id or correlation_id_var.get() or f"corr_{uuid4().hex[:12]}"
     )
-    return {
+    headers = {
         CORRELATION_ID_HEADER: resolved_correlation_id,
         REQUEST_ID_HEADER: request_id_var.get() or f"req_{uuid4().hex[:12]}",
         TRACE_ID_HEADER: resolved_trace,
-        TRACEPARENT_HEADER: f"00-{resolved_trace}-0000000000000001-01",
     }
+    traceparent = traceparent_header(resolved_trace)
+    if traceparent:
+        headers[TRACEPARENT_HEADER] = traceparent
+    return headers
 
 
 def setup_observability(app: FastAPI) -> None:
@@ -156,5 +172,7 @@ def setup_observability(app: FastAPI) -> None:
         response.headers[CORRELATION_ID_HEADER] = correlation_id
         response.headers[REQUEST_ID_HEADER] = request_id
         response.headers[TRACE_ID_HEADER] = trace_id
-        response.headers[TRACEPARENT_HEADER] = f"00-{trace_id}-0000000000000001-01"
+        traceparent = traceparent_header(trace_id)
+        if traceparent:
+            response.headers[TRACEPARENT_HEADER] = traceparent
         return response
