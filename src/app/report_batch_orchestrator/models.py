@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.report_batch_orchestrator.contracts import BatchSelectorMode
+from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
 
 BatchStatus = Literal["materialized"]
 BatchItemStatus = Literal["materialized"]
@@ -134,3 +134,55 @@ class ReportBatchRecord(BaseModel):
     correlation_id: str
     trace_id: str
     items: list[ReportBatchItemRecord]
+
+
+class BatchCycleRequest(BaseModel):
+    frequency: BatchFrequency = Field(
+        ...,
+        description="Production cycle frequency to materialize.",
+        examples=["monthly"],
+    )
+    as_of_date: date = Field(
+        ...,
+        description="Business as-of date for the cycle.",
+        examples=["2026-04-30"],
+    )
+    explicit_period_start: date | None = Field(
+        default=None,
+        description="Required period start when frequency is explicit.",
+        examples=["2026-04-01"],
+    )
+    explicit_period_end: date | None = Field(
+        default=None,
+        description="Required period end when frequency is explicit.",
+        examples=["2026-04-30"],
+    )
+    template_id: str = Field(
+        "portfolio-review",
+        min_length=1,
+        description="Report template identifier included in scheduled batch identity.",
+        examples=["portfolio-review"],
+    )
+    template_version: str = Field(
+        "v1",
+        min_length=1,
+        description="Report template version included in scheduled batch identity.",
+        examples=["v1"],
+    )
+    render_package_version: str = Field(
+        "portfolio-review.v1",
+        min_length=1,
+        description="Render package contract version included in scheduled batch identity.",
+        examples=["portfolio-review.v1"],
+    )
+
+
+class BatchCycle(BaseModel):
+    frequency: BatchFrequency
+    period_start: date
+    period_end: date
+    as_of_date: date
+    template_id: str
+    template_version: str
+    render_package_version: str
+    idempotency_scope: str

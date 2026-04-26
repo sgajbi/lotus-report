@@ -32,5 +32,7 @@
 - repo-local wiki pages should stay concise and operator-facing; RFC implementation detail belongs
   in `rfcs/` and implementation-backed feature truth belongs in `docs/supported-features.md`
 - RFC-0104 batch reporting is in progress. Internal durable batch and batch-item materialization
-  primitives exist for explicit portfolio lists and selected subsets; no batch scheduler, API,
-  retry-failed-only, pause, resume, or recovery operator capability is shipped yet
+  primitives exist for explicit portfolio lists and selected subsets, and deterministic
+  schedule-cycle materialization exists for monthly, quarterly, semi-annual, yearly, and explicit
+  cycles. No batch scheduler loop, API, retry-failed-only, pause, resume, or recovery operator
+  capability is shipped yet

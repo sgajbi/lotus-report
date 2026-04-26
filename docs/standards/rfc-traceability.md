@@ -61,3 +61,14 @@ This document provides explicit implementation evidence pointers for active RFCs
     when `REPORT_JOB_LEDGER_DATABASE_URL` is available.
   - `docs/standards/batch-orchestration-source-map.md` records the source mapping and remaining
     source gaps for all-active and manifest selectors.
+- Slice 3 deterministic schedule materialization evidence:
+  - `src/app/report_batch_orchestrator/schedule.py` materializes monthly, quarterly, semi-annual,
+    yearly, and explicit production cycles from a business as-of date and output contract versions.
+  - `BatchCycleRequest` and `BatchCycle` in `src/app/report_batch_orchestrator/models.py` define
+    the internal schedule contract without exposing an operator-facing scheduler API.
+  - `tests/unit/report_batch_orchestrator/test_schedule.py` proves period/as-of semantics,
+    unsupported-frequency rejection, explicit-period validation, scheduled-batch idempotency
+    stability, template-version sensitivity, and continued all-active selector gating.
+  - Runtime posture remains intentionally disabled through `BATCH_RUNTIME_SUPPORTED = False`;
+    no scheduler loop, worker dispatch, retry, pause, resume, or recovery API is shipped by this
+    slice.

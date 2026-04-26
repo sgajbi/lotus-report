@@ -156,7 +156,8 @@ Key code areas:
   governed render-package assembly, lotus-render orchestration, and post-render archive handoff
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
-  batch/batch-item materialization primitives; no batch scheduler or runtime API is implemented yet
+  batch/batch-item and deterministic schedule-cycle materialization primitives; no batch scheduler
+  loop, worker, recovery, or runtime API is implemented yet
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
