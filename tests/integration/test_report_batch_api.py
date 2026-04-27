@@ -577,11 +577,16 @@ def test_report_batch_run_once_maps_worker_failures():
             json={"worker_id": "lotus-report-batch-worker-unit"},
             headers=_headers(),
         )
+        metrics_body = client.get("/metrics").text
 
         assert missing.status_code == 404
         assert missing.json()["detail"]["code"] == "report_batch_not_found"
         assert inconsistent.status_code == 409
         assert inconsistent.json()["detail"]["code"] == "batch_worker_run_failed"
+        assert (
+            'lotus_report_operations_total{failure_category="batch_worker_runtime_error",'
+            'operation="batch_worker_run",status="failed"}' in metrics_body
+        )
     finally:
         _clear_overrides()
 

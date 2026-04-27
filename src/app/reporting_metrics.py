@@ -223,13 +223,18 @@ def record_batch_worker_metrics(
     dispatched_count: int,
     executed_count: int,
     skipped_reason: str | None = None,
+    status: str | None = None,
+    failure_category: str | None = None,
     duration_seconds: float | None = None,
 ) -> None:
-    status = "skipped" if skipped_reason else "completed"
+    if status is None:
+        status = "skipped" if skipped_reason else "completed"
+        failure_category = _failure_category_from_skip(skipped_reason)
+
     record_report_operation(
         operation="batch_worker_run",
         status=status,
-        failure_category=_failure_category_from_skip(skipped_reason),
+        failure_category=failure_category,
         duration_seconds=duration_seconds,
     )
     _BATCH_RUNTIME_LAST_ITEMS.labels(item_state="recovered").set(max(0, recovered_count))

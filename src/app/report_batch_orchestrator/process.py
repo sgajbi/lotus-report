@@ -133,6 +133,17 @@ class BatchWorkerProcess:
                 )
                 record_batch_pressure_metrics(result.pressure_snapshot)
                 self._log_pass_result(iteration=iteration, result=result)
+            except Exception:
+                record_batch_worker_metrics(
+                    recovered_count=0,
+                    leased_count=0,
+                    dispatched_count=0,
+                    executed_count=0,
+                    status="failed",
+                    failure_category="batch_worker_runtime_error",
+                    duration_seconds=perf_counter() - started_at,
+                )
+                raise
             finally:
                 correlation_id_var.reset(corr_token)
                 request_id_var.reset(req_token)

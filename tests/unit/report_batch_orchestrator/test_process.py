@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
 from app.config import Settings
 from app.report_batch_orchestrator import process as process_module
 from app.report_batch_orchestrator.models import BatchDispatchPolicy
@@ -43,6 +45,30 @@ class _Runtime:
             dispatched_count=1,
             executed_count=1,
         )
+
+
+class _FailingRuntime:
+    def __init__(self, *, error: Exception) -> None:
+        self.error = error
+        self.calls: list[dict[str, object]] = []
+
+    async def run_pass(
+        self,
+        *,
+        caller_context: ReportCallerContext,
+        worker_id: str,
+        max_batches: int = 5,
+        dispatch_policy: BatchDispatchPolicy | None = None,
+        recover_expired_leases: bool = True,
+    ) -> BatchRuntimePassResult:
+        self.calls.append(
+            {
+                "caller_context": caller_context,
+                "worker_id": worker_id,
+                "max_batches": max_batches,
+            }
+        )
+        raise self.error
 
 
 def _config() -> BatchWorkerProcessConfig:
@@ -165,6 +191,62 @@ async def test_run_batch_worker_process_builds_config_and_runs_runtime() -> None
     assert call["max_batches"] == 9
     assert isinstance(call["caller_context"], ReportCallerContext)
     assert call["caller_context"].tenant_id == "tenant-main"
+
+
+async def test_batch_worker_process_records_failed_metrics_when_runtime_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = _FailingRuntime(error=RuntimeError("worker runtime failure"))
+
+    async def _sleep(_seconds: float) -> None:
+        raise AssertionError("sleep should not be called when runtime fails")
+
+    process = BatchWorkerProcess(runtime=runtime, config=_config(), sleep=_sleep)
+
+    metric_calls: list[dict[str, object]] = []
+
+    def _record_batch_worker_metrics(
+        *,
+        recovered_count: int,
+        leased_count: int,
+        dispatched_count: int,
+        executed_count: int,
+        status: str | None = None,
+        failure_category: str | None = None,
+        duration_seconds: float | None = None,
+        skipped_reason: str | None = None,
+    ) -> None:
+        metric_calls.append(
+            {
+                "recovered_count": recovered_count,
+                "leased_count": leased_count,
+                "dispatched_count": dispatched_count,
+                "executed_count": executed_count,
+                "status": status,
+                "failure_category": failure_category,
+                "duration_seconds": duration_seconds,
+                "skipped_reason": skipped_reason,
+            }
+        )
+
+    monkeypatch.setattr(process_module, "record_batch_worker_metrics", _record_batch_worker_metrics)
+
+    with pytest.raises(RuntimeError, match="worker runtime failure"):
+        await process.run(max_iterations=1)
+
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0]["worker_id"] == "worker-unit-1"
+    assert runtime.calls[0]["max_batches"] == 3
+    assert len(metric_calls) == 1
+    metric_call = metric_calls[0]
+    assert metric_call["recovered_count"] == 0
+    assert metric_call["leased_count"] == 0
+    assert metric_call["dispatched_count"] == 0
+    assert metric_call["executed_count"] == 0
+    assert metric_call["status"] == "failed"
+    assert metric_call["failure_category"] == "batch_worker_runtime_error"
+    assert metric_call["duration_seconds"] is not None
+    assert metric_call["skipped_reason"] is None
 
 
 def test_main_maps_once_flag_to_single_iteration(monkeypatch) -> None:

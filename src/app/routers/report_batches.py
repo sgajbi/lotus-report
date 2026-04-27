@@ -867,6 +867,15 @@ async def run_report_batch_once(
     except ValueError as exc:
         raise _not_found_error(exc) from exc
     except RuntimeError as exc:
+        record_batch_worker_metrics(
+            recovered_count=0,
+            leased_count=0,
+            dispatched_count=0,
+            executed_count=0,
+            status="failed",
+            failure_category="batch_worker_runtime_error",
+            duration_seconds=perf_counter() - started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
