@@ -130,3 +130,32 @@ async def test_archive_document_sends_trace_without_invalid_traceparent(monkeypa
         "X-Correlation-ID": "corr-789",
         "X-Trace-ID": "trace-archive",
     }
+
+
+@pytest.mark.asyncio
+async def test_archive_document_omits_traceparent_when_trace_id_is_32_char_invalid_hex(monkeypatch):
+    captured_headers: dict[str, str] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured_headers.update(kwargs["headers"])
+        return 200, {}
+
+    monkeypatch.setattr(archive_client_module, "post_with_retry", _fake_post_with_retry)
+    client = ArchiveClient(
+        base_url="http://archive.dev.lotus",
+        timeout_seconds=5.0,
+        max_retries=1,
+        retry_backoff_seconds=0.1,
+    )
+
+    await client.archive_document(
+        {"archive_request_id": "arch-hex"},
+        actor_id="advisor-hex",
+        tenant_id="tenant-eu",
+        region="EMEA",
+        correlation_id="corr-hex",
+        trace_id="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",  # 32 chars, invalid hex
+    )
+
+    assert "traceparent" not in captured_headers
+    assert captured_headers["X-Trace-ID"] == "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
