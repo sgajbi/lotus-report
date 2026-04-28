@@ -10,6 +10,16 @@ import uvicorn
 
 from app.clients.render_client import RenderClient
 from app.main import app as report_app
+from app.report_batch_orchestrator.ledger import ReportBatchLedger
+from app.report_batch_orchestrator.replay import (
+    ReportBatchItemReplayService,
+    get_report_batch_item_replay_service,
+)
+from app.report_batch_orchestrator.scheduler import ReportBatchScheduler
+from app.report_batch_orchestrator.service import (
+    get_report_batch_ledger,
+    get_report_batch_scheduler,
+)
 from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
@@ -18,6 +28,18 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_lineage.store import ReportInputSnapshotStore
+from app.reporting_render.regenerate_service import (
+    PortfolioReviewRegenerateService,
+    get_portfolio_review_regenerate_service,
+)
+from app.reporting_render.replay_service import (
+    PortfolioReviewReplayService,
+    get_portfolio_review_replay_service,
+)
+from app.reporting_render.rerender_service import (
+    PortfolioReviewRerenderService,
+    get_portfolio_review_rerender_service,
+)
 from app.reporting_render.service import (
     PortfolioReviewRenderOrchestrationService,
     get_portfolio_review_render_orchestration_service,
@@ -143,6 +165,33 @@ class ProofSnapshotCaptureService:
         )
 
 
+class ProofPortfolioSource:
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return 200, {
+            "portfolio_id": portfolio_id,
+            "status": "active",
+            "correlation_id": correlation_id,
+        }
+
+    async def list_portfolios(
+        self,
+        correlation_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        return 200, {
+            "portfolios": [
+                {
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "status": "active",
+                }
+            ],
+            "correlation_id": correlation_id,
+        }
+
+
 class RecordingRenderClient:
     def __init__(
         self,
@@ -159,6 +208,7 @@ class RecordingRenderClient:
         self,
         payload: dict[str, Any],
         correlation_id: str | None = None,
+        trace_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
         self._request_capture_path.write_text(
             json.dumps(payload, indent=2, sort_keys=True),
@@ -167,6 +217,67 @@ class RecordingRenderClient:
         status_code, response_payload = await self._inner.submit_render_package(
             payload,
             correlation_id=correlation_id,
+            trace_id=trace_id,
+        )
+        self._response_capture_path.write_text(
+            json.dumps(
+                {
+                    "status_code": status_code,
+                    "payload": response_payload,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return status_code, response_payload
+
+
+class RecordingArchiveClient:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        request_capture_path: Path,
+        response_capture_path: Path,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._request_capture_path = request_capture_path
+        self._response_capture_path = response_capture_path
+
+    async def archive_document(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        from app.clients.archive_client import ArchiveClient
+
+        self._request_capture_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        client = ArchiveClient(
+            base_url=self._base_url,
+            timeout_seconds=10.0,
+            max_retries=1,
+            retry_backoff_seconds=0.1,
+        )
+        status_code, response_payload = await client.archive_document(
+            payload,
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            region=region,
+            correlation_id=correlation_id,
+            trace_id=trace_id,
+            booking_center_code=booking_center_code,
+            role=role,
         )
         self._response_capture_path.write_text(
             json.dumps(
@@ -185,6 +296,7 @@ class RecordingRenderClient:
 def build_app() -> Any:
     ledger = ReportJobLedger(Path(_required_env("RFC0102_LEDGER_PATH")))
     lineage_store = ReportInputSnapshotStore(Path(_required_env("RFC0102_LINEAGE_PATH")))
+    batch_ledger = ReportBatchLedger(Path(_required_env("RFC0102_BATCH_LEDGER_PATH")))
     capture_service = ProofSnapshotCaptureService(
         ledger=ledger,
         lineage_store=lineage_store,
@@ -200,20 +312,63 @@ def build_app() -> Any:
         request_capture_path=Path(_required_env("RFC0102_RENDER_REQUEST_CAPTURE_PATH")),
         response_capture_path=Path(_required_env("RFC0102_RENDER_RESPONSE_CAPTURE_PATH")),
     )
+    archive_client = RecordingArchiveClient(
+        base_url=_required_env("RFC0102_ARCHIVE_BASE_URL"),
+        request_capture_path=Path(_required_env("RFC0102_ARCHIVE_REQUEST_CAPTURE_PATH")),
+        response_capture_path=Path(_required_env("RFC0102_ARCHIVE_RESPONSE_CAPTURE_PATH")),
+    )
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=render_client,
+        archive_client=archive_client,
         snapshot_store=lineage_store,
         job_ledger=ledger,
+    )
+    rerender_service = PortfolioReviewRerenderService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        ledger=ledger,
+    )
+    regenerate_service = PortfolioReviewRegenerateService(
+        ledger=ledger,
+        snapshot_store=lineage_store,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    replay_service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    batch_replay_service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=ledger,
+    )
+    batch_scheduler = ReportBatchScheduler(
+        batch_ledger=batch_ledger,
+        portfolio_source=ProofPortfolioSource(),
     )
 
     report_app.dependency_overrides[get_report_job_ledger] = lambda: ledger
     report_app.dependency_overrides[get_report_lineage_store] = lambda: lineage_store
+    report_app.dependency_overrides[get_report_batch_ledger] = lambda: batch_ledger
     report_app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         capture_service
     )
     report_app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
         render_service
     )
+    report_app.dependency_overrides[get_portfolio_review_rerender_service] = lambda: (
+        rerender_service
+    )
+    report_app.dependency_overrides[get_portfolio_review_regenerate_service] = lambda: (
+        regenerate_service
+    )
+    report_app.dependency_overrides[get_portfolio_review_replay_service] = lambda: replay_service
+    report_app.dependency_overrides[get_report_batch_item_replay_service] = lambda: (
+        batch_replay_service
+    )
+    report_app.dependency_overrides[get_report_batch_scheduler] = lambda: batch_scheduler
     report_app.state.report_job_ledger_readiness_override = lambda: True
     report_app.state.report_input_snapshot_store_readiness_override = lambda: True
     return report_app

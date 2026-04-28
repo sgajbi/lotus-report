@@ -967,8 +967,8 @@ def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_
 
         assert len(render_client.payloads) == 1
         assert render_client.payloads[0]["snapshot_id"] == snapshot.snapshot_id
-        assert render_client.payloads[0]["snapshot_hash"] == snapshot.snapshot_hash
-        assert render_client.payloads[0]["render_attempt_id"] == body["rerender_attempt_id"]
+        assert "snapshot_hash" not in render_client.payloads[0]
+        assert "render_attempt_id" not in render_client.payloads[0]
         assert len(archive_client.payloads) == 1
         metadata = archive_client.payloads[0]["metadata"]
         assert metadata["snapshot_id"] == snapshot.snapshot_id

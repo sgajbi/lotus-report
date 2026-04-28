@@ -165,8 +165,6 @@ class PortfolioReviewRerenderService:
             render_job_id=attempt.render_job_id,
         )
         payload["snapshot_id"] = snapshot.snapshot_id
-        payload["snapshot_hash"] = snapshot.snapshot_hash
-        payload["render_attempt_id"] = attempt.rerender_attempt_id
         status_code, render_response = await self._render_client.submit_render_package(
             payload,
             correlation_id=caller_context.correlation_id,
