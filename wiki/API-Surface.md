@@ -29,6 +29,10 @@
   lineage, render, and archive handoff state; omits raw payloads and storage references
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history
+- `POST /reports/jobs/{job_id}/rerender`
+  internal RFC-0105 rerender command for already archived PDF jobs; reuses the immutable snapshot,
+  preserves snapshot id/hash, creates a new render/archive correction identity, and does not
+  recollect upstream data
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`

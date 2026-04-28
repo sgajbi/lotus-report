@@ -169,9 +169,13 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     assert "lotus_report_operations_total" in implemented_names
     assert "lotus_report_batch_pressure_last_counts" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
-    assert {"report_job_submission", "snapshot_capture", "render_handoff", "archive_handoff"} <= (
-        IMPLEMENTED_REPORTING_OPERATIONS
-    )
+    assert {
+        "report_job_submission",
+        "snapshot_capture",
+        "render_handoff",
+        "archive_handoff",
+        "rerender_from_snapshot",
+    } <= (IMPLEMENTED_REPORTING_OPERATIONS)
     assert {"replay_command", "rerender_command", "regenerate_command"} <= (
         RESERVED_REPORTING_OPERATIONS
     )
@@ -278,6 +282,12 @@ def test_record_report_operation_bounds_status_failure_category_and_duration():
         operation="archive_handoff",
         status="failed",
         failure_category="x" * 81,
+    )
+    record_report_operation(
+        operation="rerender_from_snapshot",
+        status="archived",
+        failure_category=None,
+        duration_seconds=0.01,
     )
 
 

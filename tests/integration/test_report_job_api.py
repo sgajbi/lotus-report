@@ -15,6 +15,10 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_lineage.store import ReportInputSnapshotStore
+from app.reporting_render.rerender_service import (
+    PortfolioReviewRerenderService,
+    get_portfolio_review_rerender_service,
+)
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.report_jobs import get_report_lineage_store
 
@@ -145,6 +149,89 @@ class _FakeCaptureService:
 class _FakeRenderService:
     async def render_for_job(self, job):
         return job
+
+
+class _RerenderRenderClient:
+    def __init__(self, *, status_code=201, payload=None):
+        self.status_code = status_code
+        self.payload = payload
+        self.payloads = []
+
+    async def submit_render_package(self, payload, **kwargs):
+        self.payloads.append(payload)
+        if self.payload is not None:
+            return self.status_code, self.payload
+        return self.status_code, {
+            "status": "rendered",
+            "render_job_id": payload["render_job_id"],
+            "artifact_sha256": "sha256:rerender-artifact",
+            "bounded_determinism_fingerprint": "fingerprint-rerender",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 731,
+            "artifact_base64": "JVBERi0xLjQ=",
+        }
+
+
+class _RerenderArchiveClient:
+    def __init__(self, *, status_code=201, payload=None):
+        self.status_code = status_code
+        self.payload = payload or {"document_id": "doc_report_job_pdf_correction"}
+        self.payloads = []
+
+    async def archive_document(self, payload, **kwargs):
+        self.payloads.append(payload)
+        return self.status_code, self.payload
+
+
+def _install_rerender_service(ledger, lineage_store, render_client, archive_client):
+    service = PortfolioReviewRerenderService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        ledger=ledger,
+    )
+    app.dependency_overrides[get_portfolio_review_rerender_service] = lambda: service
+    return service
+
+
+def _create_archived_pdf_job(client, ledger):
+    payload = _payload()
+    payload["requested_output_formats"] = ["pdf"]
+    response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
+    assert response.status_code == 202
+    job_id = response.json()["report_job_id"]
+    ready = ledger.get_job(job_id)
+    rendered = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    ledger.mark_archiving(
+        job_id=rendered.job_id,
+        actor=rendered.triggered_by,
+        correlation_id=rendered.correlation_id,
+        trace_id=rendered.trace_id,
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+    )
+    return ledger.mark_archived(
+        job_id=rendered.job_id,
+        actor=rendered.triggered_by,
+        correlation_id=rendered.correlation_id,
+        trace_id=rendered.trace_id,
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+        archive_document_id="doc_report_job_pdf",
+    )
 
 
 def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
@@ -693,5 +780,213 @@ def test_report_job_snapshot_endpoints_translate_missing_snapshot_rows(tmp_path)
         assert missing_snapshot.json()["detail"]["code"] == "report_snapshot_not_found"
         assert missing_snapshot_lineage.status_code == 404
         assert missing_snapshot_lineage.json()["detail"]["code"] == "report_snapshot_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        snapshot = lineage_store.get_snapshot_by_job(job.job_id)
+        capture_calls_after_create = capture_service.calls
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-template-correction"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["snapshot_id"] == snapshot.snapshot_id
+        assert body["snapshot_hash"] == snapshot.snapshot_hash
+        assert body["previous_render_job_id"] == f"rdr_{job.job_id}_pdf"
+        assert body["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert body["render"]["render_job_id"].startswith("rdr_rrnd_")
+        assert body["render"]["render_job_id"] != job.render_job_id
+        assert body["archive"]["document_id"] == "doc_report_job_pdf_correction"
+        assert body["archive_consequence"] == "correction"
+        assert capture_service.calls == capture_calls_after_create
+
+        assert len(render_client.payloads) == 1
+        assert render_client.payloads[0]["snapshot_id"] == snapshot.snapshot_id
+        assert render_client.payloads[0]["snapshot_hash"] == snapshot.snapshot_hash
+        assert render_client.payloads[0]["render_attempt_id"] == body["rerender_attempt_id"]
+        assert len(archive_client.payloads) == 1
+        metadata = archive_client.payloads[0]["metadata"]
+        assert metadata["snapshot_id"] == snapshot.snapshot_id
+        assert metadata["snapshot_hash"] == snapshot.snapshot_hash
+        assert metadata["render_attempt_id"] == body["rerender_attempt_id"]
+        assert metadata["supersedes_render_job_id"] == f"rdr_{job.job_id}_pdf"
+        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
+        assert metadata["archive_consequence"] == "correction"
+
+        events = ledger.list_status_events(job.job_id)
+        assert [event.event_type for event in events][-2:] == [
+            "job_rerender_requested",
+            "job_rerender_archived",
+        ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        headers = _headers(f"rerender-{job.job_id}-same-key")
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_rejects_non_archived_job(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_rerender_service(
+        ledger,
+        lineage_store,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers(),
+        ).json()
+
+        response = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{handle['report_job_id']}-invalid"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_rerendered"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_reports_missing_snapshot(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_rerender_service(
+        ledger,
+        lineage_store,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        missing_snapshot_store = ReportInputSnapshotStore(tmp_path / "empty-lineage.sqlite3")
+        _install_rerender_service(
+            ledger,
+            missing_snapshot_store,
+            _RerenderRenderClient(),
+            _RerenderArchiveClient(),
+        )
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-missing-snapshot"),
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "report_job_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_render_validation_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=422,
+        payload={
+            "detail": {
+                "code": "render_package_invalid",
+                "message": "Render package failed contract validation.",
+            }
+        },
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-validation"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_validation_failed"
+        assert body["retry_eligible"] is False
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_archive_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        status_code=503,
+        payload={
+            "detail": {
+                "code": "archive_storage_unavailable",
+                "message": "Archive storage is unavailable.",
+            }
+        },
+    )
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-archive-failure"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "archive_storage_failed"
+        assert body["retry_eligible"] is True
+        assert body["archive"]["archive_request_id"].startswith("arch_rdr_rrnd_")
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
     finally:
         _clear_overrides()

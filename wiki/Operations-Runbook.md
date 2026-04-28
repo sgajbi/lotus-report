@@ -29,8 +29,8 @@
 - `docs/operations/reporting-observability-metrics.md` records the code-backed first-wave metrics
   contract, dashboard contract, alert basis, and label restrictions.
 - implemented metrics cover report job submission, snapshot capture, render handoff, archive
-  handoff, batch worker passes, and scheduler passes.
-- replay, rerender, regenerate, stuck-state, and SLA scan metrics are reserved until those command
+  handoff, rerender-from-snapshot, batch worker passes, and scheduler passes.
+- broader replay, regenerate, stuck-state, and SLA scan metrics are reserved until those command
   paths are implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
   document, report job, batch, trace, correlation, storage, or raw payload fields.
@@ -41,7 +41,7 @@
   operator lookup field vocabulary.
 - operator docs summarize those fields but must not introduce additional observability identifiers
   outside the code-owned vocabulary.
-- RFC-0105 dashboards, replay, rerender, regenerate, and stuck-state APIs remain planned until
+- RFC-0105 dashboards, broader replay, regenerate, and stuck-state APIs remain planned until
   implemented and proven with source-backed runtime evidence.
 
 ## Operational truths
@@ -195,8 +195,10 @@ Expected controls:
 4. `GET /reports/jobs/{job_id}/diagnostics` is the first stop for one-job operator review because
    it composes source-backed status, latest event, snapshot posture, upstream-lineage summary,
    render metadata, archive handoff identifiers, and evidence links without raw payloads,
-5. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
-6. every report job has one durable `report_request`, one durable `report_job`, and append-only
+5. `POST /reports/jobs/{job_id}/rerender` is only for archived PDF jobs and creates a new
+   rerender attempt from the existing immutable snapshot without recollecting upstream data,
+6. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
+7. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
 
 ## RFC-0101 snapshot and lineage flow
@@ -297,9 +299,10 @@ ORDER BY captured_at, upstream_call_id;
 
 Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
 ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention,
-retrieval, rerender, reissue, and archive housekeeping belong to `lotus-archive` or later
-reporting architecture RFCs. `lotus-report` records only the archive handoff request id, document
-id, completion timestamp, and truthful archive failure posture.
+retrieval, broad replay, regenerate, reissue, and archive housekeeping belong to `lotus-archive`
+or later reporting architecture RFCs. `lotus-report` records the archive handoff request id,
+document id, completion timestamp, truthful archive failure posture, and rerender correction
+attempts for already archived PDF reports.
 
 ## Practical probes
 

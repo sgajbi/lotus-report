@@ -57,6 +57,7 @@ IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
         "batch_worker_run",
         "report_job_submission",
         "render_handoff",
+        "rerender_from_snapshot",
         "snapshot_capture",
     }
 )

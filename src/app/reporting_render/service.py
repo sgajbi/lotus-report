@@ -332,6 +332,10 @@ def _build_archive_payload(
     render_response: dict[str, Any],
     archive_request_id: str,
     content_base64: str,
+    render_attempt_id: str | None = None,
+    supersedes_render_job_id: str | None = None,
+    supersedes_archive_document_id: str | None = None,
+    archive_consequence: str | None = None,
 ) -> dict[str, Any]:
     snapshot_payload = _as_dict(snapshot.snapshot_payload)
     review_period = _as_dict(snapshot_payload.get("reviewPeriod"))
@@ -355,9 +359,11 @@ def _build_archive_payload(
         "report_job_id": job.job_id,
         "report_request_id": job.request_id,
         "snapshot_id": snapshot.snapshot_id,
+        "snapshot_hash": snapshot.snapshot_hash,
         "render_job_id": str(render_response.get("render_job_id") or job.render_job_id),
         "render_attempt_id": str(
-            render_response.get("render_attempt_id")
+            render_attempt_id
+            or render_response.get("render_attempt_id")
             or render_response.get("render_job_id")
             or job.render_job_id
             or job.job_id
@@ -390,6 +396,12 @@ def _build_archive_payload(
         "created_by_service": "lotus-report",
         "created_by_actor": job.triggered_by,
     }
+    if supersedes_render_job_id:
+        metadata["supersedes_render_job_id"] = supersedes_render_job_id
+    if supersedes_archive_document_id:
+        metadata["supersedes_archive_document_id"] = supersedes_archive_document_id
+    if archive_consequence:
+        metadata["archive_consequence"] = archive_consequence
     return {"metadata": metadata, "content_base64": content_base64}
 
 

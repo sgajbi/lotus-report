@@ -16,6 +16,7 @@ from app.reporting_jobs.models import (
     REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
     REPORT_JOB_HANDLE_RESPONSE_EXAMPLE,
     REPORT_JOB_LIST_RESPONSE_EXAMPLE,
+    REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
     ApiErrorResponse,
@@ -30,9 +31,12 @@ from app.reporting_jobs.models import (
     ReportJobListResponse,
     ReportJobOperationLinks,
     ReportJobRenderInfo,
+    ReportJobRerenderRequest,
+    ReportJobRerenderResponse,
     ReportJobSnapshotDiagnostics,
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
+    ReportRerenderAttemptRecord,
 )
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
@@ -46,6 +50,7 @@ from app.reporting_lineage.service import (
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.rerender_service import get_portfolio_review_rerender_service
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
 
@@ -189,6 +194,48 @@ def _record_to_archive(record: ReportJobLedgerRecord) -> ReportJobArchiveInfo | 
         archive_request_id=record.archive_request_id,
         document_id=record.archive_document_id,
         completed_at=record.archive_completed_at,
+    )
+
+
+def _attempt_to_rerender_response(
+    attempt: ReportRerenderAttemptRecord,
+) -> ReportJobRerenderResponse:
+    return ReportJobRerenderResponse(
+        report_job_id=attempt.report_job_id,
+        rerender_attempt_id=attempt.rerender_attempt_id,
+        idempotency_key=attempt.idempotency_key,
+        status=attempt.status,
+        snapshot_id=attempt.snapshot_id,
+        snapshot_hash=attempt.snapshot_hash,
+        previous_render_job_id=attempt.previous_render_job_id,
+        previous_archive_document_id=attempt.previous_archive_document_id,
+        failure_category=attempt.failure_category,
+        failure_message=attempt.failure_message,
+        retry_eligible=attempt.retry_eligible,
+        render=ReportJobRenderInfo(
+            render_job_id=attempt.render_job_id,
+            output_format=attempt.render_output_format,
+            template_id=attempt.render_template_id,
+            template_version=attempt.render_template_version,
+            artifact_sha256=attempt.render_artifact_sha256,
+            bounded_determinism_fingerprint=attempt.render_bounded_determinism_fingerprint,
+            runtime_engine=attempt.render_runtime_engine,
+            runtime_engine_version=attempt.render_runtime_engine_version,
+            render_duration_ms=attempt.render_duration_ms,
+        ),
+        archive=(
+            ReportJobArchiveInfo(
+                archive_request_id=attempt.archive_request_id,
+                document_id=attempt.archive_document_id,
+                completed_at=attempt.archive_completed_at,
+            )
+            if attempt.archive_request_id
+            or attempt.archive_document_id
+            or attempt.archive_completed_at
+            else None
+        ),
+        created_at=attempt.created_at,
+        updated_at=attempt.updated_at,
     )
 
 
@@ -880,6 +927,123 @@ async def get_report_job_events(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+
+@jobs_router.post(
+    "/{job_id}/rerender",
+    response_model=ReportJobRerenderResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Rerender archived report job from immutable snapshot",
+    description=(
+        "Rerenders an already archived PDF report from the durable input snapshot captured for "
+        "the source job. This command does not recollect upstream domain data. It preserves the "
+        "source snapshot id and snapshot hash, creates a new render attempt identity, and records "
+        "the archive correction consequence when a new document is handed off to lotus-archive."
+    ),
+    openapi_extra={
+        "responses": {
+            "202": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_rerender": {
+                                "summary": "Archived report rerendered from snapshot",
+                                "value": REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description="Returned when the rerender command omits Idempotency-Key.",
+        ),
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job or snapshot does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="report_job_cannot_be_rerendered",
+            description="Returned when the report job is not archived PDF output.",
+        ),
+    },
+)
+async def rerender_report_job(
+    job_id: Annotated[str, Path(description="Opaque archived report job identifier.")],
+    command: ReportJobRerenderRequest,
+    rerender_service: Any = Depends(get_portfolio_review_rerender_service),
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Idempotency key for this rerender command."),
+    ] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
+    role: Annotated[str | None, Header(alias="X-Role")] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
+) -> ReportJobRerenderResponse:
+    caller_context = caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
+    try:
+        return _attempt_to_rerender_response(
+            await rerender_service.rerender_job(
+                job_id=job_id,
+                command=command,
+                caller_context=caller_context,
+                idempotency_key=idempotency_key,
+            )
+        )
+    except MissingIdempotencyKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
+        ) from exc
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+    except InvalidReportJobTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_job_cannot_be_rerendered"]["detail"],
         ) from exc
 
 

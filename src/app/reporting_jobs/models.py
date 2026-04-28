@@ -34,6 +34,14 @@ ReportFailureCategory = Literal[
     "operator_intervention_required",
 ]
 
+ReportRerenderAttemptStatus = Literal[
+    "rendering",
+    "rendered",
+    "archiving",
+    "archived",
+    "failed",
+]
+
 
 class PortfolioReviewJobRequest(BaseModel):
     portfolio_scope: dict[str, Any] = Field(
@@ -280,6 +288,12 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report lineage diagnostics are temporarily unavailable.",
         }
     },
+    "report_job_cannot_be_rerendered": {
+        "detail": {
+            "code": "report_job_cannot_be_rerendered",
+            "message": "Report job is not eligible for rerender from snapshot.",
+        }
+    },
     "report_job_cannot_be_cancelled": {
         "detail": {
             "code": "report_job_cannot_be_cancelled",
@@ -292,6 +306,39 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "At least one supported job-search filter is required.",
         }
     },
+}
+
+REPORT_JOB_RERENDER_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "rerender_attempt_id": "rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
+    "idempotency_key": "rerender-rjob_83ca965c50334c40a17d2b8cc94873a5-template-fix-1",
+    "status": "archived",
+    "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+    "snapshot_hash": "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd",
+    "previous_render_job_id": "rdr_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+    "previous_archive_document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+    "archive_consequence": "correction",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-rerender",
+        "bounded_determinism_fingerprint": "typst-0.14.2:b8e42bb1",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 731,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+        "document_id": "doc_correction_83ca965c50334c40a17d2b8cc94873a5",
+        "completed_at": "2026-04-22T09:07:04Z",
+    },
+    "created_at": "2026-04-22T09:07:00Z",
+    "updated_at": "2026-04-22T09:07:04Z",
 }
 
 
@@ -460,6 +507,124 @@ class ReportJobArchiveInfo(BaseModel):
         default=None,
         description="UTC timestamp when lotus-archive confirmed document archival.",
         examples=["2026-04-22T09:00:04Z"],
+    )
+
+
+class ReportJobRerenderRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Support-safe business or operations reason for rerendering the archived job.",
+        examples=["Template correction after approved disclosure wording change."],
+    )
+
+
+class ReportRerenderAttemptRecord(BaseModel):
+    rerender_attempt_id: str
+    report_job_id: str
+    idempotency_key: str
+    status: ReportRerenderAttemptStatus
+    snapshot_id: str
+    snapshot_hash: str
+    previous_render_job_id: str | None = None
+    previous_archive_document_id: str | None = None
+    render_job_id: str
+    render_output_format: str = "pdf"
+    render_template_id: str = "portfolio-review"
+    render_template_version: str = "v1"
+    render_artifact_sha256: str | None = None
+    render_bounded_determinism_fingerprint: str | None = None
+    render_runtime_engine: str | None = None
+    render_runtime_engine_version: str | None = None
+    render_duration_ms: int | None = None
+    archive_request_id: str | None = None
+    archive_document_id: str | None = None
+    archive_completed_at: datetime | None = None
+    failure_category: ReportFailureCategory | None = None
+    failure_message: str | None = None
+    retry_eligible: bool = False
+    requested_by: str
+    reason: str
+    correlation_id: str
+    trace_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReportJobRerenderResponse(BaseModel):
+    report_job_id: str = Field(
+        ...,
+        description="Source archived report job rerendered from its immutable snapshot.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    rerender_attempt_id: str = Field(
+        ...,
+        description="Opaque rerender attempt identifier preserving repeat render identity.",
+        examples=["rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c"],
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this rerender command.",
+        examples=["rerender-rjob_83ca965c50334c40a17d2b8cc94873a5-template-fix-1"],
+    )
+    status: ReportRerenderAttemptStatus = Field(
+        ...,
+        description="Current rerender attempt status.",
+        examples=["archived"],
+    )
+    snapshot_id: str = Field(
+        ...,
+        description="Immutable snapshot reused by the rerender attempt.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    snapshot_hash: str = Field(
+        ...,
+        description=(
+            "Snapshot hash reused by the rerender attempt; upstream data is not recollected."
+        ),
+        examples=["sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    previous_render_job_id: str | None = Field(
+        default=None,
+        description="Original render job identifier superseded by this rerender attempt.",
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Original archive document identifier superseded by the new archive document.",
+    )
+    archive_consequence: Literal["correction"] = Field(
+        "correction",
+        description="Archive consequence of a successful rerender.",
+        examples=["correction"],
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable rerender failure category when the attempt failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe rerender failure message when the attempt failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry is currently permitted for this rerender attempt.",
+    )
+    render: ReportJobRenderInfo = Field(
+        ...,
+        description="New render identity and render metadata for this rerender attempt.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="New archive handoff and document identifiers for this rerender attempt.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was last updated.",
     )
 
 
