@@ -13,6 +13,8 @@ MiddlewareCallable = Callable[[Request, MiddlewareNext], Awaitable[Response]]
 
 _SERVICE_NAME = "lotus-report"
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_READ_AUTHZ_METHODS = {"GET", "HEAD"}
+_READ_AUDIT_METHODS = {"GET", "HEAD"}
 _REQUIRED_HEADERS = {"x-actor-id", "x-tenant-id", "x-role", "x-correlation-id"}
 _REDACT_FIELDS = {
     "password",
@@ -60,8 +62,8 @@ def validate_enterprise_runtime_config() -> list[str]:
 
     if (
         _env_enabled("ENTERPRISE_ENFORCE_AUTHZ", "false")
-        and not os.getenv("ENTERPRISE_PRIMARY_KEY_ID", "").strip()
-    ):
+        or _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    ) and not os.getenv("ENTERPRISE_PRIMARY_KEY_ID", "").strip():
         issues.append("missing_primary_key_id")
 
     if issues and _env_enabled("ENTERPRISE_ENFORCE_RUNTIME_CONFIG", "false"):
@@ -76,6 +78,24 @@ def load_feature_flags() -> dict[str, dict[str, dict[str, bool]]]:
 def load_capability_rules() -> dict[str, str]:
     rules = _load_json_map("ENTERPRISE_CAPABILITY_RULES_JSON")
     return {str(key): str(value) for key, value in rules.items() if isinstance(key, str)}
+
+
+def _path_matches_rule(path: str, rule_path: str) -> bool:
+    normalized_rule = rule_path.rstrip("/")
+    if not normalized_rule or normalized_rule == "/":
+        return True
+    if "{" in normalized_rule and "}" in normalized_rule:
+        path_segments = [segment for segment in path.rstrip("/").split("/") if segment]
+        rule_segments = [segment for segment in normalized_rule.split("/") if segment]
+        if len(path_segments) != len(rule_segments):
+            return False
+        return all(
+            rule_segment.startswith("{")
+            and rule_segment.endswith("}")
+            or path_segment == rule_segment
+            for path_segment, rule_segment in zip(path_segments, rule_segments)
+        )
+    return path == normalized_rule or path.startswith(f"{normalized_rule}/")
 
 
 def is_feature_enabled(feature_key: str, tenant_id: str, role: str) -> bool:
@@ -96,17 +116,36 @@ def _required_capability(method: str, path: str) -> str | None:
     method = method.upper()
     for key, capability in load_capability_rules().items():
         prefix = f"{method} "
-        if key.upper().startswith(prefix) and path.startswith(key[len(prefix) :]):
+        if not key.upper().startswith(prefix):
+            continue
+        rule_path = key[len(prefix) :]
+        if _path_matches_rule(path, rule_path):
             return capability
     return None
+
+
+def authorize_read_request(
+    method: str, path: str, headers: dict[str, str]
+) -> tuple[bool, str | None]:
+    return authorize_request(method, path, headers)
 
 
 def authorize_write_request(
     method: str, path: str, headers: dict[str, str]
 ) -> tuple[bool, str | None]:
-    if method.upper() not in _WRITE_METHODS or not _env_enabled(
+    return authorize_request(method, path, headers)
+
+
+def authorize_request(method: str, path: str, headers: dict[str, str]) -> tuple[bool, str | None]:
+    method_upper = method.upper()
+    required_capability = _required_capability(method_upper, path)
+    requires_write_auth = method_upper in _WRITE_METHODS and _env_enabled(
         "ENTERPRISE_ENFORCE_AUTHZ", "false"
-    ):
+    )
+    requires_read_auth = (
+        method_upper in _READ_AUTHZ_METHODS or required_capability
+    ) and _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    if not (requires_write_auth or requires_read_auth):
         return True, None
 
     normalized = {str(k).lower(): str(v) for k, v in headers.items()}
@@ -179,7 +218,7 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         if request.method in _WRITE_METHODS and content_length > max_write_payload_bytes:
             return JSONResponse(status_code=413, content={"detail": "payload_too_large"})
 
-        authorized, reason = authorize_write_request(
+        authorized, reason = authorize_request(
             request.method, request.url.path, dict(request.headers)
         )
         if not authorized:
@@ -205,6 +244,17 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
                 role=request.headers.get("X-Role", "unknown"),
                 correlation_id=request.headers.get("X-Correlation-Id"),
                 metadata={"status_code": response.status_code},
+            )
+        elif request.method in _READ_AUDIT_METHODS and _env_enabled(
+            "ENTERPRISE_AUDIT_READS", "false"
+        ):
+            emit_audit_event(
+                action=f"{request.method} {request.url.path}",
+                actor_id=request.headers.get("X-Actor-Id", "unknown"),
+                tenant_id=request.headers.get("X-Tenant-Id", "default"),
+                role=request.headers.get("X-Role", "unknown"),
+                correlation_id=request.headers.get("X-Correlation-Id"),
+                metadata={"status_code": response.status_code, "access_type": "read"},
             )
         return response
 
