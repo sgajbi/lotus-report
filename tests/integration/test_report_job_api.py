@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.reporting_jobs.ledger import (
+    InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobLedger,
     ReportJobNotFoundError,
@@ -1672,5 +1673,25 @@ def test_report_job_replay_error_mappings(tmp_path):
         assert missing_key.json()["detail"]["code"] == "missing_idempotency_key"
         assert not_found.status_code == 404
         assert not_found.json()["detail"]["code"] == "report_job_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_conflict_mapping() -> None:
+    class _ConflictReplayService:
+        async def replay_job(self, **_kwargs):
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+
+    app.dependency_overrides[get_portfolio_review_replay_service] = lambda: _ConflictReplayService()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/jobs/rjob_conflict/replay",
+            json={"reason": "Unsupported replay state."},
+            headers=_headers("replay-conflict"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
     finally:
         _clear_overrides()

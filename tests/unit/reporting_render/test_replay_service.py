@@ -13,6 +13,7 @@ from app.reporting_jobs.models import (
 from app.reporting_render.replay_service import (
     PortfolioReviewReplayService,
     assert_replay_eligible,
+    get_portfolio_review_replay_service,
     replay_idempotency_key,
 )
 
@@ -60,9 +61,32 @@ class _RenderNotCalled:
         raise AssertionError("JSON replay must not invoke PDF render")
 
 
-def _failed_job(ledger: ReportJobLedger, *, retry_eligible: bool = True):
+class _RenderToFailed:
+    def __init__(self, ledger: ReportJobLedger) -> None:
+        self._ledger = ledger
+        self.calls = 0
+
+    async def render_for_job(self, job):
+        self.calls += 1
+        return self._ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category="render_execution_failed",
+            failure_message="lotus-render timed out.",
+            retry_eligible=True,
+        )
+
+
+def _failed_job(
+    ledger: ReportJobLedger,
+    *,
+    retry_eligible: bool = True,
+    output_formats: list[str] | None = None,
+):
     job = ledger.create_portfolio_review_job(
-        request=_request(),
+        request=_request(output_formats=output_formats),
         caller_context=_caller(),
         idempotency_key="source-replay",
     )
@@ -106,6 +130,36 @@ async def test_report_replay_json_path_completes_without_render(tmp_path):
     ] == ["job_replay_completed"]
 
 
+@pytest.mark.asyncio
+async def test_report_replay_records_failed_render_result(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _failed_job(ledger, output_formats=["pdf"])
+    capture = _CaptureToDataReady(ledger)
+    render = _RenderToFailed(ledger)
+    service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=capture,
+        render_service=render,
+    )
+
+    result = await service.replay_job(
+        job_id=source.job_id,
+        command=ReportJobReplayRequest(reason="Retry failed PDF render path."),
+        caller_context=_caller(),
+        idempotency_key="pdf-render-failure",
+    )
+
+    assert capture.calls == 1
+    assert render.calls == 1
+    assert result.replayed_job.status == "failed"
+    assert result.replayed_job.failure_category == "render_execution_failed"
+    assert [
+        event.event_type
+        for event in ledger.list_status_events(source.job_id)
+        if event.event_type == "job_replay_completed"
+    ] == ["job_replay_completed"]
+
+
 def test_report_replay_rejects_missing_key_nonretryable_and_archived(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     failed = _failed_job(ledger, retry_eligible=False)
@@ -118,3 +172,28 @@ def test_report_replay_rejects_missing_key_nonretryable_and_archived(tmp_path):
         assert_replay_eligible(failed)
     with pytest.raises(InvalidReportJobTransitionError):
         assert_replay_eligible(archived_with_doc)
+
+
+def test_report_replay_service_factory_wires_runtime_dependencies(monkeypatch):
+    ledger = object()
+    capture_service = object()
+    render_service = object()
+
+    monkeypatch.setattr(
+        "app.reporting_render.replay_service.get_report_job_ledger",
+        lambda: ledger,
+    )
+    monkeypatch.setattr(
+        "app.reporting_render.replay_service.get_portfolio_review_snapshot_capture_service",
+        lambda: capture_service,
+    )
+    monkeypatch.setattr(
+        "app.reporting_render.replay_service.get_portfolio_review_render_orchestration_service",
+        lambda: render_service,
+    )
+
+    service = get_portfolio_review_replay_service()
+
+    assert service._ledger is ledger
+    assert service._capture_service is capture_service
+    assert service._render_service is render_service

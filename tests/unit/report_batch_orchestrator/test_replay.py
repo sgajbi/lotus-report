@@ -10,6 +10,7 @@ from app.report_batch_orchestrator.models import (
 from app.report_batch_orchestrator.replay import (
     ReportBatchItemReplayService,
     _batch_item_replay_idempotency_key,
+    get_report_batch_item_replay_service,
 )
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
@@ -229,3 +230,22 @@ def test_batch_replay_rejects_failed_item_without_source_job(tmp_path):
             caller_context=_caller(),
             idempotency_key="missing-source",
         )
+
+
+def test_batch_replay_service_factory_wires_runtime_dependencies(monkeypatch):
+    batch_ledger = object()
+    report_job_ledger = object()
+
+    monkeypatch.setattr(
+        "app.report_batch_orchestrator.replay.get_report_batch_ledger",
+        lambda: batch_ledger,
+    )
+    monkeypatch.setattr(
+        "app.report_batch_orchestrator.replay.get_report_job_ledger",
+        lambda: report_job_ledger,
+    )
+
+    service = get_report_batch_item_replay_service()
+
+    assert service._batch_ledger is batch_ledger
+    assert service._report_job_ledger is report_job_ledger

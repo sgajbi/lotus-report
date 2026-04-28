@@ -524,6 +524,26 @@ def test_report_batch_item_replay_error_mappings(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_item_replay_legacy_cannot_replay_mapping() -> None:
+    class _CannotReplayService:
+        def replay_item(self, **_kwargs):
+            raise ValueError("report_batch_item_cannot_be_replayed")
+
+    app.dependency_overrides[get_report_batch_item_replay_service] = lambda: _CannotReplayService()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/batches/rbch_replay/items/rbit_replay/replay",
+            json={"reason": "Unsupported legacy replay state."},
+            headers=_headers("batch-item-replay-legacy-conflict"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_batch_item_cannot_be_replayed"
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
     client, ledger = _client(tmp_path)
     app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
