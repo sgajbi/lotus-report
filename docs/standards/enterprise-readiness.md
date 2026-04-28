@@ -7,6 +7,13 @@
 ## Security and IAM Baseline
 
 - Write-path/privileged action audit middleware is enabled.
+- Read-path authorization can be enabled with `ENTERPRISE_ENFORCE_READ_AUTHZ=true`; when enabled,
+  `GET` and `HEAD` requests require caller audit headers plus either `X-Service-Identity` or
+  `Authorization`.
+- Read-path audit events can be enabled with `ENTERPRISE_AUDIT_READS=true`; emitted metadata stays
+  identifier-only and records status code plus `access_type=read`.
+- Capability rules in `ENTERPRISE_CAPABILITY_RULES_JSON` apply to both read and write paths when
+  the matching enforcement toggle is enabled.
 - Audit metadata includes actor/tenant/role/correlation with sensitive-field redaction.
 
 Evidence:
@@ -61,5 +68,3 @@ Evidence:
 ## Deviations
 
 - Deviations require ADR with mitigation and expiry review date.
-
-

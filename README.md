@@ -339,6 +339,9 @@ Current orchestration model:
   compatibility before changing response formatting
 - preserve observability, correlation, request, and trace behavior on reporting endpoints,
   especially when debugging summary, review, batch, render, or archive flows
+- use `ENTERPRISE_ENFORCE_READ_AUTHZ=true` to require service identity or authorization on
+  `GET`/`HEAD` surfaces, and `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit
+  events through the enterprise readiness middleware
 - treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
   dashboard, alert, and label-governance contract; replay, rerender, regenerate, stuck-state, and
   SLA scan metrics remain reserved until those command paths are implementation-backed
