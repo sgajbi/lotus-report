@@ -231,6 +231,26 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             "data_ready",
             "cancelled",
         ]
+
+        diagnostics_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers(),
+        )
+        assert diagnostics_response.status_code == 200
+        diagnostics_body = diagnostics_response.json()
+        assert diagnostics_body["report_job_id"] == handle["report_job_id"]
+        assert diagnostics_body["status"]["status"] == "cancelled"
+        assert diagnostics_body["event_count"] == 4
+        assert diagnostics_body["latest_event"]["to_status"] == "cancelled"
+        assert diagnostics_body["snapshot"]["snapshot_id"].startswith("rsnap_")
+        assert diagnostics_body["lineage"]["upstream_call_count"] == 1
+        assert diagnostics_body["lineage"]["source_services"] == ["lotus-core"]
+        assert diagnostics_body["operation_links"]["status_url"] == (
+            f"/reports/jobs/{handle['report_job_id']}"
+        )
+        assert "snapshot_payload" not in str(diagnostics_body).lower()
+        assert "storage_ref" not in str(diagnostics_body).lower()
+        assert "response_payload" not in str(diagnostics_body).lower()
     finally:
         _clear_overrides()
 
@@ -428,6 +448,11 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
         unknown = client.get("/reports/jobs/rjob_missing", headers=_headers())
         assert unknown.status_code == 404
         assert unknown.json()["detail"]["code"] == "report_job_not_found"
+        unknown_diagnostics = client.get(
+            "/reports/jobs/rjob_missing/diagnostics", headers=_headers()
+        )
+        assert unknown_diagnostics.status_code == 404
+        assert unknown_diagnostics.json()["detail"]["code"] == "report_job_not_found"
 
         handle = client.post(
             "/reports/portfolio-reviews",
@@ -447,6 +472,79 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
         assert duplicate_cancel.status_code == 409
         assert duplicate_cancel.json()["detail"]["code"] == "report_job_cannot_be_cancelled"
         assert "traceback" not in str(duplicate_cancel.json()).lower()
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_requires_caller_context(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        response = client.get("/reports/jobs/rjob_missing/diagnostics")
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "missing_caller_context"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_reports_missing_snapshot_without_payload_leak(tmp_path):
+    client, _ledger, lineage_store = _client(tmp_path)
+
+    class _NoSnapshotCaptureService:
+        async def capture_for_job(self, job):
+            return job
+
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _NoSnapshotCaptureService()
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-no-snapshot"),
+        ).json()
+
+        response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers("portfolio-review-no-snapshot"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["snapshot"] is None
+        assert body["lineage"] is None
+        assert body["operation_links"]["snapshot_url"] is None
+        assert body["operation_links"]["lineage_url"] is None
+        assert body["diagnostic_flags"] == ["snapshot_not_captured"]
+        assert "snapshot_payload" not in str(body).lower()
+        assert lineage_store.list_upstream_calls("missing") == []
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_translates_lineage_store_unavailable(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+
+    class _UnavailableLineageStore:
+        def get_snapshot_by_job(self, _report_job_id):
+            raise RuntimeError("database connection failed")
+
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-lineage-unavailable"),
+        ).json()
+        app.dependency_overrides[get_report_lineage_store] = lambda: _UnavailableLineageStore()
+
+        response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers("portfolio-review-lineage-unavailable"),
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "report_lineage_store_unavailable"
+        assert "database" not in str(response.json()).lower()
     finally:
         _clear_overrides()
 
@@ -484,6 +582,10 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     list_example = list_get["responses"]["200"]["content"]["application/json"]["example"]
     events_get = schema["paths"]["/reports/jobs/{job_id}/events"]["get"]
     events_example = events_get["responses"]["200"]["content"]["application/json"]["example"]
+    diagnostics_get = schema["paths"]["/reports/jobs/{job_id}/diagnostics"]["get"]
+    diagnostics_example = diagnostics_get["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
@@ -492,20 +594,30 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert status_example["archive"]["document_id"].startswith("doc_")
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
+    assert diagnostics_example["lineage"]["upstream_call_count"] == 3
+    assert diagnostics_example["operation_links"]["lineage_url"].endswith("/lineage")
+    assert "snapshot_payload" not in str(diagnostics_example)
     assert "Report Jobs" in list_get["tags"]
+    assert "Report Jobs" in diagnostics_get["tags"]
     assert "what" in list_get["description"].lower() or "returns" in list_get["description"].lower()
     assert (
         "when" in list_get["description"].lower()
         or "use this endpoint" in list_get["description"].lower()
     )
+    assert "use this endpoint" in diagnostics_get["description"].lower()
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
     assert "RFC-" not in str(list_example)
     assert "RFC-" not in str(events_example)
+    assert "RFC-" not in str(diagnostics_example)
     for schema_name in [
         "ReportJobHandleResponse",
         "ReportJobStatusResponse",
+        "ReportJobDiagnosticsResponse",
+        "ReportJobSnapshotDiagnostics",
+        "ReportJobLineageDiagnostics",
+        "ReportJobOperationLinks",
         "ReportJobListResponse",
         "ReportJobListItem",
         "ReportJobListFilters",

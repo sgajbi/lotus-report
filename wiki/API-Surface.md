@@ -24,6 +24,9 @@
   portfolio id, as-of date, idempotency key, correlation id, and created-at window
 - `GET /reports/jobs/{job_id}`
   internal product-safe report job status and diagnostics
+- `GET /reports/jobs/{job_id}/diagnostics`
+  internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
+  lineage, render, and archive handoff state; omits raw payloads and storage references
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history
 - `GET /reports/jobs/{job_id}/snapshot`

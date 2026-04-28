@@ -347,8 +347,11 @@ Current orchestration model:
   SLA scan metrics remain reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
-- use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before
-  inspecting database rows directly
+- use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
+  job; it composes source-backed status, lifecycle-event, snapshot, lineage, render, and archive
+  handoff posture while omitting raw payloads, storage references, and database internals
+- use `GET /reports/jobs/{job_id}/events` for deeper lifecycle diagnostics before inspecting
+  database rows directly
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
   internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
   recover-expired-leases controls plus the bounded `run-once` operator action are direct

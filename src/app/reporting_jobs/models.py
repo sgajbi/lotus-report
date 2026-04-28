@@ -147,6 +147,41 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
     ],
 }
 
+REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "status": REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
+    "event_count": 4,
+    "latest_event": {
+        **REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE["events"][0],
+        "to_status": "archived",
+        "event_type": "job_archived",
+        "message": "Report artifact archived by lotus-archive.",
+    },
+    "snapshot": {
+        "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+        "snapshot_hash": "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd",
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "captured_at": "2026-04-22T09:00:03Z",
+    },
+    "lineage": {
+        "upstream_call_count": 3,
+        "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "failure_categories": [],
+    },
+    "render": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["render"],
+    "archive": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["archive"],
+    "diagnostic_flags": [],
+    "operation_links": {
+        "status_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5",
+        "events_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/events",
+        "snapshot_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/snapshot",
+        "lineage_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/lineage",
+    },
+}
+
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
@@ -237,6 +272,12 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
         "detail": {
             "code": "report_snapshot_not_found",
             "message": "Report snapshot was not found.",
+        }
+    },
+    "report_lineage_store_unavailable": {
+        "detail": {
+            "code": "report_lineage_store_unavailable",
+            "message": "Report lineage diagnostics are temporarily unavailable.",
         }
     },
     "report_job_cannot_be_cancelled": {
@@ -581,6 +622,133 @@ class ReportJobStatusEventsResponse(BaseModel):
         ...,
         description="Append-only lifecycle events ordered by creation time.",
         examples=[REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE["events"]],
+    )
+
+
+class ReportJobSnapshotDiagnostics(BaseModel):
+    snapshot_id: str = Field(
+        ...,
+        description="Opaque durable snapshot identifier associated with the report job.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    snapshot_hash: str = Field(
+        ...,
+        description="Canonical hash of the captured snapshot payload; raw payload is not returned.",
+        examples=["sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    supportability_status: str = Field(
+        ...,
+        description="Supportability posture recorded on the durable snapshot.",
+        examples=["complete"],
+    )
+    completeness_status: str = Field(
+        ...,
+        description="Completeness posture recorded on the durable snapshot.",
+        examples=["complete"],
+    )
+    captured_at: datetime = Field(
+        ...,
+        description="UTC timestamp when snapshot capture completed.",
+        examples=["2026-04-22T09:00:03Z"],
+    )
+
+
+class ReportJobLineageDiagnostics(BaseModel):
+    upstream_call_count: int = Field(
+        ...,
+        description="Number of durable upstream-call evidence rows linked to the snapshot.",
+        examples=[3],
+    )
+    source_services: list[str] = Field(
+        ...,
+        description="Bounded service names observed in upstream lineage evidence.",
+        examples=[["lotus-core", "lotus-performance", "lotus-risk"]],
+    )
+    supportability_status: str = Field(
+        ...,
+        description="Aggregated supportability posture from the durable snapshot summary.",
+        examples=["complete"],
+    )
+    completeness_status: str = Field(
+        ...,
+        description="Aggregated completeness posture from the durable snapshot summary.",
+        examples=["complete"],
+    )
+    failure_categories: list[str] = Field(
+        ...,
+        description="Distinct non-empty upstream failure categories excluding normal `none` rows.",
+        examples=[["upstream_unavailable"]],
+    )
+
+
+class ReportJobOperationLinks(BaseModel):
+    status_url: str = Field(
+        ...,
+        description="Relative URL for the source-backed report job status contract.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    events_url: str = Field(
+        ...,
+        description="Relative URL for append-only report job lifecycle events.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/events"],
+    )
+    snapshot_url: str | None = Field(
+        default=None,
+        description="Relative URL for the durable snapshot when snapshot evidence exists.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/snapshot"],
+    )
+    lineage_url: str | None = Field(
+        default=None,
+        description="Relative URL for durable upstream lineage when snapshot evidence exists.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/lineage"],
+    )
+
+
+class ReportJobDiagnosticsResponse(BaseModel):
+    report_job_id: str = Field(
+        ...,
+        description="Opaque durable report job identifier inspected by the diagnostics view.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    status: ReportJobStatusResponse = Field(
+        ...,
+        description="Source-backed product-safe job status and render/archive summary.",
+        examples=[REPORT_JOB_STATUS_RESPONSE_EXAMPLE],
+    )
+    event_count: int = Field(
+        ...,
+        description="Count of append-only lifecycle events recorded for the job.",
+        examples=[4],
+    )
+    latest_event: ReportStatusEvent | None = Field(
+        default=None,
+        description="Most recent lifecycle event when event history exists.",
+    )
+    snapshot: ReportJobSnapshotDiagnostics | None = Field(
+        default=None,
+        description="Support-safe snapshot posture without raw snapshot payload or storage refs.",
+    )
+    lineage: ReportJobLineageDiagnostics | None = Field(
+        default=None,
+        description="Support-safe lineage summary without request or response payloads.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Support-safe render metadata copied from the report job ledger.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Support-safe archive handoff and document identifiers from the job ledger.",
+    )
+    diagnostic_flags: list[str] = Field(
+        ...,
+        description="Machine-readable support flags such as `snapshot_not_captured`.",
+        examples=[["snapshot_not_captured"]],
+    )
+    operation_links: ReportJobOperationLinks = Field(
+        ...,
+        description="Related source-backed operator endpoints for deeper evidence review.",
+        examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["operation_links"]],
     )
 
 

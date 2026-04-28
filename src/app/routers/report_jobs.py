@@ -13,6 +13,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     API_ERROR_RESPONSE_EXAMPLES,
     PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE,
+    REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
     REPORT_JOB_HANDLE_RESPONSE_EXAMPLE,
     REPORT_JOB_LIST_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
@@ -20,12 +21,16 @@ from app.reporting_jobs.models import (
     ApiErrorResponse,
     PortfolioReviewJobRequest,
     ReportJobArchiveInfo,
+    ReportJobDiagnosticsResponse,
     ReportJobHandleResponse,
     ReportJobLedgerRecord,
+    ReportJobLineageDiagnostics,
     ReportJobListFilters,
     ReportJobListItem,
     ReportJobListResponse,
+    ReportJobOperationLinks,
     ReportJobRenderInfo,
+    ReportJobSnapshotDiagnostics,
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
 )
@@ -231,6 +236,50 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
         updated_at=record.updated_at,
         render=_record_to_render(record),
         archive=_record_to_archive(record),
+    )
+
+
+def _snapshot_to_diagnostics(
+    snapshot: ReportInputSnapshotRecord,
+) -> ReportJobSnapshotDiagnostics:
+    return ReportJobSnapshotDiagnostics(
+        snapshot_id=snapshot.snapshot_id,
+        snapshot_hash=snapshot.snapshot_hash,
+        supportability_status=snapshot.supportability_status,
+        completeness_status=snapshot.completeness_status,
+        captured_at=snapshot.captured_at,
+    )
+
+
+def _lineage_to_diagnostics(
+    snapshot: ReportInputSnapshotRecord,
+    upstream_calls: list[ReportUpstreamCallRecord],
+) -> ReportJobLineageDiagnostics:
+    source_services = sorted({call.service_name for call in upstream_calls if call.service_name})
+    failure_categories = sorted(
+        {
+            call.failure_category
+            for call in upstream_calls
+            if call.failure_category and call.failure_category != "none"
+        }
+    )
+    return ReportJobLineageDiagnostics(
+        upstream_call_count=len(upstream_calls),
+        source_services=source_services,
+        supportability_status=snapshot.supportability_status,
+        completeness_status=snapshot.completeness_status,
+        failure_categories=failure_categories,
+    )
+
+
+def _diagnostic_links(
+    job_id: str, snapshot: ReportInputSnapshotRecord | None
+) -> ReportJobOperationLinks:
+    return ReportJobOperationLinks(
+        status_url=f"/reports/jobs/{job_id}",
+        events_url=f"/reports/jobs/{job_id}/events",
+        snapshot_url=f"/reports/jobs/{job_id}/snapshot" if snapshot else None,
+        lineage_url=f"/reports/jobs/{job_id}/lineage" if snapshot else None,
     )
 
 
@@ -639,6 +688,122 @@ async def get_report_job_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
         ) from exc
+
+
+@jobs_router.get(
+    "/{job_id}/diagnostics",
+    response_model=ReportJobDiagnosticsResponse,
+    summary="Get report job operator diagnostics",
+    description=(
+        "Returns one composed, source-backed diagnostics view for a report job. Use this endpoint "
+        "when support needs to inspect status, lifecycle events, snapshot posture, upstream "
+        "lineage summary, render identifiers, and archive handoff identifiers without exposing "
+        "raw report payloads, storage locations, database internals, or later replay commands."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_diagnostics": {
+                                "summary": "Report job operator diagnostics",
+                                "value": REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job identifier does not exist.",
+        ),
+        **_error_response(
+            503,
+            example_key="report_lineage_store_unavailable",
+            description="Returned when source-backed lineage diagnostics cannot be queried.",
+        ),
+    },
+)
+async def get_report_job_diagnostics(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+) -> ReportJobDiagnosticsResponse:
+    caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        record = ledger.get_job(job_id)
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+    status_response = _record_to_status(record)
+    events = ledger.list_status_events(job_id)
+    snapshot: ReportInputSnapshotRecord | None = None
+    upstream_calls: list[ReportUpstreamCallRecord] = []
+    diagnostic_flags: list[str] = []
+    try:
+        snapshot = store.get_snapshot_by_job(job_id)
+        upstream_calls = store.list_upstream_calls(snapshot.snapshot_id)
+    except ReportInputSnapshotNotFoundError:
+        diagnostic_flags.append("snapshot_not_captured")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_lineage_store_unavailable"]["detail"],
+        ) from exc
+
+    if record.status == "failed":
+        diagnostic_flags.append("job_failed")
+    if record.retry_eligible:
+        diagnostic_flags.append("retry_eligible")
+    if record.render_job_id and not record.archive_document_id:
+        diagnostic_flags.append("archive_not_completed")
+
+    return ReportJobDiagnosticsResponse(
+        report_job_id=record.job_id,
+        status=status_response,
+        event_count=len(events),
+        latest_event=events[-1] if events else None,
+        snapshot=_snapshot_to_diagnostics(snapshot) if snapshot else None,
+        lineage=_lineage_to_diagnostics(snapshot, upstream_calls) if snapshot else None,
+        render=status_response.render,
+        archive=status_response.archive,
+        diagnostic_flags=diagnostic_flags,
+        operation_links=_diagnostic_links(record.job_id, snapshot),
+    )
 
 
 @jobs_router.get(

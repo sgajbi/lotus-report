@@ -190,9 +190,13 @@ Expected controls:
    existing job handle,
 2. a duplicate `Idempotency-Key` with a different canonical request hash returns `409
    idempotency_conflict`,
-3. search, status, and event endpoints return product-safe diagnostics and no database internals,
-4. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
-5. every report job has one durable `report_request`, one durable `report_job`, and append-only
+3. search, status, event, and RFC-0105 diagnostics endpoints return product-safe diagnostics and no
+   database internals,
+4. `GET /reports/jobs/{job_id}/diagnostics` is the first stop for one-job operator review because
+   it composes source-backed status, latest event, snapshot posture, upstream-lineage summary,
+   render metadata, archive handoff identifiers, and evidence links without raw payloads,
+5. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
+6. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
 
 ## RFC-0101 snapshot and lineage flow
