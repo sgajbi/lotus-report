@@ -8,13 +8,16 @@ from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render import service as render_service
 from app.reporting_render.package_builder import (
+    _allocation_bucket_rows,
     _build_render_package,
     _holding_observation,
     _optional_decimal,
     _optional_int,
     _optional_str,
+    _performance_history,
     _performance_observation,
     _risk_observation,
+    _transactions,
 )
 from app.reporting_render.service import (
     PortfolioReviewRenderOrchestrationService,
@@ -1063,6 +1066,74 @@ def test_render_service_helpers_cover_fallback_branches(monkeypatch):
     assert _optional_decimal("bad-decimal") is None
     assert _optional_int(True) == 1
     assert _optional_int("bad-int") is None
+
+
+def test_render_package_helpers_ignore_malformed_collection_rows(monkeypatch):
+    assert (
+        _performance_history(
+            {"performance": {"monthly_history": "not-a-list"}}, "monthly_history", limit=3
+        )
+        == []
+    )
+    assert _performance_history(
+        {"performance": {"monthly_history": [{"period": "2026-04"}, "bad-row"]}},
+        "monthly_history",
+        limit=3,
+    ) == [
+        {
+            "period": "2026-04",
+            "period_start": "Not available",
+            "period_end": "Not available",
+            "final_value": "Not available",
+            "inflows": "Not available",
+            "outflows": "Not available",
+            "performance_value": "Not available",
+            "cumulative_performance_value": "Not available",
+            "twr_pct": "Not available",
+            "cumulative_twr_pct": "Not available",
+        }
+    ]
+    assert _transactions({"transactions": {"transactionsByCategory": {}}}) == []
+    assert (
+        _transactions(
+            {
+                "transactions": {
+                    "transactionsByAssetClass": {
+                        "Equity": [
+                            "bad-row",
+                            {
+                                "transaction_id": "TXN-1",
+                                "transaction_date": "2026-04-22",
+                            },
+                        ],
+                        "Cash": "bad-group",
+                    }
+                }
+            }
+        )[0]["category"]
+        == "Equity"
+    )
+    assert _allocation_bucket_rows("bad-buckets") == []
+    assert _allocation_bucket_rows(
+        [
+            "bad-row",
+            {"group": "Cash", "weight": "5", "market_value": "50", "position_count": "1"},
+            {"group": "Equity", "weight": "95", "market_value": "950", "position_count": 5},
+        ]
+    ) == [
+        {
+            "name": "Equity",
+            "weight_pct": "95.00%",
+            "market_value": "950.00",
+            "position_count": 5,
+        },
+        {
+            "name": "Cash",
+            "weight_pct": "5.00%",
+            "market_value": "50.00",
+            "position_count": 1,
+        },
+    ]
     assert _date_text("2026-04-22") == "2026-04-22"
     with pytest.raises(ValueError, match="date value is required"):
         _date_text(None)

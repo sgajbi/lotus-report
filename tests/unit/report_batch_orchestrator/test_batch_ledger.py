@@ -12,6 +12,7 @@ from app.report_batch_orchestrator.ledger import (
 )
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
+    BatchRetryPolicy,
     PortfolioBatchCandidate,
 )
 from app.report_batch_orchestrator.selector import BatchSelectorValidationError
@@ -121,6 +122,91 @@ def test_get_batch_item_returns_single_item_and_raises_not_founds(tmp_path) -> N
 
     with pytest.raises(ValueError, match="report_batch_item_not_found"):
         ledger.get_batch_item(batch.batch_id, "rbci_missing_item")
+
+
+def test_mark_item_succeeded_and_failed_reject_stale_or_missing_items(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = ledger.create_batch(
+        request=_explicit_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=_caller(),
+        idempotency_key="batch-stale-item-transition",
+    )
+    item = batch.items[0]
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.mark_item_succeeded(
+            batch_item_id=item.batch_item_id,
+            report_job_id="rjob_not_linked",
+        )
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.mark_item_failed(
+            batch_item_id="rbit_missing",
+            error_category="upstream_data_failed",
+            error_summary="Missing item.",
+            retryable=True,
+        )
+
+
+def test_relink_failed_item_for_replay_is_idempotent_and_enforces_retry_ceiling(
+    tmp_path,
+) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    batch = ledger.create_batch(
+        request=_explicit_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=_caller(),
+        idempotency_key="batch-replay-ledger-edges",
+    )
+    item = batch.items[0]
+    failed_item = ledger.mark_item_failed(
+        batch_item_id=item.batch_item_id,
+        error_category="upstream_data_failed",
+        error_summary="Upstream timeout.",
+        retryable=True,
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+    )
+
+    replayed = ledger.relink_failed_item_for_replay(
+        batch_id=batch.batch_id,
+        batch_item_id=failed_item.batch_item_id,
+        replayed_report_job_id="rjob_replay_1",
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+    )
+    same_replay = ledger.relink_failed_item_for_replay(
+        batch_id=batch.batch_id,
+        batch_item_id=failed_item.batch_item_id,
+        replayed_report_job_id="rjob_replay_1",
+        retry_policy=BatchRetryPolicy(max_attempts=3),
+    )
+
+    assert replayed.status == "waiting_on_report_job"
+    assert same_replay == replayed
+    with pytest.raises(ValueError, match="report_batch_item_cannot_be_replayed"):
+        ledger.relink_failed_item_for_replay(
+            batch_id=batch.batch_id,
+            batch_item_id=failed_item.batch_item_id,
+            replayed_report_job_id="rjob_replay_2",
+            retry_policy=BatchRetryPolicy(max_attempts=3),
+        )
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.relink_failed_item_for_replay(
+            batch_id=batch.batch_id,
+            batch_item_id="rbit_missing",
+            replayed_report_job_id="rjob_replay_missing",
+        )
+    with pytest.raises(ValueError, match="report_batch_not_found"):
+        ledger.relink_failed_item_for_replay(
+            batch_id="rbch_missing",
+            batch_item_id="rbit_missing",
+            replayed_report_job_id="rjob_replay_missing",
+        )
+
+
+def test_runnable_batch_scan_and_empty_status_refresh_are_bounded(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+
+    assert ledger.list_runnable_batch_ids(limit=0) == []
+    with ledger._connect() as connection:
+        ledger._refresh_batch_status(connection, "rbch_without_items", now=None)
 
 
 def test_json_dict_loader_rejects_non_object_payload() -> None:
