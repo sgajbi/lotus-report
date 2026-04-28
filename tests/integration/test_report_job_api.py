@@ -959,6 +959,99 @@ def test_report_job_rerender_records_render_validation_failure(tmp_path):
         _clear_overrides()
 
 
+def test_report_job_rerender_records_retryable_render_execution_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=503,
+        payload={"failure_message": "Render worker unavailable."},
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-execution"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_execution_failed"
+        assert body["failure_message"] == "Render worker unavailable."
+        assert body["retry_eligible"] is True
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_non_retryable_render_conflict(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=409,
+        payload={"detail": "Render job already exists."},
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-conflict"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_conflict"
+        assert body["failure_message"] == "Render job already exists."
+        assert body["retry_eligible"] is False
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_missing_artifact_archive_validation_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        payload={
+            "status": "rendered",
+            "render_job_id": "rdr_missing_artifact",
+            "artifact_sha256": "sha256:rerender-artifact",
+            "bounded_determinism_fingerprint": "fingerprint-rerender",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 731,
+        },
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-missing-artifact"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "archive_validation_failed"
+        assert body["retry_eligible"] is False
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_rerender_records_archive_failure(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     render_client = _RerenderRenderClient()

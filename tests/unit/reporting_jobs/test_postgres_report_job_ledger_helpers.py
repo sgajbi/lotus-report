@@ -6,18 +6,22 @@ from typing import Any, Iterator, Mapping
 
 import pytest
 
-from app.reporting_jobs.ledger import IdempotencyConflictError
+from app.reporting_jobs.ledger import IdempotencyConflictError, ReportJobNotFoundError
 from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.postgres_ledger import (
     PostgresReportJobLedger,
     _event_from_row,
     _record_from_row,
+    _rerender_attempt_from_row,
 )
 
 
 class _Cursor:
     def __init__(self, rows: list[Mapping[str, Any]]):
         self._rows = rows
+
+    def fetchone(self) -> Mapping[str, Any] | None:
+        return self._rows[0] if self._rows else None
 
     def fetchall(self) -> list[Mapping[str, Any]]:
         return self._rows
@@ -69,6 +73,45 @@ def _row(*, job_id: str = "rjob_123", tenant_id: str = "tenant-sg") -> Mapping[s
         "started_at": None,
         "completed_at": None,
         "cancelled_at": None,
+    }
+
+
+def _rerender_row(
+    *,
+    status: str = "archived",
+    retry_eligible: bool = False,
+) -> Mapping[str, Any]:
+    now = datetime(2026, 4, 23, 12, 30, tzinfo=UTC)
+    return {
+        "rerender_attempt_id": "rrnd_123",
+        "report_job_id": "rjob_123",
+        "idempotency_key": "rerender-rjob-123",
+        "status": status,
+        "snapshot_id": "rsnap_123",
+        "snapshot_hash": "sha256:snapshot",
+        "previous_render_job_id": "rdr_original_pdf",
+        "previous_archive_document_id": "doc_original_pdf",
+        "render_job_id": "rdr_rrnd_123_pdf",
+        "render_output_format": "pdf",
+        "render_template_id": "portfolio-review",
+        "render_template_version": "v1",
+        "render_artifact_sha256": "sha256:artifact",
+        "render_bounded_determinism_fingerprint": "fingerprint",
+        "render_runtime_engine": "typst",
+        "render_runtime_engine_version": "0.14.2",
+        "render_duration_ms": 731,
+        "archive_request_id": "arch_rdr_rrnd_123_pdf",
+        "archive_document_id": "doc_correction_pdf",
+        "archive_completed_at": now,
+        "failure_category": None,
+        "failure_message": None,
+        "retry_eligible": retry_eligible,
+        "requested_by": "advisor-123",
+        "reason": "Template correction.",
+        "correlation_id": "corr-rerender",
+        "trace_id": "trace-rerender",
+        "created_at": now,
+        "updated_at": now,
     }
 
 
@@ -177,3 +220,29 @@ def test_postgres_report_job_ledger_existing_or_conflict_and_row_helpers() -> No
     )
     assert event.to_status == "accepted"
     assert event.created_at == datetime(2026, 4, 23, 12, 0, tzinfo=UTC)
+
+
+def test_postgres_report_job_ledger_rerender_row_helper_maps_operational_fields() -> None:
+    attempt = _rerender_attempt_from_row(_rerender_row())
+
+    assert attempt.rerender_attempt_id == "rrnd_123"
+    assert attempt.status == "archived"
+    assert attempt.snapshot_hash == "sha256:snapshot"
+    assert attempt.previous_render_job_id == "rdr_original_pdf"
+    assert attempt.previous_archive_document_id == "doc_original_pdf"
+    assert attempt.render_job_id == "rdr_rrnd_123_pdf"
+    assert attempt.archive_document_id == "doc_correction_pdf"
+    assert attempt.archive_completed_at == datetime(2026, 4, 23, 12, 30, tzinfo=UTC)
+    assert attempt.retry_eligible is False
+
+
+def test_postgres_report_job_ledger_rerender_update_raises_for_unknown_attempt() -> None:
+    ledger = object.__new__(PostgresReportJobLedger)
+    connection = _Connection([])
+
+    with pytest.raises(ReportJobNotFoundError, match="report_rerender_attempt_not_found"):
+        ledger._update_rerender_attempt(
+            connection=connection,
+            rerender_attempt_id="rrnd_missing",
+            status="failed",
+        )
