@@ -54,6 +54,13 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _write_capture(path: Path, payload: dict[str, Any], *, sequence: int) -> None:
+    encoded = json.dumps(payload, indent=2, sort_keys=True)
+    path.write_text(encoded, encoding="utf-8")
+    sequenced_path = path.with_name(f"{path.stem}-{sequence:02d}{path.suffix}")
+    sequenced_path.write_text(encoded, encoding="utf-8")
+
+
 class ProofSnapshotCaptureService:
     def __init__(
         self,
@@ -203,6 +210,7 @@ class RecordingRenderClient:
         self._inner = inner
         self._request_capture_path = request_capture_path
         self._response_capture_path = response_capture_path
+        self._submit_count = 0
 
     async def submit_render_package(
         self,
@@ -210,25 +218,20 @@ class RecordingRenderClient:
         correlation_id: str | None = None,
         trace_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        self._request_capture_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        self._submit_count += 1
+        _write_capture(self._request_capture_path, payload, sequence=self._submit_count)
         status_code, response_payload = await self._inner.submit_render_package(
             payload,
             correlation_id=correlation_id,
             trace_id=trace_id,
         )
-        self._response_capture_path.write_text(
-            json.dumps(
-                {
-                    "status_code": status_code,
-                    "payload": response_payload,
-                },
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+        _write_capture(
+            self._response_capture_path,
+            {
+                "status_code": status_code,
+                "payload": response_payload,
+            },
+            sequence=self._submit_count,
         )
         return status_code, response_payload
 
@@ -244,6 +247,7 @@ class RecordingArchiveClient:
         self._base_url = base_url.rstrip("/")
         self._request_capture_path = request_capture_path
         self._response_capture_path = response_capture_path
+        self._archive_count = 0
 
     async def archive_document(
         self,
@@ -259,10 +263,8 @@ class RecordingArchiveClient:
     ) -> tuple[int, dict[str, Any]]:
         from app.clients.archive_client import ArchiveClient
 
-        self._request_capture_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        self._archive_count += 1
+        _write_capture(self._request_capture_path, payload, sequence=self._archive_count)
         client = ArchiveClient(
             base_url=self._base_url,
             timeout_seconds=10.0,
@@ -279,16 +281,13 @@ class RecordingArchiveClient:
             booking_center_code=booking_center_code,
             role=role,
         )
-        self._response_capture_path.write_text(
-            json.dumps(
-                {
-                    "status_code": status_code,
-                    "payload": response_payload,
-                },
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
+        _write_capture(
+            self._response_capture_path,
+            {
+                "status_code": status_code,
+                "payload": response_payload,
+            },
+            sequence=self._archive_count,
         )
         return status_code, response_payload
 
