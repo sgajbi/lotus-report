@@ -496,6 +496,34 @@ def test_report_batch_item_replay_rejects_retry_ceiling(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_item_replay_error_mappings(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch_id, failed_item, _source_job = _failed_batch_item_with_report_job(
+            client,
+            batch_ledger,
+            report_ledger,
+        )
+
+        missing_key = client.post(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
+            json={"reason": "Missing idempotency key."},
+            headers={key: value for key, value in _headers().items() if key != "Idempotency-Key"},
+        )
+        missing_item = client.post(
+            f"/reports/batches/{batch_id}/items/rbit_missing/replay",
+            json={"reason": "Missing item."},
+            headers=_headers("batch-item-replay-missing-item"),
+        )
+
+        assert missing_key.status_code == 400
+        assert missing_key.json()["detail"]["code"] == "missing_idempotency_key"
+        assert missing_item.status_code == 404
+        assert missing_item.json()["detail"]["code"] == "report_batch_item_not_found"
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
     client, ledger = _client(tmp_path)
     app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config

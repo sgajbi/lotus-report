@@ -1630,3 +1630,47 @@ def test_report_job_replay_rejects_non_retryable_and_archived_jobs(tmp_path):
         assert archived_response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
     finally:
         _clear_overrides()
+
+
+def test_report_job_replay_error_mappings(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        _FakeCaptureService(ledger, lineage_store),
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-replay-errors"),
+        ).json()
+        failed = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="upstream_data_failed",
+            failure_message="Upstream timeout.",
+            retry_eligible=True,
+        )
+
+        missing_key = client.post(
+            f"/reports/jobs/{failed.job_id}/replay",
+            json={"reason": "Missing key."},
+            headers={key: value for key, value in _headers().items() if key != "Idempotency-Key"},
+        )
+        not_found = client.post(
+            "/reports/jobs/rjob_missing/replay",
+            json={"reason": "Missing job."},
+            headers=_headers("replay-missing-job"),
+        )
+
+        assert missing_key.status_code == 400
+        assert missing_key.json()["detail"]["code"] == "missing_idempotency_key"
+        assert not_found.status_code == 404
+        assert not_found.json()["detail"]["code"] == "report_job_not_found"
+    finally:
+        _clear_overrides()
