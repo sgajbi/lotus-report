@@ -762,6 +762,21 @@ class PostgresReportBatchLedger:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
 
+    def get_batch_item(self, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord:
+        with self._connect() as connection:
+            self._load_batch(connection, batch_id)
+            row = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_id = %s AND batch_item_id = %s
+                """,
+                (batch_id, batch_item_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("report_batch_item_not_found")
+            return _item_from_row(row)
+
     def _existing_or_conflict(
         self,
         connection: Connection[Mapping[str, Any]],

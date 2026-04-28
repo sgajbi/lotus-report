@@ -27,6 +27,7 @@ from app.report_batch_orchestrator.models import (
     BatchWorkerItemExecutionResponse,
     BatchWorkerRunRequest,
     BatchWorkerRunResponse,
+    ReportBatchItemRecord,
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.scheduler import (
@@ -72,6 +73,12 @@ class ReportBatchLedgerPort(Protocol):
     ) -> ReportBatchRecord: ...
 
     def get_batch(self, batch_id: str) -> ReportBatchRecord: ...
+
+    def get_batch_item(
+        self,
+        batch_id: str,
+        batch_item_id: str,
+    ) -> ReportBatchItemRecord: ...
 
     def pause_batch(self, *, batch_id: str) -> Any: ...
 
@@ -150,6 +157,12 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report batch was not found.",
         }
     },
+    "report_batch_item_not_found": {
+        "detail": {
+            "code": "report_batch_item_not_found",
+            "message": "Report batch item was not found.",
+        }
+    },
     "batch_worker_run_failed": {
         "detail": {
             "code": "batch_worker_run_failed",
@@ -211,6 +224,25 @@ def _record_to_handle(record: ReportBatchRecord) -> BatchHandleResponse:
     )
 
 
+def _record_item_to_status(item: Any) -> BatchItemStatusResponse:
+    return BatchItemStatusResponse(
+        batch_item_id=item.batch_item_id,
+        item_position=item.item_position,
+        portfolio_id=item.portfolio_id,
+        status=item.status,
+        report_job_id=item.report_job_id,
+        attempt_count=item.attempt_count,
+        retry_eligible=item.retry_eligible,
+        next_retry_at=item.next_retry_at,
+        last_error_category=item.last_error_category,
+        last_error_summary=item.last_error_summary,
+        created_at=item.created_at,
+        started_at=item.started_at,
+        completed_at=item.completed_at,
+        cancelled_at=item.cancelled_at,
+    )
+
+
 def _record_to_status(record: ReportBatchRecord) -> BatchStatusResponse:
     status_counts: dict[str, int] = {}
     for item in record.items:
@@ -227,25 +259,7 @@ def _record_to_status(record: ReportBatchRecord) -> BatchStatusResponse:
         status=record.status,
         item_count=record.item_count,
         status_counts=status_counts,
-        items=[
-            BatchItemStatusResponse(
-                batch_item_id=item.batch_item_id,
-                item_position=item.item_position,
-                portfolio_id=item.portfolio_id,
-                status=item.status,
-                report_job_id=item.report_job_id,
-                attempt_count=item.attempt_count,
-                retry_eligible=item.retry_eligible,
-                next_retry_at=item.next_retry_at,
-                last_error_category=item.last_error_category,
-                last_error_summary=item.last_error_summary,
-                created_at=item.created_at,
-                started_at=item.started_at,
-                completed_at=item.completed_at,
-                cancelled_at=item.cancelled_at,
-            )
-            for item in record.items
-        ],
+        items=[_record_item_to_status(item) for item in record.items],
         created_at=record.created_at,
         updated_at=record.updated_at,
         started_at=record.started_at,
@@ -444,6 +458,11 @@ def _not_found_error(exc: ValueError) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_not_found"]["detail"],
         )
+    if str(exc) == "report_batch_item_not_found":
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_not_found"]["detail"],
+        )
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail={"code": "batch_operation_failed", "message": str(exc)},
@@ -595,6 +614,59 @@ async def get_report_batch_status(
 ) -> BatchStatusResponse:
     try:
         return _record_to_status(ledger.get_batch(batch_id))
+    except ValueError as exc:
+        raise _not_found_error(exc) from exc
+
+
+@router.get(
+    "/{batch_id}/items/{batch_item_id}",
+    response_model=BatchItemStatusResponse,
+    summary="Get report batch item status",
+    description=(
+        "Returns product-safe status for a specific item in a durable report batch, including "
+        "execution posture and retry metadata."
+    ),
+    responses={
+        404: {
+            "model": ApiErrorResponse,
+            "description": (
+                "Returned when the requested report batch or report batch item does not exist."
+            ),
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "report_batch_not_found": {
+                            "summary": "Unknown batch",
+                            "value": BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_not_found"],
+                        },
+                        "report_batch_item_not_found": {
+                            "summary": "Unknown batch item",
+                            "value": BATCH_API_ERROR_RESPONSE_EXAMPLES[
+                                "report_batch_item_not_found"
+                            ],
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+async def get_report_batch_item_status(
+    batch_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch identifier.", examples=["rbch_example"]),
+    ],
+    batch_item_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch item identifier.", examples=["rbci_example"]),
+    ],
+    ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
+    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchItemStatusResponse:
+    try:
+        return _record_item_to_status(
+            ledger.get_batch_item(batch_id=batch_id, batch_item_id=batch_item_id)
+        )
     except ValueError as exc:
         raise _not_found_error(exc) from exc
 

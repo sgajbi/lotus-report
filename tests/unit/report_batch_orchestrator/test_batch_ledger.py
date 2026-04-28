@@ -101,6 +101,28 @@ def test_in_memory_schema_initialization_and_missing_lookup_are_bounded(tmp_path
             ledger._load_batch(connection, "rbch_missing")
 
 
+def test_get_batch_item_returns_single_item_and_raises_not_founds(tmp_path) -> None:
+    ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    request = _explicit_request("PB_SG_GLOBAL_BAL_001", "PB_SG_GLOBAL_BAL_002")
+    batch = ledger.create_batch(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="batch-item-lookup",
+    )
+    item = ledger.get_batch_item(batch.batch_id, batch.items[1].batch_item_id)
+
+    assert item.batch_item_id == batch.items[1].batch_item_id
+    assert item.item_position == 2
+    assert item.portfolio_id == "PB_SG_GLOBAL_BAL_002"
+    assert item.status == "materialized"
+
+    with pytest.raises(ValueError, match="report_batch_not_found"):
+        ledger.get_batch_item(f"rbch_missing_{uuid4().hex}", batch.items[0].batch_item_id)
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.get_batch_item(batch.batch_id, "rbci_missing_item")
+
+
 def test_json_dict_loader_rejects_non_object_payload() -> None:
     assert _json_dict('["not", "an", "object"]') == {}
 

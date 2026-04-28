@@ -229,6 +229,48 @@ def test_report_batch_create_status_and_control_endpoints(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_item_status_endpoint_returns_item_and_404s(tmp_path):
+    client, _ledger = _client(tmp_path)
+    try:
+        create_response = client.post("/reports/batches", json=_payload(), headers=_headers())
+        assert create_response.status_code == 202
+        batch = create_response.json()
+        batch_id = batch["batch_id"]
+
+        status_response = client.get(f"/reports/batches/{batch_id}", headers=_headers())
+        assert status_response.status_code == 200
+        items = status_response.json()["items"]
+        first_item = items[0]
+
+        item_response = client.get(
+            f"/reports/batches/{batch_id}/items/{first_item['batch_item_id']}",
+            headers=_headers(),
+        )
+        assert item_response.status_code == 200
+        item_body = item_response.json()
+
+        assert item_body["batch_item_id"] == first_item["batch_item_id"]
+        assert item_body["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+        assert item_body["status"] == "materialized"
+        assert item_body["retry_eligible"] is False
+
+        missing_item_response = client.get(
+            f"/reports/batches/{batch_id}/items/rbci_missing_item",
+            headers=_headers(),
+        )
+        assert missing_item_response.status_code == 404
+        assert missing_item_response.json()["detail"]["code"] == "report_batch_item_not_found"
+
+        missing_batch_item_response = client.get(
+            f"/reports/batches/rbch_missing/items/{first_item['batch_item_id']}",
+            headers=_headers(),
+        )
+        assert missing_batch_item_response.status_code == 404
+        assert missing_batch_item_response.json()["detail"]["code"] == "report_batch_not_found"
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_scheduler_admin_list_and_run_due_endpoints(tmp_path):
     client, ledger = _client(tmp_path)
     app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config

@@ -936,6 +936,21 @@ class ReportBatchLedger:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
 
+    def get_batch_item(self, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord:
+        with self._connect() as connection:
+            self._load_batch(connection, batch_id)
+            row = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_id = ? AND batch_item_id = ?
+                """,
+                (batch_id, batch_item_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("report_batch_item_not_found")
+            return _item_from_row(row)
+
     def _load_batch(self, connection: sqlite3.Connection, batch_id: str) -> ReportBatchRecord:
         batch_row = connection.execute(
             "SELECT * FROM report_batch WHERE batch_id = ?",
