@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi import Request
 
-from src.app.enterprise_readiness import (
+from app.enterprise_readiness import (
     authorize_read_request,
     authorize_write_request,
     build_enterprise_audit_middleware,
@@ -210,6 +210,70 @@ def test_authorize_read_request_enforces_capability_rules(monkeypatch):
     assert allowed_reason is None
 
 
+def test_authorize_read_request_matches_templated_capability_rules(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON",
+        json.dumps(
+            {
+                "POST /reports/jobs/{job_id}": "reports.jobs.write",
+                "GET /reports/jobs/{job_id}/lineage": "reports.lineage.read",
+            }
+        ),
+    )
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "portal",
+        "X-Capabilities": "reports.lineage.read",
+    }
+
+    allowed, reason = authorize_read_request("GET", "/reports/jobs/r123/lineage", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
+def test_authorize_read_request_rejects_templated_rule_shape_mismatch(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON",
+        json.dumps({"GET /reports/jobs/{job_id}/lineage": "reports.lineage.read"}),
+    )
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "portal",
+    }
+
+    allowed, reason = authorize_read_request("GET", "/reports/jobs/r123", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
+def test_authorize_write_request_supports_root_scoped_capability_rule(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "true")
+    monkeypatch.setenv("ENTERPRISE_CAPABILITY_RULES_JSON", json.dumps({"POST /": "reports.write"}))
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "lotus-report",
+        "X-Capabilities": "reports.write",
+    }
+
+    allowed, reason = authorize_write_request("POST", "/reports/export", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
 @pytest.mark.asyncio
 async def test_middleware_audits_read_access_when_enabled(monkeypatch):
     monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
@@ -220,7 +284,7 @@ async def test_middleware_audits_read_access_when_enabled(monkeypatch):
     def _record_audit(**kwargs):
         audit_events.append(kwargs)
 
-    monkeypatch.setattr("src.app.enterprise_readiness.emit_audit_event", _record_audit)
+    monkeypatch.setattr("app.enterprise_readiness.emit_audit_event", _record_audit)
 
     async def _call_next(_request):
         from fastapi.responses import JSONResponse
@@ -244,6 +308,42 @@ async def test_middleware_audits_read_access_when_enabled(monkeypatch):
     assert len(audit_events) == 1
     assert audit_events[0]["action"] == "GET /reports/jobs/r123"
     assert audit_events[0]["metadata"]["access_type"] == "read"
+
+
+@pytest.mark.asyncio
+async def test_middleware_audits_write_access(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    middleware = build_enterprise_audit_middleware()
+    audit_events: list[dict] = []
+
+    def _record_audit(**kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr("app.enterprise_readiness.emit_audit_event", _record_audit)
+
+    async def _call_next(_request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({"ok": True}, status_code=202)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/export",
+        "headers": [
+            (b"x-actor-id", b"a1"),
+            (b"x-tenant-id", b"t1"),
+            (b"x-role", b"ops"),
+            (b"x-correlation-id", b"c1"),
+            (b"content-length", b"0"),
+        ],
+    }
+    request = Request(scope)
+    response = await middleware(request, _call_next)
+    assert response.status_code == 202
+    assert len(audit_events) == 1
+    assert audit_events[0]["action"] == "POST /reports/export"
+    assert audit_events[0]["metadata"]["status_code"] == 202
 
 
 @pytest.mark.asyncio
