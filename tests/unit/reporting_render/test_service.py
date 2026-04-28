@@ -18,6 +18,9 @@ from app.reporting_render.package_builder import (
 )
 from app.reporting_render.service import (
     PortfolioReviewRenderOrchestrationService,
+    _archive_failure_message,
+    _archive_failure_posture,
+    _date_text,
 )
 
 
@@ -415,6 +418,81 @@ async def test_render_orchestration_skips_non_pdf_requests(tmp_path):
 
     assert returned.job_id == job.job_id
     assert returned.status == "accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "rendering", "accepted"])
+async def test_render_orchestration_skips_jobs_that_are_not_data_ready_for_pdf(
+    tmp_path,
+    status,
+):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    if status == "completed":
+        job = ledger.mark_completed(
+            job_id=ready.job_id,
+            actor=ready.triggered_by,
+            correlation_id=ready.correlation_id,
+            trace_id=ready.trace_id,
+            render_job_id=f"rdr_{ready.job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+            artifact_sha256="sha256:artifact",
+            bounded_determinism_fingerprint="fingerprint",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+    elif status == "failed":
+        job = ledger.mark_failed(
+            job_id=ready.job_id,
+            actor=ready.triggered_by,
+            correlation_id=ready.correlation_id,
+            trace_id=ready.trace_id,
+            failure_category="render_execution_failed",
+            failure_message="Render worker unavailable.",
+            retry_eligible=True,
+        )
+    elif status == "cancelled":
+        fresh = ledger.create_portfolio_review_job(
+            request=_job_request(),
+            caller_context=_caller(),
+            idempotency_key="idem-render-cancelled-skip",
+        )
+        job = ledger.cancel_job(
+            job_id=fresh.job_id,
+            actor=fresh.triggered_by,
+            correlation_id=fresh.correlation_id,
+            trace_id=fresh.trace_id,
+        )
+    elif status == "rendering":
+        job = ledger.mark_rendering(
+            job_id=ready.job_id,
+            actor=ready.triggered_by,
+            correlation_id=ready.correlation_id,
+            trace_id=ready.trace_id,
+            render_job_id=f"rdr_{ready.job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+        )
+    else:
+        job = ledger.create_portfolio_review_job(
+            request=_job_request(),
+            caller_context=_caller(),
+            idempotency_key="idem-render-accepted-skip",
+        )
+
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccess(),
+        archive_client=_ArchiveClientSuccess(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    returned = await service.render_for_job(job)
+
+    assert returned == job
 
 
 @pytest.mark.asyncio
@@ -985,6 +1063,11 @@ def test_render_service_helpers_cover_fallback_branches(monkeypatch):
     assert _optional_decimal("bad-decimal") is None
     assert _optional_int(True) == 1
     assert _optional_int("bad-int") is None
+    assert _date_text("2026-04-22") == "2026-04-22"
+    with pytest.raises(ValueError, match="date value is required"):
+        _date_text(None)
+    assert _archive_failure_posture(409, {}) == ("archive_conflict", False)
+    assert _archive_failure_message({"detail": {}}) == "lotus-archive handoff failed."
 
     class _SentinelClient:
         pass

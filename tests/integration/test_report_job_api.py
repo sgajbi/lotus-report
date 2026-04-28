@@ -609,6 +609,76 @@ def test_report_job_diagnostics_reports_missing_snapshot_without_payload_leak(tm
         _clear_overrides()
 
 
+def test_report_job_diagnostics_reports_failed_retryable_job_flags(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-diagnostics-failed"),
+        ).json()
+        job_id = handle["report_job_id"]
+        failed = ledger.mark_failed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-diagnostics-failed",
+            trace_id="trace-diagnostics-failed",
+            failure_category="upstream_data_failed",
+            failure_message="Snapshot capture timed out.",
+            retry_eligible=True,
+        )
+
+        response = client.get(
+            f"/reports/jobs/{failed.job_id}/diagnostics",
+            headers=_headers("portfolio-review-diagnostics-failed"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"]["status"] == "failed"
+        assert body["diagnostic_flags"] == ["job_failed", "retry_eligible"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_reports_unarchived_render_flag(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-diagnostics-unarchived"),
+        ).json()
+        job_id = handle["report_job_id"]
+        rendered = ledger.mark_completed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-diagnostics-unarchived",
+            trace_id="trace-diagnostics-unarchived",
+            render_job_id=f"rdr_{job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+            artifact_sha256="sha256:artifact",
+            bounded_determinism_fingerprint="fingerprint",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+
+        response = client.get(
+            f"/reports/jobs/{rendered.job_id}/diagnostics",
+            headers=_headers("portfolio-review-diagnostics-unarchived"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"]["status"] == "completed"
+        assert body["diagnostic_flags"] == ["archive_not_completed"]
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_diagnostics_translates_lineage_store_unavailable(tmp_path):
     client, _ledger, _lineage_store = _client(tmp_path)
 
