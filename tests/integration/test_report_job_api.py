@@ -15,11 +15,18 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_lineage.store import ReportInputSnapshotStore
+from app.reporting_render.regenerate_service import (
+    PortfolioReviewRegenerateService,
+    get_portfolio_review_regenerate_service,
+)
 from app.reporting_render.rerender_service import (
     PortfolioReviewRerenderService,
     get_portfolio_review_rerender_service,
 )
-from app.reporting_render.service import get_portfolio_review_render_orchestration_service
+from app.reporting_render.service import (
+    PortfolioReviewRenderOrchestrationService,
+    get_portfolio_review_render_orchestration_service,
+)
 from app.routers.report_jobs import get_report_lineage_store
 
 
@@ -97,6 +104,7 @@ class _FakeCaptureService:
                     ),
                     "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
                     "as_of_date": job.as_of_date.isoformat(),
+                    "capture_sequence": self.calls,
                 },
                 snapshot_storage_ref=None,
                 supportability_status="complete",
@@ -192,6 +200,25 @@ def _install_rerender_service(ledger, lineage_store, render_client, archive_clie
         ledger=ledger,
     )
     app.dependency_overrides[get_portfolio_review_rerender_service] = lambda: service
+    return service
+
+
+def _install_regenerate_service(
+    ledger, lineage_store, capture_service, render_client, archive_client
+):
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    service = PortfolioReviewRegenerateService(
+        ledger=ledger,
+        snapshot_store=lineage_store,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    app.dependency_overrides[get_portfolio_review_regenerate_service] = lambda: service
     return service
 
 
@@ -743,6 +770,10 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     diagnostics_example = diagnostics_get["responses"]["200"]["content"]["application/json"][
         "example"
     ]
+    regenerate_post = schema["paths"]["/reports/jobs/{job_id}/regenerate"]["post"]
+    regenerate_example = regenerate_post["responses"]["202"]["content"]["application/json"][
+        "example"
+    ]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
@@ -754,20 +785,32 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert diagnostics_example["lineage"]["upstream_call_count"] == 3
     assert diagnostics_example["operation_links"]["lineage_url"].endswith("/lineage")
     assert "snapshot_payload" not in str(diagnostics_example)
+    assert regenerate_example["source_report_job_id"].startswith("rjob_")
+    assert regenerate_example["regenerated_report_job_id"].startswith("rjob_")
+    assert regenerate_example["new_snapshot_id"] != regenerate_example["previous_snapshot_id"]
+    assert (
+        regenerate_example["new_archive_document_id"]
+        != regenerate_example["previous_archive_document_id"]
+    )
+    assert regenerate_example["archive_consequence"] == "replacement"
     assert "Report Jobs" in list_get["tags"]
     assert "Report Jobs" in diagnostics_get["tags"]
+    assert "Report Jobs" in regenerate_post["tags"]
     assert "what" in list_get["description"].lower() or "returns" in list_get["description"].lower()
     assert (
         "when" in list_get["description"].lower()
         or "use this endpoint" in list_get["description"].lower()
     )
     assert "use this endpoint" in diagnostics_get["description"].lower()
+    assert "upstream" in regenerate_post["description"].lower()
+    assert "rerender" in regenerate_post["description"].lower()
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
     assert "RFC-" not in str(list_example)
     assert "RFC-" not in str(events_example)
     assert "RFC-" not in str(diagnostics_example)
+    assert "RFC-" not in str(regenerate_example)
     for schema_name in [
         "ReportJobHandleResponse",
         "ReportJobStatusResponse",
@@ -779,6 +822,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         "ReportJobListItem",
         "ReportJobListFilters",
         "ReportJobStatusEventsResponse",
+        "ReportJobRegenerateRequest",
+        "ReportJobRegenerateResponse",
         "ReportStatusEvent",
         "ApiErrorResponse",
         "ApiErrorDetail",
@@ -1151,5 +1196,297 @@ def test_report_job_rerender_records_archive_failure(tmp_path):
         assert body["retry_eligible"] is True
         assert body["archive"]["archive_request_id"].startswith("arch_rdr_rrnd_")
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_archive(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        payload={"document_id": "doc_report_job_pdf_replacement"}
+    )
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+        previous_snapshot = lineage_store.get_snapshot_by_job(source.job_id)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{source.job_id}-upstream-correction"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["source_report_job_id"] == source.job_id
+        assert body["regenerated_report_job_id"] != source.job_id
+        assert body["previous_snapshot_id"] == previous_snapshot.snapshot_id
+        assert body["new_snapshot_id"] != previous_snapshot.snapshot_id
+        assert body["previous_snapshot_hash"] == previous_snapshot.snapshot_hash
+        assert body["new_snapshot_hash"] != previous_snapshot.snapshot_hash
+        assert body["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert body["new_archive_document_id"] == "doc_report_job_pdf_replacement"
+        assert body["archive_consequence"] == "replacement"
+
+        new_calls = lineage_store.list_upstream_calls_by_job(body["regenerated_report_job_id"])
+        assert [call.service_name for call in new_calls] == ["lotus-core"]
+        metadata = archive_client.payloads[0]["metadata"]
+        assert metadata["supersedes_render_job_id"] == f"rdr_{source.job_id}_pdf"
+        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
+        assert metadata["archive_consequence"] == "replacement"
+        assert [event.event_type for event in ledger.list_status_events(source.job_id)][-2:] == [
+            "job_regenerate_requested",
+            "job_regenerate_archived",
+        ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        payload={"document_id": "doc_report_job_pdf_replacement"}
+    )
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+        headers = _headers(f"regenerate-{source.job_id}-same-key")
+        calls_after_source = capture_service.calls
+
+        first = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        assert capture_service.calls == calls_after_source + 1
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+        assert [
+            event.event_type
+            for event in ledger.list_status_events(source.job_id)
+            if event.event_type == "job_regenerate_archived"
+        ] == ["job_regenerate_archived"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_rejects_non_archived_job(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-regenerate-invalid"),
+        ).json()
+
+        response = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{handle['report_job_id']}-invalid"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_regenerated"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_records_upstream_failure_without_render(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+
+    class _FailingCaptureService:
+        async def capture_for_job(self, job):
+            ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            return ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="upstream_data_failed",
+                failure_message="Upstream report-data capture failed.",
+                retry_eligible=True,
+            )
+
+    capture_service = _FailingCaptureService()
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{source.job_id}-upstream-failure"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "upstream_data_failed"
+        assert body["retry_eligible"] is True
+        assert body["new_snapshot_id"] is None
+        assert len(render_client.payloads) == 0
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_allows_partial_snapshot_lineage(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+
+    class _PartialCaptureService(_FakeCaptureService):
+        async def capture_for_job(self, job):
+            self.calls += 1
+            ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            snapshot = lineage_store.create_snapshot(
+                ReportInputSnapshotCreateRequest(
+                    report_job_id=job.job_id,
+                    report_type=job.report_type,
+                    report_data_contract_version="v1",
+                    portfolio_scope=job.portfolio_scope,
+                    as_of_date=job.as_of_date,
+                    snapshot_payload={
+                        "report_id": f"portfolio-review:{job.job_id}",
+                        "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
+                        "as_of_date": job.as_of_date.isoformat(),
+                        "capture_sequence": self.calls,
+                        "readiness": {"status": "partial"},
+                    },
+                    snapshot_storage_ref=None,
+                    supportability_status="partial",
+                    completeness_status="partial",
+                    lineage_summary={
+                        "source_services": ["lotus-core"],
+                        "call_count": 1,
+                        "supportability_status": "partial",
+                        "partial_call_count": 1,
+                        "unavailable_call_count": 0,
+                        "not_supported_call_count": 0,
+                        "redacted_call_count": 0,
+                    },
+                    captured_at=datetime.now(UTC),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            )
+            lineage_store.create_upstream_calls(
+                snapshot_id=snapshot.snapshot_id,
+                calls=[
+                    ReportUpstreamCallCreateRequest(
+                        service_name="lotus-core",
+                        endpoint="/reporting/portfolio-summary/query",
+                        method="POST",
+                        contract_version="v1",
+                        request_hash="sha256:req-partial",
+                        response_hash="sha256:resp-partial",
+                        response_ref=None,
+                        status_code=206,
+                        latency_ms=251,
+                        supportability_status="partial",
+                        completeness_status="partial",
+                        failure_category="none",
+                        failure_message=None,
+                        captured_at=datetime.now(UTC),
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                ],
+            )
+            return ledger.mark_data_ready(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+
+    capture_service = _PartialCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_partial_replacement"})
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Refresh with partially supported upstream evidence."},
+            headers=_headers(f"regenerate-{source.job_id}-partial"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["new_snapshot_id"]
+        assert body["new_archive_document_id"] == "doc_partial_replacement"
+        snapshot = lineage_store.get_snapshot_by_job(body["regenerated_report_job_id"])
+        assert snapshot.supportability_status == "partial"
+        assert lineage_store.list_upstream_calls(snapshot.snapshot_id)[0].supportability_status == (
+            "partial"
+        )
     finally:
         _clear_overrides()

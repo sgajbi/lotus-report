@@ -42,6 +42,8 @@ ReportRerenderAttemptStatus = Literal[
     "failed",
 ]
 
+ReportRegenerateStatus = ReportJobStatus
+
 
 class PortfolioReviewJobRequest(BaseModel):
     portfolio_scope: dict[str, Any] = Field(
@@ -294,6 +296,12 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report job is not eligible for rerender from snapshot.",
         }
     },
+    "report_job_cannot_be_regenerated": {
+        "detail": {
+            "code": "report_job_cannot_be_regenerated",
+            "message": "Report job is not eligible for regeneration from upstream data.",
+        }
+    },
     "report_job_cannot_be_cancelled": {
         "detail": {
             "code": "report_job_cannot_be_cancelled",
@@ -339,6 +347,45 @@ REPORT_JOB_RERENDER_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
     "created_at": "2026-04-22T09:07:00Z",
     "updated_at": "2026-04-22T09:07:04Z",
+}
+
+REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "source_report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "regenerated_report_job_id": "rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd",
+    "idempotency_key": "regenerate-rjob_83ca965c50334c40a17d2b8cc94873a5-refresh-1",
+    "status": "archived",
+    "previous_snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+    "new_snapshot_id": "rsnap_b98d1c76ad9d47da880f0863df2d3f83",
+    "previous_snapshot_hash": (
+        "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"
+    ),
+    "new_snapshot_hash": (
+        "sha256:bdbb727e97934f629f8a2ed2fb88cf9e42b6cfc06c6615a378d3f9a1d9f77811"
+    ),
+    "previous_archive_document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+    "new_archive_document_id": "doc_replacement_83ca965c50334c40a17d2b8cc94873a5",
+    "archive_consequence": "replacement",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-regenerate",
+        "bounded_determinism_fingerprint": "typst-0.14.2:9dd87c01",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 804,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd_pdf",
+        "document_id": "doc_replacement_83ca965c50334c40a17d2b8cc94873a5",
+        "completed_at": "2026-04-22T09:12:04Z",
+    },
+    "created_at": "2026-04-22T09:12:00Z",
+    "updated_at": "2026-04-22T09:12:04Z",
 }
 
 
@@ -520,6 +567,19 @@ class ReportJobRerenderRequest(BaseModel):
     )
 
 
+class ReportJobRegenerateRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description=(
+            "Support-safe business or operations reason for regenerating the archived job from "
+            "fresh upstream data."
+        ),
+        examples=["Refresh report after upstream position correction was certified."],
+    )
+
+
 class ReportRerenderAttemptRecord(BaseModel):
     rerender_attempt_id: str
     report_job_id: str
@@ -625,6 +685,81 @@ class ReportJobRerenderResponse(BaseModel):
     updated_at: datetime = Field(
         ...,
         description="UTC timestamp when the rerender attempt was last updated.",
+    )
+
+
+class ReportJobRegenerateResponse(BaseModel):
+    source_report_job_id: str = Field(
+        ...,
+        description="Archived source report job used as the regeneration template.",
+    )
+    regenerated_report_job_id: str = Field(
+        ...,
+        description="New report job created for fresh upstream snapshot capture and rendering.",
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this regenerate command.",
+    )
+    status: ReportRegenerateStatus = Field(
+        ...,
+        description="Current status of the regenerated report job.",
+    )
+    previous_snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot identifier from the source report job, when available.",
+    )
+    new_snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot identifier captured for the regenerated report job.",
+    )
+    previous_snapshot_hash: str | None = Field(
+        default=None,
+        description="Snapshot hash from the source report job, when available.",
+    )
+    new_snapshot_hash: str | None = Field(
+        default=None,
+        description="Snapshot hash captured for the regenerated report job.",
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Archived source document superseded by the regenerated document.",
+    )
+    new_archive_document_id: str | None = Field(
+        default=None,
+        description="Archive document identifier produced by the regenerated job.",
+    )
+    archive_consequence: Literal["replacement"] = Field(
+        "replacement",
+        description="Archive consequence of a successful regenerated document.",
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable regenerate failure category when regeneration failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe regenerate failure message when regeneration failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry is currently permitted for the regenerated job.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Render metadata for the regenerated report job.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Archive metadata for the regenerated report job.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the regenerated job was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the regenerated job was last updated.",
     )
 
 

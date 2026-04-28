@@ -29,9 +29,10 @@
 - `docs/operations/reporting-observability-metrics.md` records the code-backed first-wave metrics
   contract, dashboard contract, alert basis, and label restrictions.
 - implemented metrics cover report job submission, snapshot capture, render handoff, archive
-  handoff, rerender-from-snapshot, batch worker passes, and scheduler passes.
-- broader replay, regenerate, stuck-state, and SLA scan metrics are reserved until those command
-  paths are implementation-backed.
+  handoff, rerender-from-snapshot, regenerate-from-upstream, batch worker passes, and scheduler
+  passes.
+- broader replay, stuck-state, and SLA scan metrics are reserved until those command paths are
+  implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
   document, report job, batch, trace, correlation, storage, or raw payload fields.
 
@@ -41,8 +42,8 @@
   operator lookup field vocabulary.
 - operator docs summarize those fields but must not introduce additional observability identifiers
   outside the code-owned vocabulary.
-- RFC-0105 dashboards, broader replay, regenerate, and stuck-state APIs remain planned until
-  implemented and proven with source-backed runtime evidence.
+- RFC-0105 dashboards, broader replay, and stuck-state APIs remain planned until implemented and
+  proven with source-backed runtime evidence.
 
 ## Operational truths
 
@@ -115,7 +116,7 @@ Still not supported:
 - Workbench scheduler-management surface
 - schedule CRUD or persisted scheduler registry management
 - entitlement-certified public scheduler runtime
-- broad replay, rerender, regenerate, or document distribution controls
+- broad replay or document distribution controls
 
 Use individual report-job APIs for production portfolio-review initiation until later RFC-0104
 slices ship the remaining scheduler-management surfaces. Use `lotus-report` batch APIs and internal
@@ -197,9 +198,18 @@ Expected controls:
    render metadata, archive handoff identifiers, and evidence links without raw payloads,
 5. `POST /reports/jobs/{job_id}/rerender` is only for archived PDF jobs and creates a new
    rerender attempt from the existing immutable snapshot without recollecting upstream data,
-6. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
-7. every report job has one durable `report_request`, one durable `report_job`, and append-only
+6. `POST /reports/jobs/{job_id}/regenerate` is only for archived PDF jobs and creates a new report
+   job, fresh upstream snapshot and lineage bundle, and replacement archive document when source
+   data must be refreshed,
+7. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
+8. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
+
+Use rerender for presentation, template, or rendering corrections where the source snapshot remains
+authoritative. Use regenerate when upstream domain data was corrected, late, or incomplete and the
+operator needs a replacement document backed by a new lineage bundle. Both commands require
+`Idempotency-Key` and caller context headers, and neither command exposes raw snapshot payloads,
+storage keys, or upstream response bodies.
 
 ## RFC-0101 snapshot and lineage flow
 
@@ -299,10 +309,10 @@ ORDER BY captured_at, upstream_call_id;
 
 Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
 ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention,
-retrieval, broad replay, regenerate, reissue, and archive housekeeping belong to `lotus-archive`
-or later reporting architecture RFCs. `lotus-report` records the archive handoff request id,
-document id, completion timestamp, truthful archive failure posture, and rerender correction
-attempts for already archived PDF reports.
+retrieval, broad replay, archive reissue, and archive housekeeping belong to `lotus-archive` or
+later reporting architecture RFCs. `lotus-report` records the archive handoff request id, document
+id, completion timestamp, truthful archive failure posture, rerender correction attempts, and
+regenerate replacement attempts for already archived PDF reports.
 
 ## Practical probes
 

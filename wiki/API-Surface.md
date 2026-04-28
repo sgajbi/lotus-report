@@ -33,6 +33,10 @@
   internal RFC-0105 rerender command for already archived PDF jobs; reuses the immutable snapshot,
   preserves snapshot id/hash, creates a new render/archive correction identity, and does not
   recollect upstream data
+- `POST /reports/jobs/{job_id}/regenerate`
+  internal RFC-0105 regenerate command for already archived PDF jobs; recollects upstream data into
+  a fresh snapshot and lineage bundle, creates a replacement archive document, and returns explicit
+  old/new job, snapshot, hash, and archive document identities
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`
@@ -91,6 +95,7 @@ front-office consumers.
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
+- rerender and regenerate commands require `Idempotency-Key` plus governed caller context headers
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
 - batch materialization, control, run-once, and config-backed scheduler list/run-due APIs are

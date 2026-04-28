@@ -157,8 +157,8 @@ Key code areas:
   archived-report rerender from immutable snapshot
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
-  archive, rerender-from-snapshot, batch worker, and scheduler operations, with reserved broader
-  replay/regenerate posture and high-cardinality label rejection
+  archive, rerender-from-snapshot, regenerate-from-upstream, batch worker, and scheduler
+  operations, with reserved broader replay posture and high-cardinality label rejection
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
@@ -344,8 +344,8 @@ Current orchestration model:
   `GET`/`HEAD` surfaces, and `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit
   events through the enterprise readiness middleware
 - treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
-  dashboard, alert, and label-governance contract; broader replay, regenerate, stuck-state, and
-  SLA scan metrics remain reserved until those command paths are implementation-backed
+  dashboard, alert, and label-governance contract; broader replay, stuck-state, and SLA scan
+  metrics remain reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
 - use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
@@ -354,6 +354,9 @@ Current orchestration model:
 - use `POST /reports/jobs/{job_id}/rerender` only for already archived PDF jobs when operations
   need a correction document from the same immutable snapshot; the response proves the same
   snapshot id/hash and a new rerender/render/archive identity
+- use `POST /reports/jobs/{job_id}/regenerate` only for already archived PDF jobs when operations
+  need to refresh upstream data and create a replacement document; the response proves the old and
+  new report job, snapshot, snapshot hash, and archive document identities
 - use `GET /reports/jobs/{job_id}/events` for deeper lifecycle diagnostics before inspecting
   database rows directly
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified

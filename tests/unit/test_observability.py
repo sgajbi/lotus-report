@@ -175,6 +175,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         "render_handoff",
         "archive_handoff",
         "rerender_from_snapshot",
+        "regenerate_from_upstream",
     } <= (IMPLEMENTED_REPORTING_OPERATIONS)
     assert {"replay_command", "rerender_command", "regenerate_command"} <= (
         RESERVED_REPORTING_OPERATIONS

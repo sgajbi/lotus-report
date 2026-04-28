@@ -120,7 +120,14 @@ class PortfolioReviewRenderOrchestrationService:
         self._snapshot_store = snapshot_store
         self._job_ledger = job_ledger
 
-    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+    async def render_for_job(
+        self,
+        job: ReportJobLedgerRecord,
+        *,
+        supersedes_render_job_id: str | None = None,
+        supersedes_archive_document_id: str | None = None,
+        archive_consequence: str | None = None,
+    ) -> ReportJobLedgerRecord:
         started_at = perf_counter()
         if "pdf" not in job.requested_output_formats:
             return job
@@ -178,6 +185,9 @@ class PortfolioReviewRenderOrchestrationService:
                 job=rendered,
                 snapshot=snapshot,
                 render_response=response_payload,
+                supersedes_render_job_id=supersedes_render_job_id,
+                supersedes_archive_document_id=supersedes_archive_document_id,
+                archive_consequence=archive_consequence,
             )
             record_report_operation(
                 operation="render_handoff",
@@ -224,6 +234,9 @@ class PortfolioReviewRenderOrchestrationService:
         job: ReportJobLedgerRecord,
         snapshot: Any,
         render_response: dict[str, Any],
+        supersedes_render_job_id: str | None = None,
+        supersedes_archive_document_id: str | None = None,
+        archive_consequence: str | None = None,
     ) -> ReportJobLedgerRecord:
         started_at = perf_counter()
         artifact_base64 = _optional_str(render_response.get("artifact_base64"))
@@ -260,6 +273,9 @@ class PortfolioReviewRenderOrchestrationService:
                 render_response=render_response,
                 archive_request_id=archive_request_id,
                 content_base64=artifact_base64,
+                supersedes_render_job_id=supersedes_render_job_id,
+                supersedes_archive_document_id=supersedes_archive_document_id,
+                archive_consequence=archive_consequence,
             ),
             actor_id=job.triggered_by,
             tenant_id=job.tenant_id,
