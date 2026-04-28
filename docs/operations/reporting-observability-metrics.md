@@ -1,18 +1,18 @@
 # Reporting Observability Metrics
 
 This page records the RFC-0105 Slice 3 first-wave `lotus-report` metrics contract, updated by
-Slice 5 for the implementation-backed rerender-from-snapshot command and Slice 6 for the
-implementation-backed regenerate-from-upstream command.
+Slice 5 for the implementation-backed rerender-from-snapshot command, Slice 6 for the
+implementation-backed regenerate-from-upstream command, and Slice 7 for failed-work replay.
 
 The current implementation emits metrics for report operations that already exist and are
-implementation-backed. Broader replay and stuck-state scan metrics are reserved until those command
-paths are implemented and proven.
+implementation-backed. Dedicated broad replay dashboards and stuck-state scan metrics are reserved
+until those command paths are implemented and proven.
 
 ## Implemented Metrics
 
 | Metric | Type | Labels | Source |
 | --- | --- | --- | --- |
-| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, snapshot capture, render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, batch worker pass, scheduler pass |
+| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, snapshot capture, render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch worker pass, scheduler pass |
 | `lotus_report_operation_duration_seconds` | histogram | `operation`, `status`, `failure_category` | Duration for the same implemented operations |
 | `lotus_report_batch_runtime_last_items` | gauge | `item_state` | Latest bounded batch-worker pass counts for recovered, leased, dispatched, and executed items |
 | `lotus_report_batch_scheduler_last_schedules` | gauge | `outcome` | Latest bounded scheduler pass counts for attempted, materialized, and skipped schedules |
@@ -21,7 +21,7 @@ paths are implemented and proven.
 
 | Metric | Status | Reason |
 | --- | --- | --- |
-| `lotus_report_replay_operations_total` | reserved | Broader replay commands are not yet implementation-backed |
+| `lotus_report_replay_operations_total` | reserved | Dedicated broader replay dashboard metrics are not yet implementation-backed; failed-work replay is counted through `lotus_report_operations_total{operation="replay_command"}` |
 
 ## Label Discipline
 
@@ -46,10 +46,11 @@ First-wave dashboards may reference only implemented metrics:
 3. batch worker activity from `lotus_report_batch_runtime_last_items`,
 4. scheduler materialization activity from `lotus_report_batch_scheduler_last_schedules`.
 
-Dashboards may include `operation="rerender_from_snapshot"` and
-`operation="regenerate_from_upstream"` from `lotus_report_operations_total` and
-`lotus_report_operation_duration_seconds`. They must not reference reserved broader replay,
-stuck-state, or SLA scan metrics until those slices add implementation-backed metrics and tests.
+Dashboards may include `operation="rerender_from_snapshot"`,
+`operation="regenerate_from_upstream"`, and `operation="replay_command"` from
+`lotus_report_operations_total` and `lotus_report_operation_duration_seconds`. They must not
+reference reserved dedicated broader replay, stuck-state, or SLA scan metrics until those slices add
+implementation-backed metrics and tests.
 
 ## Alert Contract
 

@@ -176,10 +176,9 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         "archive_handoff",
         "rerender_from_snapshot",
         "regenerate_from_upstream",
+        "replay_command",
     } <= (IMPLEMENTED_REPORTING_OPERATIONS)
-    assert {"replay_command", "rerender_command", "regenerate_command"} <= (
-        RESERVED_REPORTING_OPERATIONS
-    )
+    assert {"rerender_command", "regenerate_command"} <= RESERVED_REPORTING_OPERATIONS
     for contract in REPORTING_METRIC_CONTRACTS:
         assert not (set(contract.labels) & FORBIDDEN_METRIC_LABELS)
         assert "correlation_id" not in contract.labels
@@ -190,7 +189,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
 
 def test_record_report_operation_rejects_unimplemented_reserved_operation():
     with pytest.raises(ValueError, match="unsupported_reporting_metric_operation"):
-        record_report_operation(operation="replay_command", status="failed")
+        record_report_operation(operation="rerender_command", status="failed")
 
 
 def test_reporting_metric_contract_validation_rejects_duplicate_metric_names(monkeypatch):

@@ -154,11 +154,12 @@ Key code areas:
   rerender attempt state, and bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, post-render archive handoff, and
-  archived-report rerender from immutable snapshot
+  archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
-  archive, rerender-from-snapshot, regenerate-from-upstream, batch worker, and scheduler
-  operations, with reserved broader replay posture and high-cardinality label rejection
+  archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
+  worker, and scheduler operations, with reserved dedicated broader replay posture and
+  high-cardinality label rejection
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
@@ -344,8 +345,9 @@ Current orchestration model:
   `GET`/`HEAD` surfaces, and `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit
   events through the enterprise readiness middleware
 - treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
-  dashboard, alert, and label-governance contract; broader replay, stuck-state, and SLA scan
-  metrics remain reserved until those command paths are implementation-backed
+  dashboard, alert, and label-governance contract; dedicated broader replay dashboards,
+  stuck-state, and SLA scan metrics remain reserved until those command paths are
+  implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
 - use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
@@ -357,6 +359,13 @@ Current orchestration model:
 - use `POST /reports/jobs/{job_id}/regenerate` only for already archived PDF jobs when operations
   need to refresh upstream data and create a replacement document; the response proves the old and
   new report job, snapshot, snapshot hash, and archive document identities
+- use `POST /reports/jobs/{job_id}/replay` only for failed retry-eligible report jobs; it creates
+  or reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
+  source jobs
+- use `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay` only for failed
+  retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
+  item to replay work without scheduler CRUD, registry mutation, distribution, or archive
+  housekeeping behavior
 - use `GET /reports/jobs/{job_id}/events` for deeper lifecycle diagnostics before inspecting
   database rows directly
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified

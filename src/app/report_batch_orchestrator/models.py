@@ -298,6 +298,25 @@ BATCH_RECOVERY_RESPONSE_EXAMPLE: dict[str, Any] = {
     "status_url": "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
 }
 
+BATCH_ITEM_REPLAY_REQUEST_EXAMPLE: dict[str, Any] = {
+    "reason": "Retry item after upstream service recovered.",
+}
+
+BATCH_ITEM_REPLAY_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "batch_id": "rbch_2f6d1a8f2ef24f019e7d7f37507f352c",
+    "batch_item_id": "rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c",
+    "source_report_job_id": "rjob_failed_83ca965c50334c40a17d2b8cc94873a5",
+    "replayed_report_job_id": "rjob_replay_83ca965c50334c40a17d2b8cc94873a5",
+    "idempotency_key": "replay-rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c-upstream-retry-1",
+    "item_status": "waiting_on_report_job",
+    "report_job_status": "accepted",
+    "retry_eligible": False,
+    "status_url": (
+        "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c/items/"
+        "rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"
+    ),
+}
+
 BATCH_WORKER_RUN_REQUEST_EXAMPLE: dict[str, Any] = {
     "worker_id": "lotus-report-batch-worker-1",
     "recover_expired_leases": True,
@@ -604,6 +623,66 @@ class BatchRecoveryResponse(BaseModel):
         ...,
         description="Relative URL where callers can retrieve product-safe batch status.",
         examples=["/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+
+
+class BatchItemReplayRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Support-safe business or operations reason for replaying this failed item.",
+        examples=["Retry item after upstream service recovered."],
+    )
+
+
+class BatchItemReplayResponse(BaseModel):
+    batch_id: str = Field(
+        ...,
+        description="Opaque durable batch identifier.",
+        examples=["rbch_2f6d1a8f2ef24f019e7d7f37507f352c"],
+    )
+    batch_item_id: str = Field(
+        ...,
+        description="Opaque durable batch item identifier replayed by this command.",
+        examples=["rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"],
+    )
+    source_report_job_id: str | None = Field(
+        default=None,
+        description="Previously linked failed report job, when the item had one.",
+        examples=["rjob_failed_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    replayed_report_job_id: str = Field(
+        ...,
+        description="New or reused replay-scoped report job linked to the batch item.",
+        examples=["rjob_replay_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this batch-item replay command.",
+        examples=["replay-rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c-upstream-retry-1"],
+    )
+    item_status: BatchItemStatus = Field(
+        ...,
+        description="Batch item status after replay relink.",
+        examples=["waiting_on_report_job"],
+    )
+    report_job_status: str = Field(
+        ...,
+        description="Status of the replayed report job after relink.",
+        examples=["accepted"],
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether the batch item remains retry eligible after replay relink.",
+        examples=[False],
+    )
+    status_url: str = Field(
+        ...,
+        description="Relative URL where callers can retrieve product-safe batch item status.",
+        examples=[
+            "/reports/batches/rbch_2f6d1a8f2ef24f019e7d7f37507f352c/items/rbci_1a3b5c7d9e0f4a12a45f7a8d00bd129c"
+        ],
     )
 
 

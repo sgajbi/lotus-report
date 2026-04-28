@@ -761,6 +761,73 @@ class ReportBatchLedger:
                     recovery_pending_item_ids=[str(row["batch_item_id"]) for row in rows],
                 )
 
+    def relink_failed_item_for_replay(
+        self,
+        *,
+        batch_id: str,
+        batch_item_id: str,
+        replayed_report_job_id: str,
+        retry_policy: BatchRetryPolicy | None = None,
+        now: datetime | None = None,
+    ) -> ReportBatchItemRecord:
+        replay_at = now or utc_now()
+        policy = retry_policy or BatchRetryPolicy()
+        with self._lock:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT *
+                    FROM report_batch_item
+                    WHERE batch_id = ? AND batch_item_id = ?
+                    """,
+                    (batch_id, batch_item_id),
+                ).fetchone()
+                if existing is None:
+                    self._load_batch(connection, batch_id)
+                    raise ValueError("report_batch_item_not_found")
+                if (
+                    existing["status"] == "waiting_on_report_job"
+                    and existing["report_job_id"] == replayed_report_job_id
+                ):
+                    return _item_from_row(existing)
+                updated = connection.execute(
+                    """
+                    UPDATE report_batch_item
+                    SET status = 'waiting_on_report_job',
+                        report_job_id = ?,
+                        retry_eligible = 0,
+                        next_retry_at = NULL,
+                        lease_owner = NULL,
+                        lease_token = NULL,
+                        lease_acquired_at = NULL,
+                        lease_expires_at = NULL,
+                        last_heartbeat_at = NULL,
+                        last_error_category = NULL,
+                        last_error_summary = NULL,
+                        started_at = COALESCE(started_at, ?),
+                        completed_at = NULL,
+                        cancelled_at = NULL
+                    WHERE batch_id = ?
+                      AND batch_item_id = ?
+                      AND status = 'failed_retryable'
+                      AND retry_eligible = 1
+                      AND lease_token IS NULL
+                      AND attempt_count < ?
+                    RETURNING *
+                    """,
+                    (
+                        replayed_report_job_id,
+                        _dt_to_text(replay_at),
+                        batch_id,
+                        batch_item_id,
+                        policy.max_attempts,
+                    ),
+                ).fetchone()
+                if updated is None:
+                    raise ValueError("report_batch_item_cannot_be_replayed")
+                self._refresh_batch_status(connection, batch_id, now=replay_at)
+                return _item_from_row(updated)
+
     def count_active_batches(self) -> int:
         with self._connect() as connection:
             row = connection.execute(

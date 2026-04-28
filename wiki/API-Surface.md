@@ -37,6 +37,10 @@
   internal RFC-0105 regenerate command for already archived PDF jobs; recollects upstream data into
   a fresh snapshot and lineage bundle, creates a replacement archive document, and returns explicit
   old/new job, snapshot, hash, and archive document identities
+- `POST /reports/jobs/{job_id}/replay`
+  internal RFC-0105 failed-work replay command for failed retry-eligible report jobs; creates or
+  reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
+  source jobs
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`
@@ -65,6 +69,10 @@
 - `POST /reports/batches/{batch_id}:run-once`
   internal bounded operator-controlled batch run over recovery, dispatch, report-job execution, and
   batch-item reconciliation for one explicit batch
+- `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay`
+  internal RFC-0105 failed-work replay command for implementation-backed RFC-0104 batch items whose
+  linked report job failed; relinks the item to a replay-scoped report job without scheduler CRUD,
+  registry mutation, or archive distribution behavior
 
 ## Product-facing boundary
 
@@ -95,7 +103,8 @@ front-office consumers.
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
-- rerender and regenerate commands require `Idempotency-Key` plus governed caller context headers
+- rerender, regenerate, and failed-work replay commands require `Idempotency-Key` plus governed
+  caller context headers
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
 - batch materialization, control, run-once, and config-backed scheduler list/run-due APIs are

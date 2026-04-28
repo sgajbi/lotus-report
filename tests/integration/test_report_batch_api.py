@@ -8,6 +8,10 @@ from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
     ReportBatchLedger,
 )
+from app.report_batch_orchestrator.replay import (
+    ReportBatchItemReplayService,
+    get_report_batch_item_replay_service,
+)
 from app.report_batch_orchestrator.scheduler import (
     BatchScheduleConfigError,
     BatchScheduleDefinition,
@@ -20,6 +24,9 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_worker,
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
+from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.service import get_report_job_ledger
 from app.routers.report_batches import get_report_batch_scheduler_config
 
 
@@ -27,6 +34,19 @@ def _client(tmp_path):
     ledger = ReportBatchLedger(tmp_path / "batches.sqlite3")
     app.dependency_overrides[get_report_batch_ledger] = lambda: ledger
     return TestClient(app), ledger
+
+
+def _client_with_report_jobs(tmp_path):
+    batch_ledger = ReportBatchLedger(tmp_path / "batches.sqlite3")
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    replay_service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+    app.dependency_overrides[get_report_batch_ledger] = lambda: batch_ledger
+    app.dependency_overrides[get_report_job_ledger] = lambda: report_ledger
+    app.dependency_overrides[get_report_batch_item_replay_service] = lambda: replay_service
+    return TestClient(app), batch_ledger, report_ledger
 
 
 def _clear_overrides() -> None:
@@ -45,6 +65,19 @@ def _headers(idempotency_key: str = "batch-portfolio-review-2026-04-22") -> dict
         "X-Correlation-ID": "corr-batch-1",
         "X-Trace-ID": "trace-batch-1",
     }
+
+
+def _caller_context() -> ReportCallerContext:
+    return ReportCallerContext(
+        triggered_by="advisor-123",
+        caller_application="lotus-gateway",
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="advisor",
+        correlation_id="corr-batch-1",
+        trace_id="trace-batch-1",
+    )
 
 
 def _payload() -> dict[str, object]:
@@ -77,6 +110,54 @@ def _payload() -> dict[str, object]:
         "options": {"sections": ["OVERVIEW", "PERFORMANCE"]},
         "max_batch_size": 250,
     }
+
+
+def _failed_batch_item_with_report_job(client, batch_ledger, report_ledger):
+    batch = client.post(
+        "/reports/batches",
+        json=_payload(),
+        headers=_headers("batch-item-replay-source"),
+    ).json()
+    batch_id = batch["batch_id"]
+    item = batch_ledger.get_batch(batch_id).items[0]
+    leased = batch_ledger.acquire_dispatch_items(
+        batch_id=batch_id,
+        worker_id="worker-replay-test",
+        lease_seconds=300,
+        limit=1,
+    )[0]
+    report_job = report_ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest(
+            portfolio_scope={"portfolio_ids": [item.portfolio_id]},
+            as_of_date="2026-04-22",
+            requested_output_formats=["pdf"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+        ),
+        caller_context=_caller_context(),
+        idempotency_key=leased.item_idempotency_key,
+    )
+    waiting = batch_ledger.mark_item_waiting_on_report_job(
+        batch_item_id=leased.batch_item_id,
+        lease_token=leased.lease_token,
+        report_job_id=report_job.job_id,
+    )
+    report_ledger.mark_failed(
+        job_id=report_job.job_id,
+        actor="advisor-123",
+        correlation_id="corr-batch-1",
+        trace_id="trace-batch-1",
+        failure_category="upstream_data_failed",
+        failure_message="Upstream timeout.",
+        retry_eligible=True,
+    )
+    failed_item = batch_ledger.mark_item_failed(
+        batch_item_id=waiting.batch_item_id,
+        error_category="upstream_data_failed",
+        error_summary="Upstream timeout.",
+        retryable=True,
+    )
+    return batch_id, failed_item, report_job
 
 
 class _WorkerRunSuccess:
@@ -267,6 +348,150 @@ def test_report_batch_item_status_endpoint_returns_item_and_404s(tmp_path):
         )
         assert missing_batch_item_response.status_code == 404
         assert missing_batch_item_response.json()["detail"]["code"] == "report_batch_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_item_replay_relinks_failed_item_idempotently(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch_id, failed_item, source_job = _failed_batch_item_with_report_job(
+            client,
+            batch_ledger,
+            report_ledger,
+        )
+        headers = _headers(f"batch-item-replay-{failed_item.batch_item_id}-same-key")
+
+        first = client.post(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
+            json={"reason": "Retry item after upstream service recovered."},
+            headers=headers,
+        )
+        assert first.status_code == 202
+        body = first.json()
+        assert body["batch_id"] == batch_id
+        assert body["batch_item_id"] == failed_item.batch_item_id
+        assert body["source_report_job_id"] == source_job.job_id
+        assert body["replayed_report_job_id"] != source_job.job_id
+        assert body["item_status"] == "waiting_on_report_job"
+        replayed_item = batch_ledger.get_batch_item(batch_id, failed_item.batch_item_id)
+        assert replayed_item.report_job_id == body["replayed_report_job_id"]
+        assert replayed_item.retry_eligible is False
+        second = client.post(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
+            json={"reason": "Retry item after upstream service recovered."},
+            headers=headers,
+        )
+        different_key = client.post(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
+            json={"reason": "Different replay command must not duplicate the relink."},
+            headers=_headers(f"batch-item-replay-{failed_item.batch_item_id}-different-key"),
+        )
+
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        assert different_key.status_code == 409
+        assert [
+            event.event_type
+            for event in report_ledger.list_status_events(source_job.job_id)
+            if event.event_type == "batch_item_replay_requested"
+        ] == ["batch_item_replay_requested"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_item_replay_rejects_completed_and_leased_items(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        completed_batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("batch-item-replay-completed-source"),
+        ).json()
+        completed_leased = batch_ledger.acquire_dispatch_items(
+            batch_id=completed_batch["batch_id"],
+            worker_id="worker-replay-test",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        completed_job = report_ledger.create_portfolio_review_job(
+            request=PortfolioReviewJobRequest(
+                portfolio_scope={"portfolio_ids": [completed_leased.portfolio_id]},
+                as_of_date="2026-04-22",
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+            ),
+            caller_context=_caller_context(),
+            idempotency_key=completed_leased.item_idempotency_key,
+        )
+        completed_waiting = batch_ledger.mark_item_waiting_on_report_job(
+            batch_item_id=completed_leased.batch_item_id,
+            lease_token=completed_leased.lease_token,
+            report_job_id=completed_job.job_id,
+        )
+        completed_item = batch_ledger.mark_item_succeeded(
+            batch_item_id=completed_waiting.batch_item_id,
+            report_job_id=completed_job.job_id,
+        )
+        completed_response = client.post(
+            f"/reports/batches/{completed_batch['batch_id']}/items/{completed_item.batch_item_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"batch-item-replay-{completed_item.batch_item_id}-completed"),
+        )
+
+        leased_batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("batch-item-replay-leased-source"),
+        ).json()
+        leased_item = batch_ledger.acquire_dispatch_items(
+            batch_id=leased_batch["batch_id"],
+            worker_id="worker-replay-test",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        leased_response = client.post(
+            f"/reports/batches/{leased_batch['batch_id']}/items/{leased_item.batch_item_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"batch-item-replay-{leased_item.batch_item_id}-leased"),
+        )
+
+        assert completed_response.status_code == 409
+        assert leased_response.status_code == 409
+        assert completed_response.json()["detail"]["code"] == (
+            "report_batch_item_cannot_be_replayed"
+        )
+        assert leased_response.json()["detail"]["code"] == "report_batch_item_cannot_be_replayed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_item_replay_rejects_retry_ceiling(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch_id, failed_item, _source_job = _failed_batch_item_with_report_job(
+            client,
+            batch_ledger,
+            report_ledger,
+        )
+        for _ in range(2):
+            failed_item = batch_ledger.mark_item_failed(
+                batch_item_id=failed_item.batch_item_id,
+                error_category="upstream_data_failed",
+                error_summary="Upstream timeout.",
+                retryable=True,
+            )
+
+        response = client.post(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
+            json={"reason": "Retry ceiling should prevent replay."},
+            headers=_headers(f"batch-item-replay-{failed_item.batch_item_id}-terminal"),
+        )
+
+        assert failed_item.status == "failed_terminal"
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_batch_item_cannot_be_replayed"
     finally:
         _clear_overrides()
 
@@ -700,6 +925,11 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     status_get = schema["paths"]["/reports/batches/{batch_id}"]["get"]
     status_example = status_get["responses"]["200"]["content"]["application/json"]["example"]
     retry_post = schema["paths"]["/reports/batches/{batch_id}:retry-failed"]["post"]
+    replay_post = schema["paths"]["/reports/batches/{batch_id}/items/{batch_item_id}/replay"][
+        "post"
+    ]
+    replay_request = replay_post["requestBody"]["content"]["application/json"]["example"]
+    replay_response = replay_post["responses"]["202"]["content"]["application/json"]["example"]
     run_once_post = schema["paths"]["/reports/batches/{batch_id}:run-once"]["post"]
     run_once_request = run_once_post["requestBody"]["content"]["application/json"]["example"]
     run_once_response = run_once_post["responses"]["200"]["content"]["application/json"]["example"]
@@ -718,6 +948,11 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     assert create_example["selector_mode"] == "explicit_portfolio_list"
     assert handle_example["batch_id"].startswith("rbch_")
     assert status_example["status_counts"] == {"materialized": 2}
+    assert replay_request["reason"]
+    assert replay_response["source_report_job_id"].startswith("rjob_")
+    assert replay_response["replayed_report_job_id"].startswith("rjob_")
+    assert replay_response["replayed_report_job_id"] != replay_response["source_report_job_id"]
+    assert replay_response["item_status"] == "waiting_on_report_job"
     assert run_once_request["worker_id"] == "lotus-report-batch-worker-1"
     assert run_once_response["executed_count"] == 2
     assert schedule_list_response["schedule_count"] == 1
@@ -727,12 +962,15 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     assert "Report Batch Schedules" in schedule_list_get["tags"]
     assert "Use this endpoint" in create_post["description"]
     assert "retryable failed batch items" in retry_post["description"]
+    assert "failed retry-eligible batch item" in replay_post["description"]
     assert "single-batch operator action" in run_once_post["description"]
     assert "config-backed" in schedule_list_get["description"]
     assert "operator-triggered scheduler pass" in schedule_run_post["description"]
     assert "RFC-" not in str(create_example)
     assert "RFC-" not in str(handle_example)
     assert "RFC-" not in str(status_example)
+    assert "RFC-" not in str(replay_request)
+    assert "RFC-" not in str(replay_response)
     assert "RFC-" not in str(run_once_request)
     assert "RFC-" not in str(run_once_response)
     assert "RFC-" not in str(schedule_list_response)
@@ -743,6 +981,8 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
         "BatchStatusResponse",
         "BatchItemStatusResponse",
         "BatchControlResponse",
+        "BatchItemReplayRequest",
+        "BatchItemReplayResponse",
         "BatchRecoveryResponse",
         "BatchWorkerRunRequest",
         "BatchWorkerRunResponse",

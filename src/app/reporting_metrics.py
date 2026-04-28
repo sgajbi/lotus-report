@@ -58,6 +58,7 @@ IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
         "report_job_submission",
         "regenerate_from_upstream",
         "render_handoff",
+        "replay_command",
         "rerender_from_snapshot",
         "snapshot_capture",
     }
@@ -65,7 +66,6 @@ IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
 RESERVED_REPORTING_OPERATIONS = frozenset(
     {
         "regenerate_command",
-        "replay_command",
         "rerender_command",
         "stuck_state_scan",
     }

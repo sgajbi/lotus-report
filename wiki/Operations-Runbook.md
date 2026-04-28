@@ -29,10 +29,10 @@
 - `docs/operations/reporting-observability-metrics.md` records the code-backed first-wave metrics
   contract, dashboard contract, alert basis, and label restrictions.
 - implemented metrics cover report job submission, snapshot capture, render handoff, archive
-  handoff, rerender-from-snapshot, regenerate-from-upstream, batch worker passes, and scheduler
-  passes.
-- broader replay, stuck-state, and SLA scan metrics are reserved until those command paths are
-  implementation-backed.
+  handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay commands, batch
+  worker passes, and scheduler passes.
+- dedicated broader replay dashboards, stuck-state, and SLA scan metrics are reserved until those
+  command paths are implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
   document, report job, batch, trace, correlation, storage, or raw payload fields.
 
@@ -42,7 +42,7 @@
   operator lookup field vocabulary.
 - operator docs summarize those fields but must not introduce additional observability identifiers
   outside the code-owned vocabulary.
-- RFC-0105 dashboards, broader replay, and stuck-state APIs remain planned until implemented and
+- RFC-0105 dedicated replay dashboards and stuck-state APIs remain planned until implemented and
   proven with source-backed runtime evidence.
 
 ## Operational truths
@@ -201,15 +201,21 @@ Expected controls:
 6. `POST /reports/jobs/{job_id}/regenerate` is only for archived PDF jobs and creates a new report
    job, fresh upstream snapshot and lineage bundle, and replacement archive document when source
    data must be refreshed,
-7. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
-8. every report job has one durable `report_request`, one durable `report_job`, and append-only
+7. `POST /reports/jobs/{job_id}/replay` is only for failed retry-eligible report jobs and creates
+   or reuses a replay-scoped report job without duplicating completed archived documents,
+8. `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay` is only for failed
+   retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
+   item to replay work and does not change scheduler configuration,
+9. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
+10. every report job has one durable `report_request`, one durable `report_job`, and append-only
    `report_status_event` rows.
 
 Use rerender for presentation, template, or rendering corrections where the source snapshot remains
 authoritative. Use regenerate when upstream domain data was corrected, late, or incomplete and the
-operator needs a replacement document backed by a new lineage bundle. Both commands require
-`Idempotency-Key` and caller context headers, and neither command exposes raw snapshot payloads,
-storage keys, or upstream response bodies.
+operator needs a replacement document backed by a new lineage bundle. Use failed-work replay only
+when the source job or implementation-backed batch item failed before producing a completed archive
+document. These commands require `Idempotency-Key` and caller context headers, and they do not
+expose raw snapshot payloads, storage keys, or upstream response bodies.
 
 ## RFC-0101 snapshot and lineage flow
 

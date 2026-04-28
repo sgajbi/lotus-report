@@ -302,6 +302,12 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report job is not eligible for regeneration from upstream data.",
         }
     },
+    "report_job_cannot_be_replayed": {
+        "detail": {
+            "code": "report_job_cannot_be_replayed",
+            "message": "Report job is not eligible for replay.",
+        }
+    },
     "report_job_cannot_be_cancelled": {
         "detail": {
             "code": "report_job_cannot_be_cancelled",
@@ -386,6 +392,35 @@ REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
     "created_at": "2026-04-22T09:12:00Z",
     "updated_at": "2026-04-22T09:12:04Z",
+}
+
+REPORT_JOB_REPLAY_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "source_report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "replayed_report_job_id": "rjob_8a1f4d267de64a5597c02cfeb612a6a4",
+    "idempotency_key": "replay-rjob_83ca965c50334c40a17d2b8cc94873a5-upstream-retry-1",
+    "status": "archived",
+    "source_failure_category": "upstream_data_failed",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rjob_8a1f4d267de64a5597c02cfeb612a6a4_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-replay",
+        "bounded_determinism_fingerprint": "typst-0.14.2:129fb9da",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 782,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rjob_8a1f4d267de64a5597c02cfeb612a6a4_pdf",
+        "document_id": "doc_replay_8a1f4d267de64a5597c02cfeb612a6a4",
+        "completed_at": "2026-04-22T09:18:04Z",
+    },
+    "created_at": "2026-04-22T09:18:00Z",
+    "updated_at": "2026-04-22T09:18:04Z",
 }
 
 
@@ -580,6 +615,16 @@ class ReportJobRegenerateRequest(BaseModel):
     )
 
 
+class ReportJobReplayRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Support-safe business or operations reason for replaying a failed job.",
+        examples=["Retry after upstream service recovered."],
+    )
+
+
 class ReportRerenderAttemptRecord(BaseModel):
     rerender_attempt_id: str
     report_job_id: str
@@ -760,6 +805,57 @@ class ReportJobRegenerateResponse(BaseModel):
     updated_at: datetime = Field(
         ...,
         description="UTC timestamp when the regenerated job was last updated.",
+    )
+
+
+class ReportJobReplayResponse(BaseModel):
+    source_report_job_id: str = Field(
+        ...,
+        description="Failed source report job used as the replay template.",
+    )
+    replayed_report_job_id: str = Field(
+        ...,
+        description="New report job created or reused for the replay attempt.",
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this replay command.",
+    )
+    status: ReportJobStatus = Field(
+        ...,
+        description="Current status of the replayed report job.",
+    )
+    source_failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Failure category from the source failed report job.",
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable replay failure category when replay failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe replay failure message when replay failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry or replay remains permitted for the replayed job.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Render metadata for the replayed report job.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Archive metadata for the replayed report job.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the replayed job was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the replayed job was last updated.",
     )
 
 

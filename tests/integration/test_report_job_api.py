@@ -19,6 +19,10 @@ from app.reporting_render.regenerate_service import (
     PortfolioReviewRegenerateService,
     get_portfolio_review_regenerate_service,
 )
+from app.reporting_render.replay_service import (
+    PortfolioReviewReplayService,
+    get_portfolio_review_replay_service,
+)
 from app.reporting_render.rerender_service import (
     PortfolioReviewRerenderService,
     get_portfolio_review_rerender_service,
@@ -219,6 +223,22 @@ def _install_regenerate_service(
         render_service=render_service,
     )
     app.dependency_overrides[get_portfolio_review_regenerate_service] = lambda: service
+    return service
+
+
+def _install_replay_service(ledger, lineage_store, capture_service, render_client, archive_client):
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    app.dependency_overrides[get_portfolio_review_replay_service] = lambda: service
     return service
 
 
@@ -774,6 +794,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     regenerate_example = regenerate_post["responses"]["202"]["content"]["application/json"][
         "example"
     ]
+    replay_post = schema["paths"]["/reports/jobs/{job_id}/replay"]["post"]
+    replay_example = replay_post["responses"]["202"]["content"]["application/json"]["example"]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
@@ -793,9 +815,14 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         != regenerate_example["previous_archive_document_id"]
     )
     assert regenerate_example["archive_consequence"] == "replacement"
+    assert replay_example["source_report_job_id"].startswith("rjob_")
+    assert replay_example["replayed_report_job_id"].startswith("rjob_")
+    assert replay_example["replayed_report_job_id"] != replay_example["source_report_job_id"]
+    assert replay_example["source_failure_category"] == "upstream_data_failed"
     assert "Report Jobs" in list_get["tags"]
     assert "Report Jobs" in diagnostics_get["tags"]
     assert "Report Jobs" in regenerate_post["tags"]
+    assert "Report Jobs" in replay_post["tags"]
     assert "what" in list_get["description"].lower() or "returns" in list_get["description"].lower()
     assert (
         "when" in list_get["description"].lower()
@@ -804,6 +831,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert "use this endpoint" in diagnostics_get["description"].lower()
     assert "upstream" in regenerate_post["description"].lower()
     assert "rerender" in regenerate_post["description"].lower()
+    assert "failed" in replay_post["description"].lower()
+    assert "rerender" in replay_post["description"].lower()
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
@@ -811,6 +840,7 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert "RFC-" not in str(events_example)
     assert "RFC-" not in str(diagnostics_example)
     assert "RFC-" not in str(regenerate_example)
+    assert "RFC-" not in str(replay_example)
     for schema_name in [
         "ReportJobHandleResponse",
         "ReportJobStatusResponse",
@@ -824,6 +854,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         "ReportJobStatusEventsResponse",
         "ReportJobRegenerateRequest",
         "ReportJobRegenerateResponse",
+        "ReportJobReplayRequest",
+        "ReportJobReplayResponse",
         "ReportStatusEvent",
         "ApiErrorResponse",
         "ApiErrorDetail",
@@ -1488,5 +1520,113 @@ def test_report_job_regenerate_allows_partial_snapshot_lineage(tmp_path):
         assert lineage_store.list_upstream_calls(snapshot.snapshot_id)[0].supportability_status == (
             "partial"
         )
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_report_job_pdf_replay"})
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    try:
+        payload = _payload()
+        payload["requested_output_formats"] = ["pdf"]
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-replay-source"),
+        ).json()
+        source = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="upstream_data_failed",
+            failure_message="Upstream timeout.",
+            retry_eligible=True,
+        )
+        headers = _headers(f"replay-{source.job_id}-same-key")
+
+        first = client.post(
+            f"/reports/jobs/{source.job_id}/replay",
+            json={"reason": "Retry after upstream service recovered."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{source.job_id}/replay",
+            json={"reason": "Retry after upstream service recovered."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        body = first.json()
+        assert body["source_report_job_id"] == source.job_id
+        assert body["replayed_report_job_id"] != source.job_id
+        assert body["status"] == "archived"
+        assert body["source_failure_category"] == "upstream_data_failed"
+        assert body["archive"]["document_id"] == "doc_report_job_pdf_replay"
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+        assert [
+            event.event_type
+            for event in ledger.list_status_events(source.job_id)
+            if event.event_type == "job_replay_completed"
+        ] == ["job_replay_completed"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_rejects_non_retryable_and_archived_jobs(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-replay-nonretryable"),
+        ).json()
+        failed = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="validation_failed",
+            failure_message="Non retryable validation failure.",
+            retry_eligible=False,
+        )
+        archived = _create_archived_pdf_job(client, ledger)
+
+        nonretry_response = client.post(
+            f"/reports/jobs/{failed.job_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"replay-{failed.job_id}-invalid"),
+        )
+        archived_response = client.post(
+            f"/reports/jobs/{archived.job_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"replay-{archived.job_id}-invalid"),
+        )
+
+        assert nonretry_response.status_code == 409
+        assert archived_response.status_code == 409
+        assert nonretry_response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
+        assert archived_response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
     finally:
         _clear_overrides()
