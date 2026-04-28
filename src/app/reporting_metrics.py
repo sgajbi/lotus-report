@@ -13,6 +13,8 @@ METRIC_FAILURE_CATEGORY_LABEL = "failure_category"
 METRIC_ITEM_STATE_LABEL = "item_state"
 METRIC_SCHEDULER_OUTCOME_LABEL = "outcome"
 METRIC_PRESSURE_STATE_LABEL = "pressure_state"
+METRIC_ATTENTION_TYPE_LABEL = "attention_type"
+METRIC_ATTENTION_SEVERITY_LABEL = "severity"
 
 REPORTING_METRIC_LABELS = frozenset(
     {
@@ -22,6 +24,8 @@ REPORTING_METRIC_LABELS = frozenset(
         METRIC_ITEM_STATE_LABEL,
         METRIC_SCHEDULER_OUTCOME_LABEL,
         METRIC_PRESSURE_STATE_LABEL,
+        METRIC_ATTENTION_TYPE_LABEL,
+        METRIC_ATTENTION_SEVERITY_LABEL,
     }
 )
 FORBIDDEN_METRIC_LABELS = frozenset(
@@ -61,13 +65,13 @@ IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
         "replay_command",
         "rerender_from_snapshot",
         "snapshot_capture",
+        "stuck_state_scan",
     }
 )
 RESERVED_REPORTING_OPERATIONS = frozenset(
     {
         "regenerate_command",
         "rerender_command",
-        "stuck_state_scan",
     }
 )
 REPORTING_OPERATION_STATUSES = frozenset(
@@ -155,6 +159,16 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "until those command paths are implementation-backed."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_attention_events_last_count",
+        metric_type="gauge",
+        labels=(METRIC_ATTENTION_TYPE_LABEL, METRIC_ATTENTION_SEVERITY_LABEL),
+        implemented=True,
+        description=(
+            "Stores source-backed stuck-state and SLA-breach attention-event counts from the "
+            "latest operations scan using bounded labels only."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -182,6 +196,11 @@ _BATCH_PRESSURE_LAST_COUNTS = Gauge(
     "lotus_report_batch_pressure_last_counts",
     REPORTING_METRIC_CONTRACTS[4].description,
     [METRIC_PRESSURE_STATE_LABEL],
+)
+_ATTENTION_EVENTS_LAST_COUNT = Gauge(
+    "lotus_report_attention_events_last_count",
+    REPORTING_METRIC_CONTRACTS[6].description,
+    [METRIC_ATTENTION_TYPE_LABEL, METRIC_ATTENTION_SEVERITY_LABEL],
 )
 
 
@@ -283,6 +302,24 @@ def record_batch_pressure_metrics(snapshot: BatchPressureSnapshot) -> None:
     )
 
 
+def record_attention_scan_metrics(events: Iterable[object]) -> None:
+    counts: dict[tuple[str, str], int] = {
+        ("stuck_state", "warning"): 0,
+        ("stuck_state", "critical"): 0,
+        ("sla_breach", "warning"): 0,
+        ("sla_breach", "critical"): 0,
+    }
+    for event in events:
+        attention_type = _bounded_attention_type(str(getattr(event, "attention_type", "")))
+        severity = _bounded_attention_severity(str(getattr(event, "severity", "")))
+        counts[(attention_type, severity)] = counts.get((attention_type, severity), 0) + 1
+    for (attention_type, severity), count in counts.items():
+        _ATTENTION_EVENTS_LAST_COUNT.labels(
+            attention_type=attention_type,
+            severity=severity,
+        ).set(max(0, count))
+
+
 def _validate_labels(labels: Iterable[str]) -> None:
     label_set = set(labels)
     forbidden = label_set & FORBIDDEN_METRIC_LABELS
@@ -324,3 +361,15 @@ def _failure_category_from_skip(skipped_reason: str | None) -> str:
     if skipped_reason.startswith("batch_not_runnable:"):
         return "batch_not_runnable"
     return "skipped"
+
+
+def _bounded_attention_type(attention_type: str) -> str:
+    if attention_type in {"stuck_state", "sla_breach"}:
+        return attention_type
+    return "stuck_state"
+
+
+def _bounded_attention_severity(severity: str) -> str:
+    if severity in {"warning", "critical"}:
+        return severity
+    return "warning"

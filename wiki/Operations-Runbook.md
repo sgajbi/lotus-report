@@ -30,9 +30,9 @@
   contract, dashboard contract, alert basis, and label restrictions.
 - implemented metrics cover report job submission, snapshot capture, render handoff, archive
   handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay commands, batch
-  worker passes, and scheduler passes.
-- dedicated broader replay dashboards, stuck-state, and SLA scan metrics are reserved until those
-  command paths are implementation-backed.
+  worker passes, scheduler passes, and operations attention scans.
+- dedicated broader replay dashboards remain reserved until those command paths are
+  implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
   document, report job, batch, trace, correlation, storage, or raw payload fields.
 
@@ -42,8 +42,9 @@
   operator lookup field vocabulary.
 - operator docs summarize those fields but must not introduce additional observability identifiers
   outside the code-owned vocabulary.
-- RFC-0105 dedicated replay dashboards and stuck-state APIs remain planned until implemented and
-  proven with source-backed runtime evidence.
+- Use `GET /reports/operations/attention` for the implementation-backed stuck-state and SLA-breach
+  attention scan. Dedicated replay dashboards remain planned until implemented and proven with
+  source-backed runtime evidence.
 
 ## Operational truths
 

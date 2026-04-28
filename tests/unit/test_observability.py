@@ -168,6 +168,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
 
     assert "lotus_report_operations_total" in implemented_names
     assert "lotus_report_batch_pressure_last_counts" in implemented_names
+    assert "lotus_report_attention_events_last_count" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {
         "report_job_submission",
@@ -177,8 +178,10 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         "rerender_from_snapshot",
         "regenerate_from_upstream",
         "replay_command",
+        "stuck_state_scan",
     } <= (IMPLEMENTED_REPORTING_OPERATIONS)
     assert {"rerender_command", "regenerate_command"} <= RESERVED_REPORTING_OPERATIONS
+    assert "stuck_state_scan" not in RESERVED_REPORTING_OPERATIONS
     for contract in REPORTING_METRIC_CONTRACTS:
         assert not (set(contract.labels) & FORBIDDEN_METRIC_LABELS)
         assert "correlation_id" not in contract.labels

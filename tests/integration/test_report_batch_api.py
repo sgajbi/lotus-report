@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +8,7 @@ from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
     ReportBatchLedger,
 )
+from app.report_batch_orchestrator.models import BatchCreateRequest
 from app.report_batch_orchestrator.replay import (
     ReportBatchItemReplayService,
     get_report_batch_item_replay_service,
@@ -24,7 +25,7 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_worker,
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
-from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.ledger import ReportJobLedger, _dt_to_text
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 from app.reporting_jobs.service import get_report_job_ledger
 from app.routers.report_batches import get_report_batch_scheduler_config
@@ -1054,3 +1055,60 @@ def test_report_batch_ledger_service_factory_uses_runtime_settings():
         assert ledger.__class__.__name__ == "PostgresReportBatchLedger"
     finally:
         get_report_batch_ledger.cache_clear()
+
+
+def test_reporting_attention_endpoint_returns_operator_safe_scan(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    report_job = report_ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest(
+            portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+            as_of_date="2026-04-22",
+            requested_output_formats=["pdf"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+        ),
+        caller_context=_caller_context(),
+        idempotency_key="attention-api-report-job",
+    )
+    with report_ledger._connect() as connection:
+        connection.execute(
+            "UPDATE report_job SET updated_at = ? WHERE report_job_id = ?",
+            (_dt_to_text(datetime(2026, 4, 28, 11, 0, tzinfo=UTC)), report_job.job_id),
+        )
+    batch = batch_ledger.create_batch(
+        request=BatchCreateRequest.model_validate(_payload()),
+        caller_context=_caller_context(),
+        idempotency_key="attention-api-batch",
+    )
+    [leased_item] = batch_ledger.acquire_dispatch_items(
+        batch_id=batch.batch_id,
+        worker_id="worker-1",
+        lease_seconds=7200,
+        limit=1,
+        now=datetime(2026, 4, 28, 11, 0, tzinfo=UTC),
+    )
+
+    try:
+        response = client.get(
+            "/reports/operations/attention",
+            params={
+                "report_job_stuck_threshold_seconds": 1,
+                "batch_item_stuck_threshold_seconds": 1,
+                "sla_breach_threshold_seconds": 1,
+                "max_events": 10,
+            },
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["event_count"] >= 2
+    resource_ids = {event["resource_id"] for event in payload["events"]}
+    assert report_job.job_id in resource_ids
+    assert leased_item.batch_item_id in resource_ids
+    serialized = response.text
+    assert "PB_SG_GLOBAL_BAL_001" not in serialized
+    assert "tenant-sg" not in serialized
+    assert "corr-batch-1" not in serialized
+    assert "trace-batch-1" not in serialized

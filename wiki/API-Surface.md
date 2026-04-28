@@ -73,6 +73,11 @@
   internal RFC-0105 failed-work replay command for implementation-backed RFC-0104 batch items whose
   linked report job failed; relinks the item to a replay-scoped report job without scheduler CRUD,
   registry mutation, or archive distribution behavior
+- `GET /reports/operations/attention`
+  internal RFC-0105 source-backed attention scan for active report jobs and batch items; returns
+  bounded stuck-state and SLA-breach events with opaque identifiers, thresholds, age, bounded
+  reasons, and evidence links, without raw payloads, tenant, portfolio, correlation, or trace
+  identifiers
 
 ## Product-facing boundary
 

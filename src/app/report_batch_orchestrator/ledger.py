@@ -999,6 +999,47 @@ class ReportBatchLedger:
             ).fetchall()
         return [str(row["batch_id"]) for row in rows]
 
+    def list_attention_batch_ids(
+        self,
+        *,
+        limit: int = 100,
+        now: datetime | None = None,
+    ) -> list[str]:
+        if limit < 1:
+            return []
+
+        scan_at = now or utc_now()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT report_batch.batch_id, report_batch.created_at
+                FROM report_batch
+                JOIN report_batch_item
+                  ON report_batch_item.batch_id = report_batch.batch_id
+                WHERE report_batch.status IN ('materialized', 'running')
+                  AND (
+                    report_batch_item.status IN (
+                      'materialized',
+                      'leased',
+                      'waiting_on_report_job',
+                      'recovery_pending'
+                    )
+                    OR (
+                      report_batch_item.status = 'failed_retryable'
+                      AND report_batch_item.retry_eligible = 1
+                      AND (
+                        report_batch_item.next_retry_at IS NULL
+                        OR report_batch_item.next_retry_at <= ?
+                      )
+                    )
+                  )
+                ORDER BY report_batch.created_at, report_batch.batch_id
+                LIMIT ?
+                """,
+                (_dt_to_text(scan_at), limit),
+            ).fetchall()
+        return [str(row["batch_id"]) for row in rows]
+
     def get_batch(self, batch_id: str) -> ReportBatchRecord:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
