@@ -15,6 +15,9 @@ METRIC_SCHEDULER_OUTCOME_LABEL = "outcome"
 METRIC_PRESSURE_STATE_LABEL = "pressure_state"
 METRIC_ATTENTION_TYPE_LABEL = "attention_type"
 METRIC_ATTENTION_SEVERITY_LABEL = "severity"
+METRIC_SUPPORTABILITY_STATE_LABEL = "state"
+METRIC_SUPPORTABILITY_REASON_LABEL = "reason"
+METRIC_FRESHNESS_BUCKET_LABEL = "freshness_bucket"
 
 REPORTING_METRIC_LABELS = frozenset(
     {
@@ -26,6 +29,9 @@ REPORTING_METRIC_LABELS = frozenset(
         METRIC_PRESSURE_STATE_LABEL,
         METRIC_ATTENTION_TYPE_LABEL,
         METRIC_ATTENTION_SEVERITY_LABEL,
+        METRIC_SUPPORTABILITY_STATE_LABEL,
+        METRIC_SUPPORTABILITY_REASON_LABEL,
+        METRIC_FRESHNESS_BUCKET_LABEL,
     }
 )
 FORBIDDEN_METRIC_LABELS = frozenset(
@@ -169,6 +175,21 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "latest operations scan using bounded labels only."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_evidence_surface_supportability_total",
+        metric_type="counter",
+        labels=(
+            METRIC_SUPPORTABILITY_STATE_LABEL,
+            METRIC_SUPPORTABILITY_REASON_LABEL,
+            METRIC_FRESHNESS_BUCKET_LABEL,
+        ),
+        implemented=True,
+        description=(
+            "Counts reporting evidence-surface supportability evaluations by bounded posture, "
+            "reason, and freshness bucket without report, portfolio, client, tenant, trace, or "
+            "correlation identifiers."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -201,6 +222,15 @@ _ATTENTION_EVENTS_LAST_COUNT = Gauge(
     "lotus_report_attention_events_last_count",
     REPORTING_METRIC_CONTRACTS[6].description,
     [METRIC_ATTENTION_TYPE_LABEL, METRIC_ATTENTION_SEVERITY_LABEL],
+)
+_EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = Counter(
+    "lotus_report_evidence_surface_supportability_total",
+    REPORTING_METRIC_CONTRACTS[7].description,
+    [
+        METRIC_SUPPORTABILITY_STATE_LABEL,
+        METRIC_SUPPORTABILITY_REASON_LABEL,
+        METRIC_FRESHNESS_BUCKET_LABEL,
+    ],
 )
 
 
@@ -320,6 +350,16 @@ def record_attention_scan_metrics(events: Iterable[object]) -> None:
         ).set(max(0, count))
 
 
+def record_evidence_surface_supportability(
+    *, state: str, reason: str, freshness_bucket: str
+) -> None:
+    _EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL.labels(
+        state=_bounded_supportability_state(state),
+        reason=_bounded_supportability_reason(reason),
+        freshness_bucket=_bounded_freshness_bucket(freshness_bucket),
+    ).inc()
+
+
 def _validate_labels(labels: Iterable[str]) -> None:
     label_set = set(labels)
     forbidden = label_set & FORBIDDEN_METRIC_LABELS
@@ -373,3 +413,26 @@ def _bounded_attention_severity(severity: str) -> str:
     if severity in {"warning", "critical"}:
         return severity
     return "warning"
+
+
+def _bounded_supportability_state(state: str) -> str:
+    if state in {"ready", "degraded", "empty", "unsupported"}:
+        return state
+    return "unsupported"
+
+
+def _bounded_supportability_reason(reason: str) -> str:
+    if reason in {
+        "evidence_surface_ready",
+        "evidence_surface_degraded",
+        "evidence_surface_empty",
+        "supportability_unsupported",
+    }:
+        return reason
+    return "supportability_unsupported"
+
+
+def _bounded_freshness_bucket(freshness_bucket: str) -> str:
+    if freshness_bucket in {"current", "stale", "unknown"}:
+        return freshness_bucket
+    return "unknown"

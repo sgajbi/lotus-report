@@ -31,6 +31,9 @@ This repo does not own:
   evidence lineage
 - lighter CI than some core domain services, but still under the Lotus lane model
 - public API fields use canonical snake_case naming
+- `GET /integration/capabilities` publishes
+  `report.observability.evidence_surface_supportability` and a bounded supportability summary for
+  evidence-pack, job-ledger, snapshot, lineage, render, archive, and replay surfaces
 
 ## Portfolio review contract
 
