@@ -29,6 +29,7 @@ class IntegrationCapabilitiesResponse(BaseModel):
     features: list[dict[str, str | bool]]
     workflows: list[dict[str, str | bool]]
     supported_input_modes: list[str]
+    supportability: dict[str, str | int]
 
 
 PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE: dict[str, Any] = {

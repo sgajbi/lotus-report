@@ -32,6 +32,7 @@ from app.reporting_metrics import (
     record_batch_pressure_metrics,
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
+    record_evidence_surface_supportability,
     record_report_operation,
     validate_reporting_metric_contracts,
 )
@@ -169,6 +170,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     assert "lotus_report_operations_total" in implemented_names
     assert "lotus_report_batch_pressure_last_counts" in implemented_names
     assert "lotus_report_attention_events_last_count" in implemented_names
+    assert "lotus_report_evidence_surface_supportability_total" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {
         "report_job_submission",
@@ -338,4 +340,17 @@ def test_record_batch_pressure_metrics_clamps_counts() -> None:
             retry_ready_items=-5,
             recovery_pending_items=6,
         )
+    )
+
+
+def test_record_evidence_surface_supportability_bounds_metric_labels() -> None:
+    record_evidence_surface_supportability(
+        state="ready",
+        reason="evidence_surface_ready",
+        freshness_bucket="current",
+    )
+    record_evidence_surface_supportability(
+        state="bad-state",
+        reason="raw portfolio PB_SG_GLOBAL_BAL_001 failure",
+        freshness_bucket="raw-client-date",
     )

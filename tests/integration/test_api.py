@@ -280,13 +280,50 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.pre_render_cancel.v1",
         "lotus-report.reporting.portfolio_review.render_submission.v1",
         "lotus-report.reporting.portfolio_review.archive_handoff.v1",
+        "lotus-report.reporting.portfolio_review.input_snapshot.v1",
+        "lotus-report.reporting.portfolio_review.upstream_lineage.v1",
+        "lotus-report.reporting.portfolio_review.snapshot_lookup.v1",
+        "lotus-report.reporting.portfolio_review.lineage_lookup.v1",
+        "lotus-report.reporting.operations.job_diagnostics.v1",
+        "lotus-report.reporting.operations.rerender_from_snapshot.v1",
+        "lotus-report.reporting.operations.regenerate_from_upstream.v1",
+        "lotus-report.reporting.operations.failed_work_replay.v1",
         "lotus-report.reporting.observability.traceability.v1",
         "lotus-report.reporting.observability.metrics.v1",
+        "report.observability.evidence_surface_supportability",
         "lotus-report.reporting.batch_materialization_api.v1",
         "lotus-report.reporting.batch_control_api.v1",
     } <= feature_keys
     workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}
     assert "portfolio_review_report_job" in workflow_keys
+    assert body["supportability"] == {
+        "state": "ready",
+        "reason": "evidence_surface_ready",
+        "freshness_bucket": "current",
+        "evidence_feature_count": 14,
+        "ready_evidence_feature_count": 14,
+        "degraded_evidence_feature_count": 0,
+        "workflow_count": 3,
+        "ready_workflow_count": 3,
+    }
+
+
+def test_integration_capabilities_records_bounded_supportability_metric():
+    capabilities_response = client.get(
+        "/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+    )
+    metrics_response = client.get("/metrics")
+
+    assert capabilities_response.status_code == 200
+    assert metrics_response.status_code == 200
+    metrics_text = metrics_response.text
+    assert "lotus_report_evidence_surface_supportability_total" in metrics_text
+    assert 'freshness_bucket="current"' in metrics_text
+    assert 'reason="evidence_surface_ready"' in metrics_text
+    assert 'state="ready"' in metrics_text
+    assert "portfolio_id" not in metrics_text
+    assert "client_id" not in metrics_text
+    assert "tenant_id" not in metrics_text
 
 
 def test_integration_capabilities_camel_case_params_do_not_override_context():

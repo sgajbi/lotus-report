@@ -51,9 +51,15 @@ Evidence:
 ## Reliability and Operations Baseline
 
 - Resilient upstream clients, health/readiness probes, and migration/runbook conventions are in place.
+- `GET /integration/capabilities` publishes RFC-0108 evidence-surface supportability for reporting
+  evidence packs, report jobs, snapshots, upstream lineage, render/archive handoff, and replay
+  operations. `/metrics` emits `lotus_report_evidence_surface_supportability_total` with bounded
+  `state`, `reason`, and `freshness_bucket` labels only.
 
 Evidence:
 - `src/app/clients.py`
+- `src/app/routers/integration.py`
+- `src/app/reporting_metrics.py`
 - `docs/standards/scalability-availability.md`
 - `docs/standards/migration-contract.md`
 
