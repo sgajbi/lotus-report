@@ -151,13 +151,15 @@ Key code areas:
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
   durable report request/job/status-event ledger, idempotency, render metadata, archive metadata,
-  and bounded cancellation
+  rerender attempt state, and bounded cancellation
 - `src/app/reporting_render/`
-  governed render-package assembly, lotus-render orchestration, and post-render archive handoff
+  governed render-package assembly, lotus-render orchestration, post-render archive handoff, and
+  archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
-  archive, batch worker, and scheduler operations, with reserved replay/rerender/regenerate posture
-  and high-cardinality label rejection
+  archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
+  worker, scheduler, and source-backed operations attention scan behavior, with reserved dedicated
+  broader replay posture and high-cardinality label rejection
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
@@ -339,13 +341,32 @@ Current orchestration model:
   compatibility before changing response formatting
 - preserve observability, correlation, request, and trace behavior on reporting endpoints,
   especially when debugging summary, review, batch, render, or archive flows
+- use `ENTERPRISE_ENFORCE_READ_AUTHZ=true` to require service identity or authorization on
+  `GET`/`HEAD` surfaces, and `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit
+  events through the enterprise readiness middleware
 - treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
-  dashboard, alert, and label-governance contract; replay, rerender, regenerate, stuck-state, and
-  SLA scan metrics remain reserved until those command paths are implementation-backed
+  dashboard, alert, and label-governance contract; dedicated broader replay dashboards remain
+  reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
-- use `GET /reports/jobs/{job_id}/events` for support-facing lifecycle diagnostics before
-  inspecting database rows directly
+- use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
+  job; it composes source-backed status, lifecycle-event, snapshot, lineage, render, and archive
+  handoff posture while omitting raw payloads, storage references, and database internals
+- use `POST /reports/jobs/{job_id}/rerender` only for already archived PDF jobs when operations
+  need a correction document from the same immutable snapshot; the response proves the same
+  snapshot id/hash and a new rerender/render/archive identity
+- use `POST /reports/jobs/{job_id}/regenerate` only for already archived PDF jobs when operations
+  need to refresh upstream data and create a replacement document; the response proves the old and
+  new report job, snapshot, snapshot hash, and archive document identities
+- use `POST /reports/jobs/{job_id}/replay` only for failed retry-eligible report jobs; it creates
+  or reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
+  source jobs
+- use `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay` only for failed
+  retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
+  item to replay work without scheduler CRUD, registry mutation, distribution, or archive
+  housekeeping behavior
+- use `GET /reports/jobs/{job_id}/events` for deeper lifecycle diagnostics before inspecting
+  database rows directly
 - use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
   internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
   recover-expired-leases controls plus the bounded `run-once` operator action are direct

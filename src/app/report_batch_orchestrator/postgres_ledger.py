@@ -21,6 +21,7 @@ from app.report_batch_orchestrator.ledger import (
 from app.report_batch_orchestrator.models import (
     BatchControlResult,
     BatchCreateRequest,
+    BatchPressureSnapshot,
     BatchRecoveryResult,
     BatchRetryPolicy,
     MaterializedPortfolio,
@@ -586,6 +587,66 @@ class PostgresReportBatchLedger:
             recovery_pending_item_ids=[str(row["batch_item_id"]) for row in rows],
         )
 
+    def relink_failed_item_for_replay(
+        self,
+        *,
+        batch_id: str,
+        batch_item_id: str,
+        replayed_report_job_id: str,
+        retry_policy: BatchRetryPolicy | None = None,
+        now: Any | None = None,
+    ) -> ReportBatchItemRecord:
+        replay_at = now or utc_now()
+        policy = retry_policy or BatchRetryPolicy()
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_id = %s AND batch_item_id = %s
+                """,
+                (batch_id, batch_item_id),
+            ).fetchone()
+            if existing is None:
+                self._load_batch(connection, batch_id)
+                raise ValueError("report_batch_item_not_found")
+            if (
+                existing["status"] == "waiting_on_report_job"
+                and existing["report_job_id"] == replayed_report_job_id
+            ):
+                return _item_from_row(existing)
+            updated = connection.execute(
+                """
+                UPDATE report_batch_item
+                SET status = 'waiting_on_report_job',
+                    report_job_id = %s,
+                    retry_eligible = FALSE,
+                    next_retry_at = NULL,
+                    lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_acquired_at = NULL,
+                    lease_expires_at = NULL,
+                    last_heartbeat_at = NULL,
+                    last_error_category = NULL,
+                    last_error_summary = NULL,
+                    started_at = COALESCE(started_at, %s),
+                    completed_at = NULL,
+                    cancelled_at = NULL
+                WHERE batch_id = %s
+                  AND batch_item_id = %s
+                  AND status = 'failed_retryable'
+                  AND retry_eligible IS TRUE
+                  AND lease_token IS NULL
+                  AND attempt_count < %s
+                RETURNING *
+                """,
+                (replayed_report_job_id, replay_at, batch_id, batch_item_id, policy.max_attempts),
+            ).fetchone()
+            if updated is None:
+                raise ValueError("report_batch_item_cannot_be_replayed")
+            self._refresh_batch_status(connection, batch_id, now=replay_at)
+            return _item_from_row(updated)
+
     def count_active_batches(self) -> int:
         with self._connect() as connection:
             row = connection.execute(
@@ -603,6 +664,113 @@ class PostgresReportBatchLedger:
                 """
             ).fetchone()
         return int(row["count"])
+
+    def batch_pressure_snapshot(self, *, now: Any | None = None) -> BatchPressureSnapshot:
+        sample_at = now or utc_now()
+        with self._connect() as connection:
+            active_batches = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
+                ).fetchone()["count"]
+            )
+            active_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status IN ('leased', 'waiting_on_report_job')
+                    """
+                ).fetchone()["count"]
+            )
+            dispatch_ready_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE report_job_id IS NULL
+                      AND (
+                        status = 'materialized'
+                        OR status = 'recovery_pending'
+                        OR (
+                          status = 'leased'
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at < %s
+                        )
+                        OR (
+                          status = 'failed_retryable'
+                          AND retry_eligible IS TRUE
+                          AND (next_retry_at IS NULL OR next_retry_at <= %s)
+                        )
+                      )
+                    """,
+                    (sample_at, sample_at),
+                ).fetchone()["count"]
+            )
+            retry_ready_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status = 'failed_retryable'
+                      AND retry_eligible IS TRUE
+                      AND (next_retry_at IS NULL OR next_retry_at <= %s)
+                    """,
+                    (sample_at,),
+                ).fetchone()["count"]
+            )
+            recovery_pending_items = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM report_batch_item
+                    WHERE status = 'recovery_pending'
+                    """
+                ).fetchone()["count"]
+            )
+            runnable_batches = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM (
+                        SELECT DISTINCT report_batch.batch_id
+                        FROM report_batch
+                        JOIN report_batch_item
+                          ON report_batch_item.batch_id = report_batch.batch_id
+                        WHERE report_batch.status IN ('materialized', 'running')
+                          AND (
+                            report_batch_item.status IN (
+                              'materialized',
+                              'recovery_pending',
+                              'waiting_on_report_job'
+                            )
+                            OR (
+                              report_batch_item.status = 'leased'
+                              AND report_batch_item.report_job_id IS NULL
+                              AND report_batch_item.lease_expires_at IS NOT NULL
+                              AND report_batch_item.lease_expires_at < %s
+                            )
+                            OR (
+                              report_batch_item.status = 'failed_retryable'
+                              AND report_batch_item.retry_eligible IS TRUE
+                              AND (
+                                report_batch_item.next_retry_at IS NULL
+                                OR report_batch_item.next_retry_at <= %s
+                              )
+                            )
+                          )
+                    ) runnable_batches
+                    """,
+                    (sample_at, sample_at),
+                ).fetchone()["count"]
+            )
+        return BatchPressureSnapshot(
+            runnable_batches=runnable_batches,
+            active_batches=active_batches,
+            active_items=active_items,
+            dispatch_ready_items=dispatch_ready_items,
+            retry_ready_items=retry_ready_items,
+            recovery_pending_items=recovery_pending_items,
+        )
 
     def list_runnable_batch_ids(
         self,
@@ -650,9 +818,65 @@ class PostgresReportBatchLedger:
             ).fetchall()
         return [str(row["batch_id"]) for row in rows]
 
+    def list_attention_batch_ids(
+        self,
+        *,
+        limit: int = 100,
+        now: Any | None = None,
+    ) -> list[str]:
+        if limit < 1:
+            return []
+
+        scan_at = now or utc_now()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT report_batch.batch_id, report_batch.created_at
+                FROM report_batch
+                JOIN report_batch_item
+                  ON report_batch_item.batch_id = report_batch.batch_id
+                WHERE report_batch.status IN ('materialized', 'running')
+                  AND (
+                    report_batch_item.status IN (
+                      'materialized',
+                      'leased',
+                      'waiting_on_report_job',
+                      'recovery_pending'
+                    )
+                    OR (
+                      report_batch_item.status = 'failed_retryable'
+                      AND report_batch_item.retry_eligible IS TRUE
+                      AND (
+                        report_batch_item.next_retry_at IS NULL
+                        OR report_batch_item.next_retry_at <= %s
+                      )
+                    )
+                  )
+                ORDER BY report_batch.created_at, report_batch.batch_id
+                LIMIT %s
+                """,
+                (scan_at, limit),
+            ).fetchall()
+        return [str(row["batch_id"]) for row in rows]
+
     def get_batch(self, batch_id: str) -> ReportBatchRecord:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
+
+    def get_batch_item(self, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord:
+        with self._connect() as connection:
+            self._load_batch(connection, batch_id)
+            row = connection.execute(
+                """
+                SELECT *
+                FROM report_batch_item
+                WHERE batch_id = %s AND batch_item_id = %s
+                """,
+                (batch_id, batch_item_id),
+            ).fetchone()
+            if not row:
+                raise ValueError("report_batch_item_not_found")
+            return _item_from_row(row)
 
     def _existing_or_conflict(
         self,

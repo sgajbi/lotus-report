@@ -16,6 +16,7 @@ from app.routers.report_batches import schedules_router as report_batch_schedule
 from app.routers.report_jobs import evidence_router as report_evidence_router
 from app.routers.report_jobs import jobs_router as report_jobs_router
 from app.routers.report_jobs import router as report_job_submission_router
+from app.routers.reporting_operations import router as reporting_operations_router
 from app.routers.reports import router as reports_router
 
 
@@ -58,6 +59,10 @@ app = FastAPI(
             "name": "Report Evidence",
             "description": "Support-safe snapshot and upstream-lineage evidence APIs.",
         },
+        {
+            "name": "Report Operations",
+            "description": "Source-backed reporting operations attention and SLA APIs.",
+        },
     ],
     lifespan=_app_lifespan,
 )
@@ -74,3 +79,4 @@ app.include_router(report_batches_router)
 app.include_router(report_batch_schedules_router)
 app.include_router(report_jobs_router)
 app.include_router(report_evidence_router)
+app.include_router(reporting_operations_router)

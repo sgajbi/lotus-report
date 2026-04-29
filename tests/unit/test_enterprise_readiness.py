@@ -3,7 +3,8 @@ import json
 import pytest
 from fastapi import Request
 
-from src.app.enterprise_readiness import (
+from app.enterprise_readiness import (
+    authorize_read_request,
     authorize_write_request,
     build_enterprise_audit_middleware,
     is_feature_enabled,
@@ -84,6 +85,13 @@ def test_validate_runtime_config_flags_missing_policy_and_key(monkeypatch):
     monkeypatch.delenv("ENTERPRISE_PRIMARY_KEY_ID", raising=False)
     issues = validate_enterprise_runtime_config()
     assert "missing_policy_version" in issues
+    assert "missing_primary_key_id" in issues
+
+
+def test_validate_runtime_config_requires_primary_key_for_read_auth(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.delenv("ENTERPRISE_PRIMARY_KEY_ID", raising=False)
+    issues = validate_enterprise_runtime_config()
     assert "missing_primary_key_id" in issues
 
 
@@ -169,6 +177,194 @@ def test_authorize_write_request_allows_when_rule_not_matching_path(monkeypatch)
     allowed, reason = authorize_write_request("POST", "/reports/export", headers)
     assert allowed is True
     assert reason is None
+
+
+def test_authorize_read_request_enforces_required_headers_when_enabled(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    allowed, reason = authorize_read_request("GET", "/reports/jobs", {})
+    assert allowed is False
+    assert reason.startswith("missing_headers:")
+
+
+def test_authorize_read_request_enforces_capability_rules(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON",
+        json.dumps({"GET /reports/jobs/": "reports.jobs.read"}),
+    )
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "portal",
+        "X-Capabilities": "reports.jobs.write",
+    }
+    denied, denied_reason = authorize_read_request("GET", "/reports/jobs/r123", headers)
+    assert denied is False
+    assert denied_reason == "missing_capability:reports.jobs.read"
+
+    headers["X-Capabilities"] = "reports.jobs.read,reports.jobs.write"
+    allowed, allowed_reason = authorize_read_request("GET", "/reports/jobs/r123", headers)
+    assert allowed is True
+    assert allowed_reason is None
+
+
+def test_authorize_read_request_matches_templated_capability_rules(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON",
+        json.dumps(
+            {
+                "POST /reports/jobs/{job_id}": "reports.jobs.write",
+                "GET /reports/jobs/{job_id}/lineage": "reports.lineage.read",
+            }
+        ),
+    )
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "portal",
+        "X-Capabilities": "reports.lineage.read",
+    }
+
+    allowed, reason = authorize_read_request("GET", "/reports/jobs/r123/lineage", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
+def test_authorize_read_request_rejects_templated_rule_shape_mismatch(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv(
+        "ENTERPRISE_CAPABILITY_RULES_JSON",
+        json.dumps({"GET /reports/jobs/{job_id}/lineage": "reports.lineage.read"}),
+    )
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "portal",
+    }
+
+    allowed, reason = authorize_read_request("GET", "/reports/jobs/r123", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
+def test_authorize_write_request_supports_root_scoped_capability_rule(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "true")
+    monkeypatch.setenv("ENTERPRISE_CAPABILITY_RULES_JSON", json.dumps({"POST /": "reports.write"}))
+    headers = {
+        "X-Actor-Id": "a1",
+        "X-Tenant-Id": "t1",
+        "X-Role": "ops",
+        "X-Correlation-Id": "c1",
+        "X-Service-Identity": "lotus-report",
+        "X-Capabilities": "reports.write",
+    }
+
+    allowed, reason = authorize_write_request("POST", "/reports/export", headers)
+
+    assert allowed is True
+    assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_middleware_audits_read_access_when_enabled(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_AUDIT_READS", "true")
+    middleware = build_enterprise_audit_middleware()
+    audit_events: list[dict] = []
+
+    def _record_audit(**kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr("app.enterprise_readiness.emit_audit_event", _record_audit)
+
+    async def _call_next(_request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({"ok": True}, status_code=200)
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/reports/jobs/r123",
+        "headers": [
+            (b"x-actor-id", b"a1"),
+            (b"x-tenant-id", b"t1"),
+            (b"x-role", b"ops"),
+            (b"x-correlation-id", b"c1"),
+        ],
+    }
+    request = Request(scope)
+    response = await middleware(request, _call_next)
+    assert response.status_code == 200
+    assert len(audit_events) == 1
+    assert audit_events[0]["action"] == "GET /reports/jobs/r123"
+    assert audit_events[0]["metadata"]["access_type"] == "read"
+
+
+@pytest.mark.asyncio
+async def test_middleware_audits_write_access(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    middleware = build_enterprise_audit_middleware()
+    audit_events: list[dict] = []
+
+    def _record_audit(**kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr("app.enterprise_readiness.emit_audit_event", _record_audit)
+
+    async def _call_next(_request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse({"ok": True}, status_code=202)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/export",
+        "headers": [
+            (b"x-actor-id", b"a1"),
+            (b"x-tenant-id", b"t1"),
+            (b"x-role", b"ops"),
+            (b"x-correlation-id", b"c1"),
+            (b"content-length", b"0"),
+        ],
+    }
+    request = Request(scope)
+    response = await middleware(request, _call_next)
+    assert response.status_code == 202
+    assert len(audit_events) == 1
+    assert audit_events[0]["action"] == "POST /reports/export"
+    assert audit_events[0]["metadata"]["status_code"] == 202
+
+
+@pytest.mark.asyncio
+async def test_middleware_read_denies_missing_service_identity(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv("ENTERPRISE_AUDIT_READS", "false")
+    middleware = build_enterprise_audit_middleware()
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/reports/jobs/r123",
+        "headers": [
+            (b"x-actor-id", b"a1"),
+            (b"x-tenant-id", b"t1"),
+            (b"x-role", b"ops"),
+            (b"x-correlation-id", b"c1"),
+        ],
+    }
+    request = Request(scope)
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 403
 
 
 def test_redaction_handles_list_payloads():

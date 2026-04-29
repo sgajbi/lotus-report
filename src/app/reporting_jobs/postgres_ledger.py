@@ -26,6 +26,7 @@ from app.reporting_jobs.models import (
     ReportJobLedgerRecord,
     ReportJobListFilters,
     ReportJobStatus,
+    ReportRerenderAttemptRecord,
     ReportStatusEvent,
 )
 
@@ -98,6 +99,16 @@ class PostgresReportJobLedger:
                     "report_job_ledger_archive_schema_missing:"
                     f"{','.join(sorted(missing_archive_columns))}"
                 )
+            rerender_rows = connection.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'report_rerender_attempt'
+                """
+            ).fetchall()
+            if not rerender_rows:
+                raise RuntimeError("report_rerender_attempt_schema_missing")
 
     def create_portfolio_review_job(
         self,
@@ -266,6 +277,224 @@ class PostgresReportJobLedger:
                 (job_id,),
             ).fetchall()
         return [_event_from_row(row) for row in rows]
+
+    def append_job_event(
+        self,
+        *,
+        job_id: str,
+        event_type: str,
+        message: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> None:
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT status FROM report_job WHERE report_job_id = %s FOR UPDATE",
+                (job_id,),
+            ).fetchone()
+            if not existing:
+                raise ReportJobNotFoundError("report_job_not_found")
+            current_status: ReportJobStatus = existing["status"]
+            self._append_status_event(
+                connection=connection,
+                job_id=job_id,
+                from_status=current_status,
+                to_status=current_status,
+                event_type=event_type,
+                message=message,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                created_at=utc_now(),
+            )
+
+    def create_rerender_attempt(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        snapshot_id: str,
+        snapshot_hash: str,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> tuple[ReportRerenderAttemptRecord, bool]:
+        if not idempotency_key or not idempotency_key.strip():
+            raise MissingIdempotencyKeyError("missing_idempotency_key")
+        normalized_key = idempotency_key.strip()
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM report_rerender_attempt
+                WHERE report_job_id = %s AND idempotency_key = %s
+                """,
+                (job.job_id, normalized_key),
+            ).fetchone()
+            if existing:
+                return _rerender_attempt_from_row(existing), False
+            now = utc_now()
+            attempt_id = f"rrnd_{uuid4().hex}"
+            render_job_id = f"rdr_{attempt_id}_pdf"
+            connection.execute(
+                """
+                INSERT INTO report_rerender_attempt (
+                    rerender_attempt_id, report_job_id, idempotency_key, status,
+                    snapshot_id, snapshot_hash, previous_render_job_id,
+                    previous_archive_document_id, render_job_id, render_output_format,
+                    render_template_id, render_template_version, retry_eligible,
+                    requested_by, reason, correlation_id, trace_id, created_at, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    attempt_id,
+                    job.job_id,
+                    normalized_key,
+                    "rendering",
+                    snapshot_id,
+                    snapshot_hash,
+                    job.render_job_id,
+                    job.archive_document_id,
+                    render_job_id,
+                    "pdf",
+                    "portfolio-review",
+                    "v1",
+                    False,
+                    actor,
+                    reason,
+                    correlation_id,
+                    trace_id,
+                    now,
+                    now,
+                ),
+            )
+            self._append_status_event(
+                connection=connection,
+                job_id=job.job_id,
+                from_status=job.status,
+                to_status=job.status,
+                event_type="job_rerender_requested",
+                message=f"Report rerender requested from snapshot {snapshot_id}.",
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                created_at=now,
+            )
+            row = connection.execute(
+                "SELECT * FROM report_rerender_attempt WHERE rerender_attempt_id = %s",
+                (attempt_id,),
+            ).fetchone()
+            assert row is not None
+            return _rerender_attempt_from_row(row), True
+
+    def mark_rerender_rendered(
+        self,
+        *,
+        rerender_attempt_id: str,
+        render_job_id: str,
+        artifact_sha256: str | None,
+        bounded_determinism_fingerprint: str | None,
+        runtime_engine: str | None,
+        runtime_engine_version: str | None,
+        render_duration_ms: int | None,
+    ) -> ReportRerenderAttemptRecord:
+        with self._connect() as connection:
+            return self._update_rerender_attempt(
+                connection=connection,
+                rerender_attempt_id=rerender_attempt_id,
+                status="rendered",
+                render_job_id=render_job_id,
+                artifact_sha256=artifact_sha256,
+                bounded_determinism_fingerprint=bounded_determinism_fingerprint,
+                runtime_engine=runtime_engine,
+                runtime_engine_version=runtime_engine_version,
+                render_duration_ms=render_duration_ms,
+            )
+
+    def mark_rerender_archiving(
+        self,
+        *,
+        rerender_attempt_id: str,
+        archive_request_id: str,
+    ) -> ReportRerenderAttemptRecord:
+        with self._connect() as connection:
+            return self._update_rerender_attempt(
+                connection=connection,
+                rerender_attempt_id=rerender_attempt_id,
+                status="archiving",
+                archive_request_id=archive_request_id,
+            )
+
+    def mark_rerender_archived(
+        self,
+        *,
+        rerender_attempt_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_document_id: str,
+    ) -> ReportRerenderAttemptRecord:
+        with self._connect() as connection:
+            archived = self._update_rerender_attempt(
+                connection=connection,
+                rerender_attempt_id=rerender_attempt_id,
+                status="archived",
+                archive_document_id=archive_document_id,
+                archive_completed_at=utc_now(),
+            )
+            self._append_status_event(
+                connection=connection,
+                job_id=archived.report_job_id,
+                from_status="archived",
+                to_status="archived",
+                event_type="job_rerender_archived",
+                message=f"Report rerender archived as correction document {archive_document_id}.",
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                created_at=utc_now(),
+            )
+            return archived
+
+    def mark_rerender_failed(
+        self,
+        *,
+        rerender_attempt_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        failure_category: str,
+        failure_message: str,
+        retry_eligible: bool,
+    ) -> ReportRerenderAttemptRecord:
+        with self._connect() as connection:
+            failed = self._update_rerender_attempt(
+                connection=connection,
+                rerender_attempt_id=rerender_attempt_id,
+                status="failed",
+                failure_category=failure_category,
+                failure_message=failure_message,
+                retry_eligible=retry_eligible,
+            )
+            self._append_status_event(
+                connection=connection,
+                job_id=failed.report_job_id,
+                from_status="archived",
+                to_status="archived",
+                event_type="job_rerender_failed",
+                message=failure_message,
+                actor=actor,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                created_at=utc_now(),
+            )
+            return failed
 
     def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
         where_clauses = ["1=1"]
@@ -897,6 +1126,78 @@ class PostgresReportJobLedger:
         assert row is not None
         return self._load_by_request_id(connection, str(row["report_request_id"]))
 
+    def _update_rerender_attempt(
+        self,
+        *,
+        connection: Connection[Mapping[str, Any]],
+        rerender_attempt_id: str,
+        status: str,
+        render_job_id: str | None = None,
+        artifact_sha256: str | None = None,
+        bounded_determinism_fingerprint: str | None = None,
+        runtime_engine: str | None = None,
+        runtime_engine_version: str | None = None,
+        render_duration_ms: int | None = None,
+        archive_request_id: str | None = None,
+        archive_document_id: str | None = None,
+        archive_completed_at: datetime | None = None,
+        failure_category: str | None = None,
+        failure_message: str | None = None,
+        retry_eligible: bool | None = None,
+    ) -> ReportRerenderAttemptRecord:
+        existing = connection.execute(
+            "SELECT * FROM report_rerender_attempt WHERE rerender_attempt_id = %s FOR UPDATE",
+            (rerender_attempt_id,),
+        ).fetchone()
+        if not existing:
+            raise ReportJobNotFoundError("report_rerender_attempt_not_found")
+        connection.execute(
+            """
+            UPDATE report_rerender_attempt
+            SET status = %s,
+                render_job_id = COALESCE(%s, render_job_id),
+                render_artifact_sha256 = COALESCE(%s, render_artifact_sha256),
+                render_bounded_determinism_fingerprint = COALESCE(
+                    %s,
+                    render_bounded_determinism_fingerprint
+                ),
+                render_runtime_engine = COALESCE(%s, render_runtime_engine),
+                render_runtime_engine_version = COALESCE(%s, render_runtime_engine_version),
+                render_duration_ms = COALESCE(%s, render_duration_ms),
+                archive_request_id = COALESCE(%s, archive_request_id),
+                archive_document_id = COALESCE(%s, archive_document_id),
+                archive_completed_at = COALESCE(%s, archive_completed_at),
+                failure_category = COALESCE(%s, failure_category),
+                failure_message = COALESCE(%s, failure_message),
+                retry_eligible = COALESCE(%s, retry_eligible),
+                updated_at = %s
+            WHERE rerender_attempt_id = %s
+            """,
+            (
+                status,
+                render_job_id,
+                artifact_sha256,
+                bounded_determinism_fingerprint,
+                runtime_engine,
+                runtime_engine_version,
+                render_duration_ms,
+                archive_request_id,
+                archive_document_id,
+                archive_completed_at,
+                failure_category,
+                failure_message,
+                retry_eligible,
+                utc_now(),
+                rerender_attempt_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_rerender_attempt WHERE rerender_attempt_id = %s",
+            (rerender_attempt_id,),
+        ).fetchone()
+        assert row is not None
+        return _rerender_attempt_from_row(row)
+
     def _load_by_request_id(
         self,
         connection: Connection[Mapping[str, Any]],
@@ -1018,6 +1319,40 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportJobLedgerRecord:
         archive_request_id=row.get("archive_request_id"),
         archive_document_id=row.get("archive_document_id"),
         archive_completed_at=_dt_from_value(row.get("archive_completed_at")),
+    )
+
+
+def _rerender_attempt_from_row(row: Mapping[str, Any]) -> ReportRerenderAttemptRecord:
+    return ReportRerenderAttemptRecord(
+        rerender_attempt_id=str(row["rerender_attempt_id"]),
+        report_job_id=str(row["report_job_id"]),
+        idempotency_key=str(row["idempotency_key"]),
+        status=row["status"],
+        snapshot_id=str(row["snapshot_id"]),
+        snapshot_hash=str(row["snapshot_hash"]),
+        previous_render_job_id=row.get("previous_render_job_id"),
+        previous_archive_document_id=row.get("previous_archive_document_id"),
+        render_job_id=str(row["render_job_id"]),
+        render_output_format=str(row["render_output_format"]),
+        render_template_id=str(row["render_template_id"]),
+        render_template_version=str(row["render_template_version"]),
+        render_artifact_sha256=row.get("render_artifact_sha256"),
+        render_bounded_determinism_fingerprint=row.get("render_bounded_determinism_fingerprint"),
+        render_runtime_engine=row.get("render_runtime_engine"),
+        render_runtime_engine_version=row.get("render_runtime_engine_version"),
+        render_duration_ms=row.get("render_duration_ms"),
+        archive_request_id=row.get("archive_request_id"),
+        archive_document_id=row.get("archive_document_id"),
+        archive_completed_at=_dt_from_value(row.get("archive_completed_at")),
+        failure_category=row.get("failure_category"),
+        failure_message=row.get("failure_message"),
+        retry_eligible=bool(row["retry_eligible"]),
+        requested_by=str(row["requested_by"]),
+        reason=str(row["reason"]),
+        correlation_id=str(row["correlation_id"]),
+        trace_id=str(row["trace_id"]),
+        created_at=_dt_from_value(row["created_at"]) or utc_now(),
+        updated_at=_dt_from_value(row["updated_at"]) or utc_now(),
     )
 
 

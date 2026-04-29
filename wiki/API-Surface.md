@@ -24,8 +24,23 @@
   portfolio id, as-of date, idempotency key, correlation id, and created-at window
 - `GET /reports/jobs/{job_id}`
   internal product-safe report job status and diagnostics
+- `GET /reports/jobs/{job_id}/diagnostics`
+  internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
+  lineage, render, and archive handoff state; omits raw payloads and storage references
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history
+- `POST /reports/jobs/{job_id}/rerender`
+  internal RFC-0105 rerender command for already archived PDF jobs; reuses the immutable snapshot,
+  preserves snapshot id/hash, creates a new render/archive correction identity, and does not
+  recollect upstream data
+- `POST /reports/jobs/{job_id}/regenerate`
+  internal RFC-0105 regenerate command for already archived PDF jobs; recollects upstream data into
+  a fresh snapshot and lineage bundle, creates a replacement archive document, and returns explicit
+  old/new job, snapshot, hash, and archive document identities
+- `POST /reports/jobs/{job_id}/replay`
+  internal RFC-0105 failed-work replay command for failed retry-eligible report jobs; creates or
+  reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
+  source jobs
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`
@@ -54,6 +69,15 @@
 - `POST /reports/batches/{batch_id}:run-once`
   internal bounded operator-controlled batch run over recovery, dispatch, report-job execution, and
   batch-item reconciliation for one explicit batch
+- `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay`
+  internal RFC-0105 failed-work replay command for implementation-backed RFC-0104 batch items whose
+  linked report job failed; relinks the item to a replay-scoped report job without scheduler CRUD,
+  registry mutation, or archive distribution behavior
+- `GET /reports/operations/attention`
+  internal RFC-0105 source-backed attention scan for active report jobs and batch items; returns
+  bounded stuck-state and SLA-breach events with opaque identifiers, thresholds, age, bounded
+  reasons, and evidence links, without raw payloads, tenant, portfolio, correlation, or trace
+  identifiers
 
 ## Product-facing boundary
 
@@ -84,6 +108,8 @@ front-office consumers.
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
+- rerender, regenerate, and failed-work replay commands require `Idempotency-Key` plus governed
+  caller context headers
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
 - batch materialization, control, run-once, and config-backed scheduler list/run-due APIs are

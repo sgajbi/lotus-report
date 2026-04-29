@@ -40,6 +40,9 @@ class ArchiveClient:
             "X-Correlation-ID": correlation_id,
             "X-Trace-ID": trace_id,
         }
+        traceparent = _traceparent_header(trace_id)
+        if traceparent:
+            headers["traceparent"] = traceparent
         if booking_center_code:
             headers["X-Booking-Center-Code"] = booking_center_code
         if role:
@@ -52,3 +55,13 @@ class ArchiveClient:
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
         )
+
+
+def _traceparent_header(trace_id: str) -> str | None:
+    if len(trace_id) != 32:
+        return None
+    try:
+        int(trace_id, 16)
+    except ValueError:
+        return None
+    return f"00-{trace_id}-0000000000000001-01"

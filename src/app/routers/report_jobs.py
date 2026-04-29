@@ -13,21 +13,36 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     API_ERROR_RESPONSE_EXAMPLES,
     PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE,
+    REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
     REPORT_JOB_HANDLE_RESPONSE_EXAMPLE,
     REPORT_JOB_LIST_RESPONSE_EXAMPLE,
+    REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE,
+    REPORT_JOB_REPLAY_RESPONSE_EXAMPLE,
+    REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
     ApiErrorResponse,
     PortfolioReviewJobRequest,
     ReportJobArchiveInfo,
+    ReportJobDiagnosticsResponse,
     ReportJobHandleResponse,
     ReportJobLedgerRecord,
+    ReportJobLineageDiagnostics,
     ReportJobListFilters,
     ReportJobListItem,
     ReportJobListResponse,
+    ReportJobOperationLinks,
+    ReportJobRegenerateRequest,
+    ReportJobRegenerateResponse,
     ReportJobRenderInfo,
+    ReportJobReplayRequest,
+    ReportJobReplayResponse,
+    ReportJobRerenderRequest,
+    ReportJobRerenderResponse,
+    ReportJobSnapshotDiagnostics,
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
+    ReportRerenderAttemptRecord,
 )
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
@@ -41,6 +56,15 @@ from app.reporting_lineage.service import (
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.regenerate_service import (
+    ReportRegenerateResult,
+    get_portfolio_review_regenerate_service,
+)
+from app.reporting_render.replay_service import (
+    ReportReplayResult,
+    get_portfolio_review_replay_service,
+)
+from app.reporting_render.rerender_service import get_portfolio_review_rerender_service
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
 
@@ -187,6 +211,93 @@ def _record_to_archive(record: ReportJobLedgerRecord) -> ReportJobArchiveInfo | 
     )
 
 
+def _attempt_to_rerender_response(
+    attempt: ReportRerenderAttemptRecord,
+) -> ReportJobRerenderResponse:
+    return ReportJobRerenderResponse(
+        report_job_id=attempt.report_job_id,
+        rerender_attempt_id=attempt.rerender_attempt_id,
+        idempotency_key=attempt.idempotency_key,
+        status=attempt.status,
+        snapshot_id=attempt.snapshot_id,
+        snapshot_hash=attempt.snapshot_hash,
+        previous_render_job_id=attempt.previous_render_job_id,
+        previous_archive_document_id=attempt.previous_archive_document_id,
+        failure_category=attempt.failure_category,
+        failure_message=attempt.failure_message,
+        retry_eligible=attempt.retry_eligible,
+        render=ReportJobRenderInfo(
+            render_job_id=attempt.render_job_id,
+            output_format=attempt.render_output_format,
+            template_id=attempt.render_template_id,
+            template_version=attempt.render_template_version,
+            artifact_sha256=attempt.render_artifact_sha256,
+            bounded_determinism_fingerprint=attempt.render_bounded_determinism_fingerprint,
+            runtime_engine=attempt.render_runtime_engine,
+            runtime_engine_version=attempt.render_runtime_engine_version,
+            render_duration_ms=attempt.render_duration_ms,
+        ),
+        archive=(
+            ReportJobArchiveInfo(
+                archive_request_id=attempt.archive_request_id,
+                document_id=attempt.archive_document_id,
+                completed_at=attempt.archive_completed_at,
+            )
+            if attempt.archive_request_id
+            or attempt.archive_document_id
+            or attempt.archive_completed_at
+            else None
+        ),
+        created_at=attempt.created_at,
+        updated_at=attempt.updated_at,
+    )
+
+
+def _regenerate_to_response(result: ReportRegenerateResult) -> ReportJobRegenerateResponse:
+    regenerated = result.regenerated_job
+    return ReportJobRegenerateResponse(
+        source_report_job_id=result.source_job.job_id,
+        regenerated_report_job_id=regenerated.job_id,
+        idempotency_key=result.idempotency_key,
+        status=regenerated.status,
+        previous_snapshot_id=(
+            result.previous_snapshot.snapshot_id if result.previous_snapshot else None
+        ),
+        new_snapshot_id=result.new_snapshot.snapshot_id if result.new_snapshot else None,
+        previous_snapshot_hash=(
+            result.previous_snapshot.snapshot_hash if result.previous_snapshot else None
+        ),
+        new_snapshot_hash=result.new_snapshot.snapshot_hash if result.new_snapshot else None,
+        previous_archive_document_id=result.source_job.archive_document_id,
+        new_archive_document_id=regenerated.archive_document_id,
+        failure_category=regenerated.failure_category,
+        failure_message=regenerated.failure_message,
+        retry_eligible=regenerated.retry_eligible,
+        render=_record_to_render(regenerated),
+        archive=_record_to_archive(regenerated),
+        created_at=regenerated.created_at,
+        updated_at=regenerated.updated_at,
+    )
+
+
+def _replay_to_response(result: ReportReplayResult) -> ReportJobReplayResponse:
+    replayed = result.replayed_job
+    return ReportJobReplayResponse(
+        source_report_job_id=result.source_job.job_id,
+        replayed_report_job_id=replayed.job_id,
+        idempotency_key=result.idempotency_key,
+        status=replayed.status,
+        source_failure_category=result.source_job.failure_category,
+        failure_category=replayed.failure_category,
+        failure_message=replayed.failure_message,
+        retry_eligible=replayed.retry_eligible,
+        render=_record_to_render(replayed),
+        archive=_record_to_archive(replayed),
+        created_at=replayed.created_at,
+        updated_at=replayed.updated_at,
+    )
+
+
 def _record_to_status(record: ReportJobLedgerRecord) -> ReportJobStatusResponse:
     return ReportJobStatusResponse(
         report_job_id=record.job_id,
@@ -231,6 +342,50 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
         updated_at=record.updated_at,
         render=_record_to_render(record),
         archive=_record_to_archive(record),
+    )
+
+
+def _snapshot_to_diagnostics(
+    snapshot: ReportInputSnapshotRecord,
+) -> ReportJobSnapshotDiagnostics:
+    return ReportJobSnapshotDiagnostics(
+        snapshot_id=snapshot.snapshot_id,
+        snapshot_hash=snapshot.snapshot_hash,
+        supportability_status=snapshot.supportability_status,
+        completeness_status=snapshot.completeness_status,
+        captured_at=snapshot.captured_at,
+    )
+
+
+def _lineage_to_diagnostics(
+    snapshot: ReportInputSnapshotRecord,
+    upstream_calls: list[ReportUpstreamCallRecord],
+) -> ReportJobLineageDiagnostics:
+    source_services = sorted({call.service_name for call in upstream_calls if call.service_name})
+    failure_categories = sorted(
+        {
+            call.failure_category
+            for call in upstream_calls
+            if call.failure_category and call.failure_category != "none"
+        }
+    )
+    return ReportJobLineageDiagnostics(
+        upstream_call_count=len(upstream_calls),
+        source_services=source_services,
+        supportability_status=snapshot.supportability_status,
+        completeness_status=snapshot.completeness_status,
+        failure_categories=failure_categories,
+    )
+
+
+def _diagnostic_links(
+    job_id: str, snapshot: ReportInputSnapshotRecord | None
+) -> ReportJobOperationLinks:
+    return ReportJobOperationLinks(
+        status_url=f"/reports/jobs/{job_id}",
+        events_url=f"/reports/jobs/{job_id}/events",
+        snapshot_url=f"/reports/jobs/{job_id}/snapshot" if snapshot else None,
+        lineage_url=f"/reports/jobs/{job_id}/lineage" if snapshot else None,
     )
 
 
@@ -642,6 +797,122 @@ async def get_report_job_status(
 
 
 @jobs_router.get(
+    "/{job_id}/diagnostics",
+    response_model=ReportJobDiagnosticsResponse,
+    summary="Get report job operator diagnostics",
+    description=(
+        "Returns one composed, source-backed diagnostics view for a report job. Use this endpoint "
+        "when support needs to inspect status, lifecycle events, snapshot posture, upstream "
+        "lineage summary, render identifiers, and archive handoff identifiers without exposing "
+        "raw report payloads, storage locations, database internals, or later replay commands."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_diagnostics": {
+                                "summary": "Report job operator diagnostics",
+                                "value": REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job identifier does not exist.",
+        ),
+        **_error_response(
+            503,
+            example_key="report_lineage_store_unavailable",
+            description="Returned when source-backed lineage diagnostics cannot be queried.",
+        ),
+    },
+)
+async def get_report_job_diagnostics(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+) -> ReportJobDiagnosticsResponse:
+    caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        record = ledger.get_job(job_id)
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+    status_response = _record_to_status(record)
+    events = ledger.list_status_events(job_id)
+    snapshot: ReportInputSnapshotRecord | None = None
+    upstream_calls: list[ReportUpstreamCallRecord] = []
+    diagnostic_flags: list[str] = []
+    try:
+        snapshot = store.get_snapshot_by_job(job_id)
+        upstream_calls = store.list_upstream_calls(snapshot.snapshot_id)
+    except ReportInputSnapshotNotFoundError:
+        diagnostic_flags.append("snapshot_not_captured")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_lineage_store_unavailable"]["detail"],
+        ) from exc
+
+    if record.status == "failed":
+        diagnostic_flags.append("job_failed")
+    if record.retry_eligible:
+        diagnostic_flags.append("retry_eligible")
+    if record.render_job_id and not record.archive_document_id:
+        diagnostic_flags.append("archive_not_completed")
+
+    return ReportJobDiagnosticsResponse(
+        report_job_id=record.job_id,
+        status=status_response,
+        event_count=len(events),
+        latest_event=events[-1] if events else None,
+        snapshot=_snapshot_to_diagnostics(snapshot) if snapshot else None,
+        lineage=_lineage_to_diagnostics(snapshot, upstream_calls) if snapshot else None,
+        render=status_response.render,
+        archive=status_response.archive,
+        diagnostic_flags=diagnostic_flags,
+        operation_links=_diagnostic_links(record.job_id, snapshot),
+    )
+
+
+@jobs_router.get(
     "/{job_id}/events",
     response_model=ReportJobStatusEventsResponse,
     summary="Get report job event history",
@@ -715,6 +986,357 @@ async def get_report_job_events(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+
+@jobs_router.post(
+    "/{job_id}/rerender",
+    response_model=ReportJobRerenderResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Rerender archived report job from immutable snapshot",
+    description=(
+        "Rerenders an already archived PDF report from the durable input snapshot captured for "
+        "the source job. This command does not recollect upstream domain data. It preserves the "
+        "source snapshot id and snapshot hash, creates a new render attempt identity, and records "
+        "the archive correction consequence when a new document is handed off to lotus-archive."
+    ),
+    openapi_extra={
+        "responses": {
+            "202": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_rerender": {
+                                "summary": "Archived report rerendered from snapshot",
+                                "value": REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description="Returned when the rerender command omits Idempotency-Key.",
+        ),
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job or snapshot does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="report_job_cannot_be_rerendered",
+            description="Returned when the report job is not archived PDF output.",
+        ),
+    },
+)
+async def rerender_report_job(
+    job_id: Annotated[str, Path(description="Opaque archived report job identifier.")],
+    command: ReportJobRerenderRequest,
+    rerender_service: Any = Depends(get_portfolio_review_rerender_service),
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Idempotency key for this rerender command."),
+    ] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
+    role: Annotated[str | None, Header(alias="X-Role")] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
+) -> ReportJobRerenderResponse:
+    caller_context = caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
+    try:
+        return _attempt_to_rerender_response(
+            await rerender_service.rerender_job(
+                job_id=job_id,
+                command=command,
+                caller_context=caller_context,
+                idempotency_key=idempotency_key,
+            )
+        )
+    except MissingIdempotencyKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
+        ) from exc
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+    except InvalidReportJobTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_job_cannot_be_rerendered"]["detail"],
+        ) from exc
+
+
+@jobs_router.post(
+    "/{job_id}/regenerate",
+    response_model=ReportJobRegenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Regenerate archived report job from upstream data",
+    description=(
+        "Creates a new report job from an archived PDF source job, recollects upstream domain "
+        "data into a fresh snapshot and lineage bundle, renders a new document, and archives it "
+        "as a replacement for the previous archived document. Use regenerate when source data has "
+        "changed or needs correction; use rerender when only presentation needs correction."
+    ),
+    openapi_extra={
+        "responses": {
+            "202": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_regenerate": {
+                                "summary": "Archived report regenerated from upstream data",
+                                "value": REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description="Returned when the regenerate command omits Idempotency-Key.",
+        ),
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="report_job_cannot_be_regenerated",
+            description="Returned when the report job is not archived PDF output.",
+        ),
+    },
+)
+async def regenerate_report_job(
+    job_id: Annotated[str, Path(description="Opaque archived report job identifier.")],
+    command: ReportJobRegenerateRequest,
+    regenerate_service: Any = Depends(get_portfolio_review_regenerate_service),
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Idempotency key for this regenerate command."),
+    ] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
+    role: Annotated[str | None, Header(alias="X-Role")] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
+) -> ReportJobRegenerateResponse:
+    caller_context = caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
+    try:
+        return _regenerate_to_response(
+            await regenerate_service.regenerate_job(
+                job_id=job_id,
+                command=command,
+                caller_context=caller_context,
+                idempotency_key=idempotency_key,
+            )
+        )
+    except MissingIdempotencyKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
+        ) from exc
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+    except InvalidReportJobTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_job_cannot_be_regenerated"]["detail"],
+        ) from exc
+
+
+@jobs_router.post(
+    "/{job_id}/replay",
+    response_model=ReportJobReplayResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Replay failed report job",
+    description=(
+        "Creates or reuses a replay-scoped report job for a failed retry-eligible source job. "
+        "Replay is for failed work only; it does not duplicate completed or archived documents. "
+        "Use rerender for presentation corrections and regenerate when archived source data must "
+        "be refreshed from upstream."
+    ),
+    openapi_extra={
+        "responses": {
+            "202": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_JOB_REPLAY_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_job_replay": {
+                                "summary": "Failed report job replayed",
+                                "value": REPORT_JOB_REPLAY_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description="Returned when the replay command omits Idempotency-Key.",
+        ),
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="report_job_cannot_be_replayed",
+            description="Returned when the report job is not failed and retry eligible.",
+        ),
+    },
+)
+async def replay_report_job(
+    job_id: Annotated[str, Path(description="Opaque failed report job identifier.")],
+    command: ReportJobReplayRequest,
+    replay_service: Any = Depends(get_portfolio_review_replay_service),
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Idempotency key for this replay command."),
+    ] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
+    role: Annotated[str | None, Header(alias="X-Role")] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
+) -> ReportJobReplayResponse:
+    caller_context = caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
+    try:
+        return _replay_to_response(
+            await replay_service.replay_job(
+                job_id=job_id,
+                command=command,
+                caller_context=caller_context,
+                idempotency_key=idempotency_key,
+            )
+        )
+    except MissingIdempotencyKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
+        ) from exc
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+    except InvalidReportJobTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_job_cannot_be_replayed"]["detail"],
         ) from exc
 
 

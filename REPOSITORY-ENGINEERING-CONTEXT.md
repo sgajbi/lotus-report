@@ -61,10 +61,13 @@ Current repository posture:
    single-portfolio batch operation. Schedule CRUD, Workbench scheduler-management, and
    entitlement-certified public scheduler runtime remain future scope,
 11. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
-   propagation, and first-wave report metrics. Runtime correlation, request, trace, structured-log,
-   and safe operator lookup field vocabulary is owned in `src/app/observability.py`; bounded
-   Prometheus metric vocabulary, reserved replay/rerender/regenerate metric posture, and
-   high-cardinality label rejection are owned in `src/app/reporting_metrics.py`; later RFC-0105
+   propagation, first-wave report metrics, rerender/regenerate controls, and failed-work replay for
+   failed retry-eligible report jobs and implementation-backed batch items. Runtime correlation,
+   request, trace, structured-log, and safe operator lookup field vocabulary is owned in
+   `src/app/observability.py`; bounded Prometheus metric vocabulary, implemented
+   rerender/regenerate/replay command posture, source-backed attention scan metrics, reserved
+   dedicated dashboard metrics, and high-cardinality label rejection are owned in
+   `src/app/reporting_metrics.py`; later RFC-0105
    slices must extend those owners rather than adding one-off literal fields in routers, clients,
    dashboards, or operator APIs,
 12. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
@@ -83,7 +86,8 @@ Primary areas:
    operator lookup field vocabulary.
 3. `src/app/reporting_metrics.py`
    RFC-0105 bounded Prometheus metric vocabulary, report operation metrics, batch worker/scheduler
-   gauges, reserved replay/rerender/regenerate metric posture, and metric label governance.
+   gauges, source-backed attention scan gauges, reserved replay/rerender/regenerate metric
+   posture, and metric label governance.
 4. `scripts/`
    migration, OpenAPI, and monetary-float governance.
 5. `tests/`

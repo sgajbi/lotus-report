@@ -19,7 +19,7 @@ from app.report_batch_orchestrator.models import BatchDispatchPolicy
 from app.report_batch_orchestrator.runtime import BatchRuntimePassResult, ReportBatchRuntime
 from app.report_batch_orchestrator.service import get_report_batch_runtime
 from app.reporting_jobs.models import ReportCallerContext
-from app.reporting_metrics import record_batch_worker_metrics
+from app.reporting_metrics import record_batch_pressure_metrics, record_batch_worker_metrics
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -131,7 +131,19 @@ class BatchWorkerProcess:
                     ),
                     duration_seconds=perf_counter() - started_at,
                 )
+                record_batch_pressure_metrics(result.pressure_snapshot)
                 self._log_pass_result(iteration=iteration, result=result)
+            except Exception:
+                record_batch_worker_metrics(
+                    recovered_count=0,
+                    leased_count=0,
+                    dispatched_count=0,
+                    executed_count=0,
+                    status="failed",
+                    failure_category="batch_worker_runtime_error",
+                    duration_seconds=perf_counter() - started_at,
+                )
+                raise
             finally:
                 correlation_id_var.reset(corr_token)
                 request_id_var.reset(req_token)

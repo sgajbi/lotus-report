@@ -1,25 +1,30 @@
 # Reporting Observability Metrics
 
-This page records the RFC-0105 Slice 3 first-wave `lotus-report` metrics contract.
+This page records the RFC-0105 Slice 3 first-wave `lotus-report` metrics contract, updated by
+Slice 5 for the implementation-backed rerender-from-snapshot command, Slice 6 for the
+implementation-backed regenerate-from-upstream command, Slice 7 for failed-work replay, and
+Slice 8 for source-backed operations attention scans.
 
 The current implementation emits metrics for report operations that already exist and are
-implementation-backed. Replay, rerender, regenerate, and stuck-state scan metrics are reserved
-until those command paths are implemented and proven.
+implementation-backed. Dedicated broad replay dashboards remain reserved until those command paths
+are implemented and proven.
 
 ## Implemented Metrics
 
 | Metric | Type | Labels | Source |
 | --- | --- | --- | --- |
-| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, snapshot capture, render handoff, archive handoff, batch worker pass, scheduler pass |
+| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, snapshot capture, render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch worker pass, scheduler pass |
 | `lotus_report_operation_duration_seconds` | histogram | `operation`, `status`, `failure_category` | Duration for the same implemented operations |
 | `lotus_report_batch_runtime_last_items` | gauge | `item_state` | Latest bounded batch-worker pass counts for recovered, leased, dispatched, and executed items |
 | `lotus_report_batch_scheduler_last_schedules` | gauge | `outcome` | Latest bounded scheduler pass counts for attempted, materialized, and skipped schedules |
+| `lotus_report_batch_pressure_last_counts` | gauge | `pressure_state` | Latest bounded durable batch pressure counts |
+| `lotus_report_attention_events_last_count` | gauge | `attention_type`, `severity` | Latest source-backed operations attention scan counts for stuck-state and SLA-breach events |
 
 ## Reserved Metrics
 
 | Metric | Status | Reason |
 | --- | --- | --- |
-| `lotus_report_replay_operations_total` | reserved | Replay, rerender, and regenerate commands are not yet implementation-backed |
+| `lotus_report_replay_operations_total` | reserved | Dedicated broader replay dashboard metrics are not yet implementation-backed; failed-work replay is counted through `lotus_report_operations_total{operation="replay_command"}` |
 
 ## Label Discipline
 
@@ -44,8 +49,13 @@ First-wave dashboards may reference only implemented metrics:
 3. batch worker activity from `lotus_report_batch_runtime_last_items`,
 4. scheduler materialization activity from `lotus_report_batch_scheduler_last_schedules`.
 
-Dashboards must not reference reserved replay, rerender, regenerate, stuck-state, or SLA scan
-metrics until those slices add implementation-backed metrics and tests.
+Dashboards may include `operation="rerender_from_snapshot"`,
+`operation="regenerate_from_upstream"`, `operation="replay_command"`, and
+`operation="stuck_state_scan"` from `lotus_report_operations_total` and
+`lotus_report_operation_duration_seconds`. They may reference
+`lotus_report_attention_events_last_count` for stuck-state and SLA-breach scan output. They must
+not reference reserved dedicated broader replay metrics until those slices add implementation-backed
+metrics and tests.
 
 ## Alert Contract
 
@@ -55,6 +65,8 @@ metrics until those slices add implementation-backed metrics and tests.
 | Render/archive latency pressure | `lotus_report_operation_duration_seconds` for `render_handoff` or `archive_handoff` over 5 minutes | warning | reporting-operations | Check `lotus-render` and `lotus-archive` health, logs, and downstream storage posture |
 | Batch worker inactivity | `lotus_report_batch_runtime_last_items{item_state="executed"}` unchanged while runnable batches exist | warning | reporting-operations | Inspect batch status, worker logs, and back-pressure limits |
 | Scheduler materialization drop | `lotus_report_batch_scheduler_last_schedules{outcome="materialized"}` remains zero while enabled schedules are due | warning | reporting-operations | Inspect schedule configuration, scheduler logs, and portfolio selector source availability |
+| Reporting attention pressure | `lotus_report_attention_events_last_count{severity="warning"}` over 15 minutes | warning | reporting-operations | Inspect `/reports/operations/attention`, report job diagnostics, batch item status, and replay only after retry eligibility is confirmed |
+| Reporting SLA breach | `lotus_report_attention_events_last_count{attention_type="sla_breach",severity="critical"}` over 5 minutes | critical | reporting-operations | Escalate to reporting operations, inspect source-backed evidence links, recover expired leases, and confirm downstream render/archive health |
 
-These alert contracts are initial thresholds for operator review. RFC-0105 later slices must tighten
-SLA breach and stuck-state alerts after the corresponding status and diagnostics APIs are complete.
+These alert contracts are initial thresholds for operator review. The attention scan endpoint emits
+only opaque resource identifiers, bounded reasons, age, thresholds, and support-safe evidence links.

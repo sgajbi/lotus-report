@@ -26,7 +26,7 @@ async def test_archive_document_posts_to_archive_endpoint(monkeypatch):
         tenant_id="tenant-sg",
         region="APAC",
         correlation_id="corr-123",
-        trace_id="trace-123",
+        trace_id="0123456789abcdef0123456789abcdef",
         booking_center_code="SG",
         role="advisor",
     )
@@ -46,7 +46,8 @@ async def test_archive_document_posts_to_archive_endpoint(monkeypatch):
             "X-Tenant-Id": "tenant-sg",
             "X-Region": "APAC",
             "X-Correlation-ID": "corr-123",
-            "X-Trace-ID": "trace-123",
+            "X-Trace-ID": "0123456789abcdef0123456789abcdef",
+            "traceparent": "00-0123456789abcdef0123456789abcdef-0000000000000001-01",
             "X-Booking-Center-Code": "SG",
             "X-Role": "advisor",
         },
@@ -91,3 +92,70 @@ async def test_archive_document_omits_optional_headers_when_absent(monkeypatch):
         "X-Correlation-ID": "corr-456",
         "X-Trace-ID": "trace-456",
     }
+
+
+@pytest.mark.asyncio
+async def test_archive_document_sends_trace_without_invalid_traceparent(monkeypatch):
+    captured_headers: dict[str, str] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured_headers.update(kwargs["headers"])
+        return 200, {}
+
+    monkeypatch.setattr(archive_client_module, "post_with_retry", _fake_post_with_retry)
+    client = ArchiveClient(
+        base_url="http://archive.dev.lotus",
+        timeout_seconds=5.0,
+        max_retries=1,
+        retry_backoff_seconds=0.1,
+    )
+
+    await client.archive_document(
+        {"archive_request_id": "arch_789"},
+        actor_id="advisor-789",
+        tenant_id="tenant-eu",
+        region="EMEA",
+        correlation_id="corr-789",
+        trace_id="trace-archive",
+    )
+
+    assert captured_headers == {
+        "Content-Type": "application/json",
+        "X-Caller-Service": "lotus-report",
+        "X-Actor-Type": "service",
+        "X-Actor-Id": "advisor-789",
+        "X-Caller-Application": "lotus-report",
+        "X-Tenant-Id": "tenant-eu",
+        "X-Region": "EMEA",
+        "X-Correlation-ID": "corr-789",
+        "X-Trace-ID": "trace-archive",
+    }
+
+
+@pytest.mark.asyncio
+async def test_archive_document_omits_traceparent_when_trace_id_is_32_char_invalid_hex(monkeypatch):
+    captured_headers: dict[str, str] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured_headers.update(kwargs["headers"])
+        return 200, {}
+
+    monkeypatch.setattr(archive_client_module, "post_with_retry", _fake_post_with_retry)
+    client = ArchiveClient(
+        base_url="http://archive.dev.lotus",
+        timeout_seconds=5.0,
+        max_retries=1,
+        retry_backoff_seconds=0.1,
+    )
+
+    await client.archive_document(
+        {"archive_request_id": "arch-hex"},
+        actor_id="advisor-hex",
+        tenant_id="tenant-eu",
+        region="EMEA",
+        correlation_id="corr-hex",
+        trace_id="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",  # 32 chars, invalid hex
+    )
+
+    assert "traceparent" not in captured_headers
+    assert captured_headers["X-Trace-ID"] == "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"

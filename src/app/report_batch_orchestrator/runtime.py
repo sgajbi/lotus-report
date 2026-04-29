@@ -4,7 +4,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from app.report_batch_orchestrator.models import BatchDispatchPolicy, BatchRuntimeLoad
+from app.report_batch_orchestrator.models import (
+    BatchDispatchPolicy,
+    BatchPressureSnapshot,
+    BatchRuntimeLoad,
+)
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult, ReportBatchWorker
 from app.reporting_jobs.models import ReportCallerContext
 
@@ -17,6 +21,8 @@ class BatchRuntimeLedger(Protocol):
         now: datetime | None = None,
     ) -> list[str]: ...
 
+    def batch_pressure_snapshot(self, *, now: datetime | None = None) -> BatchPressureSnapshot: ...
+
 
 @dataclass(frozen=True)
 class BatchRuntimePassResult:
@@ -27,6 +33,7 @@ class BatchRuntimePassResult:
     leased_count: int = 0
     dispatched_count: int = 0
     executed_count: int = 0
+    pressure_snapshot: BatchPressureSnapshot = field(default_factory=BatchPressureSnapshot)
     back_pressure_stopped: bool = False
     back_pressure_reasons: list[str] = field(default_factory=list)
 
@@ -98,6 +105,7 @@ class ReportBatchRuntime:
             leased_count=sum(result.leased_count for result in batch_results),
             dispatched_count=sum(result.dispatched_count for result in batch_results),
             executed_count=sum(result.executed_count for result in batch_results),
+            pressure_snapshot=self._batch_ledger.batch_pressure_snapshot(now=now),
             back_pressure_stopped=back_pressure_stopped,
             back_pressure_reasons=back_pressure_reasons,
         )

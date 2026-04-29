@@ -215,6 +215,30 @@ def test_postgres_batch_get_missing_batch_raises_not_found() -> None:
         ledger.get_batch(f"rbch_missing_{uuid4().hex}")
 
 
+def test_postgres_batch_get_item_returns_single_item_and_404s() -> None:
+    unique_suffix = uuid4().hex
+    ledger = PostgresReportBatchLedger(_database_url())
+    batch = ledger.create_batch(
+        request=_multi_request(
+            unique_suffix,
+            [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}", f"PB_SG_GLOBAL_BAL_002_{unique_suffix}"],
+        ),
+        caller_context=_caller(unique_suffix),
+        idempotency_key=f"batch-pg-item-{unique_suffix}",
+    )
+
+    item = ledger.get_batch_item(batch.batch_id, batch.items[0].batch_item_id)
+    assert item.batch_item_id == batch.items[0].batch_item_id
+    assert item.portfolio_id == f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"
+    assert item.status == "materialized"
+
+    with pytest.raises(ValueError, match="report_batch_not_found"):
+        ledger.get_batch_item(f"rbch_missing_{unique_suffix}", batch.items[0].batch_item_id)
+
+    with pytest.raises(ValueError, match="report_batch_item_not_found"):
+        ledger.get_batch_item(batch.batch_id, "rbci_missing_item")
+
+
 def test_postgres_batch_dispatch_persists_report_jobs_and_item_state() -> None:
     unique_suffix = uuid4().hex
     batch_ledger = PostgresReportBatchLedger(_database_url())

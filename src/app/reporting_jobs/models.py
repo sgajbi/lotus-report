@@ -34,6 +34,16 @@ ReportFailureCategory = Literal[
     "operator_intervention_required",
 ]
 
+ReportRerenderAttemptStatus = Literal[
+    "rendering",
+    "rendered",
+    "archiving",
+    "archived",
+    "failed",
+]
+
+ReportRegenerateStatus = ReportJobStatus
+
 
 class PortfolioReviewJobRequest(BaseModel):
     portfolio_scope: dict[str, Any] = Field(
@@ -147,6 +157,41 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
     ],
 }
 
+REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "status": REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
+    "event_count": 4,
+    "latest_event": {
+        **REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE["events"][0],
+        "to_status": "archived",
+        "event_type": "job_archived",
+        "message": "Report artifact archived by lotus-archive.",
+    },
+    "snapshot": {
+        "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+        "snapshot_hash": "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd",
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "captured_at": "2026-04-22T09:00:03Z",
+    },
+    "lineage": {
+        "upstream_call_count": 3,
+        "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "failure_categories": [],
+    },
+    "render": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["render"],
+    "archive": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["archive"],
+    "diagnostic_flags": [],
+    "operation_links": {
+        "status_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5",
+        "events_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/events",
+        "snapshot_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/snapshot",
+        "lineage_url": "/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/lineage",
+    },
+}
+
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
@@ -239,6 +284,30 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report snapshot was not found.",
         }
     },
+    "report_lineage_store_unavailable": {
+        "detail": {
+            "code": "report_lineage_store_unavailable",
+            "message": "Report lineage diagnostics are temporarily unavailable.",
+        }
+    },
+    "report_job_cannot_be_rerendered": {
+        "detail": {
+            "code": "report_job_cannot_be_rerendered",
+            "message": "Report job is not eligible for rerender from snapshot.",
+        }
+    },
+    "report_job_cannot_be_regenerated": {
+        "detail": {
+            "code": "report_job_cannot_be_regenerated",
+            "message": "Report job is not eligible for regeneration from upstream data.",
+        }
+    },
+    "report_job_cannot_be_replayed": {
+        "detail": {
+            "code": "report_job_cannot_be_replayed",
+            "message": "Report job is not eligible for replay.",
+        }
+    },
     "report_job_cannot_be_cancelled": {
         "detail": {
             "code": "report_job_cannot_be_cancelled",
@@ -251,6 +320,107 @@ API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "At least one supported job-search filter is required.",
         }
     },
+}
+
+REPORT_JOB_RERENDER_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "rerender_attempt_id": "rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
+    "idempotency_key": "rerender-rjob_83ca965c50334c40a17d2b8cc94873a5-template-fix-1",
+    "status": "archived",
+    "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+    "snapshot_hash": "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd",
+    "previous_render_job_id": "rdr_rjob_83ca965c50334c40a17d2b8cc94873a5_pdf",
+    "previous_archive_document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+    "archive_consequence": "correction",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-rerender",
+        "bounded_determinism_fingerprint": "typst-0.14.2:b8e42bb1",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 731,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+        "document_id": "doc_correction_83ca965c50334c40a17d2b8cc94873a5",
+        "completed_at": "2026-04-22T09:07:04Z",
+    },
+    "created_at": "2026-04-22T09:07:00Z",
+    "updated_at": "2026-04-22T09:07:04Z",
+}
+
+REPORT_JOB_REGENERATE_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "source_report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "regenerated_report_job_id": "rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd",
+    "idempotency_key": "regenerate-rjob_83ca965c50334c40a17d2b8cc94873a5-refresh-1",
+    "status": "archived",
+    "previous_snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+    "new_snapshot_id": "rsnap_b98d1c76ad9d47da880f0863df2d3f83",
+    "previous_snapshot_hash": (
+        "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"
+    ),
+    "new_snapshot_hash": (
+        "sha256:bdbb727e97934f629f8a2ed2fb88cf9e42b6cfc06c6615a378d3f9a1d9f77811"
+    ),
+    "previous_archive_document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+    "new_archive_document_id": "doc_replacement_83ca965c50334c40a17d2b8cc94873a5",
+    "archive_consequence": "replacement",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-regenerate",
+        "bounded_determinism_fingerprint": "typst-0.14.2:9dd87c01",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 804,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rjob_5ce4b4a63bb84bb68e7dc190fdf6a3cd_pdf",
+        "document_id": "doc_replacement_83ca965c50334c40a17d2b8cc94873a5",
+        "completed_at": "2026-04-22T09:12:04Z",
+    },
+    "created_at": "2026-04-22T09:12:00Z",
+    "updated_at": "2026-04-22T09:12:04Z",
+}
+
+REPORT_JOB_REPLAY_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "source_report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "replayed_report_job_id": "rjob_8a1f4d267de64a5597c02cfeb612a6a4",
+    "idempotency_key": "replay-rjob_83ca965c50334c40a17d2b8cc94873a5-upstream-retry-1",
+    "status": "archived",
+    "source_failure_category": "upstream_data_failed",
+    "failure_category": None,
+    "failure_message": None,
+    "retry_eligible": False,
+    "render": {
+        "render_job_id": "rdr_rjob_8a1f4d267de64a5597c02cfeb612a6a4_pdf",
+        "output_format": "pdf",
+        "template_id": "portfolio-review",
+        "template_version": "v1",
+        "artifact_sha256": "sha256:artifact-portfolio-review-replay",
+        "bounded_determinism_fingerprint": "typst-0.14.2:129fb9da",
+        "runtime_engine": "typst",
+        "runtime_engine_version": "0.14.2",
+        "render_duration_ms": 782,
+    },
+    "archive": {
+        "archive_request_id": "arch_rdr_rjob_8a1f4d267de64a5597c02cfeb612a6a4_pdf",
+        "document_id": "doc_replay_8a1f4d267de64a5597c02cfeb612a6a4",
+        "completed_at": "2026-04-22T09:18:04Z",
+    },
+    "created_at": "2026-04-22T09:18:00Z",
+    "updated_at": "2026-04-22T09:18:04Z",
 }
 
 
@@ -422,6 +592,273 @@ class ReportJobArchiveInfo(BaseModel):
     )
 
 
+class ReportJobRerenderRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Support-safe business or operations reason for rerendering the archived job.",
+        examples=["Template correction after approved disclosure wording change."],
+    )
+
+
+class ReportJobRegenerateRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description=(
+            "Support-safe business or operations reason for regenerating the archived job from "
+            "fresh upstream data."
+        ),
+        examples=["Refresh report after upstream position correction was certified."],
+    )
+
+
+class ReportJobReplayRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Support-safe business or operations reason for replaying a failed job.",
+        examples=["Retry after upstream service recovered."],
+    )
+
+
+class ReportRerenderAttemptRecord(BaseModel):
+    rerender_attempt_id: str
+    report_job_id: str
+    idempotency_key: str
+    status: ReportRerenderAttemptStatus
+    snapshot_id: str
+    snapshot_hash: str
+    previous_render_job_id: str | None = None
+    previous_archive_document_id: str | None = None
+    render_job_id: str
+    render_output_format: str = "pdf"
+    render_template_id: str = "portfolio-review"
+    render_template_version: str = "v1"
+    render_artifact_sha256: str | None = None
+    render_bounded_determinism_fingerprint: str | None = None
+    render_runtime_engine: str | None = None
+    render_runtime_engine_version: str | None = None
+    render_duration_ms: int | None = None
+    archive_request_id: str | None = None
+    archive_document_id: str | None = None
+    archive_completed_at: datetime | None = None
+    failure_category: ReportFailureCategory | None = None
+    failure_message: str | None = None
+    retry_eligible: bool = False
+    requested_by: str
+    reason: str
+    correlation_id: str
+    trace_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReportJobRerenderResponse(BaseModel):
+    report_job_id: str = Field(
+        ...,
+        description="Source archived report job rerendered from its immutable snapshot.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    rerender_attempt_id: str = Field(
+        ...,
+        description="Opaque rerender attempt identifier preserving repeat render identity.",
+        examples=["rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c"],
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this rerender command.",
+        examples=["rerender-rjob_83ca965c50334c40a17d2b8cc94873a5-template-fix-1"],
+    )
+    status: ReportRerenderAttemptStatus = Field(
+        ...,
+        description="Current rerender attempt status.",
+        examples=["archived"],
+    )
+    snapshot_id: str = Field(
+        ...,
+        description="Immutable snapshot reused by the rerender attempt.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    snapshot_hash: str = Field(
+        ...,
+        description=(
+            "Snapshot hash reused by the rerender attempt; upstream data is not recollected."
+        ),
+        examples=["sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    previous_render_job_id: str | None = Field(
+        default=None,
+        description="Original render job identifier superseded by this rerender attempt.",
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Original archive document identifier superseded by the new archive document.",
+    )
+    archive_consequence: Literal["correction"] = Field(
+        "correction",
+        description="Archive consequence of a successful rerender.",
+        examples=["correction"],
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable rerender failure category when the attempt failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe rerender failure message when the attempt failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry is currently permitted for this rerender attempt.",
+    )
+    render: ReportJobRenderInfo = Field(
+        ...,
+        description="New render identity and render metadata for this rerender attempt.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="New archive handoff and document identifiers for this rerender attempt.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was last updated.",
+    )
+
+
+class ReportJobRegenerateResponse(BaseModel):
+    source_report_job_id: str = Field(
+        ...,
+        description="Archived source report job used as the regeneration template.",
+    )
+    regenerated_report_job_id: str = Field(
+        ...,
+        description="New report job created for fresh upstream snapshot capture and rendering.",
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this regenerate command.",
+    )
+    status: ReportRegenerateStatus = Field(
+        ...,
+        description="Current status of the regenerated report job.",
+    )
+    previous_snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot identifier from the source report job, when available.",
+    )
+    new_snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot identifier captured for the regenerated report job.",
+    )
+    previous_snapshot_hash: str | None = Field(
+        default=None,
+        description="Snapshot hash from the source report job, when available.",
+    )
+    new_snapshot_hash: str | None = Field(
+        default=None,
+        description="Snapshot hash captured for the regenerated report job.",
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Archived source document superseded by the regenerated document.",
+    )
+    new_archive_document_id: str | None = Field(
+        default=None,
+        description="Archive document identifier produced by the regenerated job.",
+    )
+    archive_consequence: Literal["replacement"] = Field(
+        "replacement",
+        description="Archive consequence of a successful regenerated document.",
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable regenerate failure category when regeneration failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe regenerate failure message when regeneration failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry is currently permitted for the regenerated job.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Render metadata for the regenerated report job.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Archive metadata for the regenerated report job.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the regenerated job was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the regenerated job was last updated.",
+    )
+
+
+class ReportJobReplayResponse(BaseModel):
+    source_report_job_id: str = Field(
+        ...,
+        description="Failed source report job used as the replay template.",
+    )
+    replayed_report_job_id: str = Field(
+        ...,
+        description="New report job created or reused for the replay attempt.",
+    )
+    idempotency_key: str = Field(
+        ...,
+        description="Caller-supplied idempotency key for this replay command.",
+    )
+    status: ReportJobStatus = Field(
+        ...,
+        description="Current status of the replayed report job.",
+    )
+    source_failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Failure category from the source failed report job.",
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable replay failure category when replay failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe replay failure message when replay failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry or replay remains permitted for the replayed job.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Render metadata for the replayed report job.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Archive metadata for the replayed report job.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the replayed job was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the replayed job was last updated.",
+    )
+
+
 class ReportJobStatusResponse(BaseModel):
     report_job_id: str = Field(
         ...,
@@ -581,6 +1018,133 @@ class ReportJobStatusEventsResponse(BaseModel):
         ...,
         description="Append-only lifecycle events ordered by creation time.",
         examples=[REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE["events"]],
+    )
+
+
+class ReportJobSnapshotDiagnostics(BaseModel):
+    snapshot_id: str = Field(
+        ...,
+        description="Opaque durable snapshot identifier associated with the report job.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    snapshot_hash: str = Field(
+        ...,
+        description="Canonical hash of the captured snapshot payload; raw payload is not returned.",
+        examples=["sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    supportability_status: str = Field(
+        ...,
+        description="Supportability posture recorded on the durable snapshot.",
+        examples=["complete"],
+    )
+    completeness_status: str = Field(
+        ...,
+        description="Completeness posture recorded on the durable snapshot.",
+        examples=["complete"],
+    )
+    captured_at: datetime = Field(
+        ...,
+        description="UTC timestamp when snapshot capture completed.",
+        examples=["2026-04-22T09:00:03Z"],
+    )
+
+
+class ReportJobLineageDiagnostics(BaseModel):
+    upstream_call_count: int = Field(
+        ...,
+        description="Number of durable upstream-call evidence rows linked to the snapshot.",
+        examples=[3],
+    )
+    source_services: list[str] = Field(
+        ...,
+        description="Bounded service names observed in upstream lineage evidence.",
+        examples=[["lotus-core", "lotus-performance", "lotus-risk"]],
+    )
+    supportability_status: str = Field(
+        ...,
+        description="Aggregated supportability posture from the durable snapshot summary.",
+        examples=["complete"],
+    )
+    completeness_status: str = Field(
+        ...,
+        description="Aggregated completeness posture from the durable snapshot summary.",
+        examples=["complete"],
+    )
+    failure_categories: list[str] = Field(
+        ...,
+        description="Distinct non-empty upstream failure categories excluding normal `none` rows.",
+        examples=[["upstream_unavailable"]],
+    )
+
+
+class ReportJobOperationLinks(BaseModel):
+    status_url: str = Field(
+        ...,
+        description="Relative URL for the source-backed report job status contract.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    events_url: str = Field(
+        ...,
+        description="Relative URL for append-only report job lifecycle events.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/events"],
+    )
+    snapshot_url: str | None = Field(
+        default=None,
+        description="Relative URL for the durable snapshot when snapshot evidence exists.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/snapshot"],
+    )
+    lineage_url: str | None = Field(
+        default=None,
+        description="Relative URL for durable upstream lineage when snapshot evidence exists.",
+        examples=["/reports/jobs/rjob_83ca965c50334c40a17d2b8cc94873a5/lineage"],
+    )
+
+
+class ReportJobDiagnosticsResponse(BaseModel):
+    report_job_id: str = Field(
+        ...,
+        description="Opaque durable report job identifier inspected by the diagnostics view.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    status: ReportJobStatusResponse = Field(
+        ...,
+        description="Source-backed product-safe job status and render/archive summary.",
+        examples=[REPORT_JOB_STATUS_RESPONSE_EXAMPLE],
+    )
+    event_count: int = Field(
+        ...,
+        description="Count of append-only lifecycle events recorded for the job.",
+        examples=[4],
+    )
+    latest_event: ReportStatusEvent | None = Field(
+        default=None,
+        description="Most recent lifecycle event when event history exists.",
+    )
+    snapshot: ReportJobSnapshotDiagnostics | None = Field(
+        default=None,
+        description="Support-safe snapshot posture without raw snapshot payload or storage refs.",
+    )
+    lineage: ReportJobLineageDiagnostics | None = Field(
+        default=None,
+        description="Support-safe lineage summary without request or response payloads.",
+    )
+    render: ReportJobRenderInfo | None = Field(
+        default=None,
+        description="Support-safe render metadata copied from the report job ledger.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="Support-safe archive handoff and document identifiers from the job ledger.",
+    )
+    diagnostic_flags: list[str] = Field(
+        ...,
+        description="Machine-readable support flags such as `snapshot_not_captured`.",
+        examples=[["snapshot_not_captured"]],
+    )
+    operation_links: ReportJobOperationLinks = Field(
+        ...,
+        description="Related source-backed operator endpoints for deeper evidence review.",
+        examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["operation_links"]],
     )
 
 

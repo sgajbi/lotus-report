@@ -11,6 +11,8 @@ from app.report_batch_orchestrator.models import (
     BATCH_CONTROL_RESPONSE_EXAMPLE,
     BATCH_CREATE_REQUEST_EXAMPLE,
     BATCH_HANDLE_RESPONSE_EXAMPLE,
+    BATCH_ITEM_REPLAY_REQUEST_EXAMPLE,
+    BATCH_ITEM_REPLAY_RESPONSE_EXAMPLE,
     BATCH_RECOVERY_RESPONSE_EXAMPLE,
     BATCH_STATUS_RESPONSE_EXAMPLE,
     BATCH_WORKER_RUN_REQUEST_EXAMPLE,
@@ -18,7 +20,10 @@ from app.report_batch_orchestrator.models import (
     BatchControlResponse,
     BatchCreateRequest,
     BatchHandleResponse,
+    BatchItemReplayRequest,
+    BatchItemReplayResponse,
     BatchItemStatusResponse,
+    BatchPressureSnapshot,
     BatchRecoveryResponse,
     BatchRetryPolicy,
     BatchStatus,
@@ -26,7 +31,12 @@ from app.report_batch_orchestrator.models import (
     BatchWorkerItemExecutionResponse,
     BatchWorkerRunRequest,
     BatchWorkerRunResponse,
+    ReportBatchItemRecord,
     ReportBatchRecord,
+)
+from app.report_batch_orchestrator.replay import (
+    BatchItemReplayResult,
+    get_report_batch_item_replay_service,
 )
 from app.report_batch_orchestrator.scheduler import (
     BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE,
@@ -49,8 +59,16 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_worker,
 )
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
+from app.reporting_jobs.ledger import (
+    InvalidReportJobTransitionError,
+    MissingIdempotencyKeyError,
+)
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
-from app.reporting_metrics import record_batch_scheduler_metrics, record_batch_worker_metrics
+from app.reporting_metrics import (
+    record_batch_pressure_metrics,
+    record_batch_scheduler_metrics,
+    record_batch_worker_metrics,
+)
 from app.routers.caller_context import caller_context_dependency
 
 router = APIRouter(prefix="/reports/batches", tags=["Report Batches"])
@@ -68,6 +86,12 @@ class ReportBatchLedgerPort(Protocol):
 
     def get_batch(self, batch_id: str) -> ReportBatchRecord: ...
 
+    def get_batch_item(
+        self,
+        batch_id: str,
+        batch_item_id: str,
+    ) -> ReportBatchItemRecord: ...
+
     def pause_batch(self, *, batch_id: str) -> Any: ...
 
     def resume_batch(self, *, batch_id: str) -> Any: ...
@@ -82,6 +106,8 @@ class ReportBatchLedgerPort(Protocol):
     ) -> Any: ...
 
     def recover_expired_leases(self, *, batch_id: str) -> Any: ...
+
+    def batch_pressure_snapshot(self) -> BatchPressureSnapshot: ...
 
 
 class ReportBatchWorkerPort(Protocol):
@@ -143,6 +169,12 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report batch was not found.",
         }
     },
+    "report_batch_item_not_found": {
+        "detail": {
+            "code": "report_batch_item_not_found",
+            "message": "Report batch item was not found.",
+        }
+    },
     "batch_worker_run_failed": {
         "detail": {
             "code": "batch_worker_run_failed",
@@ -159,6 +191,12 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
         "detail": {
             "code": "batch_scheduler_run_failed",
             "message": "Report batch scheduler pass could not be completed.",
+        }
+    },
+    "report_batch_item_cannot_be_replayed": {
+        "detail": {
+            "code": "report_batch_item_cannot_be_replayed",
+            "message": "Report batch item is not eligible for replay.",
         }
     },
 }
@@ -204,6 +242,25 @@ def _record_to_handle(record: ReportBatchRecord) -> BatchHandleResponse:
     )
 
 
+def _record_item_to_status(item: Any) -> BatchItemStatusResponse:
+    return BatchItemStatusResponse(
+        batch_item_id=item.batch_item_id,
+        item_position=item.item_position,
+        portfolio_id=item.portfolio_id,
+        status=item.status,
+        report_job_id=item.report_job_id,
+        attempt_count=item.attempt_count,
+        retry_eligible=item.retry_eligible,
+        next_retry_at=item.next_retry_at,
+        last_error_category=item.last_error_category,
+        last_error_summary=item.last_error_summary,
+        created_at=item.created_at,
+        started_at=item.started_at,
+        completed_at=item.completed_at,
+        cancelled_at=item.cancelled_at,
+    )
+
+
 def _record_to_status(record: ReportBatchRecord) -> BatchStatusResponse:
     status_counts: dict[str, int] = {}
     for item in record.items:
@@ -220,25 +277,7 @@ def _record_to_status(record: ReportBatchRecord) -> BatchStatusResponse:
         status=record.status,
         item_count=record.item_count,
         status_counts=status_counts,
-        items=[
-            BatchItemStatusResponse(
-                batch_item_id=item.batch_item_id,
-                item_position=item.item_position,
-                portfolio_id=item.portfolio_id,
-                status=item.status,
-                report_job_id=item.report_job_id,
-                attempt_count=item.attempt_count,
-                retry_eligible=item.retry_eligible,
-                next_retry_at=item.next_retry_at,
-                last_error_category=item.last_error_category,
-                last_error_summary=item.last_error_summary,
-                created_at=item.created_at,
-                started_at=item.started_at,
-                completed_at=item.completed_at,
-                cancelled_at=item.cancelled_at,
-            )
-            for item in record.items
-        ],
+        items=[_record_item_to_status(item) for item in record.items],
         created_at=record.created_at,
         updated_at=record.updated_at,
         started_at=record.started_at,
@@ -286,6 +325,20 @@ def _worker_run_response(result: BatchWorkerRunResult) -> BatchWorkerRunResponse
             for item in result.execution_results
         ],
         status_url=_status_url(result.batch_id),
+    )
+
+
+def _batch_item_replay_response(result: BatchItemReplayResult) -> BatchItemReplayResponse:
+    return BatchItemReplayResponse(
+        batch_id=result.batch_id,
+        batch_item_id=result.item.batch_item_id,
+        source_report_job_id=result.source_report_job.job_id,
+        replayed_report_job_id=result.replayed_report_job.job_id,
+        idempotency_key=result.idempotency_key,
+        item_status=result.item.status,
+        report_job_status=result.replayed_report_job.status,
+        retry_eligible=result.item.retry_eligible,
+        status_url=f"{_status_url(result.batch_id)}/items/{result.item.batch_item_id}",
     )
 
 
@@ -436,6 +489,11 @@ def _not_found_error(exc: ValueError) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_not_found"]["detail"],
+        )
+    if str(exc) == "report_batch_item_not_found":
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_not_found"]["detail"],
         )
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -589,6 +647,168 @@ async def get_report_batch_status(
     try:
         return _record_to_status(ledger.get_batch(batch_id))
     except ValueError as exc:
+        raise _not_found_error(exc) from exc
+
+
+@router.get(
+    "/{batch_id}/items/{batch_item_id}",
+    response_model=BatchItemStatusResponse,
+    summary="Get report batch item status",
+    description=(
+        "Returns product-safe status for a specific item in a durable report batch, including "
+        "execution posture and retry metadata."
+    ),
+    responses={
+        404: {
+            "model": ApiErrorResponse,
+            "description": (
+                "Returned when the requested report batch or report batch item does not exist."
+            ),
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "report_batch_not_found": {
+                            "summary": "Unknown batch",
+                            "value": BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_not_found"],
+                        },
+                        "report_batch_item_not_found": {
+                            "summary": "Unknown batch item",
+                            "value": BATCH_API_ERROR_RESPONSE_EXAMPLES[
+                                "report_batch_item_not_found"
+                            ],
+                        },
+                    }
+                }
+            },
+        }
+    },
+)
+async def get_report_batch_item_status(
+    batch_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch identifier.", examples=["rbch_example"]),
+    ],
+    batch_item_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch item identifier.", examples=["rbci_example"]),
+    ],
+    ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
+    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchItemStatusResponse:
+    try:
+        return _record_item_to_status(
+            ledger.get_batch_item(batch_id=batch_id, batch_item_id=batch_item_id)
+        )
+    except ValueError as exc:
+        raise _not_found_error(exc) from exc
+
+
+@router.post(
+    "/{batch_id}/items/{batch_item_id}/replay",
+    response_model=BatchItemReplayResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Replay failed report batch item",
+    description=(
+        "Relinks one failed retry-eligible batch item to a replay-scoped report job. Use this "
+        "endpoint for implementation-backed batch items whose linked report job failed. "
+        "The command does not duplicate completed or archived report documents and does not change "
+        "scheduler configuration."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": BATCH_ITEM_REPLAY_REQUEST_EXAMPLE,
+                    "examples": {
+                        "batch_item_replay": {
+                            "summary": "Replay failed batch item",
+                            "value": BATCH_ITEM_REPLAY_REQUEST_EXAMPLE,
+                        }
+                    },
+                }
+            }
+        },
+        "responses": {
+            "202": {
+                "content": {
+                    "application/json": {
+                        "example": BATCH_ITEM_REPLAY_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "replayed": {
+                                "summary": "Batch item relinked to replay job",
+                                "value": BATCH_ITEM_REPLAY_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        },
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description="Returned when the replay command omits Idempotency-Key.",
+        ),
+        **_error_response(
+            404,
+            example_key="report_batch_item_not_found",
+            description="Returned when the requested batch item does not exist.",
+        ),
+        **_error_response(
+            409,
+            example_key="report_batch_item_cannot_be_replayed",
+            description="Returned when the item is not failed and retry eligible.",
+        ),
+    },
+)
+async def replay_report_batch_item(
+    batch_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch identifier.", examples=["rbch_example"]),
+    ],
+    batch_item_id: Annotated[
+        str,
+        Path(description="Opaque durable report batch item identifier.", examples=["rbci_example"]),
+    ],
+    command: BatchItemReplayRequest,
+    replay_service: Any = Depends(get_report_batch_item_replay_service),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Idempotency key for this replay command."),
+    ] = None,
+) -> BatchItemReplayResponse:
+    try:
+        return _batch_item_replay_response(
+            replay_service.replay_item(
+                batch_id=batch_id,
+                batch_item_id=batch_item_id,
+                command=command,
+                caller_context=caller_context,
+                idempotency_key=idempotency_key,
+            )
+        )
+    except MissingIdempotencyKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
+        ) from exc
+    except InvalidReportJobTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_cannot_be_replayed"][
+                "detail"
+            ],
+        ) from exc
+    except ValueError as exc:
+        if str(exc) == "report_batch_item_cannot_be_replayed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_cannot_be_replayed"][
+                    "detail"
+                ],
+            ) from exc
         raise _not_found_error(exc) from exc
 
 
@@ -844,6 +1064,7 @@ async def run_report_batch_once(
     request: BatchWorkerRunRequest,
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     worker: ReportBatchWorkerPort = Depends(get_report_batch_worker),
+    batch_ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchWorkerRunResponse:
     started_at = perf_counter()
@@ -859,6 +1080,15 @@ async def run_report_batch_once(
     except ValueError as exc:
         raise _not_found_error(exc) from exc
     except RuntimeError as exc:
+        record_batch_worker_metrics(
+            recovered_count=0,
+            leased_count=0,
+            dispatched_count=0,
+            executed_count=0,
+            status="failed",
+            failure_category="batch_worker_runtime_error",
+            duration_seconds=perf_counter() - started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -874,4 +1104,5 @@ async def run_report_batch_once(
         skipped_reason=result.skipped_reason,
         duration_seconds=perf_counter() - started_at,
     )
+    record_batch_pressure_metrics(batch_ledger.batch_pressure_snapshot())
     return _worker_run_response(result)

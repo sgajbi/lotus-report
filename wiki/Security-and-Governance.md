@@ -19,6 +19,8 @@
 - typecheck is part of the fast gate
 - migration smoke and security audit are part of PR-grade validation
 - enterprise readiness and observability behavior are covered by unit tests
+- enterprise read authorization is toggle-backed with `ENTERPRISE_ENFORCE_READ_AUTHZ`; read audit
+  events are toggle-backed with `ENTERPRISE_AUDIT_READS`
 - portfolio review responses preserve source refs, readiness state, report coverage, and
   advisor/client separation so downstream consumers can distinguish sourced facts from missing
   evidence

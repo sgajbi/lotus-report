@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.reporting_jobs.ledger import (
+    InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobLedger,
     ReportJobNotFoundError,
@@ -15,7 +16,22 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_lineage.store import ReportInputSnapshotStore
-from app.reporting_render.service import get_portfolio_review_render_orchestration_service
+from app.reporting_render.regenerate_service import (
+    PortfolioReviewRegenerateService,
+    get_portfolio_review_regenerate_service,
+)
+from app.reporting_render.replay_service import (
+    PortfolioReviewReplayService,
+    get_portfolio_review_replay_service,
+)
+from app.reporting_render.rerender_service import (
+    PortfolioReviewRerenderService,
+    get_portfolio_review_rerender_service,
+)
+from app.reporting_render.service import (
+    PortfolioReviewRenderOrchestrationService,
+    get_portfolio_review_render_orchestration_service,
+)
 from app.routers.report_jobs import get_report_lineage_store
 
 
@@ -93,6 +109,7 @@ class _FakeCaptureService:
                     ),
                     "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
                     "as_of_date": job.as_of_date.isoformat(),
+                    "capture_sequence": self.calls,
                 },
                 snapshot_storage_ref=None,
                 supportability_status="complete",
@@ -145,6 +162,124 @@ class _FakeCaptureService:
 class _FakeRenderService:
     async def render_for_job(self, job):
         return job
+
+
+class _RerenderRenderClient:
+    def __init__(self, *, status_code=201, payload=None):
+        self.status_code = status_code
+        self.payload = payload
+        self.payloads = []
+
+    async def submit_render_package(self, payload, **kwargs):
+        self.payloads.append(payload)
+        if self.payload is not None:
+            return self.status_code, self.payload
+        return self.status_code, {
+            "status": "rendered",
+            "render_job_id": payload["render_job_id"],
+            "artifact_sha256": "sha256:rerender-artifact",
+            "bounded_determinism_fingerprint": "fingerprint-rerender",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 731,
+            "artifact_base64": "JVBERi0xLjQ=",
+        }
+
+
+class _RerenderArchiveClient:
+    def __init__(self, *, status_code=201, payload=None):
+        self.status_code = status_code
+        self.payload = payload or {"document_id": "doc_report_job_pdf_correction"}
+        self.payloads = []
+
+    async def archive_document(self, payload, **kwargs):
+        self.payloads.append(payload)
+        return self.status_code, self.payload
+
+
+def _install_rerender_service(ledger, lineage_store, render_client, archive_client):
+    service = PortfolioReviewRerenderService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        ledger=ledger,
+    )
+    app.dependency_overrides[get_portfolio_review_rerender_service] = lambda: service
+    return service
+
+
+def _install_regenerate_service(
+    ledger, lineage_store, capture_service, render_client, archive_client
+):
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    service = PortfolioReviewRegenerateService(
+        ledger=ledger,
+        snapshot_store=lineage_store,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    app.dependency_overrides[get_portfolio_review_regenerate_service] = lambda: service
+    return service
+
+
+def _install_replay_service(ledger, lineage_store, capture_service, render_client, archive_client):
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=capture_service,
+        render_service=render_service,
+    )
+    app.dependency_overrides[get_portfolio_review_replay_service] = lambda: service
+    return service
+
+
+def _create_archived_pdf_job(client, ledger):
+    payload = _payload()
+    payload["requested_output_formats"] = ["pdf"]
+    response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
+    assert response.status_code == 202
+    job_id = response.json()["report_job_id"]
+    ready = ledger.get_job(job_id)
+    rendered = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    ledger.mark_archiving(
+        job_id=rendered.job_id,
+        actor=rendered.triggered_by,
+        correlation_id=rendered.correlation_id,
+        trace_id=rendered.trace_id,
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+    )
+    return ledger.mark_archived(
+        job_id=rendered.job_id,
+        actor=rendered.triggered_by,
+        correlation_id=rendered.correlation_id,
+        trace_id=rendered.trace_id,
+        archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+        archive_document_id="doc_report_job_pdf",
+    )
 
 
 def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
@@ -231,6 +366,26 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             "data_ready",
             "cancelled",
         ]
+
+        diagnostics_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers(),
+        )
+        assert diagnostics_response.status_code == 200
+        diagnostics_body = diagnostics_response.json()
+        assert diagnostics_body["report_job_id"] == handle["report_job_id"]
+        assert diagnostics_body["status"]["status"] == "cancelled"
+        assert diagnostics_body["event_count"] == 4
+        assert diagnostics_body["latest_event"]["to_status"] == "cancelled"
+        assert diagnostics_body["snapshot"]["snapshot_id"].startswith("rsnap_")
+        assert diagnostics_body["lineage"]["upstream_call_count"] == 1
+        assert diagnostics_body["lineage"]["source_services"] == ["lotus-core"]
+        assert diagnostics_body["operation_links"]["status_url"] == (
+            f"/reports/jobs/{handle['report_job_id']}"
+        )
+        assert "snapshot_payload" not in str(diagnostics_body).lower()
+        assert "storage_ref" not in str(diagnostics_body).lower()
+        assert "response_payload" not in str(diagnostics_body).lower()
     finally:
         _clear_overrides()
 
@@ -428,6 +583,11 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
         unknown = client.get("/reports/jobs/rjob_missing", headers=_headers())
         assert unknown.status_code == 404
         assert unknown.json()["detail"]["code"] == "report_job_not_found"
+        unknown_diagnostics = client.get(
+            "/reports/jobs/rjob_missing/diagnostics", headers=_headers()
+        )
+        assert unknown_diagnostics.status_code == 404
+        assert unknown_diagnostics.json()["detail"]["code"] == "report_job_not_found"
 
         handle = client.post(
             "/reports/portfolio-reviews",
@@ -447,6 +607,149 @@ def test_report_job_unknown_and_duplicate_cancel_are_product_safe(tmp_path):
         assert duplicate_cancel.status_code == 409
         assert duplicate_cancel.json()["detail"]["code"] == "report_job_cannot_be_cancelled"
         assert "traceback" not in str(duplicate_cancel.json()).lower()
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_requires_caller_context(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        response = client.get("/reports/jobs/rjob_missing/diagnostics")
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "missing_caller_context"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_reports_missing_snapshot_without_payload_leak(tmp_path):
+    client, _ledger, lineage_store = _client(tmp_path)
+
+    class _NoSnapshotCaptureService:
+        async def capture_for_job(self, job):
+            return job
+
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _NoSnapshotCaptureService()
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-no-snapshot"),
+        ).json()
+
+        response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers("portfolio-review-no-snapshot"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["snapshot"] is None
+        assert body["lineage"] is None
+        assert body["operation_links"]["snapshot_url"] is None
+        assert body["operation_links"]["lineage_url"] is None
+        assert body["diagnostic_flags"] == ["snapshot_not_captured"]
+        assert "snapshot_payload" not in str(body).lower()
+        assert lineage_store.list_upstream_calls("missing") == []
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_reports_failed_retryable_job_flags(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-diagnostics-failed"),
+        ).json()
+        job_id = handle["report_job_id"]
+        failed = ledger.mark_failed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-diagnostics-failed",
+            trace_id="trace-diagnostics-failed",
+            failure_category="upstream_data_failed",
+            failure_message="Snapshot capture timed out.",
+            retry_eligible=True,
+        )
+
+        response = client.get(
+            f"/reports/jobs/{failed.job_id}/diagnostics",
+            headers=_headers("portfolio-review-diagnostics-failed"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"]["status"] == "failed"
+        assert body["diagnostic_flags"] == ["job_failed", "retry_eligible"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_reports_unarchived_render_flag(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-diagnostics-unarchived"),
+        ).json()
+        job_id = handle["report_job_id"]
+        rendered = ledger.mark_completed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-diagnostics-unarchived",
+            trace_id="trace-diagnostics-unarchived",
+            render_job_id=f"rdr_{job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+            artifact_sha256="sha256:artifact",
+            bounded_determinism_fingerprint="fingerprint",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+
+        response = client.get(
+            f"/reports/jobs/{rendered.job_id}/diagnostics",
+            headers=_headers("portfolio-review-diagnostics-unarchived"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"]["status"] == "completed"
+        assert body["diagnostic_flags"] == ["archive_not_completed"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_diagnostics_translates_lineage_store_unavailable(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+
+    class _UnavailableLineageStore:
+        def get_snapshot_by_job(self, _report_job_id):
+            raise RuntimeError("database connection failed")
+
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-lineage-unavailable"),
+        ).json()
+        app.dependency_overrides[get_report_lineage_store] = lambda: _UnavailableLineageStore()
+
+        response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/diagnostics",
+            headers=_headers("portfolio-review-lineage-unavailable"),
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "report_lineage_store_unavailable"
+        assert "database" not in str(response.json()).lower()
     finally:
         _clear_overrides()
 
@@ -484,6 +787,16 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     list_example = list_get["responses"]["200"]["content"]["application/json"]["example"]
     events_get = schema["paths"]["/reports/jobs/{job_id}/events"]["get"]
     events_example = events_get["responses"]["200"]["content"]["application/json"]["example"]
+    diagnostics_get = schema["paths"]["/reports/jobs/{job_id}/diagnostics"]["get"]
+    diagnostics_example = diagnostics_get["responses"]["200"]["content"]["application/json"][
+        "example"
+    ]
+    regenerate_post = schema["paths"]["/reports/jobs/{job_id}/regenerate"]["post"]
+    regenerate_example = regenerate_post["responses"]["202"]["content"]["application/json"][
+        "example"
+    ]
+    replay_post = schema["paths"]["/reports/jobs/{job_id}/replay"]["post"]
+    replay_example = replay_post["responses"]["202"]["content"]["application/json"]["example"]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
     assert response_example["report_job_id"].startswith("rjob_")
@@ -492,24 +805,58 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert status_example["archive"]["document_id"].startswith("doc_")
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
+    assert diagnostics_example["lineage"]["upstream_call_count"] == 3
+    assert diagnostics_example["operation_links"]["lineage_url"].endswith("/lineage")
+    assert "snapshot_payload" not in str(diagnostics_example)
+    assert regenerate_example["source_report_job_id"].startswith("rjob_")
+    assert regenerate_example["regenerated_report_job_id"].startswith("rjob_")
+    assert regenerate_example["new_snapshot_id"] != regenerate_example["previous_snapshot_id"]
+    assert (
+        regenerate_example["new_archive_document_id"]
+        != regenerate_example["previous_archive_document_id"]
+    )
+    assert regenerate_example["archive_consequence"] == "replacement"
+    assert replay_example["source_report_job_id"].startswith("rjob_")
+    assert replay_example["replayed_report_job_id"].startswith("rjob_")
+    assert replay_example["replayed_report_job_id"] != replay_example["source_report_job_id"]
+    assert replay_example["source_failure_category"] == "upstream_data_failed"
     assert "Report Jobs" in list_get["tags"]
+    assert "Report Jobs" in diagnostics_get["tags"]
+    assert "Report Jobs" in regenerate_post["tags"]
+    assert "Report Jobs" in replay_post["tags"]
     assert "what" in list_get["description"].lower() or "returns" in list_get["description"].lower()
     assert (
         "when" in list_get["description"].lower()
         or "use this endpoint" in list_get["description"].lower()
     )
+    assert "use this endpoint" in diagnostics_get["description"].lower()
+    assert "upstream" in regenerate_post["description"].lower()
+    assert "rerender" in regenerate_post["description"].lower()
+    assert "failed" in replay_post["description"].lower()
+    assert "rerender" in replay_post["description"].lower()
     assert "RFC-" not in str(request_example)
     assert "RFC-" not in str(response_example)
     assert "RFC-" not in str(status_example)
     assert "RFC-" not in str(list_example)
     assert "RFC-" not in str(events_example)
+    assert "RFC-" not in str(diagnostics_example)
+    assert "RFC-" not in str(regenerate_example)
+    assert "RFC-" not in str(replay_example)
     for schema_name in [
         "ReportJobHandleResponse",
         "ReportJobStatusResponse",
+        "ReportJobDiagnosticsResponse",
+        "ReportJobSnapshotDiagnostics",
+        "ReportJobLineageDiagnostics",
+        "ReportJobOperationLinks",
         "ReportJobListResponse",
         "ReportJobListItem",
         "ReportJobListFilters",
         "ReportJobStatusEventsResponse",
+        "ReportJobRegenerateRequest",
+        "ReportJobRegenerateResponse",
+        "ReportJobReplayRequest",
+        "ReportJobReplayResponse",
         "ReportStatusEvent",
         "ApiErrorResponse",
         "ApiErrorDetail",
@@ -581,5 +928,770 @@ def test_report_job_snapshot_endpoints_translate_missing_snapshot_rows(tmp_path)
         assert missing_snapshot.json()["detail"]["code"] == "report_snapshot_not_found"
         assert missing_snapshot_lineage.status_code == 404
         assert missing_snapshot_lineage.json()["detail"]["code"] == "report_snapshot_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        snapshot = lineage_store.get_snapshot_by_job(job.job_id)
+        capture_calls_after_create = capture_service.calls
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-template-correction"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["snapshot_id"] == snapshot.snapshot_id
+        assert body["snapshot_hash"] == snapshot.snapshot_hash
+        assert body["previous_render_job_id"] == f"rdr_{job.job_id}_pdf"
+        assert body["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert body["render"]["render_job_id"].startswith("rdr_rrnd_")
+        assert body["render"]["render_job_id"] != job.render_job_id
+        assert body["archive"]["document_id"] == "doc_report_job_pdf_correction"
+        assert body["archive_consequence"] == "correction"
+        assert capture_service.calls == capture_calls_after_create
+
+        assert len(render_client.payloads) == 1
+        assert render_client.payloads[0]["snapshot_id"] == snapshot.snapshot_id
+        assert "snapshot_hash" not in render_client.payloads[0]
+        assert "render_attempt_id" not in render_client.payloads[0]
+        assert len(archive_client.payloads) == 1
+        metadata = archive_client.payloads[0]["metadata"]
+        assert metadata["snapshot_id"] == snapshot.snapshot_id
+        assert metadata["snapshot_hash"] == snapshot.snapshot_hash
+        assert metadata["render_attempt_id"] == body["rerender_attempt_id"]
+        assert metadata["supersedes_render_job_id"] == f"rdr_{job.job_id}_pdf"
+        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
+        assert metadata["archive_consequence"] == "correction"
+
+        events = ledger.list_status_events(job.job_id)
+        assert [event.event_type for event in events][-2:] == [
+            "job_rerender_requested",
+            "job_rerender_archived",
+        ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        headers = _headers(f"rerender-{job.job_id}-same-key")
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_rejects_non_archived_job(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_rerender_service(
+        ledger,
+        lineage_store,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers(),
+        ).json()
+
+        response = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{handle['report_job_id']}-invalid"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_rerendered"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_reports_missing_snapshot(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_rerender_service(
+        ledger,
+        lineage_store,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+        missing_snapshot_store = ReportInputSnapshotStore(tmp_path / "empty-lineage.sqlite3")
+        _install_rerender_service(
+            ledger,
+            missing_snapshot_store,
+            _RerenderRenderClient(),
+            _RerenderArchiveClient(),
+        )
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-missing-snapshot"),
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"]["code"] == "report_job_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_render_validation_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=422,
+        payload={
+            "detail": {
+                "code": "render_package_invalid",
+                "message": "Render package failed contract validation.",
+            }
+        },
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-validation"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_validation_failed"
+        assert body["retry_eligible"] is False
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_retryable_render_execution_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=503,
+        payload={"failure_message": "Render worker unavailable."},
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-execution"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_execution_failed"
+        assert body["failure_message"] == "Render worker unavailable."
+        assert body["retry_eligible"] is True
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_non_retryable_render_conflict(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        status_code=409,
+        payload={"detail": "Render job already exists."},
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-render-conflict"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_conflict"
+        assert body["failure_message"] == "Render job already exists."
+        assert body["retry_eligible"] is False
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_missing_artifact_archive_validation_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        payload={
+            "status": "rendered",
+            "render_job_id": "rdr_missing_artifact",
+            "artifact_sha256": "sha256:rerender-artifact",
+            "bounded_determinism_fingerprint": "fingerprint-rerender",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 731,
+        },
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-missing-artifact"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "archive_validation_failed"
+        assert body["retry_eligible"] is False
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_rerender_records_archive_failure(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        status_code=503,
+        payload={
+            "detail": {
+                "code": "archive_storage_unavailable",
+                "message": "Archive storage is unavailable.",
+            }
+        },
+    )
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-archive-failure"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "archive_storage_failed"
+        assert body["retry_eligible"] is True
+        assert body["archive"]["archive_request_id"].startswith("arch_rdr_rrnd_")
+        assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_archive(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        payload={"document_id": "doc_report_job_pdf_replacement"}
+    )
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+        previous_snapshot = lineage_store.get_snapshot_by_job(source.job_id)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{source.job_id}-upstream-correction"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["source_report_job_id"] == source.job_id
+        assert body["regenerated_report_job_id"] != source.job_id
+        assert body["previous_snapshot_id"] == previous_snapshot.snapshot_id
+        assert body["new_snapshot_id"] != previous_snapshot.snapshot_id
+        assert body["previous_snapshot_hash"] == previous_snapshot.snapshot_hash
+        assert body["new_snapshot_hash"] != previous_snapshot.snapshot_hash
+        assert body["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert body["new_archive_document_id"] == "doc_report_job_pdf_replacement"
+        assert body["archive_consequence"] == "replacement"
+
+        new_calls = lineage_store.list_upstream_calls_by_job(body["regenerated_report_job_id"])
+        assert [call.service_name for call in new_calls] == ["lotus-core"]
+        metadata = archive_client.payloads[0]["metadata"]
+        assert metadata["supersedes_render_job_id"] == f"rdr_{source.job_id}_pdf"
+        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
+        assert metadata["archive_consequence"] == "replacement"
+        assert [event.event_type for event in ledger.list_status_events(source.job_id)][-2:] == [
+            "job_regenerate_requested",
+            "job_regenerate_archived",
+        ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        payload={"document_id": "doc_report_job_pdf_replacement"}
+    )
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+        headers = _headers(f"regenerate-{source.job_id}-same-key")
+        calls_after_source = capture_service.calls
+
+        first = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        assert capture_service.calls == calls_after_source + 1
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+        assert [
+            event.event_type
+            for event in ledger.list_status_events(source.job_id)
+            if event.event_type == "job_regenerate_archived"
+        ] == ["job_regenerate_archived"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_rejects_non_archived_job(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-regenerate-invalid"),
+        ).json()
+
+        response = client.post(
+            f"/reports/jobs/{handle['report_job_id']}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{handle['report_job_id']}-invalid"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_regenerated"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_records_upstream_failure_without_render(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+
+    class _FailingCaptureService:
+        async def capture_for_job(self, job):
+            ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            return ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="upstream_data_failed",
+                failure_message="Upstream report-data capture failed.",
+                retry_eligible=True,
+            )
+
+    capture_service = _FailingCaptureService()
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Certified upstream position correction."},
+            headers=_headers(f"regenerate-{source.job_id}-upstream-failure"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "upstream_data_failed"
+        assert body["retry_eligible"] is True
+        assert body["new_snapshot_id"] is None
+        assert len(render_client.payloads) == 0
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_regenerate_allows_partial_snapshot_lineage(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+
+    class _PartialCaptureService(_FakeCaptureService):
+        async def capture_for_job(self, job):
+            self.calls += 1
+            ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            snapshot = lineage_store.create_snapshot(
+                ReportInputSnapshotCreateRequest(
+                    report_job_id=job.job_id,
+                    report_type=job.report_type,
+                    report_data_contract_version="v1",
+                    portfolio_scope=job.portfolio_scope,
+                    as_of_date=job.as_of_date,
+                    snapshot_payload={
+                        "report_id": f"portfolio-review:{job.job_id}",
+                        "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
+                        "as_of_date": job.as_of_date.isoformat(),
+                        "capture_sequence": self.calls,
+                        "readiness": {"status": "partial"},
+                    },
+                    snapshot_storage_ref=None,
+                    supportability_status="partial",
+                    completeness_status="partial",
+                    lineage_summary={
+                        "source_services": ["lotus-core"],
+                        "call_count": 1,
+                        "supportability_status": "partial",
+                        "partial_call_count": 1,
+                        "unavailable_call_count": 0,
+                        "not_supported_call_count": 0,
+                        "redacted_call_count": 0,
+                    },
+                    captured_at=datetime.now(UTC),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            )
+            lineage_store.create_upstream_calls(
+                snapshot_id=snapshot.snapshot_id,
+                calls=[
+                    ReportUpstreamCallCreateRequest(
+                        service_name="lotus-core",
+                        endpoint="/reporting/portfolio-summary/query",
+                        method="POST",
+                        contract_version="v1",
+                        request_hash="sha256:req-partial",
+                        response_hash="sha256:resp-partial",
+                        response_ref=None,
+                        status_code=206,
+                        latency_ms=251,
+                        supportability_status="partial",
+                        completeness_status="partial",
+                        failure_category="none",
+                        failure_message=None,
+                        captured_at=datetime.now(UTC),
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                ],
+            )
+            return ledger.mark_data_ready(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+
+    capture_service = _PartialCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_partial_replacement"})
+    _install_regenerate_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        source = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{source.job_id}/regenerate",
+            json={"reason": "Refresh with partially supported upstream evidence."},
+            headers=_headers(f"regenerate-{source.job_id}-partial"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "archived"
+        assert body["new_snapshot_id"]
+        assert body["new_archive_document_id"] == "doc_partial_replacement"
+        snapshot = lineage_store.get_snapshot_by_job(body["regenerated_report_job_id"])
+        assert snapshot.supportability_status == "partial"
+        assert lineage_store.list_upstream_calls(snapshot.snapshot_id)[0].supportability_status == (
+            "partial"
+        )
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_report_job_pdf_replay"})
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        render_client,
+        archive_client,
+    )
+    try:
+        payload = _payload()
+        payload["requested_output_formats"] = ["pdf"]
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-replay-source"),
+        ).json()
+        source = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="upstream_data_failed",
+            failure_message="Upstream timeout.",
+            retry_eligible=True,
+        )
+        headers = _headers(f"replay-{source.job_id}-same-key")
+
+        first = client.post(
+            f"/reports/jobs/{source.job_id}/replay",
+            json={"reason": "Retry after upstream service recovered."},
+            headers=headers,
+        )
+        second = client.post(
+            f"/reports/jobs/{source.job_id}/replay",
+            json={"reason": "Retry after upstream service recovered."},
+            headers=headers,
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert second.json() == first.json()
+        body = first.json()
+        assert body["source_report_job_id"] == source.job_id
+        assert body["replayed_report_job_id"] != source.job_id
+        assert body["status"] == "archived"
+        assert body["source_failure_category"] == "upstream_data_failed"
+        assert body["archive"]["document_id"] == "doc_report_job_pdf_replay"
+        assert len(render_client.payloads) == 1
+        assert len(archive_client.payloads) == 1
+        assert [
+            event.event_type
+            for event in ledger.list_status_events(source.job_id)
+            if event.event_type == "job_replay_completed"
+        ] == ["job_replay_completed"]
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_rejects_non_retryable_and_archived_jobs(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        capture_service,
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-replay-nonretryable"),
+        ).json()
+        failed = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="validation_failed",
+            failure_message="Non retryable validation failure.",
+            retry_eligible=False,
+        )
+        archived = _create_archived_pdf_job(client, ledger)
+
+        nonretry_response = client.post(
+            f"/reports/jobs/{failed.job_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"replay-{failed.job_id}-invalid"),
+        )
+        archived_response = client.post(
+            f"/reports/jobs/{archived.job_id}/replay",
+            json={"reason": "Should be rejected."},
+            headers=_headers(f"replay-{archived.job_id}-invalid"),
+        )
+
+        assert nonretry_response.status_code == 409
+        assert archived_response.status_code == 409
+        assert nonretry_response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
+        assert archived_response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_error_mappings(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    _install_replay_service(
+        ledger,
+        lineage_store,
+        _FakeCaptureService(ledger, lineage_store),
+        _RerenderRenderClient(),
+        _RerenderArchiveClient(),
+    )
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-replay-errors"),
+        ).json()
+        failed = ledger.mark_failed(
+            job_id=handle["report_job_id"],
+            actor="advisor-123",
+            correlation_id="corr-report-job-1",
+            trace_id="trace-report-job-1",
+            failure_category="upstream_data_failed",
+            failure_message="Upstream timeout.",
+            retry_eligible=True,
+        )
+
+        missing_key = client.post(
+            f"/reports/jobs/{failed.job_id}/replay",
+            json={"reason": "Missing key."},
+            headers={key: value for key, value in _headers().items() if key != "Idempotency-Key"},
+        )
+        not_found = client.post(
+            "/reports/jobs/rjob_missing/replay",
+            json={"reason": "Missing job."},
+            headers=_headers("replay-missing-job"),
+        )
+
+        assert missing_key.status_code == 400
+        assert missing_key.json()["detail"]["code"] == "missing_idempotency_key"
+        assert not_found.status_code == 404
+        assert not_found.json()["detail"]["code"] == "report_job_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_job_replay_conflict_mapping() -> None:
+    class _ConflictReplayService:
+        async def replay_job(self, **_kwargs):
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+
+    app.dependency_overrides[get_portfolio_review_replay_service] = lambda: _ConflictReplayService()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/jobs/rjob_conflict/replay",
+            json={"reason": "Unsupported replay state."},
+            headers=_headers("replay-conflict"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
     finally:
         _clear_overrides()
