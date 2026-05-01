@@ -40,6 +40,12 @@ metric labels:
 The code-owned metric contract in `src/app/reporting_metrics.py` rejects unsupported and forbidden
 labels before the FastAPI application exposes `/metrics`.
 
+The RFC-0108 evidence-surface supportability metric is intentionally lossy when callers provide
+unexpected posture values. Unknown states are emitted as `state="unsupported"`, unknown reasons as
+`reason="supportability_unsupported"`, and unknown freshness values as
+`freshness_bucket="unknown"`. This keeps client, portfolio, tenant, trace, report, and raw upstream
+details out of Prometheus while preserving an operator-visible degraded posture.
+
 ## Dashboard Contract
 
 First-wave dashboards may reference only implemented metrics:

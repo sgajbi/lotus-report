@@ -344,13 +344,57 @@ def test_record_batch_pressure_metrics_clamps_counts() -> None:
 
 
 def test_record_evidence_surface_supportability_bounds_metric_labels() -> None:
+    captured_labels: list[dict[str, str]] = []
+
+    class _CapturedMetric:
+        def inc(self) -> None:
+            return None
+
+    class _CapturedCounter:
+        def labels(self, **labels: str) -> _CapturedMetric:
+            captured_labels.append(labels)
+            return _CapturedMetric()
+
+    original_counter = reporting_metrics._EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL
+    reporting_metrics._EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = _CapturedCounter()
+    try:
+        record_evidence_surface_supportability(
+            state="ready",
+            reason="evidence_surface_ready",
+            freshness_bucket="current",
+        )
+        record_evidence_surface_supportability(
+            state="bad-state",
+            reason="raw portfolio PB_SG_GLOBAL_BAL_001 client Alpha failure",
+            freshness_bucket="raw-client-date",
+        )
+    finally:
+        reporting_metrics._EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = original_counter
+
+    assert captured_labels == [
+        {
+            "state": "ready",
+            "reason": "evidence_surface_ready",
+            "freshness_bucket": "current",
+        },
+        {
+            "state": "unsupported",
+            "reason": "supportability_unsupported",
+            "freshness_bucket": "unknown",
+        },
+    ]
+    assert "PB_SG_GLOBAL_BAL_001" not in str(captured_labels)
+    assert "Alpha" not in str(captured_labels)
+
+
+def test_record_evidence_surface_supportability_accepts_degraded_empty_and_stale() -> None:
     record_evidence_surface_supportability(
-        state="ready",
-        reason="evidence_surface_ready",
-        freshness_bucket="current",
+        state="degraded",
+        reason="evidence_surface_degraded",
+        freshness_bucket="stale",
     )
     record_evidence_surface_supportability(
-        state="bad-state",
-        reason="raw portfolio PB_SG_GLOBAL_BAL_001 failure",
-        freshness_bucket="raw-client-date",
+        state="empty",
+        reason="evidence_surface_empty",
+        freshness_bucket="unknown",
     )
