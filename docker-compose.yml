@@ -42,7 +42,12 @@ services:
     build: .
     image: lotus-report:local
     container_name: lotus-report-batch-worker
-    command: ["python", "-m", "app.report_batch_orchestrator.process"]
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m app.runtime_schema && exec python -m app.report_batch_orchestrator.process",
+      ]
     environment:
       <<: *lotus-report-service-environment
       REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local
@@ -60,7 +65,12 @@ services:
     build: .
     image: lotus-report:local
     container_name: lotus-report-batch-scheduler
-    command: ["python", "-m", "app.report_batch_orchestrator.scheduler_process"]
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m app.runtime_schema && exec python -m app.report_batch_orchestrator.scheduler_process",
+      ]
     environment:
       <<: *lotus-report-service-environment
       REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local
