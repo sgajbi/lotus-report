@@ -9,6 +9,9 @@
 - `/metrics` exposes `lotus_report_evidence_surface_supportability_total` with only bounded
   `state`, `reason`, and `freshness_bucket` labels; it must not include report, portfolio, client,
   tenant, trace, or correlation identifiers
+- unexpected evidence-surface posture values are intentionally folded to `state="unsupported"`,
+  `reason="supportability_unsupported"`, and `freshness_bucket="unknown"` so operators can see the
+  degraded posture without leaking client, portfolio, report, tenant, trace, or raw upstream values
 - if aggregation requests fail, confirm `as_of_date` query handling and live/static mode intent
 - if summary/review requests fail validation, confirm request body date field shape and section limit
 
