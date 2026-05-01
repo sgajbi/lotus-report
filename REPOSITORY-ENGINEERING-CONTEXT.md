@@ -70,10 +70,14 @@ Current repository posture:
    `src/app/reporting_metrics.py`; later RFC-0105
    slices must extend those owners rather than adding one-off literal fields in routers, clients,
    dashboards, or operator APIs,
-12. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+12. Docker-local `lotus-report` startup now initializes and verifies the PostgreSQL report-job
+   ledger and report-input snapshot schema before serving readiness. The API, batch worker, and
+   scheduler containers all use the same schema guard so canonical `report.dev.lotus` evidence
+   fails fast on migration or volume drift instead of returning a misleading healthy container,
+13. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-13. CI is standardized but still lighter than some core domain services,
-14. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+14. CI is standardized but still lighter than some core domain services,
+15. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 

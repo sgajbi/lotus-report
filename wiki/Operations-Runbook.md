@@ -68,6 +68,9 @@
   host-published canonical upstream ports while callers continue to use `report.dev.lotus`
 - Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger
   parity; do not use a file database for runtime or integration evidence
+- Docker Compose containers initialize the PostgreSQL report-job ledger and report-input snapshot
+  migrations before serving the API, worker, or scheduler process. `/health/ready` must remain 503
+  when those tables are absent, and a fresh volume should become ready without manual SQL.
 
 ## RFC-0104 batch reporting posture
 

@@ -15,12 +15,33 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "condition: service_healthy" in compose
     assert '"host.docker.internal:host-gateway"' in compose
     assert "lotus-report-batch-worker:" in compose
-    assert 'command: ["python", "-m", "app.report_batch_orchestrator.process"]' in compose
+    assert "python -m app.runtime_schema" in compose
+    assert "exec python -m app.report_batch_orchestrator.process" in compose
     assert "REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local" in compose
     assert "REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS" in compose
     assert "REPORT_BATCH_WORKER_MAX_ACTIVE_ITEMS" in compose
     assert "lotus-report-batch-scheduler:" in compose
-    assert 'command: ["python", "-m", "app.report_batch_orchestrator.scheduler_process"]' in compose
+    assert "exec python -m app.report_batch_orchestrator.scheduler_process" in compose
     assert "REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local" in compose
     assert "REPORT_BATCH_SCHEDULES_JSON:" in compose
     assert 'REPORT_BATCH_SCHEDULES_JSON: "[]"' in compose
+
+
+def test_docker_image_copies_migrations_and_initializes_postgres_schema_before_api() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY migrations /app/migrations" in dockerfile
+    assert "python -m app.runtime_schema" in dockerfile
+    assert "exec uvicorn app.main:app --host 0.0.0.0 --port 8300" in dockerfile
+
+
+def test_runtime_schema_guard_checks_ledger_and_snapshot_store() -> None:
+    runtime_schema = (ROOT / "src" / "app" / "runtime_schema.py").read_text(encoding="utf-8")
+
+    assert "pg_advisory_lock" in runtime_schema
+    assert "pg_advisory_unlock" in runtime_schema
+    assert "def ensure_runtime_schema() -> None:" in runtime_schema
+    assert "with _runtime_schema_lock(database_url):" in runtime_schema
+    assert "PostgresReportBatchLedger(database_url).check_ready()" in runtime_schema
+    assert "PostgresReportInputSnapshotStore(database_url).check_ready()" in runtime_schema
+    assert 'if __name__ == "__main__":' in runtime_schema
