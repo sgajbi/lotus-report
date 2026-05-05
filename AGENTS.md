@@ -32,7 +32,19 @@ Always:
 6. write meaningful, high-value tests and avoid superficial coverage,
 7. keep commits small, meaningful, and truthful,
 8. remove dead code, duplicate logic, and stale non-standard handling when encountered,
-9. ensure every UI feature is genuinely backed by supported backend functionality.
+9. ensure every UI feature is genuinely backed by supported backend functionality,
+10. ensure RFC/docs/wiki/context/contract closure truth is present on `main`, not stranded on an
+    unmerged side branch.
+
+For RFC, documentation, wiki, context, contract, supported-features, API-governance, migration, or
+CI-workflow changes, run stranded-truth reconciliation before starting implementation, before final
+closure, and before moving to the next RFC:
+
+1. `git fetch origin --prune`,
+2. `git branch -r --no-merged origin/main`,
+3. inspect unmerged branches that touch durable governance paths,
+4. classify each as `must-merge`, `cherry-pick`, `superseded`, `delete`, or `active`,
+5. merge, cherry-pick, explicitly supersede, or delete unique durable truth before claiming closure.
 
 ## Delivery Posture
 
