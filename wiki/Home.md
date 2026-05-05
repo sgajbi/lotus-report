@@ -13,6 +13,8 @@
 
 - active reporting orchestration service in the canonical front-office stack
 - portfolio review report is live as a machine-readable client/advisor meeting-pack contract
+- post-trade outcome-review report jobs are live for manage-owned `DpmOutcomeReportInput`
+  snapshots, render-package assembly, and report-to-archive lifecycle handoff
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
@@ -29,6 +31,7 @@ This repo owns:
 
 - reporting read-model aggregation
 - portfolio summary and portfolio review payload shaping
+- outcome-review report artifact orchestration from manage-owned bounded report input
 - reporting capability publication for downstream consumers
 
 This repo does not own:

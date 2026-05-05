@@ -11,6 +11,7 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 from app.reporting_jobs.models import (
+    OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
@@ -48,20 +49,66 @@ def canonical_json(value: Any) -> str:
 def compute_request_hash(
     *,
     report_type: str,
-    request: PortfolioReviewJobRequest,
+    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
     caller_context: ReportCallerContext,
 ) -> str:
+    portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
+        report_type=report_type,
+        request=request,
+    )
     hash_payload = {
         "report_type": report_type,
-        "portfolio_scope": request.portfolio_scope,
-        "as_of_date": request.as_of_date.isoformat(),
-        "requested_output_formats": sorted(request.requested_output_formats),
-        "reporting_currency": request.reporting_currency,
-        "options": request.options,
+        "portfolio_scope": portfolio_scope,
+        "as_of_date": as_of_date.isoformat(),
+        "requested_output_formats": sorted(output_formats),
+        "reporting_currency": reporting_currency,
+        "options": options,
         "tenant_id": caller_context.tenant_id,
         "region": caller_context.region,
     }
     return hashlib.sha256(canonical_json(hash_payload).encode("utf-8")).hexdigest()
+
+
+def _request_parts(
+    *,
+    report_type: str,
+    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
+    if isinstance(request, PortfolioReviewJobRequest):
+        return (
+            request.portfolio_scope,
+            request.as_of_date,
+            request.requested_output_formats,
+            request.reporting_currency,
+            request.options,
+        )
+    report_input = request.outcome_report_input
+    portfolio_id = str(report_input.get("portfolio_id") or "").strip()
+    if not portfolio_id:
+        raise ValueError("outcome_report_input.portfolio_id is required")
+    review_window = report_input.get("review_window")
+    review_window_payload = review_window if isinstance(review_window, dict) else {}
+    as_of_text = (
+        review_window_payload.get("end_date")
+        or review_window_payload.get("period_end")
+        or report_input.get("generated_at")
+    )
+    if not as_of_text:
+        raise ValueError("outcome_report_input review window end date is required")
+    as_of_date = date.fromisoformat(str(as_of_text)[:10])
+    options = dict(request.options)
+    options["outcome_report_input"] = report_input
+    portfolio_scope = {
+        "portfolio_ids": [portfolio_id],
+        "outcome_review_id": report_input.get("outcome_review_id"),
+    }
+    return (
+        portfolio_scope,
+        as_of_date,
+        request.requested_output_formats,
+        request.reporting_currency,
+        options,
+    )
 
 
 class ReportJobLedger:
@@ -221,12 +268,48 @@ class ReportJobLedger:
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="portfolio_review",
+            accepted_message="Portfolio review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
+    def create_outcome_review_report_job(
+        self,
+        *,
+        request: OutcomeReviewReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="outcome_review",
+            accepted_message="Outcome review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
+    def _create_report_job(
+        self,
+        *,
+        report_type: str,
+        accepted_message: str,
+        request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
 
+        portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
+            report_type=report_type,
+            request=request,
+        )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
-            report_type="portfolio_review",
+            report_type=report_type,
             request=request,
             caller_context=caller_context,
         )
@@ -252,9 +335,9 @@ class ReportJobLedger:
                 request_id = f"rrq_{uuid4().hex}"
                 job_id = f"rjob_{uuid4().hex}"
                 now_text = _dt_to_text(now)
-                portfolio_scope_json = canonical_json(request.portfolio_scope)
-                output_formats_json = canonical_json(sorted(request.requested_output_formats))
-                options_json = canonical_json(request.options)
+                portfolio_scope_json = canonical_json(portfolio_scope)
+                output_formats_json = canonical_json(sorted(output_formats))
+                options_json = canonical_json(options)
 
                 connection.execute(
                     """
@@ -269,11 +352,11 @@ class ReportJobLedger:
                     """,
                     (
                         request_id,
-                        "portfolio_review",
+                        report_type,
                         portfolio_scope_json,
                         output_formats_json,
-                        request.as_of_date.isoformat(),
-                        request.reporting_currency,
+                        as_of_date.isoformat(),
+                        reporting_currency,
                         options_json,
                         caller_context.trigger_type,
                         caller_context.triggered_by,
@@ -302,7 +385,7 @@ class ReportJobLedger:
                     (
                         job_id,
                         request_id,
-                        "portfolio_review",
+                        report_type,
                         portfolio_scope_json,
                         "accepted",
                         None,
@@ -323,7 +406,7 @@ class ReportJobLedger:
                     from_status=None,
                     to_status="accepted",
                     event_type="job_accepted",
-                    message="Portfolio review report job accepted.",
+                    message=accepted_message,
                     actor=caller_context.triggered_by,
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,

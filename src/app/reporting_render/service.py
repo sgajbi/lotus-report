@@ -152,8 +152,8 @@ class PortfolioReviewRenderOrchestrationService:
             trace_id=job.trace_id,
             render_job_id=render_job_id,
             output_format="pdf",
-            template_id="portfolio-review",
-            template_version="v1",
+            template_id=str(payload.get("template_id") or "portfolio-review"),
+            template_version=str(payload.get("template_version") or "v1"),
         )
 
         status_code, response_payload = await self._render_client.submit_render_package(
@@ -169,8 +169,10 @@ class PortfolioReviewRenderOrchestrationService:
                 trace_id=job.trace_id,
                 render_job_id=str(response_payload.get("render_job_id") or render_job_id),
                 output_format="pdf",
-                template_id=str(response_payload.get("template_id") or "portfolio-review"),
-                template_version=str(response_payload.get("template_version") or "v1"),
+                template_id=str(response_payload.get("template_id") or payload.get("template_id")),
+                template_version=str(
+                    response_payload.get("template_version") or payload.get("template_version")
+                ),
                 artifact_sha256=_optional_str(response_payload.get("artifact_sha256")),
                 bounded_determinism_fingerprint=_optional_str(
                     response_payload.get("bounded_determinism_fingerprint")

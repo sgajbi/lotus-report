@@ -13,6 +13,12 @@ def _build_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
 ) -> dict[str, Any]:
+    if job.report_type == "outcome_review":
+        return _build_outcome_review_render_package(
+            job=job,
+            snapshot=snapshot,
+            render_job_id=render_job_id,
+        )
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
     mandate_profile = _as_dict(client_profile.get("mandate_profile"))
@@ -173,6 +179,83 @@ def _build_render_package(
         "report_data": report_data,
         "lineage_refs": [job.job_id],
         "disclosure_refs": ["portfolio-review.standard-disclosures.v1"],
+        "requested_by": job.triggered_by,
+        "correlation_id": job.correlation_id,
+        "trace_id": job.trace_id,
+    }
+
+
+def _build_outcome_review_render_package(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+    render_job_id: str,
+) -> dict[str, Any]:
+    review_window = _as_dict(snapshot.get("review_window"))
+    dimensions = [
+        {
+            "dimension": _optional_str(item.get("dimension")) or "not_available",
+            "state": _optional_str(item.get("state")) or "not_available",
+            "reason_code": _optional_str(item.get("reason_code")) or "not_available",
+            "expected": _optional_str(item.get("expected")) or "not_available",
+            "realized": _optional_str(item.get("realized")) or "not_available",
+            "variance": _optional_str(item.get("variance")) or "not_available",
+            "explanation": _optional_str(item.get("explanation")) or "No explanation supplied.",
+        }
+        for item in snapshot.get("dimensions", [])
+        if isinstance(item, dict)
+    ]
+    source_services = sorted(
+        {
+            _optional_str(item.get("source_system")) or "lotus-manage"
+            for item in snapshot.get("source_lineage", [])
+            if isinstance(item, dict)
+        }
+        or {"lotus-manage"}
+    )
+    portfolio_id = _optional_str(snapshot.get("portfolio_id")) or "Portfolio"
+    report_data = {
+        "title": _optional_str(snapshot.get("report_title"))
+        or f"Post-Trade Outcome Review - {portfolio_id}",
+        "portfolio_id": _optional_str(snapshot.get("portfolio_id")) or "not_available",
+        "outcome_review_id": _optional_str(snapshot.get("outcome_review_id")) or "not_available",
+        "proof_pack_id": _optional_str(snapshot.get("proof_pack_id")) or "not_available",
+        "rebalance_run_id": _optional_str(snapshot.get("rebalance_run_id")) or "not_available",
+        "wave_id": _optional_str(snapshot.get("wave_id")) or "not_available",
+        "state": _optional_str(snapshot.get("state")) or "not_available",
+        "overall_outcome": _optional_str(snapshot.get("overall_outcome"))
+        or "Outcome summary was not supplied.",
+        "review_window_start": _optional_str(review_window.get("start_date"))
+        or _optional_str(review_window.get("period_start"))
+        or "not_available",
+        "review_window_end": _optional_str(review_window.get("end_date"))
+        or _optional_str(review_window.get("period_end"))
+        or job.as_of_date.isoformat(),
+        "dimensions": dimensions,
+        "source_services": source_services,
+        "source_hashes": _as_dict(snapshot.get("source_hashes")),
+        "section_hashes": _as_dict(snapshot.get("section_hashes")),
+        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
+        "outcome_review_content_hash": _optional_str(snapshot.get("outcome_review_content_hash"))
+        or "not_available",
+        "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+    }
+    return {
+        "render_package_version": "render_package.v1",
+        "render_job_id": render_job_id,
+        "report_job_id": job.job_id,
+        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
+        "report_type": job.report_type,
+        "report_data_contract_version": "dpm_outcome_report_input.v1",
+        "template_id": "outcome-review",
+        "template_version": "v1",
+        "locale": "en-SG",
+        "brand_variant": "private_banking",
+        "output_format": "pdf",
+        "render_context": {"timezone": "Asia/Singapore"},
+        "report_data": report_data,
+        "lineage_refs": [job.job_id, report_data["outcome_review_id"], report_data["content_hash"]],
+        "disclosure_refs": ["outcome-review.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,

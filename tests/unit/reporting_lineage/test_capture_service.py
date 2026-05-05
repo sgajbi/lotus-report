@@ -8,7 +8,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.reporting_jobs.ledger import ReportJobLedger
-from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.models import (
+    OutcomeReviewReportJobRequest,
+    PortfolioReviewJobRequest,
+    ReportCallerContext,
+)
 from app.reporting_lineage import service as lineage_service
 from app.reporting_lineage.capture_service import (
     PortfolioReviewSnapshotCaptureService,
@@ -41,6 +45,31 @@ def _request(**overrides):
     return PortfolioReviewJobRequest.model_validate(payload)
 
 
+def _outcome_request(**overrides):
+    outcome_report_input = {
+        "contract_version": "1.0",
+        "outcome_review_id": "dor_001",
+        "outcome_review_content_hash": "sha256:outcome-review",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
+        "generated_at": "2026-04-23T09:00:00Z",
+        "state": "READY",
+        "dimensions": [],
+        "source_lineage": [],
+        "source_hashes": {"realized": "sha256:realized"},
+        "section_hashes": {"proof_pack": "sha256:proof-pack"},
+        "content_hash": "sha256:report-input",
+    }
+    payload = {
+        "outcome_report_input": outcome_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return OutcomeReviewReportJobRequest.model_validate(payload)
+
+
 def _caller(**overrides):
     payload = {
         "triggered_by": "advisor-123",
@@ -61,6 +90,17 @@ def _create_job(tmp_path, *, suffix: str = "capture"):
     store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
     job = ledger.create_portfolio_review_job(
         request=_request(),
+        caller_context=_caller(),
+        idempotency_key=f"idem-{suffix}",
+    )
+    return ledger, store, job
+
+
+def _create_outcome_job(tmp_path, *, suffix: str = "outcome-capture"):
+    ledger = ReportJobLedger(tmp_path / f"jobs-{suffix}.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
+    job = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
         caller_context=_caller(),
         idempotency_key=f"idem-{suffix}",
     )
@@ -214,6 +254,91 @@ async def test_capture_service_records_snapshot_and_lineage_for_success(monkeypa
         "accepted",
         "collecting_data",
         "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_records_outcome_review_snapshot_and_manage_lineage(tmp_path):
+    ledger, store, job = _create_outcome_job(tmp_path, suffix="outcome-success")
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.report_type == "outcome_review"
+    assert snapshot.report_data_contract_version == "dpm_outcome_report_input.v1"
+    assert snapshot.snapshot_payload["outcome_review_id"] == "dor_001"
+    assert snapshot.lineage_summary == {
+        "source_services": ["lotus-manage"],
+        "call_count": 0,
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "outcome_review_id": "dor_001",
+        "source_hash": "sha256:report-input",
+    }
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert len(calls) == 1
+    assert calls[0].service_name == "lotus-manage"
+    assert calls[0].endpoint == "/api/v1/rebalance/outcome-reviews/{outcome_review_id}/report-input"
+    assert calls[0].request_hash == "sha256:outcome-review"
+    assert calls[0].response_hash == "sha256:report-input"
+    assert calls[0].response_ref == "dor_001"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_reuses_existing_outcome_review_snapshot(tmp_path):
+    ledger, store, job = _create_outcome_job(tmp_path, suffix="outcome-existing")
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type="outcome_review",
+            report_data_contract_version="dpm_outcome_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=job.options["outcome_report_input"],
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-manage"], "call_count": 0},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_fails_outcome_review_without_report_input(tmp_path):
+    ledger, store, job = _create_outcome_job(tmp_path, suffix="outcome-missing-input")
+    malformed_job = job.model_copy(update={"options": {}})
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(malformed_job)
+
+    assert record.status == "failed"
+    assert record.failure_category == "validation_failed"
+    assert (
+        record.failure_message == "Outcome-review report input was not present in the report job."
+    )
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "failed",
     ]
 
 

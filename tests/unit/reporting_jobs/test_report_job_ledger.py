@@ -15,6 +15,7 @@ from app.reporting_jobs.ledger import (
     _record_matches_filters,
 )
 from app.reporting_jobs.models import (
+    OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobListFilters,
@@ -31,6 +32,25 @@ def _request(**overrides):
     }
     payload.update(overrides)
     return PortfolioReviewJobRequest.model_validate(payload)
+
+
+def _outcome_request(**overrides):
+    outcome_report_input = {
+        "contract_version": "1.0",
+        "outcome_review_id": "dor_001",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
+        "generated_at": "2026-04-23T09:00:00Z",
+        "content_hash": "sha256:report-input",
+    }
+    payload = {
+        "outcome_report_input": outcome_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return OutcomeReviewReportJobRequest.model_validate(payload)
 
 
 def _caller(**overrides):
@@ -74,6 +94,77 @@ def test_report_job_ledger_creates_request_job_and_append_only_event(tmp_path):
     assert events[0].from_status is None
     assert events[0].to_status == "accepted"
     assert events[0].event_type == "job_accepted"
+
+
+def test_report_job_ledger_creates_outcome_review_request_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    record = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome",
+    )
+
+    assert record.report_type == "outcome_review"
+    assert record.status == "accepted"
+    assert record.portfolio_scope == {
+        "portfolio_ids": ["PB_SG_GLOBAL_BAL_001"],
+        "outcome_review_id": "dor_001",
+    }
+    assert record.as_of_date == date(2026, 4, 23)
+    assert record.options["outcome_report_input"]["content_hash"] == "sha256:report-input"
+    events = ledger.list_status_events(record.job_id)
+    assert events[0].message == "Outcome review report job accepted."
+
+
+def test_report_job_ledger_returns_duplicate_outcome_review_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    first = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-duplicate",
+    )
+    second = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-duplicate",
+    )
+
+    assert second.request_id == first.request_id
+    assert second.job_id == first.job_id
+    assert len(ledger.list_status_events(first.job_id)) == 1
+
+
+def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    missing_portfolio_request = _outcome_request(
+        outcome_report_input={
+            "contract_version": "1.0",
+            "outcome_review_id": "dor_001",
+            "review_window": {"end_date": "2026-04-23"},
+        }
+    )
+    missing_window_request = _outcome_request(
+        outcome_report_input={
+            "contract_version": "1.0",
+            "outcome_review_id": "dor_001",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        }
+    )
+
+    with pytest.raises(ValueError, match="portfolio_id is required"):
+        ledger.create_outcome_review_report_job(
+            request=missing_portfolio_request,
+            caller_context=_caller(),
+            idempotency_key="idem-missing-portfolio",
+        )
+    with pytest.raises(ValueError, match="review window end date is required"):
+        ledger.create_outcome_review_report_job(
+            request=missing_window_request,
+            caller_context=_caller(),
+            idempotency_key="idem-missing-window",
+        )
 
 
 def test_report_job_ledger_returns_duplicate_for_same_idempotency_key_and_hash(tmp_path):

@@ -81,6 +81,66 @@ class PortfolioReviewJobRequest(BaseModel):
     )
 
 
+class OutcomeReviewReportJobRequest(BaseModel):
+    outcome_report_input: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Manage-owned DpmOutcomeReportInput payload. lotus-report treats this as bounded "
+            "source truth for outcome-review report generation and never recomputes outcome facts."
+        ),
+        examples=[
+            {
+                "contract_version": "1.0",
+                "outcome_review_id": "dor_001",
+                "outcome_review_content_hash": "sha256:outcome-review",
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "proof_pack_id": "dpp_001",
+                "review_window": {
+                    "start_date": "2026-04-22",
+                    "end_date": "2026-04-23",
+                },
+                "generated_at": "2026-04-23T09:00:00Z",
+                "report_title": "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001",
+                "report_audience": ["portfolio_manager", "cio_office", "audit"],
+                "state": "READY",
+                "overall_outcome": "Execution outcome aligned with pre-trade proof.",
+                "dimensions": [],
+                "source_lineage": [],
+                "source_hashes": {"realized": "sha256:realized"},
+                "section_hashes": {"proof_pack": "sha256:proof-pack"},
+                "redaction_policy": "NO_RAW_PAYLOADS",
+                "evidence_ref": {
+                    "source_system": "lotus-manage",
+                    "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                    "source_id": "dor_001:dpm_outcome_report_input",
+                    "content_hash": "sha256:report-input",
+                },
+                "content_hash": "sha256:report-input",
+            }
+        ],
+    )
+    requested_output_formats: list[str] = Field(
+        default_factory=lambda: ["pdf"],
+        description=(
+            "Requested output formats. Outcome-review report jobs are intended for governed PDF "
+            "artifact generation; JSON-only jobs may be used for snapshot certification."
+        ),
+        examples=[["pdf"], ["json"]],
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Optional reporting currency used for request hashing and render context.",
+        examples=["USD"],
+    )
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Output-affecting report options such as retention policy or template controls."
+        ),
+        examples=[{"retention_policy_id": "generated-report-standard"}],
+    )
+
+
 PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
     "as_of_date": "2026-04-22",
@@ -90,6 +150,15 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
         "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS"],
         "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
     },
+}
+
+OUTCOME_REVIEW_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
+    "outcome_report_input": OutcomeReviewReportJobRequest.model_fields[
+        "outcome_report_input"
+    ].examples[0],
+    "requested_output_formats": ["pdf"],
+    "reporting_currency": "USD",
+    "options": {"retention_policy_id": "generated-report-standard"},
 }
 
 
