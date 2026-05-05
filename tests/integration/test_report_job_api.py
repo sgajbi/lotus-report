@@ -577,6 +577,54 @@ def test_outcome_review_report_job_captures_manage_report_input_snapshot(tmp_pat
         _clear_overrides()
 
 
+def test_outcome_review_report_job_requires_idempotency_key(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    headers = {key: value for key, value in _headers().items() if key != "Idempotency-Key"}
+    try:
+        response = client.post(
+            "/reports/outcome-reviews",
+            json=_outcome_payload(),
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == {
+            "code": "missing_idempotency_key",
+            "message": "Idempotency-Key is required.",
+        }
+    finally:
+        _clear_overrides()
+
+
+def test_outcome_review_report_job_rejects_idempotency_conflict(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    conflict_payload = _outcome_payload()
+    conflict_payload["outcome_report_input"] = {
+        **conflict_payload["outcome_report_input"],
+        "content_hash": "sha256:changed-report-input",
+    }
+    try:
+        first = client.post(
+            "/reports/outcome-reviews",
+            json=_outcome_payload(),
+            headers=_headers("outcome-review-conflict"),
+        )
+        second = client.post(
+            "/reports/outcome-reviews",
+            json=conflict_payload,
+            headers=_headers("outcome-review-conflict"),
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 409
+        assert second.json()["detail"] == {
+            "code": "idempotency_conflict",
+            "message": "Idempotency-Key was reused with a different report request.",
+        }
+    finally:
+        _clear_overrides()
+
+
 def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
     client, ledger, _lineage_store = _client(tmp_path)
     try:
