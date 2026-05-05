@@ -33,7 +33,8 @@ Always:
 7. keep commits small, meaningful, and truthful,
 8. remove dead code, duplicate logic, and stale non-standard handling when encountered,
 9. ensure every UI feature is genuinely backed by supported backend functionality,
-10. ensure RFC/docs/wiki/context/contract closure truth is present on `main`, not stranded on an
+10. treat "merged to `main` and validated" as the definition of done; ensure
+    RFC/docs/wiki/context/contract closure truth is present on `main`, not stranded on an
     unmerged side branch.
 
 For RFC, documentation, wiki, context, contract, supported-features, API-governance, migration, or
