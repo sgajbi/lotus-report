@@ -572,7 +572,7 @@ async def submit_portfolio_review_job(
         "`DpmOutcomeReportInput`. Use this endpoint when Gateway, Workbench, operations, or "
         "report automation need a governed PDF artifact for an existing outcome review. "
         "lotus-report persists the supplied manage handoff as the immutable snapshot, records "
-        "lineage back to lotus-manage, submits a first-class outcome-review render package to "
+        "lineage back to lotus-manage, submits a versioned outcome-review render package to "
         "lotus-render when PDF is requested, and hands successful artifacts to lotus-archive. "
         "It does not recompute expected-versus-realized outcomes."
     ),
