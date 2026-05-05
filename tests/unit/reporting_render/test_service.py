@@ -3,7 +3,11 @@ from datetime import UTC, datetime
 import pytest
 
 from app.reporting_jobs.ledger import ReportJobLedger
-from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.models import (
+    OutcomeReviewReportJobRequest,
+    PortfolioReviewJobRequest,
+    ReportCallerContext,
+)
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render import service as render_service
@@ -1049,6 +1053,61 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
         "data_quality_status": "quality_passed",
         "readiness_status": "ready",
     }
+
+
+def test_build_render_package_emits_outcome_review_contract(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_outcome_review_report_job(
+        request=OutcomeReviewReportJobRequest.model_validate(
+            {
+                "outcome_report_input": {
+                    "outcome_review_id": "dor_001",
+                    "outcome_review_content_hash": "sha256:outcome-review",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "proof_pack_id": "dpp_001",
+                    "rebalance_run_id": "run_001",
+                    "wave_id": "wave_001",
+                    "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
+                    "report_title": "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001",
+                    "state": "READY",
+                    "overall_outcome": "Execution outcome aligned with pre-trade proof.",
+                    "dimensions": [
+                        {
+                            "dimension": "PERFORMANCE",
+                            "state": "READY",
+                            "reason_code": "performance_realized",
+                            "expected": "4.10",
+                            "realized": "4.22",
+                            "variance": "0.12",
+                            "explanation": "Realized performance exceeded expected performance.",
+                        }
+                    ],
+                    "source_lineage": [{"source_system": "lotus-manage"}],
+                    "source_hashes": {"realized": "sha256:realized"},
+                    "section_hashes": {"proof_pack": "sha256:proof-pack"},
+                    "content_hash": "sha256:report-input",
+                    "redaction_policy": "NO_RAW_PAYLOADS",
+                },
+                "requested_output_formats": ["pdf"],
+            }
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-render",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        snapshot=job.options["outcome_report_input"],
+        render_job_id="rdr-outcome",
+    )
+
+    assert payload["report_type"] == "outcome_review"
+    assert payload["report_data_contract_version"] == "dpm_outcome_report_input.v1"
+    assert payload["template_id"] == "outcome-review"
+    assert payload["report_data"]["outcome_review_id"] == "dor_001"
+    assert payload["report_data"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+    assert payload["report_data"]["dimensions"][0]["variance"] == "0.12"
+    assert payload["lineage_refs"] == [job.job_id, "dor_001", "sha256:report-input"]
 
 
 def test_render_service_helpers_cover_fallback_branches(monkeypatch):

@@ -17,10 +17,12 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobNotFoundError,
+    _request_parts,
     compute_request_hash,
     utc_now,
 )
 from app.reporting_jobs.models import (
+    OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
@@ -117,12 +119,48 @@ class PostgresReportJobLedger:
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="portfolio_review",
+            accepted_message="Portfolio review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
+    def create_outcome_review_report_job(
+        self,
+        *,
+        request: OutcomeReviewReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="outcome_review",
+            accepted_message="Outcome review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
+    def _create_report_job(
+        self,
+        *,
+        report_type: str,
+        accepted_message: str,
+        request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
 
+        portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
+            report_type=report_type,
+            request=request,
+        )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
-            report_type="portfolio_review",
+            report_type=report_type,
             request=request,
             caller_context=caller_context,
         )
@@ -160,12 +198,12 @@ class PostgresReportJobLedger:
                     """,
                     (
                         request_id,
-                        "portfolio_review",
-                        Jsonb(request.portfolio_scope),
-                        Jsonb(sorted(request.requested_output_formats)),
-                        request.as_of_date,
-                        request.reporting_currency,
-                        Jsonb(request.options),
+                        report_type,
+                        Jsonb(portfolio_scope),
+                        Jsonb(sorted(output_formats)),
+                        as_of_date,
+                        reporting_currency,
+                        Jsonb(options),
                         caller_context.trigger_type,
                         caller_context.triggered_by,
                         caller_context.caller_application,
@@ -201,8 +239,8 @@ class PostgresReportJobLedger:
                     (
                         job_id,
                         request_id,
-                        "portfolio_review",
-                        Jsonb(request.portfolio_scope),
+                        report_type,
+                        Jsonb(portfolio_scope),
                         "accepted",
                         None,
                         None,
@@ -234,7 +272,7 @@ class PostgresReportJobLedger:
                     from_status=None,
                     to_status="accepted",
                     event_type="job_accepted",
-                    message="Portfolio review report job accepted.",
+                    message=accepted_message,
                     actor=caller_context.triggered_by,
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,

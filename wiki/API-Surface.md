@@ -19,6 +19,10 @@
 - `POST /reports/portfolio-reviews`
   internal durable portfolio review report job initiation; returns a job handle and, for PDF jobs,
   may advance through render completion before the response returns
+- `POST /reports/outcome-reviews`
+  internal durable post-trade outcome-review report job initiation from manage-owned
+  `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to
+  `lotus-manage`, and uses the governed render/archive lifecycle for PDF artifacts
 - `GET /reports/jobs`
   internal operator-safe bounded search for report jobs by tenant, region, status, report type,
   portfolio id, as-of date, idempotency key, correlation id, and created-at window

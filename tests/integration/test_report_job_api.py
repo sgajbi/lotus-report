@@ -66,6 +66,66 @@ def _payload():
     }
 
 
+def _outcome_payload():
+    return {
+        "outcome_report_input": {
+            "contract_version": "1.0",
+            "outcome_review_id": "dor_001",
+            "outcome_review_content_hash": "sha256:outcome-review",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "mandate_id": "mandate_001",
+            "rebalance_run_id": "run_001",
+            "proof_pack_id": "dpp_001",
+            "wave_id": "wave_001",
+            "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
+            "generated_at": "2026-04-23T09:00:00Z",
+            "report_title": "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001",
+            "report_audience": ["portfolio_manager", "cio_office", "audit"],
+            "state": "READY",
+            "overall_outcome": "Execution outcome aligned with pre-trade proof.",
+            "variance_summary": {"tracking_error": "0.12"},
+            "supportability": {"state": "READY", "reason_codes": ["outcome_review_ready"]},
+            "dimensions": [
+                {
+                    "dimension": "PERFORMANCE",
+                    "state": "READY",
+                    "reason_code": "performance_realized",
+                    "expected": "4.10",
+                    "realized": "4.22",
+                    "variance": "0.12",
+                    "explanation": "Realized performance exceeded expected performance.",
+                    "source_refs": [],
+                    "supportability": {
+                        "state": "READY",
+                        "reason_codes": ["performance_realized"],
+                    },
+                }
+            ],
+            "source_lineage": [
+                {
+                    "source_system": "lotus-manage",
+                    "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                    "source_id": "dor_001:dpm_outcome_report_input",
+                    "content_hash": "sha256:report-input",
+                }
+            ],
+            "source_hashes": {"realized": "sha256:realized"},
+            "section_hashes": {"proof_pack": "sha256:proof-pack"},
+            "redaction_policy": "NO_RAW_PAYLOADS",
+            "evidence_ref": {
+                "source_system": "lotus-manage",
+                "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                "source_id": "dor_001:dpm_outcome_report_input",
+                "content_hash": "sha256:report-input",
+            },
+            "content_hash": "sha256:report-input",
+        },
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+
+
 def _headers(idempotency_key="portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22"):
     return {
         "Idempotency-Key": idempotency_key,
@@ -88,6 +148,64 @@ class _FakeCaptureService:
 
     async def capture_for_job(self, job):
         self.calls += 1
+        if job.report_type == "outcome_review":
+            self._ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            outcome_report_input = job.options["outcome_report_input"]
+            snapshot = self._lineage_store.create_snapshot(
+                ReportInputSnapshotCreateRequest(
+                    report_job_id=job.job_id,
+                    report_type=job.report_type,
+                    report_data_contract_version="dpm_outcome_report_input.v1",
+                    portfolio_scope=job.portfolio_scope,
+                    as_of_date=job.as_of_date,
+                    snapshot_payload=outcome_report_input,
+                    snapshot_storage_ref=None,
+                    supportability_status="complete",
+                    completeness_status="complete",
+                    lineage_summary={
+                        "source_services": ["lotus-manage"],
+                        "call_count": 1,
+                        "supportability_status": "complete",
+                    },
+                    captured_at=datetime.now(UTC),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            )
+            self._lineage_store.create_upstream_calls(
+                snapshot_id=snapshot.snapshot_id,
+                calls=[
+                    ReportUpstreamCallCreateRequest(
+                        service_name="lotus-manage",
+                        endpoint="/api/v1/rebalance/outcome-reviews/{outcome_review_id}/report-input",
+                        method="GET",
+                        contract_version="DpmOutcomeReportInput.1.0",
+                        request_hash="sha256:outcome-review",
+                        response_hash="sha256:report-input",
+                        response_ref="dor_001",
+                        status_code=200,
+                        latency_ms=0,
+                        supportability_status="complete",
+                        completeness_status="complete",
+                        failure_category="none",
+                        failure_message=None,
+                        captured_at=datetime.now(UTC),
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                ],
+            )
+            return self._ledger.mark_data_ready(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
         self._ledger.mark_collecting_data(
             job_id=job.job_id,
             actor=job.triggered_by,
@@ -410,6 +528,51 @@ def test_portfolio_review_job_submit_is_idempotent(tmp_path):
         assert first.status_code == 202
         assert second.status_code == 202
         assert second.json() == first.json()
+    finally:
+        _clear_overrides()
+
+
+def test_outcome_review_report_job_captures_manage_report_input_snapshot(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        response = client.post(
+            "/reports/outcome-reviews",
+            json=_outcome_payload(),
+            headers=_headers("outcome-review-dor_001-json"),
+        )
+
+        assert response.status_code == 202
+        handle = response.json()
+        assert handle["status"] == "data_ready"
+
+        status_response = client.get(f"/reports/jobs/{handle['report_job_id']}", headers=_headers())
+        assert status_response.status_code == 200
+        status_body = status_response.json()
+        assert status_body["report_type"] == "outcome_review"
+        assert status_body["portfolio_scope"] == {
+            "portfolio_ids": ["PB_SG_GLOBAL_BAL_001"],
+            "outcome_review_id": "dor_001",
+        }
+
+        snapshot_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/snapshot",
+            headers=_headers(),
+        )
+        assert snapshot_response.status_code == 200
+        snapshot_body = snapshot_response.json()
+        assert snapshot_body["report_type"] == "outcome_review"
+        assert snapshot_body["report_data_contract_version"] == "dpm_outcome_report_input.v1"
+        assert snapshot_body["snapshot_payload"]["outcome_review_id"] == "dor_001"
+        assert snapshot_body["snapshot_payload"]["content_hash"] == "sha256:report-input"
+
+        lineage_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/lineage",
+            headers=_headers(),
+        )
+        assert lineage_response.status_code == 200
+        lineage_body = lineage_response.json()
+        assert lineage_body["upstream_calls"][0]["service_name"] == "lotus-manage"
+        assert lineage_body["upstream_calls"][0]["response_hash"] == "sha256:report-input"
     finally:
         _clear_overrides()
 
