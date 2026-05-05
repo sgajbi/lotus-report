@@ -1110,6 +1110,60 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
     assert payload["lineage_refs"] == [job.job_id, "dor_001", "sha256:report-input"]
 
 
+def test_build_render_package_applies_outcome_review_fallbacks(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_outcome_review_report_job(
+        request=OutcomeReviewReportJobRequest.model_validate(
+            {
+                "outcome_report_input": {
+                    "outcome_review_id": "dor_minimal",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "review_window": {"end_date": "2026-04-23"},
+                    "dimensions": [
+                        {
+                            "dimension": " ",
+                            "expected": "",
+                        },
+                        "ignored",
+                    ],
+                    "source_lineage": ["ignored"],
+                    "source_hashes": "ignored",
+                    "section_hashes": "ignored",
+                },
+                "requested_output_formats": ["pdf"],
+            }
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-render-fallbacks",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        snapshot=job.options["outcome_report_input"],
+        render_job_id="rdr-outcome-fallbacks",
+    )
+
+    report_data = payload["report_data"]
+    assert report_data["title"] == "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001"
+    assert report_data["overall_outcome"] == "Outcome summary was not supplied."
+    assert report_data["dimensions"] == [
+        {
+            "dimension": "not_available",
+            "state": "not_available",
+            "reason_code": "not_available",
+            "expected": "not_available",
+            "realized": "not_available",
+            "variance": "not_available",
+            "explanation": "No explanation supplied.",
+        }
+    ]
+    assert report_data["source_services"] == ["lotus-manage"]
+    assert report_data["source_hashes"] == {}
+    assert report_data["section_hashes"] == {}
+    assert report_data["content_hash"] == "not_available"
+    assert payload["lineage_refs"] == [job.job_id, "dor_minimal", "not_available"]
+
+
 def test_render_service_helpers_cover_fallback_branches(monkeypatch):
     assert _performance_observation({"benchmark_comparison_status": "not_available"}) == (
         "Benchmark comparison status is not_available in the governed report snapshot."

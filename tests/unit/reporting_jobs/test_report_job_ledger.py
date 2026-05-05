@@ -117,6 +117,25 @@ def test_report_job_ledger_creates_outcome_review_request_job(tmp_path):
     assert events[0].message == "Outcome review report job accepted."
 
 
+def test_report_job_ledger_returns_duplicate_outcome_review_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    first = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-duplicate",
+    )
+    second = ledger.create_outcome_review_report_job(
+        request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-outcome-duplicate",
+    )
+
+    assert second.request_id == first.request_id
+    assert second.job_id == first.job_id
+    assert len(ledger.list_status_events(first.job_id)) == 1
+
+
 def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     missing_portfolio_request = _outcome_request(

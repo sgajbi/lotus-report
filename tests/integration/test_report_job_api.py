@@ -282,6 +282,15 @@ class _FakeRenderService:
         return job
 
 
+class _CountingRenderService:
+    def __init__(self):
+        self.calls = 0
+
+    async def render_for_job(self, job):
+        self.calls += 1
+        return job
+
+
 class _RerenderRenderClient:
     def __init__(self, *, status_code=201, payload=None):
         self.status_code = status_code
@@ -621,6 +630,28 @@ def test_outcome_review_report_job_rejects_idempotency_conflict(tmp_path):
             "code": "idempotency_conflict",
             "message": "Idempotency-Key was reused with a different report request.",
         }
+    finally:
+        _clear_overrides()
+
+
+def test_outcome_review_report_job_invokes_render_for_pdf_request(tmp_path):
+    render_service = _CountingRenderService()
+    client, _ledger, _lineage_store = _client(tmp_path)
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        render_service
+    )
+    payload = _outcome_payload()
+    payload["requested_output_formats"] = ["pdf"]
+    try:
+        response = client.post(
+            "/reports/outcome-reviews",
+            json=payload,
+            headers=_headers("outcome-review-dor_001-pdf"),
+        )
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "data_ready"
+        assert render_service.calls == 1
     finally:
         _clear_overrides()
 
