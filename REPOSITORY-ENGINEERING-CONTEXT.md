@@ -58,14 +58,20 @@ Current repository posture:
    immutable report snapshot, records lineage to `lotus-manage`, builds a `proof_pack` render
    package for `lotus-render` template `proof-pack v1`, and reuses the existing archive handoff
    lifecycle for PDF artifacts without recomputing proof-pack evidence,
-11. RFC-0104 is implemented for first-wave scope. The implemented surface includes durable batch
+11. RFC41-WTBD-008 first-wave wave report materialization is implemented for manage-owned
+   `DpmWaveReportInput`: `POST /reports/rebalance-waves` persists the bounded handoff as an
+   immutable report snapshot, records lineage to `lotus-manage`, builds a `rebalance_wave` render
+   package for `lotus-render` template `rebalance-wave v1`, and reuses the existing archive
+   handoff lifecycle for PDF artifacts without recomputing wave state, proof-pack linkage,
+   supportability, internal handoff evidence, or external execution posture,
+12. RFC-0104 is implemented for first-wave scope. The implemented surface includes durable batch
    materialization/status/control APIs, deterministic schedule-cycle identity, dispatch/lease/
    back-pressure primitives, retry/recovery controls, the internal item execution bridge,
    bounded run-once and runtime-pass primitives, daemonized worker and scheduler processes,
    config-backed scheduler administration APIs, gateway exposure, and Workbench explicit
    single-portfolio batch operation. Schedule CRUD, Workbench scheduler-management, and
    entitlement-certified public scheduler runtime remain future scope,
-12. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
+13. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
    propagation, first-wave report metrics, rerender/regenerate controls, and failed-work replay for
    failed retry-eligible report jobs and implementation-backed batch items. Runtime correlation,
    request, trace, structured-log, and safe operator lookup field vocabulary is owned in
@@ -75,14 +81,14 @@ Current repository posture:
    `src/app/reporting_metrics.py`; later RFC-0105
    slices must extend those owners rather than adding one-off literal fields in routers, clients,
    dashboards, or operator APIs,
-13. Docker-local `lotus-report` startup now initializes and verifies the PostgreSQL report-job
+14. Docker-local `lotus-report` startup now initializes and verifies the PostgreSQL report-job
    ledger and report-input snapshot schema before serving readiness. The API, batch worker, and
    scheduler containers all use the same schema guard so canonical `report.dev.lotus` evidence
    fails fast on migration or volume drift instead of returning a misleading healthy container,
-13. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+15. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-14. CI is standardized but still lighter than some core domain services,
-15. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+16. CI is standardized but still lighter than some core domain services,
+17. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 

@@ -9,6 +9,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ProofPackReportJobRequest,
     ReportCallerContext,
+    WaveReportJobRequest,
 )
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
@@ -1186,6 +1187,73 @@ def test_build_render_package_emits_proof_pack_contract(tmp_path):
     assert payload["report_data"]["proof_pack_content_hash"] == "sha256:proof-pack"
     assert payload["report_data"]["sections"][0]["title"] == "Mandate context"
     assert payload["lineage_refs"] == [job.job_id, "dpp_001", "sha256:report-input"]
+
+
+def test_build_render_package_emits_wave_contract(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_wave_report_job(
+        request=WaveReportJobRequest.model_validate(
+            {
+                "wave_report_input": {
+                    "wave_id": "dwv_001",
+                    "wave_content_hash": "sha256:wave",
+                    "wave_state": "HANDOFF_READY",
+                    "trigger_type": "EXPLICIT_PORTFOLIO_LIST",
+                    "trigger_id": "manual-wave-001",
+                    "trigger_rationale": "Review explicit affected portfolio list.",
+                    "as_of_date": "2026-05-03",
+                    "report_title": "Rebalance Wave Evidence - dwv_001",
+                    "aggregate_metrics": {"item_count": 1, "state_counts": {"HANDOFF_READY": 1}},
+                    "supportability": {"supportability_state": "ready"},
+                    "proof_pack_posture": {"ready_proof_pack_count": 1},
+                    "items": [
+                        {
+                            "wave_item_id": "dwi_001",
+                            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                            "mandate_id": "MANDATE_PB_SG_GLOBAL_BAL_001",
+                            "state": "HANDOFF_READY",
+                            "reason_codes": ["WAVE_ITEM_HANDOFF_READY"],
+                            "proof_pack_id": "dpp_001",
+                            "proof_pack_state": "READY",
+                        }
+                    ],
+                    "events": [
+                        {
+                            "event_type": "STATE_TRANSITION",
+                            "to_state": "HANDOFF_READY",
+                            "actor_id": "pm_001",
+                            "reason_code": "WAVE_HANDOFF_READY",
+                            "created_at": "2026-05-03T09:00:00Z",
+                        }
+                    ],
+                    "handoff_refs": [{"handoff_ref_id": "dwh_001"}],
+                    "external_execution_claimed": False,
+                    "content_hash": "sha256:report-input",
+                    "redaction_policy": "NO_RAW_PAYLOADS",
+                },
+                "requested_output_formats": ["pdf"],
+            }
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-wave-render",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        snapshot=job.options["wave_report_input"],
+        render_job_id="rdr-wave",
+    )
+
+    assert payload["report_type"] == "rebalance_wave"
+    assert payload["report_data_contract_version"] == "dpm_wave_report_input.v1"
+    assert payload["template_id"] == "rebalance-wave"
+    assert payload["disclosure_refs"] == ["rebalance-wave.standard-disclosures.v1"]
+    assert payload["report_data"]["wave_id"] == "dwv_001"
+    assert payload["report_data"]["proof_pack_posture"]["ready_proof_pack_count"] == 1
+    assert payload["report_data"]["items"][0]["proof_pack_id"] == "dpp_001"
+    assert payload["report_data"]["handoff_count"] == 1
+    assert payload["report_data"]["external_execution_claimed"] is False
+    assert payload["lineage_refs"] == [job.job_id, "dwv_001", "sha256:report-input"]
 
 
 def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):

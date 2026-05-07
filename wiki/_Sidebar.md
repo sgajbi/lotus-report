@@ -10,6 +10,8 @@
 
 [Proof-Pack Report](Proof-Pack-Report)
 
+[Rebalance Wave Report](Rebalance-Wave-Report)
+
 [Getting Started](Getting-Started)
 
 [Development Workflow](Development-Workflow)

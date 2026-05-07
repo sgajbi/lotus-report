@@ -31,6 +31,7 @@ from app.reporting_jobs.models import (
     ReportJobStatus,
     ReportRerenderAttemptRecord,
     ReportStatusEvent,
+    WaveReportJobRequest,
 )
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
@@ -158,6 +159,21 @@ class PostgresReportJobLedger:
             idempotency_key=idempotency_key,
         )
 
+    def create_wave_report_job(
+        self,
+        *,
+        request: WaveReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="rebalance_wave",
+            accepted_message="Rebalance wave report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
     def _create_report_job(
         self,
         *,
@@ -165,7 +181,8 @@ class PostgresReportJobLedger:
         accepted_message: str,
         request: PortfolioReviewJobRequest
         | OutcomeReviewReportJobRequest
-        | ProofPackReportJobRequest,
+        | ProofPackReportJobRequest
+        | WaveReportJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:

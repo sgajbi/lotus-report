@@ -25,6 +25,12 @@ def _build_render_package(
             snapshot=snapshot,
             render_job_id=render_job_id,
         )
+    if job.report_type == "rebalance_wave":
+        return _build_wave_render_package(
+            job=job,
+            snapshot=snapshot,
+            render_job_id=render_job_id,
+        )
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
     mandate_profile = _as_dict(client_profile.get("mandate_profile"))
@@ -321,6 +327,83 @@ def _build_outcome_review_render_package(
         "report_data": report_data,
         "lineage_refs": [job.job_id, report_data["outcome_review_id"], report_data["content_hash"]],
         "disclosure_refs": ["outcome-review.standard-disclosures.v1"],
+        "requested_by": job.triggered_by,
+        "correlation_id": job.correlation_id,
+        "trace_id": job.trace_id,
+    }
+
+
+def _build_wave_render_package(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+    render_job_id: str,
+) -> dict[str, Any]:
+    items = [
+        {
+            "wave_item_id": _optional_str(item.get("wave_item_id")) or "not_available",
+            "portfolio_id": _optional_str(item.get("portfolio_id")) or "not_available",
+            "state": _optional_str(item.get("state")) or "not_available",
+            "mandate_id": _optional_str(item.get("mandate_id")) or "not_available",
+            "selected_alternative_id": _optional_str(item.get("selected_alternative_id"))
+            or "not_available",
+            "proof_pack_id": _optional_str(item.get("proof_pack_id")) or "not_available",
+            "proof_pack_state": _optional_str(item.get("proof_pack_state")) or "not_available",
+            "reason_codes": _string_list(item.get("reason_codes")),
+        }
+        for item in snapshot.get("items", [])
+        if isinstance(item, dict)
+    ]
+    events = [
+        {
+            "event_type": _optional_str(item.get("event_type")) or "not_available",
+            "to_state": _optional_str(item.get("to_state")) or "not_available",
+            "actor_id": _optional_str(item.get("actor_id")) or "not_available",
+            "reason_code": _optional_str(item.get("reason_code")) or "not_available",
+            "created_at": _optional_str(item.get("created_at")) or "not_available",
+        }
+        for item in snapshot.get("events", [])[-8:]
+        if isinstance(item, dict)
+    ]
+    report_data = {
+        "title": _optional_str(snapshot.get("report_title"))
+        or f"Rebalance Wave Evidence - {snapshot.get('wave_id', 'not_available')}",
+        "wave_id": _optional_str(snapshot.get("wave_id")) or "not_available",
+        "wave_state": _optional_str(snapshot.get("wave_state")) or "not_available",
+        "trigger_type": _optional_str(snapshot.get("trigger_type")) or "not_available",
+        "trigger_id": _optional_str(snapshot.get("trigger_id")) or "not_available",
+        "trigger_rationale": _optional_str(snapshot.get("trigger_rationale"))
+        or "No trigger rationale supplied.",
+        "as_of_date": _optional_str(snapshot.get("as_of_date")) or job.as_of_date.isoformat(),
+        "aggregate_metrics": _as_dict(snapshot.get("aggregate_metrics")),
+        "supportability": _as_dict(snapshot.get("supportability")),
+        "proof_pack_posture": _as_dict(snapshot.get("proof_pack_posture")),
+        "items": items,
+        "events": events,
+        "handoff_count": len(snapshot.get("handoff_refs", []))
+        if isinstance(snapshot.get("handoff_refs"), list)
+        else 0,
+        "external_execution_claimed": bool(snapshot.get("external_execution_claimed")),
+        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
+        "wave_content_hash": _optional_str(snapshot.get("wave_content_hash")) or "not_available",
+        "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+    }
+    return {
+        "render_package_version": "render_package.v1",
+        "render_job_id": render_job_id,
+        "report_job_id": job.job_id,
+        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
+        "report_type": job.report_type,
+        "report_data_contract_version": "dpm_wave_report_input.v1",
+        "template_id": "rebalance-wave",
+        "template_version": "v1",
+        "locale": "en-SG",
+        "brand_variant": "private_banking",
+        "output_format": "pdf",
+        "render_context": {"timezone": "Asia/Singapore"},
+        "report_data": report_data,
+        "lineage_refs": [job.job_id, report_data["wave_id"], report_data["content_hash"]],
+        "disclosure_refs": ["rebalance-wave.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,

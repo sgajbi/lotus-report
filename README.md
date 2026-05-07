@@ -61,15 +61,16 @@ Boundary rules that matter:
    key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
    metadata.
 4. `POST /reports/portfolio-reviews`, `POST /reports/outcome-reviews`,
-   `POST /reports/proof-packs`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
-   `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` provide the
+   `POST /reports/proof-packs`, `POST /reports/rebalance-waves`, `GET /reports/jobs`,
+   `GET /reports/jobs/{job_id}`, `GET /reports/jobs/{job_id}/events`, and
+   `POST /reports/jobs/{job_id}/cancel` provide the
    durable job-ledger foundation for gateway-first report initiation, operator-safe job search,
    product-safe status, append-only event history, database-backed idempotency, immutable snapshot
    and lineage capture, lotus-render submission for PDF output, `lotus-archive` handoff after
    successful render completion, and bounded cancellation before the job reaches `rendering`.
-   Outcome-review and proof-pack job routes consume manage-owned bounded report inputs and do not
-   recompute DPM evidence. Archive retrieval, retention execution, legal hold, purge, and document
-   distribution remain owned by `lotus-archive`.
+   Outcome-review, proof-pack, and rebalance-wave job routes consume manage-owned bounded report
+   inputs and do not recompute DPM evidence. Archive retrieval, retention execution, legal hold,
+   purge, and document distribution remain owned by `lotus-archive`.
 5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
    services.
 6. Request conventions are governed by the Lotus API vocabulary standard. Public query,

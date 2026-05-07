@@ -17,6 +17,9 @@
   snapshots, render-package assembly, and report-to-archive lifecycle handoff
 - pre-trade proof-pack report jobs are live for manage-owned `DpmProofPackReportInput` snapshots,
   render-package assembly, and report-to-archive lifecycle handoff
+- rebalance-wave report jobs are live for manage-owned `DpmWaveReportInput` snapshots,
+  proof-pack posture, internal handoff lineage, render-package assembly, and report-to-archive
+  lifecycle handoff
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
@@ -35,6 +38,7 @@ This repo owns:
 - portfolio summary and portfolio review payload shaping
 - outcome-review report artifact orchestration from manage-owned bounded report input
 - proof-pack report artifact orchestration from manage-owned bounded report input
+- rebalance-wave report artifact orchestration from manage-owned bounded report input
 - reporting capability publication for downstream consumers
 
 This repo does not own:
@@ -51,6 +55,7 @@ This repo does not own:
 - [API Surface](API-Surface)
 - [Portfolio Review Report](Portfolio-Review-Report)
 - [Proof-Pack Report](Proof-Pack-Report)
+- [Rebalance Wave Report](Rebalance-Wave-Report)
 - [Getting Started](Getting-Started)
 - [Development Workflow](Development-Workflow)
 - [Validation and CI](Validation-and-CI)
