@@ -13,6 +13,7 @@ from uuid import uuid4
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
     ReportJobListFilters,
@@ -49,7 +50,7 @@ def canonical_json(value: Any) -> str:
 def compute_request_hash(
     *,
     report_type: str,
-    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest | ProofPackReportJobRequest,
     caller_context: ReportCallerContext,
 ) -> str:
     portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
@@ -72,7 +73,7 @@ def compute_request_hash(
 def _request_parts(
     *,
     report_type: str,
-    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest | ProofPackReportJobRequest,
 ) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
     if isinstance(request, PortfolioReviewJobRequest):
         return (
@@ -81,6 +82,28 @@ def _request_parts(
             request.requested_output_formats,
             request.reporting_currency,
             request.options,
+        )
+    if isinstance(request, ProofPackReportJobRequest):
+        report_input = request.proof_pack_report_input
+        portfolio_id = str(report_input.get("portfolio_id") or "").strip()
+        if not portfolio_id:
+            raise ValueError("proof_pack_report_input.portfolio_id is required")
+        as_of_text = report_input.get("as_of_date") or report_input.get("generated_at")
+        if not as_of_text:
+            raise ValueError("proof_pack_report_input.as_of_date is required")
+        as_of_date = date.fromisoformat(str(as_of_text)[:10])
+        options = dict(request.options)
+        options["proof_pack_report_input"] = report_input
+        portfolio_scope = {
+            "portfolio_ids": [portfolio_id],
+            "proof_pack_id": report_input.get("proof_pack_id"),
+        }
+        return (
+            portfolio_scope,
+            as_of_date,
+            request.requested_output_formats,
+            request.reporting_currency,
+            options,
         )
     report_input = request.outcome_report_input
     portfolio_id = str(report_input.get("portfolio_id") or "").strip()
@@ -291,12 +314,29 @@ class ReportJobLedger:
             idempotency_key=idempotency_key,
         )
 
+    def create_proof_pack_report_job(
+        self,
+        *,
+        request: ProofPackReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="proof_pack",
+            accepted_message="Proof-pack report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
     def _create_report_job(
         self,
         *,
         report_type: str,
         accepted_message: str,
-        request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+        request: PortfolioReviewJobRequest
+        | OutcomeReviewReportJobRequest
+        | ProofPackReportJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:

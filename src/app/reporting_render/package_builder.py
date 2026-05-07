@@ -13,6 +13,12 @@ def _build_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
 ) -> dict[str, Any]:
+    if job.report_type == "proof_pack":
+        return _build_proof_pack_render_package(
+            job=job,
+            snapshot=snapshot,
+            render_job_id=render_job_id,
+        )
     if job.report_type == "outcome_review":
         return _build_outcome_review_render_package(
             job=job,
@@ -179,6 +185,65 @@ def _build_render_package(
         "report_data": report_data,
         "lineage_refs": [job.job_id],
         "disclosure_refs": ["portfolio-review.standard-disclosures.v1"],
+        "requested_by": job.triggered_by,
+        "correlation_id": job.correlation_id,
+        "trace_id": job.trace_id,
+    }
+
+
+def _build_proof_pack_render_package(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+    render_job_id: str,
+) -> dict[str, Any]:
+    sections = [
+        {
+            "section_id": _optional_str(item.get("section_id")) or "not_available",
+            "section_type": _optional_str(item.get("section_type")) or "not_available",
+            "state": _optional_str(item.get("state")) or "not_available",
+            "title": _optional_str(item.get("title")) or "Not available",
+            "summary": _optional_str(item.get("summary")) or "No section summary supplied.",
+            "reason_codes": _string_list(item.get("reason_codes")),
+            "content_hash": _optional_str(item.get("content_hash")) or "not_available",
+        }
+        for item in snapshot.get("sections", [])
+        if isinstance(item, dict)
+    ]
+    portfolio_id = _optional_str(snapshot.get("portfolio_id")) or "Portfolio"
+    report_data = {
+        "title": _optional_str(snapshot.get("report_title"))
+        or f"Pre-Trade Proof Pack - {portfolio_id}",
+        "portfolio_id": _optional_str(snapshot.get("portfolio_id")) or "not_available",
+        "proof_pack_id": _optional_str(snapshot.get("proof_pack_id")) or "not_available",
+        "mandate_id": _optional_str(snapshot.get("mandate_id")) or "not_available",
+        "as_of_date": _optional_str(snapshot.get("as_of_date")) or job.as_of_date.isoformat(),
+        "state": _optional_str(snapshot.get("state")) or "not_available",
+        "decision_summary": _as_dict(snapshot.get("decision_summary")),
+        "supportability": _as_dict(snapshot.get("supportability")),
+        "sections": sections,
+        "source_hashes": _as_dict(snapshot.get("source_hashes")),
+        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
+        "proof_pack_content_hash": _optional_str(snapshot.get("proof_pack_content_hash"))
+        or "not_available",
+        "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+    }
+    return {
+        "render_package_version": "render_package.v1",
+        "render_job_id": render_job_id,
+        "report_job_id": job.job_id,
+        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
+        "report_type": job.report_type,
+        "report_data_contract_version": "dpm_proof_pack_report_input.v1",
+        "template_id": "proof-pack",
+        "template_version": "v1",
+        "locale": "en-SG",
+        "brand_variant": "private_banking",
+        "output_format": "pdf",
+        "render_context": {"timezone": "Asia/Singapore"},
+        "report_data": report_data,
+        "lineage_refs": [job.job_id, report_data["proof_pack_id"], report_data["content_hash"]],
+        "disclosure_refs": ["proof-pack.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,
@@ -660,6 +725,12 @@ def _decimal_text(value: object) -> str:
 
 def _as_dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _optional_str(value: object) -> str | None:

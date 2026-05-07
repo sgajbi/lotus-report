@@ -6,6 +6,7 @@ from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportCallerContext,
 )
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
@@ -159,6 +160,51 @@ def _caller():
             "trace_id": "trace-render",
         }
     )
+
+
+def _proof_pack_report_input() -> dict:
+    return {
+        "contract_version": "1.0",
+        "proof_pack_id": "dpp_001",
+        "proof_pack_content_hash": "sha256:proof-pack",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "mandate_id": "MANDATE_PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-05-03",
+        "generated_at": "2026-05-03T09:00:00Z",
+        "report_title": "Pre-Trade Proof Pack - PB_SG_GLOBAL_BAL_001",
+        "report_audience": ["portfolio_manager", "investment_control", "audit"],
+        "state": "READY",
+        "decision_summary": {
+            "recommended_action": "approve_rebalance",
+            "rationale": "Mandate drift and source readiness support rebalance approval.",
+        },
+        "supportability": {"status": "READY", "reason_codes": ["proof_pack_ready"]},
+        "sections": [
+            {
+                "section_id": "sec_mandate",
+                "section_type": "MANDATE_CONTEXT",
+                "state": "READY",
+                "title": "Mandate context",
+                "summary": "Mandate, model, and policy evidence are aligned.",
+                "reason_codes": ["mandate_context_ready"],
+                "facts": {},
+                "metrics": {},
+                "evidence_refs": [],
+                "source_refs": [],
+                "content_hash": "sha256:section-mandate",
+            }
+        ],
+        "markdown_summary": "# Pre-Trade Proof Pack",
+        "source_hashes": {"mandate": "sha256:mandate"},
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
+            "source_id": "dpp_001:dpm_proof_pack_report_input",
+            "content_hash": "sha256:report-input",
+        },
+        "content_hash": "sha256:report-input",
+    }
 
 
 def _seed_data_ready_job(tmp_path):
@@ -1108,6 +1154,85 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
     assert payload["report_data"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
     assert payload["report_data"]["dimensions"][0]["variance"] == "0.12"
     assert payload["lineage_refs"] == [job.job_id, "dor_001", "sha256:report-input"]
+
+
+def test_build_render_package_emits_proof_pack_contract(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_proof_pack_report_job(
+        request=ProofPackReportJobRequest.model_validate(
+            {
+                "proof_pack_report_input": _proof_pack_report_input(),
+                "requested_output_formats": ["pdf"],
+            }
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-proof-pack-render",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        snapshot=job.options["proof_pack_report_input"],
+        render_job_id="rdr-proof-pack",
+    )
+
+    assert payload["report_type"] == "proof_pack"
+    assert payload["report_data_contract_version"] == "dpm_proof_pack_report_input.v1"
+    assert payload["template_id"] == "proof-pack"
+    assert payload["disclosure_refs"] == ["proof-pack.standard-disclosures.v1"]
+    assert payload["report_data"]["proof_pack_id"] == "dpp_001"
+    assert payload["report_data"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+    assert payload["report_data"]["proof_pack_content_hash"] == "sha256:proof-pack"
+    assert payload["report_data"]["sections"][0]["title"] == "Mandate context"
+    assert payload["lineage_refs"] == [job.job_id, "dpp_001", "sha256:report-input"]
+
+
+def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_proof_pack_report_job(
+        request=ProofPackReportJobRequest.model_validate(
+            {
+                "proof_pack_report_input": {
+                    "proof_pack_id": "dpp_minimal",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "as_of_date": "2026-05-03",
+                    "sections": [
+                        {
+                            "title": " ",
+                            "reason_codes": [" ", "ready"],
+                        },
+                        "ignored",
+                    ],
+                    "source_hashes": "ignored",
+                },
+                "requested_output_formats": ["pdf"],
+            }
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-proof-pack-render-fallbacks",
+    )
+
+    payload = _build_render_package(
+        job=job,
+        snapshot=job.options["proof_pack_report_input"],
+        render_job_id="rdr-proof-pack-fallbacks",
+    )
+
+    report_data = payload["report_data"]
+    assert report_data["title"] == "Pre-Trade Proof Pack - PB_SG_GLOBAL_BAL_001"
+    assert report_data["proof_pack_content_hash"] == "not_available"
+    assert report_data["source_hashes"] == {}
+    assert report_data["sections"] == [
+        {
+            "section_id": "not_available",
+            "section_type": "not_available",
+            "state": "not_available",
+            "title": "Not available",
+            "summary": "No section summary supplied.",
+            "reason_codes": ["ready"],
+            "content_hash": "not_available",
+        }
+    ]
+    assert payload["lineage_refs"] == [job.job_id, "dpp_minimal", "not_available"]
 
 
 def test_build_render_package_applies_outcome_review_fallbacks(tmp_path):

@@ -9,3 +9,4 @@ build/
 *.pyo
 coverage.xml
 .coverage
+.coverage.*
