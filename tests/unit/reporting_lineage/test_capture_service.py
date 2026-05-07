@@ -13,6 +13,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ProofPackReportJobRequest,
     ReportCallerContext,
+    WaveReportJobRequest,
 )
 from app.reporting_lineage import service as lineage_service
 from app.reporting_lineage.capture_service import (
@@ -94,6 +95,34 @@ def _proof_pack_request(**overrides):
     return ProofPackReportJobRequest.model_validate(payload)
 
 
+def _wave_request(**overrides):
+    wave_report_input = {
+        "contract_version": "1.0",
+        "wave_id": "dwv_001",
+        "wave_content_hash": "sha256:wave",
+        "wave_state": "HANDOFF_READY",
+        "trigger_type": "EXPLICIT_PORTFOLIO_LIST",
+        "trigger_id": "manual-wave-001",
+        "as_of_date": "2026-05-03",
+        "generated_at": "2026-05-03T09:00:00Z",
+        "items": [
+            {
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "proof_pack_id": "dpp_001",
+            }
+        ],
+        "content_hash": "sha256:wave-report-input",
+    }
+    payload = {
+        "wave_report_input": wave_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return WaveReportJobRequest.model_validate(payload)
+
+
 def _caller(**overrides):
     payload = {
         "triggered_by": "advisor-123",
@@ -136,6 +165,17 @@ def _create_proof_pack_job(tmp_path, *, suffix: str = "proof-pack-capture"):
     store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
     job = ledger.create_proof_pack_report_job(
         request=_proof_pack_request(),
+        caller_context=_caller(),
+        idempotency_key=f"idem-{suffix}",
+    )
+    return ledger, store, job
+
+
+def _create_wave_job(tmp_path, *, suffix: str = "wave-capture"):
+    ledger = ReportJobLedger(tmp_path / f"jobs-{suffix}.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
+    job = ledger.create_wave_report_job(
+        request=_wave_request(),
         caller_context=_caller(),
         idempotency_key=f"idem-{suffix}",
     )
@@ -361,6 +401,40 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
 
 
 @pytest.mark.asyncio
+async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path):
+    ledger, store, job = _create_wave_job(tmp_path, suffix="wave-success")
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.report_type == "rebalance_wave"
+    assert snapshot.report_data_contract_version == "dpm_wave_report_input.v1"
+    assert snapshot.snapshot_payload["wave_id"] == "dwv_001"
+    assert snapshot.lineage_summary == {
+        "source_services": ["lotus-manage"],
+        "call_count": 0,
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "wave_id": "dwv_001",
+        "source_hash": "sha256:wave-report-input",
+    }
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert len(calls) == 1
+    assert calls[0].service_name == "lotus-manage"
+    assert calls[0].endpoint == "/api/v1/rebalance/waves/{wave_id}/report-input"
+    assert calls[0].request_hash == "sha256:wave"
+    assert calls[0].response_hash == "sha256:wave-report-input"
+    assert calls[0].response_ref == "dwv_001"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_capture_service_reuses_existing_proof_pack_snapshot(tmp_path):
     ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-existing")
     store.create_snapshot(
@@ -371,6 +445,37 @@ async def test_capture_service_reuses_existing_proof_pack_snapshot(tmp_path):
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=job.options["proof_pack_report_input"],
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-manage"], "call_count": 0},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_reuses_existing_wave_snapshot(tmp_path):
+    ledger, store, job = _create_wave_job(tmp_path, suffix="wave-existing")
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type="rebalance_wave",
+            report_data_contract_version="dpm_wave_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=job.options["wave_report_input"],
             snapshot_storage_ref=None,
             supportability_status="complete",
             completeness_status="complete",
@@ -428,6 +533,26 @@ async def test_capture_service_returns_terminal_proof_pack_job_without_mutation(
 
 
 @pytest.mark.asyncio
+async def test_capture_service_returns_terminal_wave_job_without_mutation(tmp_path):
+    ledger, store, job = _create_wave_job(tmp_path, suffix="wave-terminal")
+    data_ready = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(data_ready)
+
+    assert record.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_capture_service_fails_proof_pack_without_report_input(tmp_path):
     ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-missing-input")
     malformed_job = job.model_copy(update={"options": {}})
@@ -438,6 +563,24 @@ async def test_capture_service_fails_proof_pack_without_report_input(tmp_path):
     assert record.status == "failed"
     assert record.failure_category == "validation_failed"
     assert record.failure_message == "Proof-pack report input was not present in the report job."
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_fails_wave_without_report_input(tmp_path):
+    ledger, store, job = _create_wave_job(tmp_path, suffix="wave-missing-input")
+    malformed_job = job.model_copy(update={"options": {}})
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(malformed_job)
+
+    assert record.status == "failed"
+    assert record.failure_category == "validation_failed"
+    assert record.failure_message == "Wave report input was not present in the report job."
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",

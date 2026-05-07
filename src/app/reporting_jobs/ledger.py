@@ -20,6 +20,14 @@ from app.reporting_jobs.models import (
     ReportJobStatus,
     ReportRerenderAttemptRecord,
     ReportStatusEvent,
+    WaveReportJobRequest,
+)
+
+ReportJobRequest = (
+    PortfolioReviewJobRequest
+    | OutcomeReviewReportJobRequest
+    | ProofPackReportJobRequest
+    | WaveReportJobRequest
 )
 
 
@@ -50,7 +58,7 @@ def canonical_json(value: Any) -> str:
 def compute_request_hash(
     *,
     report_type: str,
-    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest | ProofPackReportJobRequest,
+    request: ReportJobRequest,
     caller_context: ReportCallerContext,
 ) -> str:
     portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
@@ -73,7 +81,7 @@ def compute_request_hash(
 def _request_parts(
     *,
     report_type: str,
-    request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest | ProofPackReportJobRequest,
+    request: ReportJobRequest,
 ) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
     if isinstance(request, PortfolioReviewJobRequest):
         return (
@@ -97,6 +105,40 @@ def _request_parts(
         portfolio_scope = {
             "portfolio_ids": [portfolio_id],
             "proof_pack_id": report_input.get("proof_pack_id"),
+        }
+        return (
+            portfolio_scope,
+            as_of_date,
+            request.requested_output_formats,
+            request.reporting_currency,
+            options,
+        )
+    if isinstance(request, WaveReportJobRequest):
+        report_input = request.wave_report_input
+        wave_id = str(report_input.get("wave_id") or "").strip()
+        if not wave_id:
+            raise ValueError("wave_report_input.wave_id is required")
+        as_of_text = report_input.get("as_of_date") or report_input.get("generated_at")
+        if not as_of_text:
+            raise ValueError("wave_report_input.as_of_date is required")
+        as_of_date = date.fromisoformat(str(as_of_text)[:10])
+        options = dict(request.options)
+        options["wave_report_input"] = report_input
+        portfolio_ids = [
+            str(item.get("portfolio_id")).strip()
+            for item in report_input.get("items", [])
+            if isinstance(item, dict) and str(item.get("portfolio_id") or "").strip()
+        ]
+        portfolio_scope = {
+            "portfolio_ids": sorted(set(portfolio_ids)),
+            "wave_id": wave_id,
+            "proof_pack_ids": sorted(
+                {
+                    str(item.get("proof_pack_id")).strip()
+                    for item in report_input.get("items", [])
+                    if isinstance(item, dict) and str(item.get("proof_pack_id") or "").strip()
+                }
+            ),
         }
         return (
             portfolio_scope,
@@ -329,14 +371,27 @@ class ReportJobLedger:
             idempotency_key=idempotency_key,
         )
 
+    def create_wave_report_job(
+        self,
+        *,
+        request: WaveReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="rebalance_wave",
+            accepted_message="Rebalance wave report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
     def _create_report_job(
         self,
         *,
         report_type: str,
         accepted_message: str,
-        request: PortfolioReviewJobRequest
-        | OutcomeReviewReportJobRequest
-        | ProofPackReportJobRequest,
+        request: ReportJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:

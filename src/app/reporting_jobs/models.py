@@ -215,6 +215,94 @@ class ProofPackReportJobRequest(BaseModel):
     )
 
 
+class WaveReportJobRequest(BaseModel):
+    wave_report_input: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Manage-owned DpmWaveReportInput payload. lotus-report treats this as bounded source "
+            "truth for rebalance-wave report generation and never recomputes wave state, "
+            "proof-pack linkage, supportability, or handoff facts."
+        ),
+        examples=[
+            {
+                "contract_version": "1.0",
+                "wave_id": "dwv_001",
+                "wave_content_hash": "sha256:wave",
+                "wave_state": "HANDOFF_READY",
+                "trigger_type": "EXPLICIT_PORTFOLIO_LIST",
+                "trigger_id": "manual-wave-001",
+                "trigger_rationale": "Review explicit affected portfolio list.",
+                "as_of_date": "2026-05-03",
+                "generated_at": "2026-05-03T09:00:00Z",
+                "report_title": "Rebalance Wave Evidence - dwv_001",
+                "report_audience": ["portfolio_manager", "operations", "audit"],
+                "aggregate_metrics": {
+                    "item_count": 1,
+                    "state_counts": {"HANDOFF_READY": 1},
+                    "ready_item_count": 1,
+                    "blocked_item_count": 0,
+                },
+                "supportability": {
+                    "supportability_state": "ready",
+                    "reason": "wave_supportability_ready",
+                },
+                "proof_pack_posture": {
+                    "linked_item_count": 1,
+                    "ready_proof_pack_count": 1,
+                    "degraded_proof_pack_count": 0,
+                },
+                "items": [
+                    {
+                        "wave_item_id": "dwi_001",
+                        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                        "mandate_id": "MANDATE_PB_SG_GLOBAL_BAL_001",
+                        "model_portfolio_id": "MODEL_PB_SG_GLOBAL_BAL_DPM",
+                        "state": "HANDOFF_READY",
+                        "reason_codes": ["WAVE_ITEM_HANDOFF_READY"],
+                        "selected_alternative_id": "alt_min_turnover",
+                        "proof_pack_id": "dpp_001",
+                        "proof_pack_state": "READY",
+                        "source_refs": [],
+                        "diagnostics": {"external_execution_claimed": False},
+                    }
+                ],
+                "events": [],
+                "handoff_refs": [],
+                "source_refs": [],
+                "redaction_policy": "NO_RAW_PAYLOADS",
+                "external_execution_claimed": False,
+                "evidence_ref": {
+                    "source_system": "lotus-manage",
+                    "ref_type": "DPM_WAVE_REPORT_INPUT",
+                    "ref_id": "dwv_001:dpm_wave_report_input",
+                    "content_hash": "sha256:report-input",
+                },
+                "content_hash": "sha256:report-input",
+            }
+        ],
+    )
+    requested_output_formats: list[str] = Field(
+        default_factory=lambda: ["pdf"],
+        description=(
+            "Requested output formats. Wave report jobs are intended for governed PDF artifact "
+            "generation; JSON-only jobs may be used for snapshot certification."
+        ),
+        examples=[["pdf"], ["json"]],
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Optional reporting currency used for request hashing and render context.",
+        examples=["USD"],
+    )
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Output-affecting report options such as retention policy or template controls."
+        ),
+        examples=[{"retention_policy_id": "generated-report-standard"}],
+    )
+
+
 PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
     "as_of_date": "2026-04-22",
@@ -239,6 +327,13 @@ PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "proof_pack_report_input": ProofPackReportJobRequest.model_fields[
         "proof_pack_report_input"
     ].examples[0],
+    "requested_output_formats": ["pdf"],
+    "reporting_currency": "USD",
+    "options": {"retention_policy_id": "generated-report-standard"},
+}
+
+WAVE_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
+    "wave_report_input": WaveReportJobRequest.model_fields["wave_report_input"].examples[0],
     "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",
     "options": {"retention_policy_id": "generated-report-standard"},

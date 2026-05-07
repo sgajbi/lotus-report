@@ -176,6 +176,69 @@ def _proof_pack_payload():
     }
 
 
+def _wave_payload():
+    return {
+        "wave_report_input": {
+            "contract_version": "1.0",
+            "wave_id": "dwv_001",
+            "wave_content_hash": "sha256:wave",
+            "wave_state": "HANDOFF_READY",
+            "trigger_type": "EXPLICIT_PORTFOLIO_LIST",
+            "trigger_id": "manual-wave-001",
+            "trigger_rationale": "Review explicit affected portfolio list.",
+            "as_of_date": "2026-05-03",
+            "generated_at": "2026-05-03T09:00:00Z",
+            "report_title": "Rebalance Wave Evidence - dwv_001",
+            "report_audience": ["portfolio_manager", "operations", "audit"],
+            "aggregate_metrics": {
+                "item_count": 1,
+                "state_counts": {"HANDOFF_READY": 1},
+                "ready_item_count": 1,
+                "blocked_item_count": 0,
+            },
+            "supportability": {
+                "supportability_state": "ready",
+                "reason": "wave_supportability_ready",
+            },
+            "proof_pack_posture": {
+                "linked_item_count": 1,
+                "ready_proof_pack_count": 1,
+                "degraded_proof_pack_count": 0,
+            },
+            "items": [
+                {
+                    "wave_item_id": "dwi_001",
+                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                    "mandate_id": "MANDATE_PB_SG_GLOBAL_BAL_001",
+                    "model_portfolio_id": "MODEL_PB_SG_GLOBAL_BAL_DPM",
+                    "state": "HANDOFF_READY",
+                    "reason_codes": ["WAVE_ITEM_HANDOFF_READY"],
+                    "selected_alternative_id": "alt_min_turnover",
+                    "proof_pack_id": "dpp_001",
+                    "proof_pack_state": "READY",
+                    "source_refs": [],
+                    "diagnostics": {"external_execution_claimed": False},
+                }
+            ],
+            "events": [],
+            "handoff_refs": [],
+            "source_refs": [],
+            "redaction_policy": "NO_RAW_PAYLOADS",
+            "external_execution_claimed": False,
+            "evidence_ref": {
+                "source_system": "lotus-manage",
+                "ref_type": "DPM_WAVE_REPORT_INPUT",
+                "ref_id": "dwv_001:dpm_wave_report_input",
+                "content_hash": "sha256:report-input",
+            },
+            "content_hash": "sha256:report-input",
+        },
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+
+
 def _headers(idempotency_key="portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22"):
     return {
         "Idempotency-Key": idempotency_key,
@@ -296,6 +359,64 @@ class _FakeCaptureService:
                         request_hash="sha256:outcome-review",
                         response_hash="sha256:report-input",
                         response_ref="dor_001",
+                        status_code=200,
+                        latency_ms=0,
+                        supportability_status="complete",
+                        completeness_status="complete",
+                        failure_category="none",
+                        failure_message=None,
+                        captured_at=datetime.now(UTC),
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                ],
+            )
+            return self._ledger.mark_data_ready(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        if job.report_type == "rebalance_wave":
+            self._ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            wave_report_input = job.options["wave_report_input"]
+            snapshot = self._lineage_store.create_snapshot(
+                ReportInputSnapshotCreateRequest(
+                    report_job_id=job.job_id,
+                    report_type=job.report_type,
+                    report_data_contract_version="dpm_wave_report_input.v1",
+                    portfolio_scope=job.portfolio_scope,
+                    as_of_date=job.as_of_date,
+                    snapshot_payload=wave_report_input,
+                    snapshot_storage_ref=None,
+                    supportability_status="complete",
+                    completeness_status="complete",
+                    lineage_summary={
+                        "source_services": ["lotus-manage"],
+                        "call_count": 1,
+                        "supportability_status": "complete",
+                    },
+                    captured_at=datetime.now(UTC),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            )
+            self._lineage_store.create_upstream_calls(
+                snapshot_id=snapshot.snapshot_id,
+                calls=[
+                    ReportUpstreamCallCreateRequest(
+                        service_name="lotus-manage",
+                        endpoint="/api/v1/rebalance/waves/{wave_id}/report-input",
+                        method="GET",
+                        contract_version="DpmWaveReportInput.1.0",
+                        request_hash="sha256:wave",
+                        response_hash="sha256:report-input",
+                        response_ref="dwv_001",
                         status_code=200,
                         latency_ms=0,
                         supportability_status="complete",
@@ -739,6 +860,55 @@ def test_proof_pack_report_job_captures_manage_report_input_snapshot(tmp_path):
         _clear_overrides()
 
 
+def test_wave_report_job_captures_manage_report_input_snapshot(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        response = client.post(
+            "/reports/rebalance-waves",
+            json=_wave_payload(),
+            headers=_headers("wave-dwv_001-json"),
+        )
+
+        assert response.status_code == 202
+        handle = response.json()
+        assert handle["status"] == "data_ready"
+
+        status_response = client.get(f"/reports/jobs/{handle['report_job_id']}", headers=_headers())
+        assert status_response.status_code == 200
+        status_body = status_response.json()
+        assert status_body["report_type"] == "rebalance_wave"
+        assert status_body["portfolio_scope"] == {
+            "portfolio_ids": ["PB_SG_GLOBAL_BAL_001"],
+            "wave_id": "dwv_001",
+            "proof_pack_ids": ["dpp_001"],
+        }
+
+        snapshot_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/snapshot",
+            headers=_headers(),
+        )
+        assert snapshot_response.status_code == 200
+        snapshot_body = snapshot_response.json()
+        assert snapshot_body["report_type"] == "rebalance_wave"
+        assert snapshot_body["report_data_contract_version"] == "dpm_wave_report_input.v1"
+        assert snapshot_body["snapshot_payload"]["wave_id"] == "dwv_001"
+        assert snapshot_body["snapshot_payload"]["content_hash"] == "sha256:report-input"
+
+        lineage_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/lineage",
+            headers=_headers(),
+        )
+        assert lineage_response.status_code == 200
+        lineage_body = lineage_response.json()
+        assert lineage_body["upstream_calls"][0]["service_name"] == "lotus-manage"
+        assert lineage_body["upstream_calls"][0]["response_hash"] == "sha256:report-input"
+        assert lineage_body["upstream_calls"][0]["endpoint"].endswith(
+            "/waves/{wave_id}/report-input"
+        )
+    finally:
+        _clear_overrides()
+
+
 def test_proof_pack_report_job_does_not_recapture_data_ready_replay(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     capture_service = _FakeCaptureService(ledger, lineage_store)
@@ -902,6 +1072,28 @@ def test_proof_pack_report_job_invokes_render_for_pdf_request(tmp_path):
             "/reports/proof-packs",
             json=payload,
             headers=_headers("proof-pack-dpp_001-pdf"),
+        )
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "data_ready"
+        assert render_service.calls == 1
+    finally:
+        _clear_overrides()
+
+
+def test_wave_report_job_invokes_render_for_pdf_request(tmp_path):
+    render_service = _CountingRenderService()
+    client, _ledger, _lineage_store = _client(tmp_path)
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        render_service
+    )
+    payload = _wave_payload()
+    payload["requested_output_formats"] = ["pdf"]
+    try:
+        response = client.post(
+            "/reports/rebalance-waves",
+            json=payload,
+            headers=_headers("wave-dwv_001-pdf"),
         )
 
         assert response.status_code == 202

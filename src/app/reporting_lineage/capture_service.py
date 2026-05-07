@@ -467,6 +467,8 @@ class PortfolioReviewSnapshotCaptureService:
             return self._capture_proof_pack_snapshot(job=job, started_at=started_at)
         if job.report_type == "outcome_review":
             return self._capture_outcome_review_snapshot(job=job, started_at=started_at)
+        if job.report_type == "rebalance_wave":
+            return self._capture_wave_snapshot(job=job, started_at=started_at)
         if job.status in {
             "data_ready",
             "failed",
@@ -815,6 +817,124 @@ class PortfolioReviewSnapshotCaptureService:
                         outcome_report_input.get("outcome_review_id")
                         or job.options.get("outcome_review_id")
                         or job.job_id
+                    ),
+                    status_code=200,
+                    latency_ms=0,
+                    supportability_status="complete",
+                    completeness_status="complete",
+                    failure_category="none",
+                    failure_message=None,
+                    captured_at=_utc_now(),
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+            ],
+        )
+        data_ready_job = self._job_ledger.mark_data_ready(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        record_report_operation(
+            operation="snapshot_capture",
+            status=data_ready_job.status,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return data_ready_job
+
+    def _capture_wave_snapshot(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+    ) -> ReportJobLedgerRecord:
+        if job.status in {
+            "data_ready",
+            "rendering",
+            "completed",
+            "archiving",
+            "archived",
+            "failed",
+            "cancelled",
+            "completed_with_warnings",
+        }:
+            return job
+        try:
+            self._snapshot_store.get_snapshot_by_job(job.job_id)
+            return self._job_ledger.mark_data_ready(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        except Exception:
+            pass
+
+        self._job_ledger.mark_collecting_data(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        wave_report_input = job.options.get("wave_report_input")
+        if not isinstance(wave_report_input, dict):
+            failed_job = self._job_ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="validation_failed",
+                failure_message="Wave report input was not present in the report job.",
+                retry_eligible=False,
+            )
+            record_report_operation(
+                operation="snapshot_capture",
+                status=failed_job.status,
+                failure_category=failed_job.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed_job
+
+        snapshot = self._snapshot_store.create_snapshot(
+            ReportInputSnapshotCreateRequest(
+                report_job_id=job.job_id,
+                report_type=job.report_type,
+                report_data_contract_version="dpm_wave_report_input.v1",
+                portfolio_scope=job.portfolio_scope,
+                as_of_date=job.as_of_date,
+                snapshot_payload=wave_report_input,
+                snapshot_storage_ref=None,
+                supportability_status="complete",
+                completeness_status="complete",
+                lineage_summary={
+                    "source_services": ["lotus-manage"],
+                    "call_count": 0,
+                    "supportability_status": "complete",
+                    "completeness_status": "complete",
+                    "wave_id": wave_report_input.get("wave_id"),
+                    "source_hash": wave_report_input.get("content_hash"),
+                },
+                captured_at=_utc_now(),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        source_hash = wave_report_input.get("content_hash")
+        self._snapshot_store.create_upstream_calls(
+            snapshot_id=snapshot.snapshot_id,
+            calls=[
+                ReportUpstreamCallCreateRequest(
+                    service_name="lotus-manage",
+                    endpoint="/api/v1/rebalance/waves/{wave_id}/report-input",
+                    method="GET",
+                    contract_version="DpmWaveReportInput.1.0",
+                    request_hash=str(
+                        wave_report_input.get("wave_content_hash") or "sha256:not-provided"
+                    ),
+                    response_hash=str(source_hash) if source_hash else None,
+                    response_ref=str(
+                        wave_report_input.get("wave_id") or job.options.get("wave_id") or job.job_id
                     ),
                     status_code=200,
                     latency_ms=0,

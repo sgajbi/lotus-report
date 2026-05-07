@@ -20,6 +20,7 @@ from app.reporting_jobs.models import (
     ProofPackReportJobRequest,
     ReportCallerContext,
     ReportJobListFilters,
+    WaveReportJobRequest,
 )
 
 
@@ -72,6 +73,38 @@ def _proof_pack_request(**overrides):
     }
     payload.update(overrides)
     return ProofPackReportJobRequest.model_validate(payload)
+
+
+def _wave_request(**overrides):
+    wave_report_input = {
+        "contract_version": "1.0",
+        "wave_id": "dwv_001",
+        "wave_content_hash": "sha256:wave",
+        "wave_state": "HANDOFF_READY",
+        "trigger_type": "EXPLICIT_PORTFOLIO_LIST",
+        "trigger_id": "manual-wave-001",
+        "as_of_date": "2026-05-03",
+        "generated_at": "2026-05-03T09:00:00Z",
+        "items": [
+            {
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "proof_pack_id": "dpp_001",
+            },
+            {
+                "portfolio_id": "PB_SG_INCOME_002",
+                "proof_pack_id": "dpp_002",
+            },
+        ],
+        "content_hash": "sha256:wave-report-input",
+    }
+    payload = {
+        "wave_report_input": wave_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return WaveReportJobRequest.model_validate(payload)
 
 
 def _caller(**overrides):
@@ -178,6 +211,28 @@ def test_report_job_ledger_creates_proof_pack_request_job(tmp_path):
     assert events[0].message == "Proof-pack report job accepted."
 
 
+def test_report_job_ledger_creates_wave_request_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    record = ledger.create_wave_report_job(
+        request=_wave_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-wave",
+    )
+
+    assert record.report_type == "rebalance_wave"
+    assert record.status == "accepted"
+    assert record.portfolio_scope == {
+        "portfolio_ids": ["PB_SG_GLOBAL_BAL_001", "PB_SG_INCOME_002"],
+        "wave_id": "dwv_001",
+        "proof_pack_ids": ["dpp_001", "dpp_002"],
+    }
+    assert record.as_of_date == date(2026, 5, 3)
+    assert record.options["wave_report_input"]["content_hash"] == "sha256:wave-report-input"
+    events = ledger.list_status_events(record.job_id)
+    assert events[0].message == "Rebalance wave report job accepted."
+
+
 def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     missing_portfolio_request = _outcome_request(
@@ -235,6 +290,35 @@ def test_report_job_ledger_validates_proof_pack_identity_and_as_of_date(tmp_path
             request=missing_as_of_request,
             caller_context=_caller(),
             idempotency_key="idem-proof-missing-as-of",
+        )
+
+
+def test_report_job_ledger_validates_wave_identity_and_as_of_date(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    missing_wave_id_request = _wave_request(
+        wave_report_input={
+            "as_of_date": "2026-05-03",
+            "items": [{"portfolio_id": "PB_SG_GLOBAL_BAL_001"}],
+        }
+    )
+    missing_as_of_request = _wave_request(
+        wave_report_input={
+            "wave_id": "dwv_001",
+            "items": [{"portfolio_id": "PB_SG_GLOBAL_BAL_001"}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="wave_report_input.wave_id is required"):
+        ledger.create_wave_report_job(
+            request=missing_wave_id_request,
+            caller_context=_caller(),
+            idempotency_key="idem-wave-missing-id",
+        )
+    with pytest.raises(ValueError, match="wave_report_input.as_of_date is required"):
+        ledger.create_wave_report_job(
+            request=missing_as_of_request,
+            caller_context=_caller(),
+            idempotency_key="idem-wave-missing-as-of",
         )
 
 

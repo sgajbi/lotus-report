@@ -28,6 +28,12 @@
   `DpmProofPackReportInput`; persists the handoff as the immutable snapshot, records lineage to
   `lotus-manage`, builds a `proof_pack` render package for `lotus-render`, and uses the governed
   render/archive lifecycle for PDF artifacts
+- `POST /reports/rebalance-waves`
+  internal durable rebalance-wave report job initiation from manage-owned `DpmWaveReportInput`;
+  persists the handoff as the immutable snapshot, records lineage to `lotus-manage`, builds a
+  `rebalance_wave` render package for `lotus-render`, and uses the governed render/archive
+  lifecycle for PDF artifacts without recomputing wave state, proof-pack linkage, internal handoff
+  evidence, or external execution posture
 - `GET /reports/jobs`
   internal operator-safe bounded search for report jobs by tenant, region, status, report type,
   portfolio id, as-of date, idempotency key, correlation id, and created-at window
