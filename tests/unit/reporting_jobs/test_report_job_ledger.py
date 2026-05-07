@@ -273,6 +273,44 @@ def test_report_job_ledger_rejects_idempotency_key_reuse_with_different_request(
         )
 
 
+def test_report_job_ledger_rejects_proof_pack_idempotency_key_reuse(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    ledger.create_proof_pack_report_job(
+        request=_proof_pack_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-proof-conflict",
+    )
+
+    changed_request = _proof_pack_request(
+        proof_pack_report_input={
+            "proof_pack_id": "dpp_001",
+            "proof_pack_content_hash": "sha256:changed-proof-pack",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "as_of_date": "2026-05-03",
+            "generated_at": "2026-05-03T09:00:00Z",
+            "content_hash": "sha256:changed-report-input",
+        }
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        ledger.create_proof_pack_report_job(
+            request=changed_request,
+            caller_context=_caller(),
+            idempotency_key="idem-proof-conflict",
+        )
+
+
+def test_report_job_ledger_requires_proof_pack_idempotency_key(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        ledger.create_proof_pack_report_job(
+            request=_proof_pack_request(),
+            caller_context=_caller(),
+            idempotency_key=" ",
+        )
+
+
 def test_report_job_ledger_requires_idempotency_key(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -21,6 +22,7 @@ from app.reporting_render.package_builder import (
     _optional_str,
     _performance_history,
     _performance_observation,
+    _positions,
     _risk_observation,
     _transactions,
 )
@@ -1198,7 +1200,7 @@ def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
                     "sections": [
                         {
                             "title": " ",
-                            "reason_codes": [" ", "ready"],
+                            "reason_codes": "not-a-list",
                         },
                         "ignored",
                     ],
@@ -1228,7 +1230,7 @@ def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
             "state": "not_available",
             "title": "Not available",
             "summary": "No section summary supplied.",
-            "reason_codes": ["ready"],
+            "reason_codes": [],
             "content_hash": "not_available",
         }
     ]
@@ -1290,6 +1292,21 @@ def test_build_render_package_applies_outcome_review_fallbacks(tmp_path):
 
 
 def test_render_service_helpers_cover_fallback_branches(monkeypatch):
+    assert (
+        _performance_observation(
+            {
+                "largest_positive_contributor": {
+                    "security_name": "Lotus Global Equity Fund",
+                    "ytd_contribution_pct": 1.237,
+                }
+            }
+        )
+        == "Lotus Global Equity Fund was the largest positive contributor "
+        "at 1.24% YTD contribution."
+    )
+    assert _risk_observation({"ytd_volatility_pct": 7.891, "ytd_beta": 0.92}) == (
+        "YTD volatility is 7.89% and beta is 0.92."
+    )
     assert _performance_observation({"benchmark_comparison_status": "not_available"}) == (
         "Benchmark comparison status is not_available in the governed report snapshot."
     )
@@ -1301,6 +1318,7 @@ def test_render_service_helpers_cover_fallback_branches(monkeypatch):
     assert _optional_str("   ") is None
     assert _optional_decimal(True) is None
     assert _optional_decimal(5) is not None
+    assert _optional_decimal(Decimal("1.23")) == Decimal("1.23")
     assert _optional_decimal("bad-decimal") is None
     assert _optional_int(True) == 1
     assert _optional_int("bad-int") is None
@@ -1332,6 +1350,8 @@ def test_render_package_helpers_ignore_malformed_collection_rows(monkeypatch):
         }
     ]
     assert _transactions({"transactions": {"transactionsByCategory": {}}}) == []
+    assert _positions({"holdings": {"holdingsByAssetClass": {"Equity": "not-a-list"}}}) == []
+    assert _positions({"holdings": {"holdingsByAssetClass": {"Equity": ["bad-row"]}}}) == []
     assert (
         _transactions(
             {

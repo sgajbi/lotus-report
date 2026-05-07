@@ -739,6 +739,34 @@ def test_proof_pack_report_job_captures_manage_report_input_snapshot(tmp_path):
         _clear_overrides()
 
 
+def test_proof_pack_report_job_does_not_recapture_data_ready_replay(tmp_path):
+    client, ledger, lineage_store = _client(tmp_path)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        first = client.post(
+            "/reports/proof-packs",
+            json=_proof_pack_payload(),
+            headers=_headers("proof-pack-dpp_001-replay"),
+        )
+        second = client.post(
+            "/reports/proof-packs",
+            json=_proof_pack_payload(),
+            headers=_headers("proof-pack-dpp_001-replay"),
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 202
+        assert first.json()["status"] == "data_ready"
+        assert second.json()["status"] == "data_ready"
+        assert second.json()["report_job_id"] == first.json()["report_job_id"]
+        assert capture_service.calls == 1
+    finally:
+        _clear_overrides()
+
+
 def test_outcome_review_report_job_requires_idempotency_key(tmp_path):
     client, _ledger, _lineage_store = _client(tmp_path)
     headers = {key: value for key, value in _headers().items() if key != "Idempotency-Key"}
@@ -775,6 +803,58 @@ def test_outcome_review_report_job_rejects_idempotency_conflict(tmp_path):
             "/reports/outcome-reviews",
             json=conflict_payload,
             headers=_headers("outcome-review-conflict"),
+        )
+
+        assert first.status_code == 202
+        assert second.status_code == 409
+        assert second.json()["detail"] == {
+            "code": "idempotency_conflict",
+            "message": "Idempotency-Key was reused with a different report request.",
+        }
+    finally:
+        _clear_overrides()
+
+
+def test_proof_pack_report_job_translates_ledger_missing_idempotency_error(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+
+    def _raise_missing_key(**_kwargs):
+        raise MissingIdempotencyKeyError("missing_idempotency_key")
+
+    ledger.create_proof_pack_report_job = _raise_missing_key
+    try:
+        response = client.post(
+            "/reports/proof-packs",
+            json=_proof_pack_payload(),
+            headers=_headers("proof-pack-ledger-missing-key"),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == {
+            "code": "missing_idempotency_key",
+            "message": "Idempotency-Key is required.",
+        }
+    finally:
+        _clear_overrides()
+
+
+def test_proof_pack_report_job_rejects_idempotency_conflict(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    conflict_payload = _proof_pack_payload()
+    conflict_payload["proof_pack_report_input"] = {
+        **conflict_payload["proof_pack_report_input"],
+        "content_hash": "sha256:changed-report-input",
+    }
+    try:
+        first = client.post(
+            "/reports/proof-packs",
+            json=_proof_pack_payload(),
+            headers=_headers("proof-pack-conflict"),
+        )
+        second = client.post(
+            "/reports/proof-packs",
+            json=conflict_payload,
+            headers=_headers("proof-pack-conflict"),
         )
 
         assert first.status_code == 202
