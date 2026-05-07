@@ -17,6 +17,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportCallerContext,
     ReportJobListFilters,
 )
@@ -51,6 +52,26 @@ def _outcome_request(**overrides):
     }
     payload.update(overrides)
     return OutcomeReviewReportJobRequest.model_validate(payload)
+
+
+def _proof_pack_request(**overrides):
+    proof_pack_report_input = {
+        "contract_version": "1.0",
+        "proof_pack_id": "dpp_001",
+        "proof_pack_content_hash": "sha256:proof-pack",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-05-03",
+        "generated_at": "2026-05-03T09:00:00Z",
+        "content_hash": "sha256:report-input",
+    }
+    payload = {
+        "proof_pack_report_input": proof_pack_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return ProofPackReportJobRequest.model_validate(payload)
 
 
 def _caller(**overrides):
@@ -136,6 +157,27 @@ def test_report_job_ledger_returns_duplicate_outcome_review_job(tmp_path):
     assert len(ledger.list_status_events(first.job_id)) == 1
 
 
+def test_report_job_ledger_creates_proof_pack_request_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    record = ledger.create_proof_pack_report_job(
+        request=_proof_pack_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-proof-pack",
+    )
+
+    assert record.report_type == "proof_pack"
+    assert record.status == "accepted"
+    assert record.portfolio_scope == {
+        "portfolio_ids": ["PB_SG_GLOBAL_BAL_001"],
+        "proof_pack_id": "dpp_001",
+    }
+    assert record.as_of_date == date(2026, 5, 3)
+    assert record.options["proof_pack_report_input"]["content_hash"] == "sha256:report-input"
+    events = ledger.list_status_events(record.job_id)
+    assert events[0].message == "Proof-pack report job accepted."
+
+
 def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     missing_portfolio_request = _outcome_request(
@@ -164,6 +206,35 @@ def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path
             request=missing_window_request,
             caller_context=_caller(),
             idempotency_key="idem-missing-window",
+        )
+
+
+def test_report_job_ledger_validates_proof_pack_identity_and_as_of_date(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    missing_portfolio_request = _proof_pack_request(
+        proof_pack_report_input={
+            "proof_pack_id": "dpp_001",
+            "as_of_date": "2026-05-03",
+        }
+    )
+    missing_as_of_request = _proof_pack_request(
+        proof_pack_report_input={
+            "proof_pack_id": "dpp_001",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        }
+    )
+
+    with pytest.raises(ValueError, match="portfolio_id is required"):
+        ledger.create_proof_pack_report_job(
+            request=missing_portfolio_request,
+            caller_context=_caller(),
+            idempotency_key="idem-proof-missing-portfolio",
+        )
+    with pytest.raises(ValueError, match="as_of_date is required"):
+        ledger.create_proof_pack_report_job(
+            request=missing_as_of_request,
+            caller_context=_caller(),
+            idempotency_key="idem-proof-missing-as-of",
         )
 
 
@@ -199,6 +270,44 @@ def test_report_job_ledger_rejects_idempotency_key_reuse_with_different_request(
             request=_request(reporting_currency="CHF"),
             caller_context=_caller(),
             idempotency_key="idem-conflict",
+        )
+
+
+def test_report_job_ledger_rejects_proof_pack_idempotency_key_reuse(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    ledger.create_proof_pack_report_job(
+        request=_proof_pack_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-proof-conflict",
+    )
+
+    changed_request = _proof_pack_request(
+        proof_pack_report_input={
+            "proof_pack_id": "dpp_001",
+            "proof_pack_content_hash": "sha256:changed-proof-pack",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "as_of_date": "2026-05-03",
+            "generated_at": "2026-05-03T09:00:00Z",
+            "content_hash": "sha256:changed-report-input",
+        }
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        ledger.create_proof_pack_report_job(
+            request=changed_request,
+            caller_context=_caller(),
+            idempotency_key="idem-proof-conflict",
+        )
+
+
+def test_report_job_ledger_requires_proof_pack_idempotency_key(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        ledger.create_proof_pack_report_job(
+            request=_proof_pack_request(),
+            caller_context=_caller(),
+            idempotency_key=" ",
         )
 
 

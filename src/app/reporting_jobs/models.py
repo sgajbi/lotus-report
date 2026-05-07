@@ -141,6 +141,80 @@ class OutcomeReviewReportJobRequest(BaseModel):
     )
 
 
+class ProofPackReportJobRequest(BaseModel):
+    proof_pack_report_input: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Manage-owned DpmProofPackReportInput payload. lotus-report treats this as bounded "
+            "source truth for pre-trade proof-pack report generation and never recomputes "
+            "proof-pack facts."
+        ),
+        examples=[
+            {
+                "contract_version": "1.0",
+                "proof_pack_id": "dpp_001",
+                "proof_pack_content_hash": "sha256:proof-pack",
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "mandate_id": "MANDATE_PB_SG_GLOBAL_BAL_001",
+                "as_of_date": "2026-05-03",
+                "generated_at": "2026-05-03T09:00:00Z",
+                "report_title": "Pre-Trade Proof Pack - PB_SG_GLOBAL_BAL_001",
+                "report_audience": ["portfolio_manager", "investment_control", "audit"],
+                "decision_summary": {
+                    "recommended_action": "approve_rebalance",
+                    "rationale": "Mandate drift and source readiness support rebalance approval.",
+                },
+                "supportability": {"status": "READY", "reason_codes": ["proof_pack_ready"]},
+                "sections": [
+                    {
+                        "section_id": "sec_mandate",
+                        "section_type": "MANDATE_CONTEXT",
+                        "state": "READY",
+                        "title": "Mandate context",
+                        "summary": "Mandate, model, and policy evidence are aligned.",
+                        "reason_codes": ["mandate_context_ready"],
+                        "facts": {},
+                        "metrics": {},
+                        "evidence_refs": [],
+                        "source_refs": [],
+                        "content_hash": "sha256:section-mandate",
+                    }
+                ],
+                "markdown_summary": "# Pre-Trade Proof Pack",
+                "source_hashes": {"mandate": "sha256:mandate"},
+                "redaction_policy": "NO_RAW_PAYLOADS",
+                "evidence_ref": {
+                    "source_system": "lotus-manage",
+                    "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
+                    "source_id": "dpp_001:dpm_proof_pack_report_input",
+                    "content_hash": "sha256:report-input",
+                },
+                "content_hash": "sha256:report-input",
+            }
+        ],
+    )
+    requested_output_formats: list[str] = Field(
+        default_factory=lambda: ["pdf"],
+        description=(
+            "Requested output formats. Proof-pack report jobs are intended for governed PDF "
+            "artifact generation; JSON-only jobs may be used for snapshot certification."
+        ),
+        examples=[["pdf"], ["json"]],
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Optional reporting currency used for request hashing and render context.",
+        examples=["USD"],
+    )
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Output-affecting report options such as retention policy or template controls."
+        ),
+        examples=[{"retention_policy_id": "generated-report-standard"}],
+    )
+
+
 PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
     "as_of_date": "2026-04-22",
@@ -155,6 +229,15 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
 OUTCOME_REVIEW_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "outcome_report_input": OutcomeReviewReportJobRequest.model_fields[
         "outcome_report_input"
+    ].examples[0],
+    "requested_output_formats": ["pdf"],
+    "reporting_currency": "USD",
+    "options": {"retention_policy_id": "generated-report-standard"},
+}
+
+PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
+    "proof_pack_report_input": ProofPackReportJobRequest.model_fields[
+        "proof_pack_report_input"
     ].examples[0],
     "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",

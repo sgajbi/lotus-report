@@ -14,6 +14,7 @@ from app.reporting_jobs.models import (
     API_ERROR_RESPONSE_EXAMPLES,
     OUTCOME_REVIEW_REPORT_JOB_REQUEST_EXAMPLE,
     PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE,
+    PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE,
     REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE,
     REPORT_JOB_HANDLE_RESPONSE_EXAMPLE,
     REPORT_JOB_LIST_RESPONSE_EXAMPLE,
@@ -25,6 +26,7 @@ from app.reporting_jobs.models import (
     ApiErrorResponse,
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportJobArchiveInfo,
     ReportJobDiagnosticsResponse,
     ReportJobHandleResponse,
@@ -562,6 +564,87 @@ async def submit_portfolio_review_job(
     return _record_to_handle(record)
 
 
+async def _submit_bounded_input_report_job(
+    *,
+    request: OutcomeReviewReportJobRequest | ProofPackReportJobRequest,
+    create_job: Any,
+    capture_service: Any,
+    render_service: Any,
+    idempotency_key: str | None,
+    actor_id: str | None,
+    caller_application: str | None,
+    tenant_id: str | None,
+    region: str | None,
+    booking_center_code: str | None,
+    role: str | None,
+    correlation_id: str | None,
+    trace_id: str | None,
+) -> ReportJobHandleResponse:
+    started_at = perf_counter()
+    if not idempotency_key or not idempotency_key.strip():
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="missing_idempotency_key",
+            duration_seconds=perf_counter() - started_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
+        )
+    try:
+        record = create_job(
+            request=request,
+            caller_context=caller_context_from_headers(
+                triggered_by=actor_id,
+                caller_application=caller_application,
+                tenant_id=tenant_id,
+                region=region,
+                booking_center_code=booking_center_code,
+                role=role,
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+            ),
+            idempotency_key=idempotency_key,
+        )
+    except MissingIdempotencyKeyError as exc:
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="missing_idempotency_key",
+            duration_seconds=perf_counter() - started_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
+        ) from exc
+    except IdempotencyConflictError as exc:
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="idempotency_conflict",
+            duration_seconds=perf_counter() - started_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "Idempotency-Key was reused with a different report request.",
+            },
+        ) from exc
+    if record.status == "accepted":
+        record = await capture_service.capture_for_job(record)
+    if record.status == "data_ready" and "pdf" in request.requested_output_formats:
+        record = await render_service.render_for_job(record)
+    record_report_operation(
+        operation="report_job_submission",
+        status=record.status,
+        failure_category=record.failure_category,
+        duration_seconds=perf_counter() - started_at,
+    )
+    return _record_to_handle(record)
+
+
 @router.post(
     "/outcome-reviews",
     response_model=ReportJobHandleResponse,
@@ -674,69 +757,128 @@ async def submit_outcome_review_report_job(
         Header(alias="X-Trace-ID", description="Distributed trace identifier."),
     ] = None,
 ) -> ReportJobHandleResponse:
-    started_at = perf_counter()
-    if not idempotency_key or not idempotency_key.strip():
-        record_report_operation(
-            operation="report_job_submission",
-            status="failed",
-            failure_category="missing_idempotency_key",
-            duration_seconds=perf_counter() - started_at,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
-        )
-    try:
-        record = ledger.create_outcome_review_report_job(
-            request=request,
-            caller_context=caller_context_from_headers(
-                triggered_by=actor_id,
-                caller_application=caller_application,
-                tenant_id=tenant_id,
-                region=region,
-                booking_center_code=booking_center_code,
-                role=role,
-                correlation_id=correlation_id,
-                trace_id=trace_id,
-            ),
-            idempotency_key=idempotency_key,
-        )
-    except MissingIdempotencyKeyError as exc:
-        record_report_operation(
-            operation="report_job_submission",
-            status="failed",
-            failure_category="missing_idempotency_key",
-            duration_seconds=perf_counter() - started_at,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
-        ) from exc
-    except IdempotencyConflictError as exc:
-        record_report_operation(
-            operation="report_job_submission",
-            status="failed",
-            failure_category="idempotency_conflict",
-            duration_seconds=perf_counter() - started_at,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "idempotency_conflict",
-                "message": "Idempotency-Key was reused with a different report request.",
-            },
-        ) from exc
-    if record.status == "accepted":
-        record = await capture_service.capture_for_job(record)
-    if record.status == "data_ready" and "pdf" in request.requested_output_formats:
-        record = await render_service.render_for_job(record)
-    record_report_operation(
-        operation="report_job_submission",
-        status=record.status,
-        failure_category=record.failure_category,
-        duration_seconds=perf_counter() - started_at,
+    return await _submit_bounded_input_report_job(
+        request=request,
+        create_job=ledger.create_outcome_review_report_job,
+        capture_service=capture_service,
+        render_service=render_service,
+        idempotency_key=idempotency_key,
+        actor_id=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
     )
-    return _record_to_handle(record)
+
+
+@router.post(
+    "/proof-packs",
+    response_model=ReportJobHandleResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit a governed pre-trade proof-pack report job",
+    description=(
+        "Accepts a manage-owned `DpmProofPackReportInput`, persists the bounded payload as the "
+        "immutable report snapshot, submits a proof-pack render package to `lotus-render` when PDF "
+        "output is requested, and hands successful render artifacts to `lotus-archive`. "
+        "`lotus-report` does not recompute proof-pack evidence or decision facts."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE,
+                    "examples": {
+                        "proof_pack_report_job": {
+                            "summary": "Proof-pack report job request",
+                            "value": PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE,
+                        }
+                    },
+                }
+            }
+        },
+        "x-lotus-feature-id": "lotus-report.reporting.proof_pack.job_orchestration.v1",
+        "x-lotus-report-type": "proof_pack",
+    },
+    responses={
+        **_error_response(
+            400,
+            example_key="missing_idempotency_key",
+            description=(
+                "Returned when the caller omits Idempotency-Key or required caller-context headers."
+            ),
+        ),
+        **_error_response(
+            409,
+            example_key="idempotency_conflict",
+            description=(
+                "Returned when the supplied Idempotency-Key conflicts with a different request."
+            ),
+        ),
+    },
+)
+async def submit_proof_pack_report_job(
+    request: ProofPackReportJobRequest,
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    capture_service: Any = Depends(get_portfolio_review_snapshot_capture_service),
+    render_service: Any = Depends(get_portfolio_review_render_orchestration_service),
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            description="Required caller idempotency key for proof-pack report job creation.",
+        ),
+    ] = None,
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+    booking_center_code: Annotated[
+        str | None,
+        Header(alias="X-Booking-Center-Code", description="Optional booking center code."),
+    ] = None,
+    role: Annotated[
+        str | None,
+        Header(alias="X-Role", description="Optional caller role for audit diagnostics."),
+    ] = None,
+    correlation_id: Annotated[
+        str | None,
+        Header(alias="X-Correlation-ID", description="End-to-end correlation identifier."),
+    ] = None,
+    trace_id: Annotated[
+        str | None,
+        Header(alias="X-Trace-ID", description="Distributed trace identifier."),
+    ] = None,
+) -> ReportJobHandleResponse:
+    return await _submit_bounded_input_report_job(
+        request=request,
+        create_job=ledger.create_proof_pack_report_job,
+        capture_service=capture_service,
+        render_service=render_service,
+        idempotency_key=idempotency_key,
+        actor_id=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
 
 
 @jobs_router.get(

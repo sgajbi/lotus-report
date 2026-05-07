@@ -24,6 +24,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
     ReportJobListFilters,
@@ -142,12 +143,29 @@ class PostgresReportJobLedger:
             idempotency_key=idempotency_key,
         )
 
+    def create_proof_pack_report_job(
+        self,
+        *,
+        request: ProofPackReportJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="proof_pack",
+            accepted_message="Proof-pack report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+        )
+
     def _create_report_job(
         self,
         *,
         report_type: str,
         accepted_message: str,
-        request: PortfolioReviewJobRequest | OutcomeReviewReportJobRequest,
+        request: PortfolioReviewJobRequest
+        | OutcomeReviewReportJobRequest
+        | ProofPackReportJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:

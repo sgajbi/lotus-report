@@ -15,6 +15,8 @@
 - portfolio review report is live as a machine-readable client/advisor meeting-pack contract
 - post-trade outcome-review report jobs are live for manage-owned `DpmOutcomeReportInput`
   snapshots, render-package assembly, and report-to-archive lifecycle handoff
+- pre-trade proof-pack report jobs are live for manage-owned `DpmProofPackReportInput` snapshots,
+  render-package assembly, and report-to-archive lifecycle handoff
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
@@ -32,6 +34,7 @@ This repo owns:
 - reporting read-model aggregation
 - portfolio summary and portfolio review payload shaping
 - outcome-review report artifact orchestration from manage-owned bounded report input
+- proof-pack report artifact orchestration from manage-owned bounded report input
 - reporting capability publication for downstream consumers
 
 This repo does not own:
@@ -47,6 +50,7 @@ This repo does not own:
 - [Architecture](Architecture)
 - [API Surface](API-Surface)
 - [Portfolio Review Report](Portfolio-Review-Report)
+- [Proof-Pack Report](Proof-Pack-Report)
 - [Getting Started](Getting-Started)
 - [Development Workflow](Development-Workflow)
 - [Validation and CI](Validation-and-CI)

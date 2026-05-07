@@ -11,6 +11,7 @@ from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
+    ProofPackReportJobRequest,
     ReportCallerContext,
 )
 from app.reporting_lineage import service as lineage_service
@@ -70,6 +71,29 @@ def _outcome_request(**overrides):
     return OutcomeReviewReportJobRequest.model_validate(payload)
 
 
+def _proof_pack_request(**overrides):
+    proof_pack_report_input = {
+        "contract_version": "1.0",
+        "proof_pack_id": "dpp_001",
+        "proof_pack_content_hash": "sha256:proof-pack",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-05-03",
+        "generated_at": "2026-05-03T09:00:00Z",
+        "state": "READY",
+        "sections": [],
+        "source_hashes": {"mandate": "sha256:mandate"},
+        "content_hash": "sha256:report-input",
+    }
+    payload = {
+        "proof_pack_report_input": proof_pack_report_input,
+        "requested_output_formats": ["json"],
+        "reporting_currency": "USD",
+        "options": {"retention_policy_id": "generated-report-standard"},
+    }
+    payload.update(overrides)
+    return ProofPackReportJobRequest.model_validate(payload)
+
+
 def _caller(**overrides):
     payload = {
         "triggered_by": "advisor-123",
@@ -101,6 +125,17 @@ def _create_outcome_job(tmp_path, *, suffix: str = "outcome-capture"):
     store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
     job = ledger.create_outcome_review_report_job(
         request=_outcome_request(),
+        caller_context=_caller(),
+        idempotency_key=f"idem-{suffix}",
+    )
+    return ledger, store, job
+
+
+def _create_proof_pack_job(tmp_path, *, suffix: str = "proof-pack-capture"):
+    ledger = ReportJobLedger(tmp_path / f"jobs-{suffix}.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
+    job = ledger.create_proof_pack_report_job(
+        request=_proof_pack_request(),
         caller_context=_caller(),
         idempotency_key=f"idem-{suffix}",
     )
@@ -288,6 +323,125 @@ async def test_capture_service_records_outcome_review_snapshot_and_manage_lineag
         "accepted",
         "collecting_data",
         "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tmp_path):
+    ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-success")
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.report_type == "proof_pack"
+    assert snapshot.report_data_contract_version == "dpm_proof_pack_report_input.v1"
+    assert snapshot.snapshot_payload["proof_pack_id"] == "dpp_001"
+    assert snapshot.lineage_summary == {
+        "source_services": ["lotus-manage"],
+        "call_count": 0,
+        "supportability_status": "complete",
+        "completeness_status": "complete",
+        "proof_pack_id": "dpp_001",
+        "source_hash": "sha256:report-input",
+    }
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert len(calls) == 1
+    assert calls[0].service_name == "lotus-manage"
+    assert calls[0].endpoint == "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
+    assert calls[0].request_hash == "sha256:proof-pack"
+    assert calls[0].response_hash == "sha256:report-input"
+    assert calls[0].response_ref == "dpp_001"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_reuses_existing_proof_pack_snapshot(tmp_path):
+    ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-existing")
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type="proof_pack",
+            report_data_contract_version="dpm_proof_pack_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=job.options["proof_pack_report_input"],
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-manage"], "call_count": 0},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_returns_terminal_proof_pack_job_without_mutation(tmp_path):
+    ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-terminal")
+    ready = ledger.mark_data_ready(
+        job_id=job.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+    completed = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+        render_job_id="rdr-proof-pack",
+        output_format="pdf",
+        template_id="proof-pack",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=500,
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(completed)
+
+    assert record.status == "completed"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "data_ready",
+        "completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_fails_proof_pack_without_report_input(tmp_path):
+    ledger, store, job = _create_proof_pack_job(tmp_path, suffix="proof-pack-missing-input")
+    malformed_job = job.model_copy(update={"options": {}})
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(malformed_job)
+
+    assert record.status == "failed"
+    assert record.failure_category == "validation_failed"
+    assert record.failure_message == "Proof-pack report input was not present in the report job."
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "failed",
     ]
 
 
