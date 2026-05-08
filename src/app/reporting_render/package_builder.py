@@ -217,6 +217,7 @@ def _build_proof_pack_render_package(
         if isinstance(item, dict)
     ]
     portfolio_id = _optional_str(snapshot.get("portfolio_id")) or "Portfolio"
+    portfolio_memory = _portfolio_memory_context(snapshot)
     report_data = {
         "title": _optional_str(snapshot.get("report_title"))
         or f"Pre-Trade Proof Pack - {portfolio_id}",
@@ -233,6 +234,7 @@ def _build_proof_pack_render_package(
         "proof_pack_content_hash": _optional_str(snapshot.get("proof_pack_content_hash"))
         or "not_available",
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+        "portfolio_memory": portfolio_memory,
     }
     return {
         "render_package_version": "render_package.v1",
@@ -248,7 +250,12 @@ def _build_proof_pack_render_package(
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
         "report_data": report_data,
-        "lineage_refs": [job.job_id, report_data["proof_pack_id"], report_data["content_hash"]],
+        "lineage_refs": _dpm_lineage_refs(
+            job.job_id,
+            report_data["proof_pack_id"],
+            report_data["content_hash"],
+            portfolio_memory,
+        ),
         "disclosure_refs": ["proof-pack.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
@@ -285,6 +292,7 @@ def _build_outcome_review_render_package(
         or {"lotus-manage"}
     )
     portfolio_id = _optional_str(snapshot.get("portfolio_id")) or "Portfolio"
+    portfolio_memory = _portfolio_memory_context(snapshot)
     report_data = {
         "title": _optional_str(snapshot.get("report_title"))
         or f"Post-Trade Outcome Review - {portfolio_id}",
@@ -310,6 +318,7 @@ def _build_outcome_review_render_package(
         "outcome_review_content_hash": _optional_str(snapshot.get("outcome_review_content_hash"))
         or "not_available",
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+        "portfolio_memory": portfolio_memory,
     }
     return {
         "render_package_version": "render_package.v1",
@@ -325,7 +334,12 @@ def _build_outcome_review_render_package(
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
         "report_data": report_data,
-        "lineage_refs": [job.job_id, report_data["outcome_review_id"], report_data["content_hash"]],
+        "lineage_refs": _dpm_lineage_refs(
+            job.job_id,
+            report_data["outcome_review_id"],
+            report_data["content_hash"],
+            portfolio_memory,
+        ),
         "disclosure_refs": ["outcome-review.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
@@ -365,6 +379,7 @@ def _build_wave_render_package(
         for item in snapshot.get("events", [])[-8:]
         if isinstance(item, dict)
     ]
+    portfolio_memory = _portfolio_memory_context(snapshot)
     report_data = {
         "title": _optional_str(snapshot.get("report_title"))
         or f"Rebalance Wave Evidence - {snapshot.get('wave_id', 'not_available')}",
@@ -387,6 +402,7 @@ def _build_wave_render_package(
         "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
         "wave_content_hash": _optional_str(snapshot.get("wave_content_hash")) or "not_available",
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
+        "portfolio_memory": portfolio_memory,
     }
     return {
         "render_package_version": "render_package.v1",
@@ -402,12 +418,79 @@ def _build_wave_render_package(
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
         "report_data": report_data,
-        "lineage_refs": [job.job_id, report_data["wave_id"], report_data["content_hash"]],
+        "lineage_refs": _dpm_lineage_refs(
+            job.job_id,
+            report_data["wave_id"],
+            report_data["content_hash"],
+            portfolio_memory,
+        ),
         "disclosure_refs": ["rebalance-wave.standard-disclosures.v1"],
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,
     }
+
+
+def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
+    context = _as_dict(snapshot.get("portfolio_memory_context"))
+    if not context:
+        return {
+            "status": "not_supplied",
+            "event_count": 0,
+            "content_hash": "not_available",
+            "event_refs": [],
+            "governance_policy": {},
+        }
+
+    raw_event_refs = context.get("event_refs")
+    if not isinstance(raw_event_refs, list):
+        raw_event_refs = []
+    event_refs = [
+        {
+            "event_identity": _optional_str(item.get("event_identity")) or "not_available",
+            "event_type": _optional_str(item.get("event_type")) or "not_available",
+            "source_system": _optional_str(item.get("source_system")) or "not_available",
+            "source_type": _optional_str(item.get("source_type")) or "not_available",
+            "source_id": _optional_str(item.get("source_id")) or "not_available",
+            "content_hash": _optional_str(item.get("content_hash")) or "not_available",
+            "retention_policy": _optional_str(item.get("retention_policy")) or "not_available",
+            "redaction_policy": _optional_str(item.get("redaction_policy")) or "not_available",
+            "audit_policy": _optional_str(item.get("audit_policy")) or "not_available",
+            "access_classification": _optional_str(item.get("access_classification"))
+            or "not_available",
+        }
+        for item in raw_event_refs[:12]
+        if isinstance(item, dict)
+    ]
+    return {
+        "status": "supplied",
+        "portfolio_id": _optional_str(context.get("portfolio_id")) or "not_available",
+        "supportability_state": _optional_str(context.get("supportability_state"))
+        or "not_available",
+        "event_count": _optional_int(context.get("event_count")) or len(event_refs),
+        "source_systems": _string_list(context.get("source_systems")),
+        "reason_codes": _string_list(context.get("reason_codes")),
+        "content_hash": _optional_str(context.get("content_hash")) or "not_available",
+        "governance_policy": _as_dict(context.get("governance_policy")),
+        "event_refs": event_refs,
+    }
+
+
+def _dpm_lineage_refs(
+    job_id: str,
+    source_id: object,
+    content_hash: object,
+    portfolio_memory: dict[str, Any],
+) -> list[str]:
+    refs = [
+        job_id,
+        _optional_str(source_id) or "not_available",
+        _optional_str(content_hash) or "not_available",
+    ]
+    memory_hash = _optional_str(portfolio_memory.get("content_hash"))
+    if portfolio_memory.get("status") == "supplied" and memory_hash:
+        refs.append(memory_hash)
+    return refs
 
 
 def _summary_paragraph(snapshot: dict[str, Any]) -> str:

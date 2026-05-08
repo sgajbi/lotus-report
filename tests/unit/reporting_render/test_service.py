@@ -210,6 +210,37 @@ def _proof_pack_report_input() -> dict:
     }
 
 
+def _portfolio_memory_context() -> dict:
+    return {
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "supportability_state": "READY",
+        "event_count": 3,
+        "source_systems": ["lotus-manage"],
+        "reason_codes": ["proof_pack_ready"],
+        "content_hash": "sha256:portfolio-memory",
+        "governance_policy": {
+            "retention_policy": "DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y",
+            "redaction_policy": "NO_RAW_PAYLOADS",
+            "audit_policy": "AUDIT_READ_AND_EXPORT",
+            "access_classification": "CLIENT_CONFIDENTIAL_INTERNAL",
+        },
+        "event_refs": [
+            {
+                "event_identity": "lotus-manage:DPM_PROOF_PACK:dpp_001:sha256:proof-pack",
+                "event_type": "PROOF_PACK_CREATED",
+                "source_system": "lotus-manage",
+                "source_type": "DPM_PROOF_PACK",
+                "source_id": "dpp_001",
+                "content_hash": "sha256:proof-pack",
+                "retention_policy": "DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y",
+                "redaction_policy": "NO_RAW_PAYLOADS",
+                "audit_policy": "AUDIT_READ_AND_EXPORT",
+                "access_classification": "CLIENT_CONFIDENTIAL_INTERNAL",
+            }
+        ],
+    }
+
+
 def _seed_data_ready_job(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
@@ -1136,6 +1167,7 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
                     "section_hashes": {"proof_pack": "sha256:proof-pack"},
                     "content_hash": "sha256:report-input",
                     "redaction_policy": "NO_RAW_PAYLOADS",
+                    "portfolio_memory_context": _portfolio_memory_context(),
                 },
                 "requested_output_formats": ["pdf"],
             }
@@ -1156,7 +1188,17 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
     assert payload["report_data"]["outcome_review_id"] == "dor_001"
     assert payload["report_data"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
     assert payload["report_data"]["dimensions"][0]["variance"] == "0.12"
-    assert payload["lineage_refs"] == [job.job_id, "dor_001", "sha256:report-input"]
+    assert payload["report_data"]["portfolio_memory"]["status"] == "supplied"
+    assert payload["report_data"]["portfolio_memory"]["event_count"] == 3
+    assert payload["report_data"]["portfolio_memory"]["event_refs"][0]["event_type"] == (
+        "PROOF_PACK_CREATED"
+    )
+    assert payload["lineage_refs"] == [
+        job.job_id,
+        "dor_001",
+        "sha256:report-input",
+        "sha256:portfolio-memory",
+    ]
 
 
 def test_build_render_package_emits_proof_pack_contract(tmp_path):
@@ -1164,7 +1206,10 @@ def test_build_render_package_emits_proof_pack_contract(tmp_path):
     job = ledger.create_proof_pack_report_job(
         request=ProofPackReportJobRequest.model_validate(
             {
-                "proof_pack_report_input": _proof_pack_report_input(),
+                "proof_pack_report_input": {
+                    **_proof_pack_report_input(),
+                    "portfolio_memory_context": _portfolio_memory_context(),
+                },
                 "requested_output_formats": ["pdf"],
             }
         ),
@@ -1186,7 +1231,15 @@ def test_build_render_package_emits_proof_pack_contract(tmp_path):
     assert payload["report_data"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
     assert payload["report_data"]["proof_pack_content_hash"] == "sha256:proof-pack"
     assert payload["report_data"]["sections"][0]["title"] == "Mandate context"
-    assert payload["lineage_refs"] == [job.job_id, "dpp_001", "sha256:report-input"]
+    assert payload["report_data"]["portfolio_memory"]["governance_policy"]["audit_policy"] == (
+        "AUDIT_READ_AND_EXPORT"
+    )
+    assert payload["lineage_refs"] == [
+        job.job_id,
+        "dpp_001",
+        "sha256:report-input",
+        "sha256:portfolio-memory",
+    ]
 
 
 def test_build_render_package_emits_wave_contract(tmp_path):
@@ -1230,6 +1283,7 @@ def test_build_render_package_emits_wave_contract(tmp_path):
                     "external_execution_claimed": False,
                     "content_hash": "sha256:report-input",
                     "redaction_policy": "NO_RAW_PAYLOADS",
+                    "portfolio_memory_context": _portfolio_memory_context(),
                 },
                 "requested_output_formats": ["pdf"],
             }
@@ -1253,7 +1307,13 @@ def test_build_render_package_emits_wave_contract(tmp_path):
     assert payload["report_data"]["items"][0]["proof_pack_id"] == "dpp_001"
     assert payload["report_data"]["handoff_count"] == 1
     assert payload["report_data"]["external_execution_claimed"] is False
-    assert payload["lineage_refs"] == [job.job_id, "dwv_001", "sha256:report-input"]
+    assert payload["report_data"]["portfolio_memory"]["content_hash"] == "sha256:portfolio-memory"
+    assert payload["lineage_refs"] == [
+        job.job_id,
+        "dwv_001",
+        "sha256:report-input",
+        "sha256:portfolio-memory",
+    ]
 
 
 def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
@@ -1302,6 +1362,13 @@ def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
             "content_hash": "not_available",
         }
     ]
+    assert report_data["portfolio_memory"] == {
+        "status": "not_supplied",
+        "event_count": 0,
+        "content_hash": "not_available",
+        "event_refs": [],
+        "governance_policy": {},
+    }
     assert payload["lineage_refs"] == [job.job_id, "dpp_minimal", "not_available"]
 
 

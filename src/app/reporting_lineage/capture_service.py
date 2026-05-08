@@ -672,6 +672,7 @@ class PortfolioReviewSnapshotCaptureService:
                     "completeness_status": "complete",
                     "proof_pack_id": proof_pack_report_input.get("proof_pack_id"),
                     "source_hash": proof_pack_report_input.get("content_hash"),
+                    **_portfolio_memory_lineage_summary(proof_pack_report_input),
                 },
                 captured_at=_utc_now(),
                 correlation_id=job.correlation_id,
@@ -793,6 +794,7 @@ class PortfolioReviewSnapshotCaptureService:
                     "completeness_status": "complete",
                     "outcome_review_id": outcome_report_input.get("outcome_review_id"),
                     "source_hash": outcome_report_input.get("content_hash"),
+                    **_portfolio_memory_lineage_summary(outcome_report_input),
                 },
                 captured_at=_utc_now(),
                 correlation_id=job.correlation_id,
@@ -914,6 +916,7 @@ class PortfolioReviewSnapshotCaptureService:
                     "completeness_status": "complete",
                     "wave_id": wave_report_input.get("wave_id"),
                     "source_hash": wave_report_input.get("content_hash"),
+                    **_portfolio_memory_lineage_summary(wave_report_input),
                 },
                 captured_at=_utc_now(),
                 correlation_id=job.correlation_id,
@@ -977,6 +980,26 @@ def _request_payload(job: ReportJobLedgerRecord) -> dict[str, Any]:
     if job.reporting_currency:
         payload["reporting_currency"] = job.reporting_currency
     return payload
+
+
+def _portfolio_memory_lineage_summary(report_input: dict[str, Any]) -> dict[str, Any]:
+    context = report_input.get("portfolio_memory_context")
+    if not isinstance(context, dict):
+        return {
+            "portfolio_memory_status": "not_supplied",
+        }
+
+    raw_event_refs = context.get("event_refs")
+    if not isinstance(raw_event_refs, list):
+        raw_event_refs = []
+    event_refs = [item for item in raw_event_refs if isinstance(item, dict)]
+    return {
+        "portfolio_memory_status": "supplied",
+        "portfolio_memory_content_hash": context.get("content_hash"),
+        "portfolio_memory_event_count": context.get("event_count", len(event_refs)),
+        "portfolio_memory_supportability_state": context.get("supportability_state"),
+        "portfolio_memory_event_ref_count": len(event_refs),
+    }
 
 
 def _overall_posture(calls: list[_RecordedUpstreamCall]) -> str:

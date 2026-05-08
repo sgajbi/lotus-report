@@ -20,6 +20,9 @@
 - rebalance-wave report jobs are live for manage-owned `DpmWaveReportInput` snapshots,
   proof-pack posture, internal handoff lineage, render-package assembly, and report-to-archive
   lifecycle handoff
+- DPM proof-pack, wave, and outcome-review report jobs can carry manage-owned
+  `portfolio_memory_context` as bounded lineage for report packages without reconstructing
+  portfolio-memory events or source-owner facts
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
@@ -39,6 +42,7 @@ This repo owns:
 - outcome-review report artifact orchestration from manage-owned bounded report input
 - proof-pack report artifact orchestration from manage-owned bounded report input
 - rebalance-wave report artifact orchestration from manage-owned bounded report input
+- report-side portfolio-memory lineage consumption for DPM report packages
 - reporting capability publication for downstream consumers
 
 This repo does not own:
