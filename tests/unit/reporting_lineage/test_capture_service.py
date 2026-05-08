@@ -123,6 +123,25 @@ def _wave_request(**overrides):
     return WaveReportJobRequest.model_validate(payload)
 
 
+def _portfolio_memory_context() -> dict:
+    return {
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "supportability_state": "READY",
+        "event_count": 2,
+        "content_hash": "sha256:portfolio-memory",
+        "event_refs": [
+            {
+                "event_identity": "lotus-manage:DPM_PROOF_PACK:dpp_001:sha256:proof-pack",
+                "event_type": "PROOF_PACK_CREATED",
+                "source_system": "lotus-manage",
+                "source_type": "DPM_PROOF_PACK",
+                "source_id": "dpp_001",
+                "content_hash": "sha256:proof-pack",
+            }
+        ],
+    }
+
+
 def _caller(**overrides):
     payload = {
         "triggered_by": "advisor-123",
@@ -160,11 +179,16 @@ def _create_outcome_job(tmp_path, *, suffix: str = "outcome-capture"):
     return ledger, store, job
 
 
-def _create_proof_pack_job(tmp_path, *, suffix: str = "proof-pack-capture"):
+def _create_proof_pack_job(
+    tmp_path,
+    *,
+    suffix: str = "proof-pack-capture",
+    request: ProofPackReportJobRequest | None = None,
+):
     ledger = ReportJobLedger(tmp_path / f"jobs-{suffix}.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / f"lineage-{suffix}.sqlite3")
     job = ledger.create_proof_pack_report_job(
-        request=_proof_pack_request(),
+        request=request or _proof_pack_request(),
         caller_context=_caller(),
         idempotency_key=f"idem-{suffix}",
     )
@@ -351,6 +375,7 @@ async def test_capture_service_records_outcome_review_snapshot_and_manage_lineag
         "completeness_status": "complete",
         "outcome_review_id": "dor_001",
         "source_hash": "sha256:report-input",
+        "portfolio_memory_status": "not_supplied",
     }
     calls = store.list_upstream_calls(snapshot.snapshot_id)
     assert len(calls) == 1
@@ -385,6 +410,7 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
         "completeness_status": "complete",
         "proof_pack_id": "dpp_001",
         "source_hash": "sha256:report-input",
+        "portfolio_memory_status": "not_supplied",
     }
     calls = store.list_upstream_calls(snapshot.snapshot_id)
     assert len(calls) == 1
@@ -419,6 +445,7 @@ async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path
         "completeness_status": "complete",
         "wave_id": "dwv_001",
         "source_hash": "sha256:wave-report-input",
+        "portfolio_memory_status": "not_supplied",
     }
     calls = store.list_upstream_calls(snapshot.snapshot_id)
     assert len(calls) == 1
@@ -432,6 +459,30 @@ async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path
         "collecting_data",
         "data_ready",
     ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_records_portfolio_memory_lineage_without_recomputing(tmp_path):
+    request = _proof_pack_request()
+    request.proof_pack_report_input["portfolio_memory_context"] = _portfolio_memory_context()
+    ledger, store, job = _create_proof_pack_job(
+        tmp_path,
+        suffix="proof-pack-portfolio-memory",
+        request=request,
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.snapshot_payload["portfolio_memory_context"]["content_hash"] == (
+        "sha256:portfolio-memory"
+    )
+    assert snapshot.lineage_summary["portfolio_memory_status"] == "supplied"
+    assert snapshot.lineage_summary["portfolio_memory_content_hash"] == "sha256:portfolio-memory"
+    assert snapshot.lineage_summary["portfolio_memory_event_count"] == 2
+    assert snapshot.lineage_summary["portfolio_memory_event_ref_count"] == 1
 
 
 @pytest.mark.asyncio
