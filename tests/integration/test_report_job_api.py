@@ -1416,6 +1416,82 @@ def test_report_job_diagnostics_reports_unarchived_render_flag(tmp_path):
         _clear_overrides()
 
 
+def test_report_job_portfolio_memory_events_are_source_owned_and_support_safe(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/proof-packs",
+            json=_proof_pack_payload(),
+            headers=_headers("proof-pack-memory-events"),
+        ).json()
+        job_id = handle["report_job_id"]
+        completed = ledger.mark_completed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-memory-events",
+            trace_id="trace-memory-events",
+            render_job_id=f"rdr_{job_id}_pdf",
+            output_format="pdf",
+            template_id="proof-pack",
+            template_version="v1",
+            artifact_sha256="sha256:artifact-proof-pack",
+            bounded_determinism_fingerprint="typst-0.14.2:proof",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+        ledger.mark_archiving(
+            job_id=completed.job_id,
+            actor="advisor-123",
+            correlation_id="corr-memory-events",
+            trace_id="trace-memory-events",
+            archive_request_id=f"arch_{job_id}_pdf",
+        )
+        archived = ledger.mark_archived(
+            job_id=completed.job_id,
+            actor="advisor-123",
+            correlation_id="corr-memory-events",
+            trace_id="trace-memory-events",
+            archive_request_id=f"arch_{job_id}_pdf",
+            archive_document_id=f"doc_{job_id}",
+        )
+
+        response = client.get(
+            f"/reports/jobs/{archived.job_id}/portfolio-memory-events",
+            headers=_headers("proof-pack-memory-events"),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["report_job_id"] == archived.job_id
+        assert body["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+        assert body["report_type"] == "proof_pack"
+        assert body["supportability_state"] == "READY"
+        assert body["governance_policy"]["redaction_policy"] == "NO_RAW_PAYLOADS"
+        assert body["events"][-1]["event_type"] == "REPORT_ARCHIVED"
+        assert body["events"][-1]["artifact_refs"] == [
+            {
+                "artifact_system": "lotus-render",
+                "artifact_type": "RENDERED_REPORT_ARTIFACT",
+                "artifact_id": f"rdr_{job_id}_pdf",
+                "content_hash": "sha256:artifact-proof-pack",
+            },
+            {
+                "artifact_system": "lotus-archive",
+                "artifact_type": "ARCHIVED_REPORT_DOCUMENT",
+                "artifact_id": f"doc_{job_id}",
+                "content_hash": "sha256:artifact-proof-pack",
+            },
+        ]
+        assert "REPORT_INPUT_SNAPSHOT" in {
+            ref["source_type"] for ref in body["events"][-1]["source_refs"]
+        }
+        assert "snapshot_payload" not in str(body).lower()
+        assert "snapshot_storage_ref" not in str(body).lower()
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_diagnostics_translates_lineage_store_unavailable(tmp_path):
     client, _ledger, _lineage_store = _client(tmp_path)
 
@@ -1476,6 +1552,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     list_example = list_get["responses"]["200"]["content"]["application/json"]["example"]
     events_get = schema["paths"]["/reports/jobs/{job_id}/events"]["get"]
     events_example = events_get["responses"]["200"]["content"]["application/json"]["example"]
+    memory_get = schema["paths"]["/reports/jobs/{job_id}/portfolio-memory-events"]["get"]
+    memory_example = memory_get["responses"]["200"]["content"]["application/json"]["example"]
     diagnostics_get = schema["paths"]["/reports/jobs/{job_id}/diagnostics"]["get"]
     diagnostics_example = diagnostics_get["responses"]["200"]["content"]["application/json"][
         "example"
@@ -1494,6 +1572,8 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert status_example["archive"]["document_id"].startswith("doc_")
     assert list_example["items"][0]["report_job_id"].startswith("rjob_")
     assert events_example["events"][0]["event_type"] == "job_accepted"
+    assert memory_example["events"][0]["event_type"] == "REPORT_JOB_ACCEPTED"
+    assert memory_example["governance_policy"]["redaction_policy"] == "NO_RAW_PAYLOADS"
     assert diagnostics_example["lineage"]["upstream_call_count"] == 3
     assert diagnostics_example["operation_links"]["lineage_url"].endswith("/lineage")
     assert "snapshot_payload" not in str(diagnostics_example)
@@ -1510,6 +1590,7 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert replay_example["replayed_report_job_id"] != replay_example["source_report_job_id"]
     assert replay_example["source_failure_category"] == "upstream_data_failed"
     assert "Report Jobs" in list_get["tags"]
+    assert "Report Jobs" in memory_get["tags"]
     assert "Report Jobs" in diagnostics_get["tags"]
     assert "Report Jobs" in regenerate_post["tags"]
     assert "Report Jobs" in replay_post["tags"]
@@ -1519,6 +1600,7 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         or "use this endpoint" in list_get["description"].lower()
     )
     assert "use this endpoint" in diagnostics_get["description"].lower()
+    assert "downstream portfolio-memory consumers" in memory_get["description"]
     assert "upstream" in regenerate_post["description"].lower()
     assert "rerender" in regenerate_post["description"].lower()
     assert "failed" in replay_post["description"].lower()
@@ -1528,6 +1610,7 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     assert "RFC-" not in str(status_example)
     assert "RFC-" not in str(list_example)
     assert "RFC-" not in str(events_example)
+    assert "RFC-" not in str(memory_example)
     assert "RFC-" not in str(diagnostics_example)
     assert "RFC-" not in str(regenerate_example)
     assert "RFC-" not in str(replay_example)
@@ -1542,6 +1625,11 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         "ReportJobListItem",
         "ReportJobListFilters",
         "ReportJobStatusEventsResponse",
+        "ReportPortfolioMemoryArtifactRef",
+        "ReportPortfolioMemoryEvent",
+        "ReportPortfolioMemoryEventsResponse",
+        "ReportPortfolioMemoryGovernancePolicy",
+        "ReportPortfolioMemorySourceRef",
         "ReportJobRegenerateRequest",
         "ReportJobRegenerateResponse",
         "ReportJobReplayRequest",

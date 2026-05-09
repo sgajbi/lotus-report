@@ -23,6 +23,9 @@
 - DPM proof-pack, wave, and outcome-review report jobs can carry manage-owned
   `portfolio_memory_context` as bounded lineage for report packages without reconstructing
   portfolio-memory events or source-owner facts
+- report jobs expose a report-owned portfolio-memory source-event family for downstream
+  ingestion, with stable identities, source refs, artifact refs, hashes, and governance policy
+  without raw payloads or storage references
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
 
@@ -43,6 +46,8 @@ This repo owns:
 - proof-pack report artifact orchestration from manage-owned bounded report input
 - rebalance-wave report artifact orchestration from manage-owned bounded report input
 - report-side portfolio-memory lineage consumption for DPM report packages
+- report-owned portfolio-memory source events for report lifecycle, snapshot, render, and archive
+  evidence
 - reporting capability publication for downstream consumers
 
 This repo does not own:

@@ -23,6 +23,7 @@ from app.reporting_jobs.models import (
     REPORT_JOB_RERENDER_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE,
     REPORT_JOB_STATUS_RESPONSE_EXAMPLE,
+    REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE,
     WAVE_REPORT_JOB_REQUEST_EXAMPLE,
     ApiErrorResponse,
     OutcomeReviewReportJobRequest,
@@ -47,9 +48,11 @@ from app.reporting_jobs.models import (
     ReportJobSnapshotDiagnostics,
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
+    ReportPortfolioMemoryEventsResponse,
     ReportRerenderAttemptRecord,
     WaveReportJobRequest,
 )
+from app.reporting_jobs.portfolio_memory_events import build_report_portfolio_memory_events
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
     ReportInputSnapshotRecord,
@@ -1340,6 +1343,103 @@ async def get_report_job_diagnostics(
         archive=status_response.archive,
         diagnostic_flags=diagnostic_flags,
         operation_links=_diagnostic_links(record.job_id, snapshot),
+    )
+
+
+@jobs_router.get(
+    "/{job_id}/portfolio-memory-events",
+    response_model=ReportPortfolioMemoryEventsResponse,
+    summary="Get report-owned portfolio memory source events",
+    description=(
+        "Returns report-owned source events that downstream portfolio-memory consumers can ingest "
+        "without reconstructing report lifecycle, snapshot, render, or archive facts. The response "
+        "is support-safe: it carries stable event identities, hashes, source refs, artifact refs, "
+        "and governance policy while omitting raw report snapshot payloads and storage references."
+    ),
+    openapi_extra={
+        "responses": {
+            "200": {
+                "content": {
+                    "application/json": {
+                        "example": REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE,
+                        "examples": {
+                            "report_portfolio_memory_events": {
+                                "summary": "Report-owned portfolio memory source events",
+                                "value": REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE,
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    },
+    responses={
+        **_error_response(
+            404,
+            example_key="report_job_not_found",
+            description="Returned when the requested report job identifier does not exist.",
+        ),
+        **_error_response(
+            503,
+            example_key="report_lineage_store_unavailable",
+            description="Returned when snapshot lineage cannot be queried for event source refs.",
+        ),
+    },
+)
+async def get_report_job_portfolio_memory_events(
+    job_id: Annotated[str, Path(description="Opaque report job identifier.")],
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    store: ReportLineageStore = Depends(get_report_lineage_store),
+    actor_id: Annotated[
+        str | None,
+        Header(alias="X-Actor-Id", description="Authenticated actor or system principal."),
+    ] = None,
+    caller_application: Annotated[
+        str | None,
+        Header(alias="X-Caller-Application", description="Calling Lotus application."),
+    ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(alias="X-Tenant-Id", description="Tenant identifier for entitlement and audit."),
+    ] = None,
+    region: Annotated[
+        str | None,
+        Header(alias="X-Region", description="Operating region for segregation and audit."),
+    ] = None,
+) -> ReportPortfolioMemoryEventsResponse:
+    caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=None,
+        role=None,
+        correlation_id=None,
+        trace_id=None,
+    )
+    try:
+        record = ledger.get_job(job_id)
+    except ReportJobNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "report_job_not_found", "message": "Report job was not found."},
+        ) from exc
+
+    snapshot: ReportInputSnapshotRecord | None = None
+    try:
+        snapshot = store.get_snapshot_by_job(job_id)
+    except ReportInputSnapshotNotFoundError:
+        snapshot = None
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=API_ERROR_RESPONSE_EXAMPLES["report_lineage_store_unavailable"]["detail"],
+        ) from exc
+
+    return build_report_portfolio_memory_events(
+        record=record,
+        status_events=ledger.list_status_events(job_id),
+        snapshot=snapshot,
     )
 
 
