@@ -67,8 +67,13 @@ Current repository posture:
 12. RFC40-WTBD-010 report-side portfolio-memory consumption is implemented for the first-wave DPM
    report jobs: proof-pack, rebalance-wave, and outcome-review report inputs may carry a
    manage-owned bounded `portfolio_memory_context`, and `lotus-report` persists that context in
-   immutable snapshot lineage and render-package lineage without reconstructing portfolio-memory
-   events, event identity, source facts, retention, redaction, access, or audit policy,
+   immutable snapshot lineage and render-package lineage without reconstructing manage-owned
+   portfolio-memory events. `lotus-report` also owns a report source-event family at
+   `GET /reports/jobs/{job_id}/portfolio-memory-events` that maps report lifecycle, snapshot,
+   render, and archive evidence into support-safe event identities, source refs, artifact refs,
+   content hashes, and retention/redaction/access/audit policy without exposing raw snapshot
+   payloads or storage references. This closes only the report-owned source-event family; AI, OMS,
+   PM-scoring, and client-communication source-event families remain separate owner work,
 13. RFC-0104 is implemented for first-wave scope. The implemented surface includes durable batch
    materialization/status/control APIs, deterministic schedule-cycle identity, dispatch/lease/
    back-pressure primitives, retry/recovery controls, the internal item execution bridge,
@@ -123,8 +128,8 @@ Primary areas:
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
 10. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
-   lifecycle, idempotency, request hashing, status retrieval, and bounded cancellation for the first
-   asynchronous reporting wave.
+   lifecycle, idempotency, request hashing, status retrieval, bounded cancellation, and
+   report-owned portfolio-memory source events for the first asynchronous reporting wave.
 11. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call

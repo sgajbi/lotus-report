@@ -45,6 +45,11 @@
 - `GET /reports/jobs/{job_id}/diagnostics`
   internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
   lineage, render, and archive handoff state; omits raw payloads and storage references
+- `GET /reports/jobs/{job_id}/portfolio-memory-events`
+  internal report-owned source-event family for downstream portfolio memory; maps report
+  lifecycle, snapshot, render, and archive evidence into stable event identities, source refs,
+  artifact refs, hashes, and retention/redaction/access/audit policy without exposing raw snapshot
+  payloads or storage references
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history
 - `POST /reports/jobs/{job_id}/rerender`
@@ -128,6 +133,9 @@ front-office consumers.
 - report job creation requires `Idempotency-Key`
 - rerender, regenerate, and failed-work replay commands require `Idempotency-Key` plus governed
   caller context headers
+- report-owned portfolio-memory events require governed caller context headers and return
+  support-safe event identities only; they do not expose raw report inputs, raw upstream payloads,
+  rendered bytes, storage keys, or client communication content
 - report job search requires at least one supported filter and is bounded by `limit`
 - batch materialization requires `Idempotency-Key` and governed caller context headers
 - batch materialization, control, run-once, and config-backed scheduler list/run-due APIs are
@@ -221,6 +229,16 @@ Internal report lineage lookup:
 
 ```bash
 curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" \
+  -H "X-Actor-Id: support-operator-1" \
+  -H "X-Caller-Application: lotus-gateway" \
+  -H "X-Tenant-Id: tenant-sg" \
+  -H "X-Region: APAC"
+```
+
+Internal report-owned portfolio-memory source events:
+
+```bash
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/portfolio-memory-events" \
   -H "X-Actor-Id: support-operator-1" \
   -H "X-Caller-Application: lotus-gateway" \
   -H "X-Tenant-Id: tenant-sg" \

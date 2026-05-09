@@ -439,6 +439,77 @@ REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
     },
 }
 
+REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
+    "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+    "report_type": "proof_pack",
+    "event_count": 3,
+    "supportability_state": "READY",
+    "source_systems": ["lotus-report"],
+    "reason_codes": ["REPORT_EVENT_FAMILY_READY"],
+    "governance_policy": {
+        "event_identity_scheme": (
+            "source_system:source_type:source_id:content_hash_or_content_hash_unavailable"
+        ),
+        "retention_policy": "DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y",
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "audit_policy": "AUDIT_READ_AND_EXPORT",
+        "access_classification": "CLIENT_CONFIDENTIAL_INTERNAL",
+    },
+    "content_hash": ("sha256:6a8dfe91ed58dce965f7825713c8bf0f2b669a50bf198b3e1fb7be6474b53e2e"),
+    "generated_at": "2026-04-22T09:00:04Z",
+    "events": [
+        {
+            "event_id": (
+                "report-memory:rjob_83ca965c50334c40a17d2b8cc94873a5:"
+                "rse_d7e9c3b87d864b098997d4fe5bd2de2a"
+            ),
+            "event_identity": (
+                "lotus-report:REPORT_STATUS_EVENT:"
+                "rse_d7e9c3b87d864b098997d4fe5bd2de2a:"
+                "sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"
+            ),
+            "event_type": "REPORT_JOB_ACCEPTED",
+            "event_time": "2026-04-22T09:00:00Z",
+            "actor": "advisor-123",
+            "source_system": "lotus-report",
+            "source_type": "REPORT_STATUS_EVENT",
+            "source_id": "rse_d7e9c3b87d864b098997d4fe5bd2de2a",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+            "report_type": "proof_pack",
+            "status": "accepted",
+            "supportability_state": "PENDING_REVIEW",
+            "summary": "Report job accepted for proof_pack.",
+            "reason_codes": ["REPORT_JOB_ACCEPTED"],
+            "source_refs": [
+                {
+                    "source_system": "lotus-report",
+                    "source_type": "REPORT_JOB",
+                    "source_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+                    "content_hash": "sha256:request-hash",
+                },
+                {
+                    "source_system": "lotus-report",
+                    "source_type": "REPORT_STATUS_EVENT",
+                    "source_id": "rse_d7e9c3b87d864b098997d4fe5bd2de2a",
+                    "content_hash": (
+                        "sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"
+                    ),
+                },
+            ],
+            "artifact_refs": [],
+            "content_hash": (
+                "sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"
+            ),
+            "metadata": {
+                "correlation_id": "corr-portfolio-review-1",
+                "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+            },
+        }
+    ],
+}
+
 REPORT_JOB_LIST_FILTERS_EXAMPLE: dict[str, Any] = {
     "tenant_id": "tenant-sg",
     "region": "APAC",
@@ -1392,6 +1463,249 @@ class ReportJobDiagnosticsResponse(BaseModel):
         ...,
         description="Related source-backed operator endpoints for deeper evidence review.",
         examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["operation_links"]],
+    )
+
+
+ReportPortfolioMemorySupportabilityState = Literal[
+    "READY",
+    "PENDING_REVIEW",
+    "DEGRADED",
+    "EMPTY",
+]
+
+
+class ReportPortfolioMemorySourceRef(BaseModel):
+    source_system: str = Field(
+        ...,
+        description="Lotus system that owns the referenced source fact.",
+        examples=["lotus-report"],
+    )
+    source_type: str = Field(
+        ...,
+        description="Bounded source type for the referenced fact.",
+        examples=["REPORT_STATUS_EVENT"],
+    )
+    source_id: str = Field(
+        ...,
+        description="Opaque source identifier in the owning system.",
+        examples=["rse_d7e9c3b87d864b098997d4fe5bd2de2a"],
+    )
+    content_hash: str | None = Field(
+        default=None,
+        description="Canonical content hash when the referenced source exposes one.",
+        examples=["sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"],
+    )
+
+
+class ReportPortfolioMemoryArtifactRef(BaseModel):
+    artifact_system: str = Field(
+        ...,
+        description="Lotus system that owns the referenced artifact.",
+        examples=["lotus-archive"],
+    )
+    artifact_type: str = Field(
+        ...,
+        description="Bounded artifact type.",
+        examples=["ARCHIVED_REPORT_DOCUMENT"],
+    )
+    artifact_id: str = Field(
+        ...,
+        description="Opaque artifact identifier in the owning system.",
+        examples=["doc_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    content_hash: str | None = Field(
+        default=None,
+        description="Artifact content hash when available.",
+        examples=["sha256:artifact-portfolio-review"],
+    )
+
+
+class ReportPortfolioMemoryGovernancePolicy(BaseModel):
+    event_identity_scheme: str = Field(
+        ...,
+        description="Stable event identity composition rule used by this source-event family.",
+        examples=["source_system:source_type:source_id:content_hash_or_content_hash_unavailable"],
+    )
+    retention_policy: str = Field(
+        ...,
+        description="Retention policy identifier for report-owned memory source lineage.",
+        examples=["DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y"],
+    )
+    redaction_policy: str = Field(
+        ...,
+        description="Redaction policy applied to this support-safe event surface.",
+        examples=["NO_RAW_PAYLOADS"],
+    )
+    audit_policy: str = Field(
+        ...,
+        description="Audit policy expected for read/export access.",
+        examples=["AUDIT_READ_AND_EXPORT"],
+    )
+    access_classification: str = Field(
+        ...,
+        description="Access classification for client-confidential internal report events.",
+        examples=["CLIENT_CONFIDENTIAL_INTERNAL"],
+    )
+
+
+class ReportPortfolioMemoryEvent(BaseModel):
+    event_id: str = Field(
+        ...,
+        description="Stable report-owned event identifier for portfolio-memory ingestion.",
+        examples=[
+            "report-memory:rjob_83ca965c50334c40a17d2b8cc94873a5:"
+            "rse_d7e9c3b87d864b098997d4fe5bd2de2a"
+        ],
+    )
+    event_identity: str = Field(
+        ...,
+        description="Stable deduplication identity for the report-owned source event.",
+        examples=[
+            "lotus-report:REPORT_STATUS_EVENT:"
+            "rse_d7e9c3b87d864b098997d4fe5bd2de2a:"
+            "sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"
+        ],
+    )
+    event_type: str = Field(
+        ...,
+        description="Bounded report-owned event type mapped from the report lifecycle.",
+        examples=["REPORT_JOB_ARCHIVED"],
+    )
+    event_time: datetime = Field(
+        ...,
+        description="UTC timestamp when the report-owned source event occurred.",
+        examples=["2026-04-22T09:00:04Z"],
+    )
+    actor: str = Field(
+        ...,
+        description="Actor or system principal that caused the report lifecycle event.",
+        examples=["advisor-123"],
+    )
+    source_system: str = Field(
+        "lotus-report",
+        description="Owning source system for this event family.",
+        examples=["lotus-report"],
+    )
+    source_type: str = Field(
+        ...,
+        description="Bounded source type for the owning report event.",
+        examples=["REPORT_STATUS_EVENT"],
+    )
+    source_id: str = Field(
+        ...,
+        description="Opaque owning source identifier.",
+        examples=["rse_d7e9c3b87d864b098997d4fe5bd2de2a"],
+    )
+    portfolio_id: str | None = Field(
+        default=None,
+        description="Primary portfolio identifier when the report scope is portfolio-bound.",
+        examples=["PB_SG_GLOBAL_BAL_001"],
+    )
+    report_job_id: str = Field(
+        ...,
+        description="Report job that produced this source event.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    report_type: str = Field(
+        ...,
+        description="Report type associated with the source event.",
+        examples=["proof_pack"],
+    )
+    status: ReportJobStatus = Field(
+        ...,
+        description="Report job status after this lifecycle event.",
+        examples=["archived"],
+    )
+    supportability_state: ReportPortfolioMemorySupportabilityState = Field(
+        ...,
+        description="Supportability posture of this event for downstream portfolio memory.",
+        examples=["READY"],
+    )
+    summary: str = Field(
+        ...,
+        description="Support-safe event summary without raw report payloads.",
+        examples=["Report job archived for proof_pack."],
+    )
+    reason_codes: list[str] = Field(
+        ...,
+        description="Machine-readable reason codes for the event and supportability posture.",
+        examples=[["REPORT_JOB_ARCHIVED"]],
+    )
+    source_refs: list[ReportPortfolioMemorySourceRef] = Field(
+        ...,
+        description="Support-safe source references required to audit the event.",
+    )
+    artifact_refs: list[ReportPortfolioMemoryArtifactRef] = Field(
+        default_factory=list,
+        description="Support-safe render/archive artifact references linked to this event.",
+    )
+    content_hash: str = Field(
+        ...,
+        description="Canonical hash over the support-safe event envelope.",
+        examples=["sha256:7ce6f9c6c5385fca0c5751f3446d575d00e27d467131ba42e0fae019ca27db21"],
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Bounded operational metadata such as correlation and trace identifiers.",
+        examples=[{"correlation_id": "corr-portfolio-review-1"}],
+    )
+
+
+class ReportPortfolioMemoryEventsResponse(BaseModel):
+    report_job_id: str = Field(
+        ...,
+        description="Report job whose report-owned portfolio-memory source events are returned.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    portfolio_id: str | None = Field(
+        default=None,
+        description="Primary portfolio identifier when the report scope is portfolio-bound.",
+        examples=["PB_SG_GLOBAL_BAL_001"],
+    )
+    report_type: str = Field(
+        ...,
+        description="Report type associated with the returned event family.",
+        examples=["proof_pack"],
+    )
+    event_count: int = Field(
+        ...,
+        description="Number of report-owned source events returned.",
+        examples=[3],
+    )
+    supportability_state: ReportPortfolioMemorySupportabilityState = Field(
+        ...,
+        description="Aggregated supportability posture for the returned event family.",
+        examples=["READY"],
+    )
+    source_systems: list[str] = Field(
+        ...,
+        description="Source systems represented by this report-owned event response.",
+        examples=[["lotus-report"]],
+    )
+    reason_codes: list[str] = Field(
+        ...,
+        description="Aggregated machine-readable reason codes for the response posture.",
+        examples=[["REPORT_EVENT_FAMILY_READY"]],
+    )
+    governance_policy: ReportPortfolioMemoryGovernancePolicy = Field(
+        ...,
+        description="Governance policies applied to the report-owned event family.",
+        examples=[REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE["governance_policy"]],
+    )
+    content_hash: str = Field(
+        ...,
+        description="Canonical hash over the returned support-safe event family.",
+        examples=[REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE["content_hash"]],
+    )
+    generated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when this response was generated.",
+        examples=["2026-04-22T09:00:04Z"],
+    )
+    events: list[ReportPortfolioMemoryEvent] = Field(
+        ...,
+        description="Report-owned portfolio-memory source events ordered by event time.",
+        examples=[REPORT_PORTFOLIO_MEMORY_EVENTS_RESPONSE_EXAMPLE["events"]],
     )
 
 
