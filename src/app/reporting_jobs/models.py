@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ReportJobStatus = Literal[
     "accepted",
@@ -45,6 +45,175 @@ ReportRerenderAttemptStatus = Literal[
 ReportRegenerateStatus = ReportJobStatus
 
 
+class ProposalNarrativeReviewPackage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    review_id: str | None = Field(
+        default=None,
+        description="lotus-advise narrative review identity that approved the package.",
+        examples=["pnrev_001"],
+    )
+    review_state: str = Field(
+        ...,
+        description="Review state supplied by lotus-advise. Must be APPROVED_FOR_ADVISOR_USE.",
+        examples=["APPROVED_FOR_ADVISOR_USE"],
+    )
+    reviewed_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp when the narrative review decision was recorded.",
+        examples=["2026-04-22T09:10:00Z"],
+    )
+    reviewed_by: str | None = Field(
+        default=None,
+        description="Actor or system principal that recorded the review decision.",
+        examples=["advisor-123"],
+    )
+
+
+class ProposalNarrativeSectionPackage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    section_id: str = Field(
+        ...,
+        description="Stable advisory narrative section identity.",
+        examples=["portfolio_context"],
+    )
+    title: str = Field(
+        ...,
+        description="Human-readable section title approved by lotus-advise.",
+        examples=["Portfolio Context"],
+    )
+    body: str = Field(
+        ...,
+        description="Approved advisory narrative body text for report rendering.",
+        examples=["The portfolio remains aligned to the balanced mandate."],
+    )
+    source_refs: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Source references carried from lotus-advise for this section.",
+    )
+
+
+class ProposalNarrativeDisclosurePackage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    disclosure_id: str = Field(
+        ...,
+        description="Stable disclosure identity supplied by lotus-advise.",
+        examples=["proposal_narrative.advisor_use_only.v1"],
+    )
+    text: str | None = Field(
+        default=None,
+        description="Disclosure text supplied by lotus-advise when available.",
+        examples=["For advisor use only until the client-ready report workflow is approved."],
+    )
+
+
+class ProposalNarrativeReportPackage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    package_status: str = Field(
+        ...,
+        description=(
+            "Package inclusion status. lotus-report accepts only INCLUDED_REVIEWED_NARRATIVE."
+        ),
+        examples=["INCLUDED_REVIEWED_NARRATIVE"],
+    )
+    usage: str = Field(
+        ...,
+        description="Intended usage boundary for the package supplied by lotus-advise.",
+        examples=["REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE"],
+    )
+    proposal_id: str = Field(
+        ...,
+        description="Source proposal identity in lotus-advise.",
+        examples=["prop_001"],
+    )
+    proposal_version_no: int = Field(
+        ...,
+        description="Source proposal version number approved for report inclusion.",
+        examples=[3],
+    )
+    narrative_id: str = Field(
+        ...,
+        description="Source advisory narrative identity in lotus-advise.",
+        examples=["pnar_001"],
+    )
+    narrative_status: str | None = Field(
+        default=None,
+        description="Source narrative lifecycle status supplied by lotus-advise.",
+        examples=["APPROVED_FOR_ADVISOR_USE"],
+    )
+    generation_mode: str | None = Field(
+        default=None,
+        description="Narrative generation mode supplied by lotus-advise.",
+        examples=["GOVERNED_AI_ASSISTED"],
+    )
+    audience: str | None = Field(
+        default=None,
+        description="Audience boundary for the approved narrative package.",
+        examples=["advisor"],
+    )
+    policy_version: str | None = Field(
+        default=None,
+        description="lotus-advise narrative policy version used to approve the package.",
+        examples=["proposal-narrative-policy.v1"],
+    )
+    review: ProposalNarrativeReviewPackage = Field(
+        ...,
+        description="Human or governed review decision that authorizes report inclusion.",
+    )
+    source_lineage: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Source lineage from lotus-advise, including source_narrative_hash and related "
+            "proposal evidence hashes."
+        ),
+        examples=[{"source_narrative_hash": "sha256:narrative"}],
+    )
+    sections: list[ProposalNarrativeSectionPackage] = Field(
+        default_factory=list,
+        description="Approved narrative sections to render in report output.",
+    )
+    disclosures: list[ProposalNarrativeDisclosurePackage] = Field(
+        default_factory=list,
+        description="Disclosures that must travel with the approved narrative package.",
+    )
+    guardrail_results: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Guardrail decisions supplied by lotus-advise.",
+    )
+    limitations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Known limitations supplied by lotus-advise for advisor/report consumption.",
+    )
+    ai_lineage: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional AI lineage supplied by lotus-advise.",
+    )
+    execution_boundary: dict[str, Any] | None = Field(
+        default=None,
+        description="Execution and distribution boundary supplied by lotus-advise.",
+    )
+
+    @model_validator(mode="after")
+    def validate_reviewed_package(self) -> "ProposalNarrativeReportPackage":
+        if self.package_status != "INCLUDED_REVIEWED_NARRATIVE":
+            raise ValueError(
+                "proposal_narrative_package.package_status must be INCLUDED_REVIEWED_NARRATIVE"
+            )
+        if self.review.review_state != "APPROVED_FOR_ADVISOR_USE":
+            raise ValueError(
+                "proposal_narrative_package.review.review_state must be APPROVED_FOR_ADVISOR_USE"
+            )
+        source_hash = str(self.source_lineage.get("source_narrative_hash") or "").strip()
+        if not source_hash:
+            raise ValueError(
+                "proposal_narrative_package.source_lineage.source_narrative_hash is required"
+            )
+        return self
+
+
 class PortfolioReviewJobRequest(BaseModel):
     portfolio_scope: dict[str, Any] = Field(
         ...,
@@ -78,6 +247,14 @@ class PortfolioReviewJobRequest(BaseModel):
                 "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
             }
         ],
+    )
+    proposal_narrative_package: ProposalNarrativeReportPackage | None = Field(
+        default=None,
+        description=(
+            "Optional approved proposal narrative package from lotus-advise. lotus-report "
+            "preserves this source-authorized package in the immutable snapshot and render "
+            "package; it does not approve, rewrite, or infer advisory narrative facts."
+        ),
     )
 
 
@@ -311,6 +488,45 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     "options": {
         "sections": ["OVERVIEW", "PERFORMANCE", "RISK_ANALYTICS"],
         "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
+    },
+    "proposal_narrative_package": {
+        "package_status": "INCLUDED_REVIEWED_NARRATIVE",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 3,
+        "narrative_id": "pnar_001",
+        "narrative_status": "APPROVED_FOR_ADVISOR_USE",
+        "generation_mode": "GOVERNED_AI_ASSISTED",
+        "audience": "advisor",
+        "policy_version": "proposal-narrative-policy.v1",
+        "review": {
+            "review_id": "pnrev_001",
+            "review_state": "APPROVED_FOR_ADVISOR_USE",
+            "reviewed_at": "2026-04-22T09:10:00Z",
+            "reviewed_by": "advisor-123",
+        },
+        "source_lineage": {
+            "source_narrative_hash": "sha256:narrative",
+            "proposal_hash": "sha256:proposal",
+            "proposal_version_hash": "sha256:proposal-version",
+        },
+        "sections": [
+            {
+                "section_id": "portfolio_context",
+                "title": "Portfolio Context",
+                "body": "The portfolio remains aligned to the balanced mandate.",
+                "source_refs": [{"source_system": "lotus-advise", "source_id": "prop_001"}],
+            }
+        ],
+        "disclosures": [
+            {
+                "disclosure_id": "proposal_narrative.advisor_use_only.v1",
+                "text": "For advisor use only until the client-ready workflow is approved.",
+            }
+        ],
+        "guardrail_results": [{"guardrail_id": "no_trade_instruction", "status": "passed"}],
+        "limitations": [{"limitation_id": "advisor_use_only", "status": "active"}],
+        "execution_boundary": {"client_distribution_allowed": False},
     },
 }
 

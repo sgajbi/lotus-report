@@ -66,6 +66,48 @@ def _payload():
     }
 
 
+def _proposal_narrative_package():
+    return {
+        "package_status": "INCLUDED_REVIEWED_NARRATIVE",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 3,
+        "narrative_id": "pnar_001",
+        "narrative_status": "APPROVED_FOR_ADVISOR_USE",
+        "generation_mode": "GOVERNED_AI_ASSISTED",
+        "audience": "advisor",
+        "policy_version": "proposal-narrative-policy.v1",
+        "review": {
+            "review_id": "pnrev_001",
+            "review_state": "APPROVED_FOR_ADVISOR_USE",
+            "reviewed_at": "2026-04-22T09:10:00Z",
+            "reviewed_by": "advisor-123",
+        },
+        "source_lineage": {
+            "source_narrative_hash": "sha256:narrative",
+            "proposal_hash": "sha256:proposal",
+            "proposal_version_hash": "sha256:proposal-version",
+        },
+        "sections": [
+            {
+                "section_id": "portfolio_context",
+                "title": "Portfolio Context",
+                "body": "The portfolio remains aligned to the balanced mandate.",
+                "source_refs": [{"source_system": "lotus-advise", "source_id": "prop_001"}],
+            }
+        ],
+        "disclosures": [
+            {
+                "disclosure_id": "proposal_narrative.advisor_use_only.v1",
+                "text": "For advisor use only until the client-ready workflow is approved.",
+            }
+        ],
+        "guardrail_results": [{"guardrail_id": "no_trade_instruction", "status": "passed"}],
+        "limitations": [{"limitation_id": "advisor_use_only", "status": "active"}],
+        "execution_boundary": {"client_distribution_allowed": False},
+    }
+
+
 def _outcome_payload():
     return {
         "outcome_report_input": {
@@ -441,6 +483,21 @@ class _FakeCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
+        snapshot_payload = {
+            "report_id": (
+                "portfolio-review:"
+                f"{job.portfolio_scope['portfolio_ids'][0]}:"
+                f"{job.as_of_date.isoformat()}"
+            ),
+            "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
+            "as_of_date": job.as_of_date.isoformat(),
+            "capture_sequence": self.calls,
+        }
+        proposal_narrative_package = job.options.get("proposal_narrative_package")
+        source_services = ["lotus-core", "lotus-performance", "lotus-risk"]
+        if isinstance(proposal_narrative_package, dict):
+            snapshot_payload["proposal_narrative_package"] = proposal_narrative_package
+            source_services.append("lotus-advise")
         snapshot = self._lineage_store.create_snapshot(
             ReportInputSnapshotCreateRequest(
                 report_job_id=job.job_id,
@@ -448,21 +505,12 @@ class _FakeCaptureService:
                 report_data_contract_version="v1",
                 portfolio_scope=job.portfolio_scope,
                 as_of_date=job.as_of_date,
-                snapshot_payload={
-                    "report_id": (
-                        "portfolio-review:"
-                        f"{job.portfolio_scope['portfolio_ids'][0]}:"
-                        f"{job.as_of_date.isoformat()}"
-                    ),
-                    "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
-                    "as_of_date": job.as_of_date.isoformat(),
-                    "capture_sequence": self.calls,
-                },
+                snapshot_payload=snapshot_payload,
                 snapshot_storage_ref=None,
                 supportability_status="complete",
                 completeness_status="complete",
                 lineage_summary={
-                    "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
+                    "source_services": source_services,
                     "call_count": 1,
                     "supportability_status": "complete",
                     "partial_call_count": 0,
@@ -742,6 +790,60 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert "snapshot_payload" not in str(diagnostics_body).lower()
         assert "storage_ref" not in str(diagnostics_body).lower()
         assert "response_payload" not in str(diagnostics_body).lower()
+    finally:
+        _clear_overrides()
+
+
+def test_portfolio_review_job_persists_reviewed_proposal_narrative_package(tmp_path):
+    client, _ledger, lineage_store = _client(tmp_path)
+    payload = _payload()
+    payload["proposal_narrative_package"] = _proposal_narrative_package()
+    try:
+        submit_response = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-with-reviewed-narrative"),
+        )
+
+        assert submit_response.status_code == 202
+        handle = submit_response.json()
+        snapshot = lineage_store.get_snapshot_by_job(handle["report_job_id"])
+        package = snapshot.snapshot_payload["proposal_narrative_package"]
+        assert package["package_status"] == "INCLUDED_REVIEWED_NARRATIVE"
+        assert package["review"]["review_state"] == "APPROVED_FOR_ADVISOR_USE"
+        assert package["source_lineage"]["source_narrative_hash"] == "sha256:narrative"
+        assert package["sections"][0]["section_id"] == "portfolio_context"
+        assert "lotus-advise" in snapshot.lineage_summary["source_services"]
+
+        snapshot_response = client.get(
+            f"/reports/jobs/{handle['report_job_id']}/snapshot",
+            headers=_headers(),
+        )
+        assert snapshot_response.status_code == 200
+        snapshot_body = snapshot_response.json()
+        assert (
+            snapshot_body["snapshot_payload"]["proposal_narrative_package"]["narrative_id"]
+            == "pnar_001"
+        )
+    finally:
+        _clear_overrides()
+
+
+def test_portfolio_review_job_rejects_unapproved_proposal_narrative_package(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    payload = _payload()
+    package = _proposal_narrative_package()
+    package["review"]["review_state"] = "NEEDS_REVIEW"
+    payload["proposal_narrative_package"] = package
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-unapproved-narrative"),
+        )
+
+        assert response.status_code == 422
+        assert "APPROVED_FOR_ADVISOR_USE" in str(response.json())
     finally:
         _clear_overrides()
 
@@ -1566,6 +1668,14 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
     replay_example = replay_post["responses"]["202"]["content"]["application/json"]["example"]
 
     assert request_example["portfolio_scope"]["portfolio_ids"] == ["PB_SG_GLOBAL_BAL_001"]
+    assert (
+        request_example["proposal_narrative_package"]["review"]["review_state"]
+        == "APPROVED_FOR_ADVISOR_USE"
+    )
+    assert (
+        request_example["proposal_narrative_package"]["source_lineage"]["source_narrative_hash"]
+        == "sha256:narrative"
+    )
     assert response_example["report_job_id"].startswith("rjob_")
     assert status_example["status"] == "archived"
     assert status_example["render"]["render_job_id"].startswith("rdr_")

@@ -537,6 +537,10 @@ class PortfolioReviewSnapshotCaptureService:
                 request_payload=_request_payload(job),
                 correlation_id=job.correlation_id or None,
             )
+            proposal_narrative_package = _proposal_narrative_package(job)
+            if proposal_narrative_package is not None:
+                snapshot_payload = dict(snapshot_payload)
+                snapshot_payload["proposal_narrative_package"] = proposal_narrative_package
         except Exception as exc:
             failure_category, failure_message, retry_eligible = _map_job_failure(exc)
             snapshot_payload = {
@@ -560,7 +564,10 @@ class PortfolioReviewSnapshotCaptureService:
             snapshot_storage_ref=None,
             supportability_status=_overall_posture(recorder.calls),
             completeness_status=_overall_posture(recorder.calls),
-            lineage_summary=_lineage_summary(recorder.calls),
+            lineage_summary=_lineage_summary(
+                recorder.calls,
+                proposal_narrative_package=_proposal_narrative_package(job),
+            ),
             captured_at=_utc_now(),
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
@@ -977,9 +984,15 @@ def _request_payload(job: ReportJobLedgerRecord) -> dict[str, Any]:
         "as_of_date": job.as_of_date.isoformat(),
         **dict(job.options),
     }
+    payload.pop("proposal_narrative_package", None)
     if job.reporting_currency:
         payload["reporting_currency"] = job.reporting_currency
     return payload
+
+
+def _proposal_narrative_package(job: ReportJobLedgerRecord) -> dict[str, Any] | None:
+    package = job.options.get("proposal_narrative_package")
+    return package if isinstance(package, dict) else None
 
 
 def _portfolio_memory_lineage_summary(report_input: dict[str, Any]) -> dict[str, Any]:
@@ -1019,8 +1032,12 @@ def _overall_posture(calls: list[_RecordedUpstreamCall]) -> str:
     return "complete"
 
 
-def _lineage_summary(calls: list[_RecordedUpstreamCall]) -> dict[str, Any]:
-    return {
+def _lineage_summary(
+    calls: list[_RecordedUpstreamCall],
+    *,
+    proposal_narrative_package: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = {
         "source_services": sorted({call.service_name for call in calls}),
         "call_count": len(calls),
         "supportability_status": _overall_posture(calls),
@@ -1033,6 +1050,29 @@ def _lineage_summary(calls: list[_RecordedUpstreamCall]) -> dict[str, Any]:
         ),
         "redacted_call_count": sum(1 for call in calls if call.supportability_status == "redacted"),
     }
+    if proposal_narrative_package is not None:
+        summary_source_services = summary.get("source_services")
+        source_services = set(
+            summary_source_services if isinstance(summary_source_services, list) else []
+        )
+        source_services.add("lotus-advise")
+        source_lineage = proposal_narrative_package.get("source_lineage")
+        if not isinstance(source_lineage, dict):
+            source_lineage = {}
+        review = proposal_narrative_package.get("review")
+        if not isinstance(review, dict):
+            review = {}
+        summary.update(
+            {
+                "source_services": sorted(source_services),
+                "proposal_narrative_package_status": proposal_narrative_package.get(
+                    "package_status"
+                ),
+                "proposal_narrative_review_state": review.get("review_state"),
+                "proposal_narrative_source_hash": source_lineage.get("source_narrative_hash"),
+            }
+        )
+    return summary
 
 
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:

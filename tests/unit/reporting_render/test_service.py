@@ -150,6 +150,47 @@ def _job_request(**overrides):
     return PortfolioReviewJobRequest.model_validate(payload)
 
 
+def _proposal_narrative_package() -> dict:
+    return {
+        "package_status": "INCLUDED_REVIEWED_NARRATIVE",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 3,
+        "narrative_id": "pnar_001",
+        "narrative_status": "APPROVED_FOR_ADVISOR_USE",
+        "audience": "advisor",
+        "policy_version": "proposal-narrative-policy.v1",
+        "review": {
+            "review_id": "pnrev_001",
+            "review_state": "APPROVED_FOR_ADVISOR_USE",
+            "reviewed_at": "2026-04-22T09:10:00Z",
+            "reviewed_by": "advisor-123",
+        },
+        "source_lineage": {
+            "source_narrative_hash": "sha256:narrative",
+            "proposal_hash": "sha256:proposal",
+            "proposal_version_hash": "sha256:proposal-version",
+        },
+        "sections": [
+            {
+                "section_id": "portfolio_context",
+                "title": "Portfolio Context",
+                "body": "The portfolio remains aligned to the balanced mandate.",
+                "source_refs": [{"source_system": "lotus-advise", "source_id": "prop_001"}],
+            }
+        ],
+        "disclosures": [
+            {
+                "disclosure_id": "proposal_narrative.advisor_use_only.v1",
+                "text": "For advisor use only until the client-ready workflow is approved.",
+            }
+        ],
+        "guardrail_results": [{"guardrail_id": "no_trade_instruction", "status": "passed"}],
+        "limitations": [{"limitation_id": "advisor_use_only", "status": "active"}],
+        "execution_boundary": {"client_distribution_allowed": False},
+    }
+
+
 def _caller():
     return ReportCallerContext.model_validate(
         {
@@ -434,6 +475,63 @@ def _seed_data_ready_job(tmp_path):
         )
     )
     return ledger, store, ready
+
+
+def test_portfolio_review_render_package_includes_reviewed_advisory_narrative(tmp_path):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {
+            "identity": {
+                "client_name": "Alex Tan",
+                "advisor_id": "RM_SG_001",
+                "booking_center_code": "Singapore",
+            },
+            "mandate_profile": {"risk_exposure": "balanced"},
+        },
+        "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+        "keyFigures": {
+            "client_profile": {"objective": "Long-term real wealth growth."},
+            "portfolio_value": {
+                "invested_market_value_reporting_currency": 14984567.89,
+                "cash_balance_reporting_currency": 250000.0,
+                "cash_weight_pct": 1.64,
+            },
+            "allocation": {"name": "Equity", "weight_pct": 60.0},
+        },
+        "evidence": {
+            "source_services": [
+                "lotus-core",
+                "lotus-performance",
+                "lotus-risk",
+                "lotus-advise",
+            ],
+            "trust_metadata": {
+                "completeness_status": "complete",
+                "data_quality_status": "quality_passed",
+            },
+        },
+        "proposal_narrative_package": _proposal_narrative_package(),
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    narrative = package["report_data"]["reviewed_advisory_narrative"]
+    assert narrative["status"] == "included"
+    assert narrative["proposal_id"] == "prop_001"
+    assert narrative["review"]["review_state"] == "APPROVED_FOR_ADVISOR_USE"
+    assert narrative["source_lineage"]["source_narrative_hash"] == "sha256:narrative"
+    assert narrative["sections"][0]["body"] == (
+        "The portfolio remains aligned to the balanced mandate."
+    )
+    assert "lotus-advise:proposal:prop_001" in package["lineage_refs"]
+    assert "sha256:narrative" in package["lineage_refs"]
+    assert "proposal_narrative.advisor_use_only.v1" in package["disclosure_refs"]
 
 
 @pytest.mark.asyncio
