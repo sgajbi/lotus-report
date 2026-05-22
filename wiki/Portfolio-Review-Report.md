@@ -58,6 +58,14 @@ The response separates audiences:
 Advisor-only material must not be rendered into client-facing output unless a future product slice
 explicitly changes that rule and adds the right approval controls.
 
+For asynchronous `POST /reports/portfolio-reviews` jobs, a caller may include a
+`proposal_narrative_package` emitted by `lotus-advise`. The package is accepted only when
+`lotus-advise` has already marked it `INCLUDED_REVIEWED_NARRATIVE`, the review state is
+`APPROVED_FOR_ADVISOR_USE`, and `source_lineage.source_narrative_hash` is present. `lotus-report`
+then preserves the package in the immutable snapshot, adds `lotus-advise` to the lineage summary,
+and projects a bounded `reviewed_advisory_narrative` block into the render package. It does not
+approve, rewrite, summarize, or infer advisory content.
+
 ## Source Authorities
 
 `lotus-report` composes the report from domain-authoritative services:
@@ -67,6 +75,7 @@ explicitly changes that rule and adds the right approval controls.
 | `lotus-core` | portfolio summary, allocation, positions, transactions, portfolio detail, client profile and mandate context where available | Source of portfolio, booking, holding, transaction, and mandate facts |
 | `lotus-performance` | workspace performance summary and YTD contribution | Source of performance analytics used by reporting |
 | `lotus-risk` | risk analytics derived from the report review flow | Source of risk analytics |
+| `lotus-advise` | optional approved `proposal_narrative_package` on asynchronous portfolio-review jobs | Source of advisory narrative approval, review state, source narrative hash, sections, guardrails, limitations, and disclosures |
 | `lotus-report` | report shape, section ordering, readiness, coverage, observations, evidence, and meeting-pack composition | Reporting contract owner only |
 
 ## Request

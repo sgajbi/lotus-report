@@ -84,12 +84,17 @@ def _request_parts(
     request: ReportJobRequest,
 ) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
     if isinstance(request, PortfolioReviewJobRequest):
+        options = dict(request.options)
+        if request.proposal_narrative_package is not None:
+            options["proposal_narrative_package"] = request.proposal_narrative_package.model_dump(
+                mode="json"
+            )
         return (
             request.portfolio_scope,
             request.as_of_date,
             request.requested_output_formats,
             request.reporting_currency,
-            request.options,
+            options,
         )
     if isinstance(request, ProofPackReportJobRequest):
         report_input = request.proof_pack_report_input

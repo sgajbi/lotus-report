@@ -18,7 +18,9 @@
   machine-readable portfolio review report payload for client/advisor meetings
 - `POST /reports/portfolio-reviews`
   internal durable portfolio review report job initiation; returns a job handle and, for PDF jobs,
-  may advance through render completion before the response returns
+  may advance through render completion before the response returns. It can carry an optional
+  `proposal_narrative_package` from `lotus-advise` when that package is already approved for
+  advisor use.
 - `POST /reports/outcome-reviews`
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to
@@ -131,6 +133,11 @@ front-office consumers.
 - report summary/review query parameters use canonical `section_limit`
 - portfolio review request bodies use canonical snake_case fields only
 - report job creation requires `Idempotency-Key`
+- optional portfolio-review `proposal_narrative_package` input is accepted only when
+  `package_status` is `INCLUDED_REVIEWED_NARRATIVE`, `review.review_state` is
+  `APPROVED_FOR_ADVISOR_USE`, and `source_lineage.source_narrative_hash` is present. The package
+  is preserved in the immutable snapshot and render package; `lotus-report` does not approve,
+  rewrite, or infer advisory narrative content.
 - rerender, regenerate, and failed-work replay commands require `Idempotency-Key` plus governed
   caller context headers
 - report-owned portfolio-memory events require governed caller context headers and return
@@ -206,7 +213,7 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" \
   -H "X-Booking-Center-Code: SG" \
   -H "X-Role: advisor" \
   -H "X-Correlation-ID: portfolio-review-job-local-proof" \
-  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
+  -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"},\"proposal_narrative_package\":{\"package_status\":\"INCLUDED_REVIEWED_NARRATIVE\",\"usage\":\"REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE\",\"proposal_id\":\"prop_001\",\"proposal_version_no\":3,\"narrative_id\":\"pnar_001\",\"review\":{\"review_id\":\"pnrev_001\",\"review_state\":\"APPROVED_FOR_ADVISOR_USE\"},\"source_lineage\":{\"source_narrative_hash\":\"sha256:narrative\"},\"sections\":[{\"section_id\":\"portfolio_context\",\"title\":\"Portfolio Context\",\"body\":\"The portfolio remains aligned to the balanced mandate.\"}],\"disclosures\":[{\"disclosure_id\":\"proposal_narrative.advisor_use_only.v1\",\"text\":\"For advisor use only until client-ready approval is complete.\"}]}}"
 ```
 
 Report job status:

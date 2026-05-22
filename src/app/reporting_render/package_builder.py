@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from numbers import Real
-from typing import Any
+from typing import Any, Sequence
 
 from app.reporting_jobs.models import ReportJobLedgerRecord
 
@@ -43,6 +43,7 @@ def _build_render_package(
     risk = _as_dict(_as_dict(snapshot.get("keyFigures")).get("risk"))
     evidence = _as_dict(snapshot.get("evidence"))
     trust_metadata = _as_dict(evidence.get("trust_metadata"))
+    reviewed_narrative = _reviewed_advisory_narrative(snapshot)
     currency = (
         _optional_str(snapshot.get("reportingCurrency"))
         or _optional_str(overview.get("currency"))
@@ -174,7 +175,13 @@ def _build_render_package(
             "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
             or "unknown",
         },
+        "reviewed_advisory_narrative": reviewed_narrative,
     }
+    lineage_refs = [job.job_id]
+    disclosure_refs = ["portfolio-review.standard-disclosures.v1"]
+    if reviewed_narrative["status"] == "included":
+        lineage_refs.extend(_reviewed_narrative_lineage_refs(reviewed_narrative))
+        disclosure_refs.extend(_reviewed_narrative_disclosure_refs(reviewed_narrative))
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
@@ -189,8 +196,8 @@ def _build_render_package(
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
         "report_data": report_data,
-        "lineage_refs": [job.job_id],
-        "disclosure_refs": ["portfolio-review.standard-disclosures.v1"],
+        "lineage_refs": _dedupe_strings(lineage_refs),
+        "disclosure_refs": _dedupe_strings(disclosure_refs),
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,
@@ -891,6 +898,103 @@ def _decimal_text(value: object) -> str:
 
 def _as_dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _reviewed_advisory_narrative(snapshot: dict[str, Any]) -> dict[str, Any]:
+    package = _as_dict(snapshot.get("proposal_narrative_package"))
+    if not package:
+        return {"status": "not_supplied", "sections": [], "disclosures": []}
+    review = _as_dict(package.get("review"))
+    source_lineage = _as_dict(package.get("source_lineage"))
+    sections = [
+        {
+            "section_id": _optional_str(section.get("section_id")) or "not_available",
+            "title": _optional_str(section.get("title")) or "Not available",
+            "body": _optional_str(section.get("body")) or "",
+            "source_refs": [
+                item for item in section.get("source_refs", []) if isinstance(item, dict)
+            ],
+        }
+        for section in package.get("sections", [])
+        if isinstance(section, dict)
+    ]
+    disclosures = [
+        {
+            "disclosure_id": _optional_str(disclosure.get("disclosure_id")) or "not_available",
+            "text": _optional_str(disclosure.get("text")),
+        }
+        for disclosure in package.get("disclosures", [])
+        if isinstance(disclosure, dict)
+    ]
+    return {
+        "status": "included",
+        "package_status": _optional_str(package.get("package_status")) or "not_available",
+        "usage": _optional_str(package.get("usage")) or "not_available",
+        "proposal_id": _optional_str(package.get("proposal_id")) or "not_available",
+        "proposal_version_no": _optional_int(package.get("proposal_version_no")),
+        "narrative_id": _optional_str(package.get("narrative_id")) or "not_available",
+        "narrative_status": _optional_str(package.get("narrative_status")) or "not_available",
+        "audience": _optional_str(package.get("audience")) or "not_available",
+        "policy_version": _optional_str(package.get("policy_version")) or "not_available",
+        "review": {
+            "review_id": _optional_str(review.get("review_id")) or "not_available",
+            "review_state": _optional_str(review.get("review_state")) or "not_available",
+            "reviewed_at": _optional_str(review.get("reviewed_at")),
+            "reviewed_by": _optional_str(review.get("reviewed_by")) or "not_available",
+        },
+        "source_lineage": {
+            "source_narrative_hash": _optional_str(source_lineage.get("source_narrative_hash"))
+            or "not_available",
+            "proposal_hash": _optional_str(source_lineage.get("proposal_hash")),
+            "proposal_version_hash": _optional_str(source_lineage.get("proposal_version_hash")),
+        },
+        "sections": sections,
+        "disclosures": disclosures,
+        "guardrail_results": [
+            item for item in package.get("guardrail_results", []) if isinstance(item, dict)
+        ],
+        "limitations": [item for item in package.get("limitations", []) if isinstance(item, dict)],
+        "execution_boundary": _as_dict(package.get("execution_boundary")),
+        "ai_lineage": _as_dict(package.get("ai_lineage")),
+    }
+
+
+def _reviewed_narrative_lineage_refs(reviewed_narrative: dict[str, Any]) -> list[str]:
+    source_lineage = _as_dict(reviewed_narrative.get("source_lineage"))
+    refs = [
+        f"lotus-advise:proposal:{reviewed_narrative.get('proposal_id')}",
+        f"lotus-advise:proposal-narrative:{reviewed_narrative.get('narrative_id')}",
+        _optional_str(source_lineage.get("source_narrative_hash")),
+    ]
+    review = _as_dict(reviewed_narrative.get("review"))
+    review_id = _optional_str(review.get("review_id"))
+    if review_id and review_id != "not_available":
+        refs.append(f"lotus-advise:proposal-narrative-review:{review_id}")
+    return [ref for ref in refs if ref and "not_available" not in ref]
+
+
+def _reviewed_narrative_disclosure_refs(reviewed_narrative: dict[str, Any]) -> list[str]:
+    disclosures = reviewed_narrative.get("disclosures")
+    if not isinstance(disclosures, list):
+        return []
+    return [
+        disclosure_id
+        for disclosure in disclosures
+        if isinstance(disclosure, dict)
+        for disclosure_id in [_optional_str(disclosure.get("disclosure_id"))]
+        if disclosure_id and disclosure_id != "not_available"
+    ]
+
+
+def _dedupe_strings(values: Sequence[str | None]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
 
 
 def _string_list(value: object) -> list[str]:
