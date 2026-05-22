@@ -848,6 +848,44 @@ def test_portfolio_review_job_rejects_unapproved_proposal_narrative_package(tmp_
         _clear_overrides()
 
 
+def test_portfolio_review_job_rejects_non_included_proposal_narrative_package(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    payload = _payload()
+    package = _proposal_narrative_package()
+    package["package_status"] = "REVIEW_REQUIRED"
+    payload["proposal_narrative_package"] = package
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-narrative-not-included"),
+        )
+
+        assert response.status_code == 422
+        assert "INCLUDED_REVIEWED_NARRATIVE" in str(response.json())
+    finally:
+        _clear_overrides()
+
+
+def test_portfolio_review_job_rejects_reviewed_package_without_source_hash(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    payload = _payload()
+    package = _proposal_narrative_package()
+    package["source_lineage"].pop("source_narrative_hash")
+    payload["proposal_narrative_package"] = package
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("portfolio-review-narrative-missing-source-hash"),
+        )
+
+        assert response.status_code == 422
+        assert "source_narrative_hash" in str(response.json())
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_list_requires_filter(tmp_path):
     client, _ledger, _lineage_store = _client(tmp_path)
     try:

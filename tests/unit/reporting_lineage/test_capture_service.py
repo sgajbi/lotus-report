@@ -47,6 +47,44 @@ def _request(**overrides):
     return PortfolioReviewJobRequest.model_validate(payload)
 
 
+def _proposal_narrative_package(**overrides) -> dict:
+    package = {
+        "package_status": "INCLUDED_REVIEWED_NARRATIVE",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 3,
+        "narrative_id": "pnar_001",
+        "narrative_status": "APPROVED_FOR_ADVISOR_USE",
+        "audience": "advisor",
+        "policy_version": "proposal-narrative-policy.v1",
+        "review": {
+            "review_id": "pnrev_001",
+            "review_state": "APPROVED_FOR_ADVISOR_USE",
+            "reviewed_at": "2026-04-22T09:10:00Z",
+            "reviewed_by": "advisor-123",
+        },
+        "source_lineage": {
+            "source_narrative_hash": "sha256:narrative",
+            "proposal_hash": "sha256:proposal",
+        },
+        "sections": [
+            {
+                "section_id": "portfolio_context",
+                "title": "Portfolio Context",
+                "body": "The portfolio remains aligned to the balanced mandate.",
+            }
+        ],
+        "disclosures": [
+            {
+                "disclosure_id": "proposal_narrative.advisor_use_only.v1",
+                "text": "For advisor use only until the client-ready workflow is approved.",
+            }
+        ],
+    }
+    package.update(overrides)
+    return package
+
+
 def _outcome_request(**overrides):
     outcome_report_input = {
         "contract_version": "1.0",
@@ -354,6 +392,43 @@ async def test_capture_service_records_snapshot_and_lineage_for_success(monkeypa
         "collecting_data",
         "data_ready",
     ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_preserves_reviewed_proposal_narrative_package(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _HappyReportingReadService,
+    )
+    request = _request(proposal_narrative_package=_proposal_narrative_package())
+    ledger = ReportJobLedger(tmp_path / "jobs-reviewed-narrative.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-reviewed-narrative.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="idem-reviewed-narrative",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    package = snapshot.snapshot_payload["proposal_narrative_package"]
+    assert package["narrative_id"] == "pnar_001"
+    assert package["review"]["review_state"] == "APPROVED_FOR_ADVISOR_USE"
+    assert snapshot.lineage_summary["source_services"] == [
+        "lotus-advise",
+        "lotus-core",
+        "lotus-performance",
+        "lotus-risk",
+    ]
+    assert snapshot.lineage_summary["proposal_narrative_source_hash"] == "sha256:narrative"
 
 
 @pytest.mark.asyncio

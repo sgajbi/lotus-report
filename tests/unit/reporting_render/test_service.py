@@ -24,6 +24,7 @@ from app.reporting_render.package_builder import (
     _performance_history,
     _performance_observation,
     _positions,
+    _reviewed_advisory_narrative,
     _risk_observation,
     _transactions,
 )
@@ -532,6 +533,30 @@ def test_portfolio_review_render_package_includes_reviewed_advisory_narrative(tm
     assert "lotus-advise:proposal:prop_001" in package["lineage_refs"]
     assert "sha256:narrative" in package["lineage_refs"]
     assert "proposal_narrative.advisor_use_only.v1" in package["disclosure_refs"]
+
+
+def test_reviewed_advisory_narrative_handles_optional_package_edges(tmp_path):
+    package = _proposal_narrative_package()
+    package["review"].pop("review_id")
+    package["disclosures"] = "not-a-list"
+    package["source_lineage"]["source_narrative_hash"] = "sha256:not_available"
+
+    narrative = _reviewed_advisory_narrative({"proposal_narrative_package": package})
+
+    assert narrative["review"]["review_id"] == "not_available"
+    assert narrative["disclosures"] == []
+    ledger = ReportJobLedger(tmp_path / "edge-jobs.sqlite3")
+    rendered = _build_render_package(
+        job=ledger.create_portfolio_review_job(
+            request=_job_request(),
+            caller_context=_caller(),
+            idempotency_key="idem-reviewed-narrative-edge",
+        ),
+        snapshot={"proposal_narrative_package": package},
+        render_job_id="rdr_edge_pdf",
+    )
+    assert "lotus-advise:proposal-narrative-review:not_available" not in rendered["lineage_refs"]
+    assert "sha256:not_available" not in rendered["lineage_refs"]
 
 
 @pytest.mark.asyncio
