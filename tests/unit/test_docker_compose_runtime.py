@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,10 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local" in compose
     assert "REPORT_BATCH_SCHEDULES_JSON:" in compose
     assert 'REPORT_BATCH_SCHEDULES_JSON: "[]"' in compose
+    assert len(re.findall(r"^\s+image:\s+lotus-report", compose, flags=re.MULTILINE)) == 3
+    assert "image: lotus-report:local" in compose
+    assert "image: lotus-report-batch-worker:local" in compose
+    assert "image: lotus-report-batch-scheduler:local" in compose
 
 
 def test_docker_image_copies_migrations_and_initializes_postgres_schema_before_api() -> None:
