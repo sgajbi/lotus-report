@@ -40,7 +40,7 @@ services:
 
   lotus-report-batch-worker:
     build: .
-    image: lotus-report:local
+    image: lotus-report-batch-worker:local
     container_name: lotus-report-batch-worker
     command:
       [
@@ -63,7 +63,7 @@ services:
 
   lotus-report-batch-scheduler:
     build: .
-    image: lotus-report:local
+    image: lotus-report-batch-scheduler:local
     container_name: lotus-report-batch-scheduler
     command:
       [
