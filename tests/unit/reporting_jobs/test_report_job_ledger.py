@@ -68,6 +68,64 @@ def test_portfolio_review_request_rejects_client_ready_memo_package() -> None:
         _request(proposal_memo_package=_memo_package(client_ready_publication="CLIENT_READY"))
 
 
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {"package_status": "BLOCKED"},
+            "proposal_memo_package.package_status must be INCLUDED_ADVISOR_PROPOSAL_MEMO",
+        ),
+        (
+            {"review": {"review_action": "REQUEST_CHANGES"}},
+            "proposal_memo_package.review.review_action must be APPROVE_FOR_ADVISOR_USE",
+        ),
+        (
+            {"memo_hash": "memo-hash"},
+            "proposal memo package hashes must use sha256 lineage",
+        ),
+        (
+            {"sections": []},
+            "proposal_memo_package.sections is required",
+        ),
+    ],
+)
+def test_portfolio_review_request_rejects_invalid_advisor_proposal_memo_package(
+    overrides,
+    message,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _request(proposal_memo_package=_memo_package(**overrides))
+
+
+def test_portfolio_review_request_rejects_invalid_reviewed_narrative_package() -> None:
+    package = {
+        "package_status": "INCLUDED_REVIEWED_NARRATIVE",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 1,
+        "narrative_id": "pnar_001",
+        "narrative_status": "APPROVED_FOR_ADVISOR_USE",
+        "audience": "advisor",
+        "policy_version": "proposal-narrative-policy.v1",
+        "review": {"review_state": "REQUEST_CHANGES"},
+        "source_lineage": {"source_narrative_hash": "sha256:narrative"},
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="proposal_narrative_package.review.review_state must be APPROVED_FOR_ADVISOR_USE",
+    ):
+        _request(proposal_narrative_package=package)
+
+    package["review"] = {"review_state": "APPROVED_FOR_ADVISOR_USE"}
+    package["source_lineage"] = {}
+    with pytest.raises(
+        ValueError,
+        match="proposal_narrative_package.source_lineage.source_narrative_hash is required",
+    ):
+        _request(proposal_narrative_package=package)
+
+
 def _outcome_request(**overrides):
     outcome_report_input = {
         "contract_version": "1.0",
