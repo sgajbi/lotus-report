@@ -214,6 +214,72 @@ class ProposalNarrativeReportPackage(BaseModel):
         return self
 
 
+class ProposalMemoReportPackage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    package_status: str = Field(
+        ...,
+        description="Memo package inclusion status supplied by lotus-advise.",
+        examples=["INCLUDED_ADVISOR_PROPOSAL_MEMO"],
+    )
+    usage: str = Field(
+        ...,
+        description="Intended usage boundary for the memo package.",
+        examples=["REPORT_REQUEST_APPROVED_ADVISOR_MEMO"],
+    )
+    memo_id: str = Field(..., description="Source memo identifier in lotus-advise.")
+    memo_version: str = Field(..., description="Source memo package contract version.")
+    memo_status: str = Field(..., description="Source memo evidence-pack readiness posture.")
+    proposal_id: str = Field(..., description="Source proposal identifier in lotus-advise.")
+    proposal_version_no: int = Field(..., description="Source proposal version number.")
+    memo_hash: str = Field(..., description="SHA-256 hash of the memo package.")
+    source_input_hash: str = Field(..., description="SHA-256 hash of memo source inputs.")
+    review: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Advisor-use review posture supplied by lotus-advise.",
+    )
+    projection: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Memo projection posture supplied by lotus-advise.",
+    )
+    sections: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Advisor proposal memo sections authorized for report rendering.",
+    )
+    source_authority_manifest: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Source-authority readiness manifest supplied by lotus-advise.",
+    )
+    supportability: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Memo supportability posture supplied by lotus-advise.",
+    )
+    client_ready_publication: str = Field(
+        default="BLOCKED",
+        description="Client-ready publication posture. Client-ready remains blocked.",
+    )
+
+    @model_validator(mode="after")
+    def validate_memo_package(self) -> "ProposalMemoReportPackage":
+        if self.package_status != "INCLUDED_ADVISOR_PROPOSAL_MEMO":
+            raise ValueError(
+                "proposal_memo_package.package_status must be INCLUDED_ADVISOR_PROPOSAL_MEMO"
+            )
+        if str(self.review.get("review_action") or "") != "APPROVE_FOR_ADVISOR_USE":
+            raise ValueError(
+                "proposal_memo_package.review.review_action must be APPROVE_FOR_ADVISOR_USE"
+            )
+        if self.client_ready_publication.upper() not in {"BLOCKED", "GATED"}:
+            raise ValueError("client-ready memo publication is not supported")
+        if not self.memo_hash.startswith("sha256:") or not self.source_input_hash.startswith(
+            "sha256:"
+        ):
+            raise ValueError("proposal memo package hashes must use sha256 lineage")
+        if not self.sections:
+            raise ValueError("proposal_memo_package.sections is required")
+        return self
+
+
 class PortfolioReviewJobRequest(BaseModel):
     portfolio_scope: dict[str, Any] = Field(
         ...,
@@ -254,6 +320,14 @@ class PortfolioReviewJobRequest(BaseModel):
             "Optional approved proposal narrative package from lotus-advise. lotus-report "
             "preserves this source-authorized package in the immutable snapshot and render "
             "package; it does not approve, rewrite, or infer advisory narrative facts."
+        ),
+    )
+    proposal_memo_package: ProposalMemoReportPackage | None = Field(
+        default=None,
+        description=(
+            "Optional advisor-reviewed proposal memo package from lotus-advise. lotus-report "
+            "preserves this source-authorized package in the immutable snapshot and render/archive "
+            "handoff; it does not approve, rewrite, or infer memo facts."
         ),
     )
 

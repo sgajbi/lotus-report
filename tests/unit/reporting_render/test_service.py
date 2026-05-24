@@ -15,8 +15,12 @@ from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render import service as render_service
 from app.reporting_render.package_builder import (
+    _advisor_memo_disclosure_refs,
+    _advisor_memo_lineage_refs,
+    _advisor_proposal_memo,
     _allocation_bucket_rows,
     _build_render_package,
+    _dedupe_strings,
     _holding_observation,
     _optional_decimal,
     _optional_int,
@@ -25,13 +29,16 @@ from app.reporting_render.package_builder import (
     _performance_observation,
     _positions,
     _reviewed_advisory_narrative,
+    _reviewed_narrative_disclosure_refs,
     _risk_observation,
     _transactions,
 )
 from app.reporting_render.service import (
     PortfolioReviewRenderOrchestrationService,
+    _advisor_proposal_memo_archive_summary,
     _archive_failure_message,
     _archive_failure_posture,
+    _build_archive_payload,
     _date_text,
 )
 
@@ -535,6 +542,73 @@ def test_portfolio_review_render_package_includes_reviewed_advisory_narrative(tm
     assert "proposal_narrative.advisor_use_only.v1" in package["disclosure_refs"]
 
 
+def test_portfolio_review_render_package_includes_advisor_proposal_memo(tmp_path):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+        "keyFigures": {},
+        "proposal_memo_package": {
+            "package_status": "INCLUDED_ADVISOR_PROPOSAL_MEMO",
+            "usage": "REPORT_REQUEST_APPROVED_ADVISOR_MEMO",
+            "memo_id": "memo_001",
+            "memo_version": "advisory-proposal-memo-evidence-pack.v1",
+            "memo_status": "READY",
+            "proposal_id": "prop_001",
+            "proposal_version_no": 1,
+            "memo_hash": "sha256:memo",
+            "source_input_hash": "sha256:source",
+            "review": {
+                "review_event_id": "pme_review_001",
+                "review_action": "APPROVE_FOR_ADVISOR_USE",
+                "reviewed_by": "compliance_1",
+            },
+            "sections": [
+                {
+                    "section_id": "EXECUTIVE_SUMMARY",
+                    "title": "Executive Summary",
+                    "status": "READY",
+                    "summary": "Advisor memo is ready for advisor use.",
+                    "material_claims": [
+                        {"claim_id": "memo.summary", "text": "Advisor-use memo claim."}
+                    ],
+                },
+                {
+                    "section_id": "CONFLICTS_AND_DISCLOSURES",
+                    "title": "Conflicts and Disclosures",
+                    "status": "READY",
+                    "summary": "Disclosures are attached.",
+                    "material_claims": [
+                        {
+                            "claim_id": "memo.disclosure.advisor_use_only",
+                            "text": "Advisor use only.",
+                        }
+                    ],
+                },
+            ],
+            "client_ready_publication": "BLOCKED",
+        },
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_memo_pdf",
+    )
+
+    memo = package["report_data"]["advisor_proposal_memo"]
+    assert memo["status"] == "included"
+    assert memo["memo_id"] == "memo_001"
+    assert memo["review"]["review_action"] == "APPROVE_FOR_ADVISOR_USE"
+    assert memo["client_ready_publication"] == "BLOCKED"
+    assert memo["sections"][0]["summary"] == "Advisor memo is ready for advisor use."
+    assert "lotus-advise:proposal-memo:memo_001" in package["lineage_refs"]
+    assert "sha256:memo" in package["lineage_refs"]
+    assert "memo.disclosure.advisor_use_only" in package["disclosure_refs"]
+
+
 def test_reviewed_advisory_narrative_handles_optional_package_edges(tmp_path):
     package = _proposal_narrative_package()
     package["review"].pop("review_id")
@@ -557,6 +631,89 @@ def test_reviewed_advisory_narrative_handles_optional_package_edges(tmp_path):
     )
     assert "lotus-advise:proposal-narrative-review:not_available" not in rendered["lineage_refs"]
     assert "sha256:not_available" not in rendered["lineage_refs"]
+
+
+def test_advisor_proposal_memo_handles_absent_package() -> None:
+    assert _advisor_proposal_memo({}) == {
+        "status": "not_supplied",
+        "sections": [],
+        "disclosures": [],
+    }
+
+
+def test_advisor_proposal_memo_handles_optional_package_edges() -> None:
+    memo = _advisor_proposal_memo(
+        {
+            "proposal_memo_package": {
+                "package_status": "INCLUDED_ADVISOR_PROPOSAL_MEMO",
+                "usage": "REPORT_REQUEST_APPROVED_ADVISOR_MEMO",
+                "memo_id": "not_available",
+                "proposal_id": "prop_001",
+                "memo_hash": "sha256:not_available",
+                "source_input_hash": "sha256:source",
+                "review": {},
+                "sections": [
+                    "bad-section",
+                    {
+                        "section_id": "CONFLICTS_AND_DISCLOSURES",
+                        "material_claims": [{"text": "Disclosure without id."}],
+                    },
+                ],
+            }
+        }
+    )
+
+    assert memo["review"]["review_event_id"] == "not_available"
+    assert memo["disclosures"] == []
+    assert _advisor_memo_lineage_refs(memo) == [
+        "lotus-advise:proposal:prop_001",
+        "sha256:source",
+    ]
+    assert _advisor_memo_disclosure_refs({"disclosures": "bad-disclosures"}) == []
+    assert _reviewed_narrative_disclosure_refs({"disclosures": "bad-disclosures"}) == []
+    assert _dedupe_strings(["one", "one", None, "two"]) == ["one", "two"]
+
+
+def test_archive_payload_preserves_advisor_memo_and_supersession_metadata(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = store.get_snapshot_by_job(ready.job_id)
+    snapshot.snapshot_payload["proposal_memo_package"] = {
+        "memo_id": "memo_001",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 1,
+        "memo_hash": "sha256:memo",
+        "source_input_hash": "sha256:source",
+        "review": {
+            "review_event_id": "pme_review_001",
+            "review_action": "APPROVE_FOR_ADVISOR_USE",
+        },
+        "sections": [{"section_id": "EXECUTIVE_SUMMARY"}],
+        "client_ready_publication": "BLOCKED",
+    }
+
+    payload = _build_archive_payload(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot,
+        render_response={
+            "render_job_id": "rdr_001",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "runtime_engine": "typst",
+        },
+        archive_request_id="arch_001",
+        content_base64="JVBERi0xLjQKJQ==",
+        supersedes_render_job_id="rdr_old",
+        supersedes_archive_document_id="doc_old",
+        archive_consequence="rerender_supersedes_prior",
+    )
+
+    metadata = payload["metadata"]
+    assert metadata["advisor_proposal_memo"]["memo_id"] == "memo_001"
+    assert metadata["advisor_proposal_memo"]["section_count"] == 1
+    assert metadata["supersedes_render_job_id"] == "rdr_old"
+    assert metadata["supersedes_archive_document_id"] == "doc_old"
+    assert metadata["archive_consequence"] == "rerender_supersedes_prior"
+    assert _advisor_proposal_memo_archive_summary({}) is None
 
 
 @pytest.mark.asyncio

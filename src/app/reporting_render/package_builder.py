@@ -44,6 +44,7 @@ def _build_render_package(
     evidence = _as_dict(snapshot.get("evidence"))
     trust_metadata = _as_dict(evidence.get("trust_metadata"))
     reviewed_narrative = _reviewed_advisory_narrative(snapshot)
+    advisor_memo = _advisor_proposal_memo(snapshot)
     currency = (
         _optional_str(snapshot.get("reportingCurrency"))
         or _optional_str(overview.get("currency"))
@@ -176,12 +177,16 @@ def _build_render_package(
             or "unknown",
         },
         "reviewed_advisory_narrative": reviewed_narrative,
+        "advisor_proposal_memo": advisor_memo,
     }
     lineage_refs = [job.job_id]
     disclosure_refs = ["portfolio-review.standard-disclosures.v1"]
     if reviewed_narrative["status"] == "included":
         lineage_refs.extend(_reviewed_narrative_lineage_refs(reviewed_narrative))
         disclosure_refs.extend(_reviewed_narrative_disclosure_refs(reviewed_narrative))
+    if advisor_memo["status"] == "included":
+        lineage_refs.extend(_advisor_memo_lineage_refs(advisor_memo))
+        disclosure_refs.extend(_advisor_memo_disclosure_refs(advisor_memo))
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
@@ -959,6 +964,62 @@ def _reviewed_advisory_narrative(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _advisor_proposal_memo(snapshot: dict[str, Any]) -> dict[str, Any]:
+    package = _as_dict(snapshot.get("proposal_memo_package"))
+    if not package:
+        return {"status": "not_supplied", "sections": [], "disclosures": []}
+    review = _as_dict(package.get("review"))
+    sections = []
+    disclosures = []
+    for section in package.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        material_claims = [
+            claim for claim in section.get("material_claims", []) if isinstance(claim, dict)
+        ]
+        sections.append(
+            {
+                "section_id": _optional_str(section.get("section_id")) or "not_available",
+                "title": _optional_str(section.get("title")) or "Not available",
+                "status": _optional_str(section.get("status")) or "not_available",
+                "summary": _optional_str(section.get("summary")) or "",
+                "material_claims": material_claims,
+                "evidence_refs": _string_list(section.get("evidence_refs")),
+                "reason_codes": _string_list(section.get("reason_codes")),
+            }
+        )
+        if section.get("section_id") == "CONFLICTS_AND_DISCLOSURES":
+            for claim in material_claims:
+                claim_id = _optional_str(claim.get("claim_id"))
+                text = _optional_str(claim.get("text"))
+                if claim_id:
+                    disclosures.append({"disclosure_id": claim_id, "text": text})
+    return {
+        "status": "included",
+        "package_status": _optional_str(package.get("package_status")) or "not_available",
+        "usage": _optional_str(package.get("usage")) or "not_available",
+        "memo_id": _optional_str(package.get("memo_id")) or "not_available",
+        "memo_version": _optional_str(package.get("memo_version")) or "not_available",
+        "memo_status": _optional_str(package.get("memo_status")) or "not_available",
+        "proposal_id": _optional_str(package.get("proposal_id")) or "not_available",
+        "proposal_version_no": _optional_int(package.get("proposal_version_no")),
+        "memo_hash": _optional_str(package.get("memo_hash")) or "not_available",
+        "source_input_hash": _optional_str(package.get("source_input_hash")) or "not_available",
+        "client_ready_publication": _optional_str(package.get("client_ready_publication"))
+        or "BLOCKED",
+        "review": {
+            "review_event_id": _optional_str(review.get("review_event_id")) or "not_available",
+            "review_action": _optional_str(review.get("review_action")) or "not_available",
+            "reviewed_by": _optional_str(review.get("reviewed_by")) or "not_available",
+            "reviewed_at": _optional_str(review.get("reviewed_at")),
+        },
+        "sections": sections,
+        "disclosures": disclosures,
+        "source_authority_manifest": _as_dict(package.get("source_authority_manifest")),
+        "supportability": _as_dict(package.get("supportability")),
+    }
+
+
 def _reviewed_narrative_lineage_refs(reviewed_narrative: dict[str, Any]) -> list[str]:
     source_lineage = _as_dict(reviewed_narrative.get("source_lineage"))
     refs = [
@@ -973,8 +1034,35 @@ def _reviewed_narrative_lineage_refs(reviewed_narrative: dict[str, Any]) -> list
     return [ref for ref in refs if ref and "not_available" not in ref]
 
 
+def _advisor_memo_lineage_refs(advisor_memo: dict[str, Any]) -> list[str]:
+    refs = [
+        f"lotus-advise:proposal:{advisor_memo.get('proposal_id')}",
+        f"lotus-advise:proposal-memo:{advisor_memo.get('memo_id')}",
+        _optional_str(advisor_memo.get("memo_hash")),
+        _optional_str(advisor_memo.get("source_input_hash")),
+    ]
+    review = _as_dict(advisor_memo.get("review"))
+    review_id = _optional_str(review.get("review_event_id"))
+    if review_id and review_id != "not_available":
+        refs.append(f"lotus-advise:proposal-memo-review:{review_id}")
+    return [ref for ref in refs if ref and "not_available" not in ref]
+
+
 def _reviewed_narrative_disclosure_refs(reviewed_narrative: dict[str, Any]) -> list[str]:
     disclosures = reviewed_narrative.get("disclosures")
+    if not isinstance(disclosures, list):
+        return []
+    return [
+        disclosure_id
+        for disclosure in disclosures
+        if isinstance(disclosure, dict)
+        for disclosure_id in [_optional_str(disclosure.get("disclosure_id"))]
+        if disclosure_id and disclosure_id != "not_available"
+    ]
+
+
+def _advisor_memo_disclosure_refs(advisor_memo: dict[str, Any]) -> list[str]:
+    disclosures = advisor_memo.get("disclosures")
     if not isinstance(disclosures, list):
         return []
     return [
