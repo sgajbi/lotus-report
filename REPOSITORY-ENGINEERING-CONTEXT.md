@@ -58,18 +58,23 @@ Current repository posture:
    `INCLUDED_REVIEWED_NARRATIVE`, review-approved for advisor use, and source-hashed; `lotus-report`
    preserves it in the request hash, immutable snapshot, lineage summary, and render package
    without approving, rewriting, or inferring advisory content,
-11. RFC40-WTBD-004 first-wave report materialization is implemented for manage-owned
+11. RFC-0024 Slice 9 adds report-side consumption for approved `lotus-advise`
+   `proposal_memo_package` payloads on `POST /reports/portfolio-reviews`: the package must be
+   `INCLUDED_ADVISOR_PROPOSAL_MEMO`, review-approved for advisor use, source-hashed, and
+   client-ready blocked; `lotus-report` preserves it in the immutable snapshot, render package,
+   and archive handoff metadata without approving, rewriting, or inferring memo facts,
+12. RFC40-WTBD-004 first-wave report materialization is implemented for manage-owned
    `DpmProofPackReportInput`: `POST /reports/proof-packs` persists the bounded handoff as an
    immutable report snapshot, records lineage to `lotus-manage`, builds a `proof_pack` render
    package for `lotus-render` template `proof-pack v1`, and reuses the existing archive handoff
    lifecycle for PDF artifacts without recomputing proof-pack evidence,
-12. RFC41-WTBD-008 first-wave wave report materialization is implemented for manage-owned
+13. RFC41-WTBD-008 first-wave wave report materialization is implemented for manage-owned
    `DpmWaveReportInput`: `POST /reports/rebalance-waves` persists the bounded handoff as an
    immutable report snapshot, records lineage to `lotus-manage`, builds a `rebalance_wave` render
    package for `lotus-render` template `rebalance-wave v1`, and reuses the existing archive
    handoff lifecycle for PDF artifacts without recomputing wave state, proof-pack linkage,
    supportability, internal handoff evidence, or external execution posture,
-13. RFC40-WTBD-010 report-side portfolio-memory consumption is implemented for the first-wave DPM
+14. RFC40-WTBD-010 report-side portfolio-memory consumption is implemented for the first-wave DPM
    report jobs: proof-pack, rebalance-wave, and outcome-review report inputs may carry a
    manage-owned bounded `portfolio_memory_context`, and `lotus-report` persists that context in
    immutable snapshot lineage and render-package lineage without reconstructing manage-owned

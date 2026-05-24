@@ -66,6 +66,13 @@ then preserves the package in the immutable snapshot, adds `lotus-advise` to the
 and projects a bounded `reviewed_advisory_narrative` block into the render package. It does not
 approve, rewrite, summarize, or infer advisory content.
 
+RFC-0024 also allows an optional `proposal_memo_package` emitted by `lotus-advise`. The package is
+accepted only when it is marked `INCLUDED_ADVISOR_PROPOSAL_MEMO`, carries
+`APPROVE_FOR_ADVISOR_USE` review posture, SHA-256 memo/source hashes, memo sections, and blocked
+client-ready posture. `lotus-report` preserves the package in the immutable snapshot, projects a
+bounded `advisor_proposal_memo` block into the render package, and includes support-safe memo
+metadata in archive handoff without approving, rewriting, or inferring memo facts.
+
 ## Source Authorities
 
 `lotus-report` composes the report from domain-authoritative services:
@@ -75,7 +82,7 @@ approve, rewrite, summarize, or infer advisory content.
 | `lotus-core` | portfolio summary, allocation, positions, transactions, portfolio detail, client profile and mandate context where available | Source of portfolio, booking, holding, transaction, and mandate facts |
 | `lotus-performance` | workspace performance summary and YTD contribution | Source of performance analytics used by reporting |
 | `lotus-risk` | risk analytics derived from the report review flow | Source of risk analytics |
-| `lotus-advise` | optional approved `proposal_narrative_package` on asynchronous portfolio-review jobs | Source of advisory narrative approval, review state, source narrative hash, sections, guardrails, limitations, and disclosures |
+| `lotus-advise` | optional approved `proposal_narrative_package` and `proposal_memo_package` on asynchronous portfolio-review jobs | Source of advisory narrative and memo approval, review state, source hashes, sections, guardrails, limitations, disclosures, and client-ready blocked posture |
 | `lotus-report` | report shape, section ordering, readiness, coverage, observations, evidence, and meeting-pack composition | Reporting contract owner only |
 
 ## Request

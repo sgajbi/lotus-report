@@ -36,6 +36,38 @@ def _request(**overrides):
     return PortfolioReviewJobRequest.model_validate(payload)
 
 
+def _memo_package(**overrides):
+    payload = {
+        "package_status": "INCLUDED_ADVISOR_PROPOSAL_MEMO",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_MEMO",
+        "memo_id": "memo_001",
+        "memo_version": "advisory-proposal-memo-evidence-pack.v1",
+        "memo_status": "READY",
+        "proposal_id": "pp_001",
+        "proposal_version_no": 1,
+        "memo_hash": "sha256:" + "a" * 64,
+        "source_input_hash": "sha256:" + "b" * 64,
+        "review": {"review_action": "APPROVE_FOR_ADVISOR_USE"},
+        "sections": [{"section_id": "EXECUTIVE_SUMMARY", "summary": "Advisor memo."}],
+        "client_ready_publication": "BLOCKED",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_portfolio_review_request_accepts_advisor_proposal_memo_package() -> None:
+    request = _request(proposal_memo_package=_memo_package())
+
+    assert request.proposal_memo_package is not None
+    assert request.proposal_memo_package.memo_id == "memo_001"
+    assert request.proposal_memo_package.review["review_action"] == "APPROVE_FOR_ADVISOR_USE"
+
+
+def test_portfolio_review_request_rejects_client_ready_memo_package() -> None:
+    with pytest.raises(ValueError):
+        _request(proposal_memo_package=_memo_package(client_ready_publication="CLIENT_READY"))
+
+
 def _outcome_request(**overrides):
     outcome_report_input = {
         "contract_version": "1.0",

@@ -414,6 +414,9 @@ def _build_archive_payload(
         "created_by_service": "lotus-report",
         "created_by_actor": job.triggered_by,
     }
+    advisor_memo = _advisor_proposal_memo_archive_summary(snapshot_payload)
+    if advisor_memo is not None:
+        metadata["advisor_proposal_memo"] = advisor_memo
     if supersedes_render_job_id:
         metadata["supersedes_render_job_id"] = supersedes_render_job_id
     if supersedes_archive_document_id:
@@ -421,6 +424,31 @@ def _build_archive_payload(
     if archive_consequence:
         metadata["archive_consequence"] = archive_consequence
     return {"metadata": metadata, "content_base64": content_base64}
+
+
+def _advisor_proposal_memo_archive_summary(
+    snapshot_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    package = _as_dict(snapshot_payload.get("proposal_memo_package"))
+    if not package:
+        return None
+    review = _as_dict(package.get("review"))
+    sections = [section for section in package.get("sections", []) if isinstance(section, dict)]
+    return {
+        "memo_id": _optional_str(package.get("memo_id")) or "not_available",
+        "proposal_id": _optional_str(package.get("proposal_id")) or "not_available",
+        "proposal_version_no": _optional_int(package.get("proposal_version_no")) or 0,
+        "review_event_id": _optional_str(review.get("review_event_id")) or "not_available",
+        "review_action": _optional_str(review.get("review_action")) or "not_available",
+        "client_ready_status": _optional_str(package.get("client_ready_publication")) or "BLOCKED",
+        "memo_hash": _optional_str(package.get("memo_hash")) or "not_available",
+        "source_input_hash": _optional_str(package.get("source_input_hash")) or "not_available",
+        "section_count": len(sections),
+        "blocked_section_count": sum(
+            1 for section in sections if section.get("status") == "BLOCKED"
+        ),
+        "included_in_render": True,
+    }
 
 
 def _date_text(value: object) -> str:
