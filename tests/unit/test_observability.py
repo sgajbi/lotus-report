@@ -2,7 +2,8 @@ import json
 import logging
 
 import pytest
-from fastapi import Request
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.testclient import TestClient
 
 import app.reporting_metrics as reporting_metrics
 from app.observability import (
@@ -20,6 +21,7 @@ from app.observability import (
     resolve_request_id,
     resolve_trace_id,
     setup_logging,
+    setup_observability,
     trace_id_var,
 )
 from app.report_batch_orchestrator.models import BatchPressureSnapshot
@@ -156,6 +158,26 @@ def test_setup_logging_initializes_handler_when_root_has_no_handlers():
         root_logger.removeHandler(handler)
     setup_logging()
     assert root_logger.hasHandlers()
+
+
+def test_setup_observability_supports_fastapi_deferred_included_routers():
+    app = FastAPI()
+    router = APIRouter()
+
+    @router.get("/health/live")
+    def health_live() -> dict[str, str]:
+        return {"status": "live"}
+
+    setup_observability(app)
+    app.include_router(router)
+
+    client = TestClient(app)
+    live = client.get("/health/live")
+    metrics = client.get("/metrics")
+
+    assert live.status_code == 200
+    assert live.json() == {"status": "live"}
+    assert metrics.status_code == 200
 
 
 def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():

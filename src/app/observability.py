@@ -5,11 +5,13 @@ import re
 import time
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import routing as prometheus_routing
+from starlette.routing import Match, Mount
 
 from app.reporting_metrics import validate_reporting_metric_contracts
 
@@ -25,6 +27,7 @@ TRACE_ID_HEADER_ALIAS = "X-Trace-ID"
 TRACEPARENT_HEADER = "traceparent"
 
 _W3C_TRACE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+_PROMETHEUS_ROUTING_PATCHED = False
 
 OBSERVABILITY_LOG_FIELDS = frozenset(
     {
@@ -137,6 +140,7 @@ def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
 def setup_observability(app: FastAPI) -> None:
     setup_logging()
     validate_reporting_metric_contracts()
+    _install_fastapi_included_router_prometheus_patch()
     Instrumentator().instrument(app).expose(app)
 
     @app.middleware("http")
@@ -179,3 +183,59 @@ def setup_observability(app: FastAPI) -> None:
         if traceparent:
             response.headers[TRACEPARENT_HEADER] = traceparent
         return response
+
+
+def _install_fastapi_included_router_prometheus_patch() -> None:
+    global _PROMETHEUS_ROUTING_PATCHED
+    if _PROMETHEUS_ROUTING_PATCHED:
+        return
+    prometheus_routing._get_route_name = _get_prometheus_route_name
+    _PROMETHEUS_ROUTING_PATCHED = True
+
+
+def _get_prometheus_route_name(
+    scope: dict[str, Any],
+    routes: list[Any],
+    route_name: str | None = None,
+) -> str | None:
+    """Resolve route names across Starlette routes and FastAPI deferred routers."""
+
+    for route in routes:
+        match, child_scope = route.matches(scope)
+        if match == Match.FULL:
+            matched_route = _resolve_effective_route(route, scope)
+            route_path = getattr(matched_route, "path", None)
+            if not isinstance(route_path, str):
+                return route_name
+
+            child_scope = {**scope, **child_scope}
+            route_name = route_path
+            if isinstance(matched_route, Mount) and matched_route.routes:
+                child_route_name = _get_prometheus_route_name(
+                    child_scope, matched_route.routes, route_name
+                )
+                if child_route_name is None:
+                    route_name = None
+                else:
+                    route_name += child_route_name
+            return route_name
+        if match == Match.PARTIAL and route_name is None:
+            route_path = getattr(route, "path", None)
+            if isinstance(route_path, str):
+                route_name = route_path
+    return None
+
+
+def _resolve_effective_route(route: Any, scope: dict[str, Any]) -> Any:
+    match_method = getattr(route, "_match", None)
+    if not callable(match_method):
+        return route
+
+    try:
+        _match, _child_scope, matched_route, effective_context = match_method(scope)
+    except Exception:
+        return route
+    if matched_route is not None:
+        return matched_route
+    starlette_route = getattr(effective_context, "starlette_route", None)
+    return starlette_route or route
