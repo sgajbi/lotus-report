@@ -86,3 +86,32 @@ async def test_submit_render_package_sends_trace_without_invalid_traceparent(mon
         "Content-Type": "application/json",
         "X-Trace-ID": "trace-render",
     }
+
+
+@pytest.mark.asyncio
+async def test_submit_render_package_omits_traceparent_when_trace_id_is_32_char_invalid_hex(
+    monkeypatch,
+):
+    captured_headers: dict[str, str] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured_headers.update(kwargs["headers"])
+        return 200, {}
+
+    monkeypatch.setattr(render_client_module, "post_with_retry", _fake_post_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus",
+        timeout_seconds=5.0,
+        max_retries=1,
+        retry_backoff_seconds=0.1,
+    )
+
+    await client.submit_render_package(
+        {"render_job_id": "rdr_790"},
+        trace_id="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    )
+
+    assert captured_headers == {
+        "Content-Type": "application/json",
+        "X-Trace-ID": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    }

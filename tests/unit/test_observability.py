@@ -4,6 +4,7 @@ import logging
 import pytest
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.testclient import TestClient
+from starlette.routing import Match, Mount, Route
 
 import app.reporting_metrics as reporting_metrics
 from app.observability import (
@@ -14,6 +15,8 @@ from app.observability import (
     TRACE_ID_HEADER,
     TRACEPARENT_HEADER,
     JsonFormatter,
+    _get_prometheus_route_name,
+    _resolve_effective_route,
     correlation_id_var,
     propagation_headers,
     request_id_var,
@@ -178,6 +181,106 @@ def test_setup_observability_supports_fastapi_deferred_included_routers():
     assert live.status_code == 200
     assert live.json() == {"status": "live"}
     assert metrics.status_code == 200
+
+
+def test_prometheus_route_name_preserves_existing_name_when_matched_route_has_no_path():
+    class _RouteWithoutPath:
+        def matches(self, scope):
+            return Match.FULL, {}
+
+    route = _RouteWithoutPath()
+    assert _get_prometheus_route_name({}, [route], "/parent") == "/parent"
+
+
+def test_prometheus_route_name_returns_none_when_matched_route_has_no_path():
+    class _RouteWithoutPath:
+        def matches(self, scope):
+            return Match.FULL, {}
+
+    route = _RouteWithoutPath()
+    assert _get_prometheus_route_name({}, [route]) is None
+
+
+def test_prometheus_route_name_uses_partial_match_until_full_match():
+    class _PartialRoute:
+        path = "/partial"
+
+        def matches(self, scope):
+            return Match.PARTIAL, {}
+
+    class _FullRoute:
+        path = "/full"
+
+        def matches(self, scope):
+            return Match.FULL, {}
+
+    partial_route = _PartialRoute()
+    full_route = _FullRoute()
+
+    assert _get_prometheus_route_name({}, [partial_route, full_route]) == "/full"
+
+
+def test_prometheus_route_name_resolves_nested_mounted_routes():
+    def _endpoint() -> dict[str, str]:
+        return {"status": "ok"}
+
+    mounted = Mount("/mounted", routes=[Route("/child", endpoint=_endpoint)])
+    scope = {
+        "type": "http",
+        "path": "/mounted/child",
+        "root_path": "",
+        "method": "GET",
+        "headers": [],
+    }
+
+    assert _get_prometheus_route_name(scope, [mounted]) == "/mounted/child"
+
+
+def test_prometheus_route_name_returns_none_when_mounted_child_does_not_match():
+    def _endpoint() -> dict[str, str]:
+        return {"status": "ok"}
+
+    mounted = Mount("/mounted", routes=[Route("/other", endpoint=_endpoint)])
+    scope = {
+        "type": "http",
+        "path": "/mounted/child",
+        "root_path": "",
+        "method": "GET",
+        "headers": [],
+    }
+
+    assert _get_prometheus_route_name(scope, [mounted]) is None
+
+
+def test_resolve_effective_route_handles_fastapi_match_failures_and_context_routes():
+    class _FallbackRoute:
+        path = "/fallback"
+
+        def _match(self, scope):
+            raise RuntimeError("match failed")
+
+    fallback_route = _FallbackRoute()
+    assert _resolve_effective_route(fallback_route, {}) is fallback_route
+
+    class _Context:
+        starlette_route = object()
+
+    class _ContextRoute:
+        def _match(self, scope):
+            return None, {}, None, _Context()
+
+    context_route = _ContextRoute()
+    assert _resolve_effective_route(context_route, {}) is _Context.starlette_route
+
+    class _EmptyContext:
+        starlette_route = None
+
+    class _NoContextRoute:
+        def _match(self, scope):
+            return None, {}, None, _EmptyContext()
+
+    no_context_route = _NoContextRoute()
+    assert _resolve_effective_route(no_context_route, {}) is no_context_route
 
 
 def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
