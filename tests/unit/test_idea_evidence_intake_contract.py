@@ -80,7 +80,8 @@ def test_idea_evidence_intake_contract_blocks_boundary_drift(tmp_path: Path) -> 
 
     assert "source_authority.report_materialization must be lotus-report" in errors
     assert any(
-        "required_payload_fields must not include forbidden fields" in error for error in errors
+        "required_payload_fields must not include forbidden sensitive fragments" in error
+        for error in errors
     )
     assert any("certification_blockers missing" in error for error in errors)
     assert any("non_proof_boundaries must mention rendered document" in error for error in errors)
@@ -103,6 +104,32 @@ def test_idea_evidence_intake_contract_blocks_camel_case_required_fields(
     )
 
     assert any("canonical snake_case" in error for error in errors)
+
+
+def test_idea_evidence_intake_contract_blocks_sensitive_field_fragments(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract = _contract_payload()
+    contract["required_payload_fields"].extend(
+        [
+            "primary_client_name",
+            "raw_provider_response_json",
+        ]
+    )
+    contract_path = tmp_path / "contract.json"
+    products_path = tmp_path / "products.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    products_path.write_text(json.dumps(_products_payload()), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_intake_contract(
+        contract_path=contract_path,
+        products_path=products_path,
+    )
+
+    assert any(
+        "primary_client_name" in error and "raw_provider_response_json" in error for error in errors
+    )
 
 
 def test_idea_evidence_intake_contract_requires_idea_producer_authority(
