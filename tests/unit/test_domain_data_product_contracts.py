@@ -101,7 +101,7 @@ def test_report_product_declaration_publishes_client_report_evidence_pack() -> N
     product = products[0]
     assert product["product_version"] == "v1"
     assert product["lifecycle_status"] == "active"
-    assert product["approved_consumers"] == ["lotus-gateway"]
+    assert product["approved_consumers"] == ["lotus-gateway", "lotus-idea"]
     assert "/reports/portfolios/{portfolio_id}/review" in product["current_routes"]
     assert product["completeness_policy"] == {
         "default_status": "complete",
