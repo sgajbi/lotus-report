@@ -12,26 +12,26 @@ CONTRACT_PATH = (
 PRODUCTS_PATH = ROOT / "contracts" / "domain-data-products" / "lotus-report-products.v1.json"
 
 REQUIRED_FIELDS = {
-    "reportEvidencePackId",
-    "conversionIntentId",
-    "candidateId",
+    "report_evidence_pack_id",
+    "conversion_intent_id",
+    "candidate_id",
     "purpose",
-    "evidencePacketId",
-    "evidenceContentFingerprint",
-    "sourceSignalIds",
-    "sourceSummaries",
-    "reasonCodes",
-    "reportSourceAuthority",
-    "renderSourceAuthority",
-    "archiveSourceAuthority",
+    "evidence_packet_id",
+    "evidence_content_fingerprint",
+    "source_signal_ids",
+    "source_summaries",
+    "reason_codes",
+    "report_source_authority",
+    "render_source_authority",
+    "archive_source_authority",
     "boundary",
-    "retentionPolicyRef",
-    "requestedAtUtc",
-    "grantsClientPublicationAuthority",
-    "createsRenderedOutput",
-    "createsArchiveRecord",
+    "retention_policy_ref",
+    "requested_at_utc",
+    "grants_client_publication_authority",
+    "creates_rendered_output",
+    "creates_archive_record",
     "producer",
-    "supportabilityStatus",
+    "supportability_status",
 }
 FORBIDDEN_FIELD_FRAGMENTS = {
     "client_name",
@@ -123,12 +123,13 @@ def _validate_source_authority(
         if authority.get(key) != expected:
             errors.append(f"source_authority.{key} must be {expected}")
 
+    if contract.get("approved_producer_repository") != authority.get("idea_evidence"):
+        errors.append("approved_producer_repository must match source_authority.idea_evidence")
+    approved_product = contract.get("approved_producer_product")
+    if not isinstance(approved_product, str) or not approved_product.startswith("lotus-idea:"):
+        errors.append("approved_producer_product must identify a lotus-idea evidence product")
+
     report_product = _client_report_evidence_pack(products)
-    approved_consumers = report_product.get("approved_consumers")
-    if not isinstance(approved_consumers, list) or "lotus-idea" not in approved_consumers:
-        errors.append(
-            "ClientReportEvidencePack producer declaration must approve lotus-idea as a consumer"
-        )
     if report_product.get("lifecycle_status") != "active":
         errors.append("ClientReportEvidencePack producer declaration must remain active")
     return errors
@@ -152,6 +153,14 @@ def _validate_payload_fields(contract: dict[str, Any]) -> list[str]:
         )
 
     normalized_required = _normalized_fields(required_fields)
+    camel_case_required = sorted(
+        field for field in required_fields if any(character.isupper() for character in field)
+    )
+    if camel_case_required:
+        errors.append(
+            "required_payload_fields must use canonical snake_case names: "
+            + ", ".join(camel_case_required)
+        )
     overlap = sorted(normalized_required & normalized_forbidden)
     if overlap:
         errors.append(
