@@ -107,8 +107,13 @@ Current repository posture:
    fails fast on migration or volume drift instead of returning a misleading healthy container,
 17. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-18. CI is standardized but still lighter than some core domain services,
-19. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+18. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
+   planned, not-certified `lotus-idea` evidence-pack intake boundary for
+   `ClientReportEvidencePack`; it is source-authority contract posture only and does not prove a
+   live route, report materialization, render, archive, client-publication authority, or supported
+   feature,
+19. CI is standardized but still lighter than some core domain services,
+20. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -136,21 +141,25 @@ Primary areas:
    reporting evidence products.
 9. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
-10. `src/app/reporting_jobs/`
+10. `contracts/idea-evidence-intake/`
+   planned, not-certified report-owned contract posture for future `lotus-idea` evidence packet
+   intake into `ClientReportEvidencePack`; this directory must not be treated as route,
+   materialization, render, archive, or supported-feature proof.
+11. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, bounded cancellation, and
    report-owned portfolio-memory source events for the first asynchronous reporting wave.
-11. `src/app/reporting_lineage/`
+12. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
-12. `src/app/reporting_render/`
+13. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
-13. `src/app/report_batch_orchestrator/`
+14. `src/app/report_batch_orchestrator/`
     RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
     validation, durable batch/batch-item materialization, deterministic schedule-cycle
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure
@@ -202,6 +211,8 @@ Use these commands as the primary local contract:
    `make docker-build`
 6. domain-data-product contract validation
    `make domain-product-validate`
+7. idea evidence intake contract validation
+   `make idea-evidence-intake-contract-gate`
 
 ## Validation And CI Expectations
 
@@ -269,9 +280,11 @@ Update this document when:
 9. report ledger database, readiness, migration, or CI proof posture changes,
 10. current-state rollout posture changes,
 11. RFC-0104 batch orchestration module, selector materialization, support posture, or
-    planned-vocabulary scope changes.
+    planned-vocabulary scope changes,
 12. RFC-0105 observability, metrics, dashboard, alert, operator API, replay, rerender, or
-    regenerate support posture changes.
+    regenerate support posture changes,
+13. planned or implemented `lotus-idea` evidence-pack intake posture, source-authority boundaries,
+    route/materialization proof, or supported-feature promotion changes.
 
 ## Cross-Links
 
