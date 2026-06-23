@@ -54,7 +54,8 @@
       },
       "security_profile_ref": "business_consumer_access:client_confidential:retain_for_client_record:audit_read_and_export",
       "approved_consumers": [
-        "lotus-gateway"
+        "lotus-gateway",
+        "lotus-idea"
       ],
       "deprecation_policy": {
         "state": "not_deprecated",
