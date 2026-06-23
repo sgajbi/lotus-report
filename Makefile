@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck monetary-float-guard domain-product-validate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
 
 install:
 	python -m pip install --upgrade pip
@@ -10,12 +10,16 @@ lint:
 	python -m ruff check .
 	python -m ruff format --check .
 	$(MAKE) monetary-float-guard
+	$(MAKE) idea-evidence-intake-contract-gate
 
 monetary-float-guard:
 	python scripts/check_monetary_float_usage.py
 
 domain-product-validate:
 	python scripts/validate_domain_data_product_contracts.py
+
+idea-evidence-intake-contract-gate:
+	python scripts/validate_idea_evidence_intake_contract.py
 
 typecheck:
 	python -m mypy --config-file mypy.ini

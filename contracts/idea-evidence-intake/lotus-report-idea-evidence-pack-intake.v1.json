@@ -1,0 +1,89 @@
+{
+  "contract_id": "lotus-report-idea-evidence-pack-intake",
+  "contract_version": "1.0.0",
+  "repository": "lotus-report",
+  "owner_repository": "lotus-report",
+  "approved_producer_repository": "lotus-idea",
+  "approved_producer_product": "lotus-idea:IdeaEvidencePacket:v1",
+  "owned_product": "lotus-report:ClientReportEvidencePack:v1",
+  "governed_by_rfc": "lotus-idea RFC-0002 Slice 13",
+  "lifecycle_status": "planned",
+  "supportability_status": "not_certified",
+  "route_existence_proven": false,
+  "materialization_proven": false,
+  "supported_feature_promoted": false,
+  "target_route": "planned:lotus-report-idea-evidence-pack-intake",
+  "source_authority": {
+    "idea_evidence": "lotus-idea",
+    "report_materialization": "lotus-report",
+    "rendering": "lotus-render",
+    "archive_record": "lotus-archive"
+  },
+  "required_payload_fields": [
+    "reportEvidencePackId",
+    "conversionIntentId",
+    "candidateId",
+    "purpose",
+    "evidencePacketId",
+    "evidenceContentFingerprint",
+    "sourceSignalIds",
+    "sourceSummaries",
+    "reasonCodes",
+    "reportSourceAuthority",
+    "renderSourceAuthority",
+    "archiveSourceAuthority",
+    "boundary",
+    "retentionPolicyRef",
+    "requestedAtUtc",
+    "grantsClientPublicationAuthority",
+    "createsRenderedOutput",
+    "createsArchiveRecord",
+    "producer",
+    "supportabilityStatus"
+  ],
+  "required_field_semantics": {
+    "evidenceContentFingerprint": "Hash of the source evidence packet content. The intake contract must not require raw portfolio, holding, account, client, or transaction payloads.",
+    "sourceSummaries": "Source-safe product, source-system, version, as-of, freshness, and data-quality summaries supplied by lotus-idea from source-owned evidence.",
+    "grantsClientPublicationAuthority": "Must remain false until lotus-report, lotus-render, and lotus-archive complete their own review, render, archive, access, and publication controls.",
+    "createsRenderedOutput": "Must remain false for the lotus-idea handoff. lotus-render owns rendered output creation.",
+    "createsArchiveRecord": "Must remain false for the lotus-idea handoff. lotus-archive owns archive record creation."
+  },
+  "forbidden_payload_fields": [
+    "clientName",
+    "client_name",
+    "accountNumber",
+    "account_number",
+    "holdingId",
+    "holding_id",
+    "transactionId",
+    "transaction_id",
+    "requestBody",
+    "request_body",
+    "responseBody",
+    "response_body",
+    "rawPrompt",
+    "raw_prompt",
+    "rawProviderResponse",
+    "raw_provider_response"
+  ],
+  "non_proof_boundaries": [
+    "Does not prove a live lotus-report intake route.",
+    "Does not create a report job, render package, rendered document, archive record, or client-ready publication.",
+    "Does not grant suitability, advisory, mandate, execution, or client-communication authority.",
+    "Does not replace lotus-report ClientReportEvidencePack product ownership.",
+    "Does not promote a supported feature in lotus-report or lotus-idea."
+  ],
+  "evidence_refs": [
+    "contracts/domain-data-products/lotus-report-products.v1.json",
+    "contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json",
+    "scripts/validate_idea_evidence_intake_contract.py",
+    "tests/unit/test_idea_evidence_intake_contract.py"
+  ],
+  "certification_blockers": [
+    "lotus_report_live_intake_route_proof_missing",
+    "report_evidence_pack_live_materialization_proof_missing",
+    "rendered_output_creation_missing",
+    "archive_record_creation_missing",
+    "client_publication_authority_blocked"
+  ]
+}

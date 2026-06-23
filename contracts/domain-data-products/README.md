@@ -14,6 +14,9 @@ Current declarations:
 2. `lotus-report-products.v1.json`
    Producer declaration for `ClientReportEvidencePack`, including the first-class portfolio review
    report route once it carries report-level lineage and customer-consumable evidence metadata.
+3. `../idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json`
+   Planned, not-certified intake contract for reviewed `lotus-idea` evidence packets. It records
+   source-authority boundaries only; it is not route, render, archive, or supported-feature proof.
 
 Local validation:
 
@@ -25,6 +28,12 @@ Make target:
 
 ```powershell
 make domain-product-validate
+```
+
+Idea evidence intake contract validation:
+
+```powershell
+make idea-evidence-intake-contract-gate
 ```
 
 Current watchlist:
