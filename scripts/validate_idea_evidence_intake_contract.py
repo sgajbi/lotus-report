@@ -161,10 +161,14 @@ def _validate_payload_fields(contract: dict[str, Any]) -> list[str]:
             "required_payload_fields must use canonical snake_case names: "
             + ", ".join(camel_case_required)
         )
-    overlap = sorted(normalized_required & normalized_forbidden)
-    if overlap:
+    sensitive_required_fields = _required_fields_with_forbidden_fragments(
+        normalized_required,
+        normalized_forbidden,
+    )
+    if sensitive_required_fields:
         errors.append(
-            "required_payload_fields must not include forbidden fields: " + ", ".join(overlap)
+            "required_payload_fields must not include forbidden sensitive fragments: "
+            + ", ".join(sensitive_required_fields)
         )
     return errors
 
@@ -228,6 +232,20 @@ def _string_set(value: object) -> set[str]:
 
 def _normalized_fields(fields: set[str]) -> set[str]:
     return {field.replace("-", "_").lower() for field in fields}
+
+
+def _required_fields_with_forbidden_fragments(
+    required_fields: set[str],
+    forbidden_fragments: set[str],
+) -> list[str]:
+    return sorted(
+        field
+        for field in required_fields
+        if any(
+            fragment in field or fragment.replace("_", "") in field.replace("_", "")
+            for fragment in forbidden_fragments
+        )
+    )
 
 
 def main() -> int:
