@@ -86,26 +86,44 @@ def test_idea_evidence_intake_contract_blocks_boundary_drift(tmp_path: Path) -> 
     assert any("non_proof_boundaries must mention rendered document" in error for error in errors)
 
 
-def test_idea_evidence_intake_contract_requires_idea_consumer_approval(
+def test_idea_evidence_intake_contract_blocks_camel_case_required_fields(
     tmp_path: Path,
 ) -> None:
     module = _load_validator()
-    products = _products_payload()
-    products["products"][0]["approved_consumers"] = ["lotus-gateway"]
+    contract = _contract_payload()
+    contract["required_payload_fields"].append("reportEvidencePackId")
     contract_path = tmp_path / "contract.json"
     products_path = tmp_path / "products.json"
-    contract_path.write_text(json.dumps(_contract_payload()), encoding="utf-8")
-    products_path.write_text(json.dumps(products), encoding="utf-8")
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    products_path.write_text(json.dumps(_products_payload()), encoding="utf-8")
 
     errors = module.validate_idea_evidence_intake_contract(
         contract_path=contract_path,
         products_path=products_path,
     )
 
-    assert (
-        "ClientReportEvidencePack producer declaration must approve lotus-idea as a consumer"
-        in errors
+    assert any("canonical snake_case" in error for error in errors)
+
+
+def test_idea_evidence_intake_contract_requires_idea_producer_authority(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract = _contract_payload()
+    contract["approved_producer_repository"] = "lotus-report"
+    contract["approved_producer_product"] = "lotus-report:ClientReportEvidencePack:v1"
+    contract_path = tmp_path / "contract.json"
+    products_path = tmp_path / "products.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    products_path.write_text(json.dumps(_products_payload()), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_intake_contract(
+        contract_path=contract_path,
+        products_path=products_path,
     )
+
+    assert "approved_producer_repository must match source_authority.idea_evidence" in errors
+    assert "approved_producer_product must identify a lotus-idea evidence product" in errors
 
 
 def _contract_payload() -> dict[str, Any]:
