@@ -237,7 +237,9 @@ Important validation expectations:
    and response fields only,
 7. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
-   agents do not normalize the wrong parameter shape by accident.
+   agents do not normalize the wrong parameter shape by accident,
+8. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
+   policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
 
 ## Standards And RFCs That Govern This Repository
 
