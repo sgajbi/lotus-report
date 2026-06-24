@@ -52,7 +52,6 @@ FORBIDDEN_FIELD_FRAGMENTS = {
     "rawproviderresponse",
 }
 REQUIRED_BLOCKERS = {
-    "lotus_report_live_intake_route_proof_missing",
     "report_evidence_pack_live_materialization_proof_missing",
     "rendered_output_creation_missing",
     "archive_record_creation_missing",
@@ -87,21 +86,20 @@ def _validate_contract_identity(contract: dict[str, Any]) -> list[str]:
         "approved_producer_repository": "lotus-idea",
         "approved_producer_product": "lotus-idea:IdeaEvidencePacket:v1",
         "owned_product": "lotus-report:ClientReportEvidencePack:v1",
-        "lifecycle_status": "planned",
+        "lifecycle_status": "implemented",
         "supportability_status": "not_certified",
-        "target_route": "planned:lotus-report-idea-evidence-pack-intake",
+        "target_route": "POST /reports/idea-evidence-packs",
     }
     for key, expected in expected_values.items():
         if contract.get(key) != expected:
             errors.append(f"{key} must be {expected}")
 
-    for key in (
-        "route_existence_proven",
-        "materialization_proven",
-        "supported_feature_promoted",
-    ):
+    if contract.get("route_existence_proven") is not True:
+        errors.append("route_existence_proven must be true for the implemented intake route")
+
+    for key in ("materialization_proven", "supported_feature_promoted"):
         if contract.get(key) is not False:
-            errors.append(f"{key} must remain false until live proof exists")
+            errors.append(f"{key} must remain false until materialization proof exists")
     return errors
 
 

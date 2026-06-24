@@ -10,6 +10,7 @@ from app.enterprise_readiness import (
 from app.observability import setup_observability
 from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
+from app.routers.idea_evidence_intake import router as idea_evidence_intake_router
 from app.routers.integration import router as integration_router
 from app.routers.report_batches import router as report_batches_router
 from app.routers.report_batches import schedules_router as report_batch_schedules_router
@@ -79,4 +80,5 @@ app.include_router(report_batches_router)
 app.include_router(report_batch_schedules_router)
 app.include_router(report_jobs_router)
 app.include_router(report_evidence_router)
+app.include_router(idea_evidence_intake_router)
 app.include_router(reporting_operations_router)
