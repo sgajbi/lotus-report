@@ -7,12 +7,12 @@
   "approved_producer_product": "lotus-idea:IdeaEvidencePacket:v1",
   "owned_product": "lotus-report:ClientReportEvidencePack:v1",
   "governed_by_rfc": "lotus-idea RFC-0002 Slice 13",
-  "lifecycle_status": "planned",
+  "lifecycle_status": "implemented",
   "supportability_status": "not_certified",
-  "route_existence_proven": false,
+  "route_existence_proven": true,
   "materialization_proven": false,
   "supported_feature_promoted": false,
-  "target_route": "planned:lotus-report-idea-evidence-pack-intake",
+  "target_route": "POST /reports/idea-evidence-packs",
   "source_authority": {
     "idea_evidence": "lotus-idea",
     "report_materialization": "lotus-report",
@@ -67,7 +67,7 @@
     "raw_provider_response"
   ],
   "non_proof_boundaries": [
-    "Does not prove a live lotus-report intake route.",
+    "Proves only a live lotus-report intake route for source-safe lotus-idea evidence-pack handoff.",
     "Does not create a report job, render package, rendered document, archive record, or client-ready publication.",
     "Does not grant suitability, advisory, mandate, execution, or client-communication authority.",
     "Does not replace lotus-report ClientReportEvidencePack product ownership.",
@@ -76,11 +76,15 @@
   "evidence_refs": [
     "contracts/domain-data-products/lotus-report-products.v1.json",
     "contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json",
+    "src/app/idea_evidence_intake/models.py",
+    "src/app/idea_evidence_intake/service.py",
+    "src/app/routers/idea_evidence_intake.py",
     "scripts/validate_idea_evidence_intake_contract.py",
-    "tests/unit/test_idea_evidence_intake_contract.py"
+    "tests/unit/test_idea_evidence_intake_contract.py",
+    "tests/unit/test_idea_evidence_intake_service.py",
+    "tests/integration/test_idea_evidence_intake_api.py"
   ],
   "certification_blockers": [
-    "lotus_report_live_intake_route_proof_missing",
     "report_evidence_pack_live_materialization_proof_missing",
     "rendered_output_creation_missing",
     "archive_record_creation_missing",

@@ -39,9 +39,7 @@ def test_idea_evidence_intake_contract_gate_cli_reports_success(capsys: Any) -> 
 def test_idea_evidence_intake_contract_blocks_premature_support(tmp_path: Path) -> None:
     module = _load_validator()
     contract = _contract_payload()
-    contract["lifecycle_status"] = "active"
     contract["supportability_status"] = "supported"
-    contract["route_existence_proven"] = True
     contract["materialization_proven"] = True
     contract["supported_feature_promoted"] = True
     contract_path = tmp_path / "contract.json"
@@ -54,11 +52,11 @@ def test_idea_evidence_intake_contract_blocks_premature_support(tmp_path: Path) 
         products_path=products_path,
     )
 
-    assert "lifecycle_status must be planned" in errors
     assert "supportability_status must be not_certified" in errors
-    assert "route_existence_proven must remain false until live proof exists" in errors
-    assert "materialization_proven must remain false until live proof exists" in errors
-    assert "supported_feature_promoted must remain false until live proof exists" in errors
+    assert "materialization_proven must remain false until materialization proof exists" in errors
+    assert (
+        "supported_feature_promoted must remain false until materialization proof exists" in errors
+    )
 
 
 def test_idea_evidence_intake_contract_blocks_boundary_drift(tmp_path: Path) -> None:
@@ -85,6 +83,25 @@ def test_idea_evidence_intake_contract_blocks_boundary_drift(tmp_path: Path) -> 
     )
     assert any("certification_blockers missing" in error for error in errors)
     assert any("non_proof_boundaries must mention rendered document" in error for error in errors)
+
+
+def test_idea_evidence_intake_contract_requires_current_live_route(tmp_path: Path) -> None:
+    module = _load_validator()
+    contract = _contract_payload()
+    contract["route_existence_proven"] = False
+    contract["target_route"] = "planned:lotus-report-idea-evidence-pack-intake"
+    contract_path = tmp_path / "contract.json"
+    products_path = tmp_path / "products.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    products_path.write_text(json.dumps(_products_payload()), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_intake_contract(
+        contract_path=contract_path,
+        products_path=products_path,
+    )
+
+    assert "route_existence_proven must be true for the implemented intake route" in errors
+    assert "target_route must be POST /reports/idea-evidence-packs" in errors
 
 
 def test_idea_evidence_intake_contract_blocks_camel_case_required_fields(
