@@ -11,8 +11,8 @@ records, or client-ready publication authority.
 Current contract:
 
 1. `lotus-report-idea-evidence-pack-intake.v1.json`
-   Planned, not-certified intake contract for reviewed `lotus-idea` evidence
-   packs.
+   Implemented, not-certified intake-route contract for reviewed `lotus-idea`
+   evidence packs.
 
 Validate locally:
 
@@ -20,5 +20,6 @@ Validate locally:
 make idea-evidence-intake-contract-gate
 ```
 
-This gate proves contract shape and source-authority boundaries only. It is not
-route-existence, materialization, render, archive, or supported-feature proof.
+This gate proves contract shape, source-authority boundaries, and the bounded
+route-foundation posture only. It is not report materialization, render,
+archive, client-publication, or supported-feature proof.
