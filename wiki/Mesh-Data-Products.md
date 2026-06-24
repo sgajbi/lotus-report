@@ -11,15 +11,16 @@
 - Source declaration: `contracts/domain-data-products/lotus-report-products.v1.json`
 - Trust telemetry: `contracts/trust-telemetry/client-report-evidence-pack.telemetry.v1.json`
 
-## Planned idea evidence intake
+## Idea evidence intake route foundation
 
 - Contract: `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json`
-- Producer boundary: `lotus-idea` may provide reviewed opportunity evidence packets in a future
-  certified flow.
+- Producer boundary: `lotus-idea` may provide reviewed opportunity evidence packets through the
+  implemented source-safe intake route.
 - Report boundary: `lotus-report` remains the owner of report materialization and
   `ClientReportEvidencePack` product truth.
-- Current status: planned and not certified. The contract does not prove a live intake route,
-  rendered output, archive record, client-publication authority, or supported feature.
+- Current status: implemented route foundation and not certified. `POST /reports/idea-evidence-packs`
+  proves only source-safe route intake; materialization, rendered output, archive record,
+  client-publication authority, and supported feature promotion remain separate certification work.
 
 ## Platform relationship
 

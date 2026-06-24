@@ -108,10 +108,10 @@ Current repository posture:
 17. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 18. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
-   planned, not-certified `lotus-idea` evidence-pack intake boundary for
-   `ClientReportEvidencePack`; it is source-authority contract posture only and does not prove a
-   live route, report materialization, render, archive, client-publication authority, or supported
-   feature,
+   implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
+   `ClientReportEvidencePack`; it proves only source-safe route intake through
+   `POST /reports/idea-evidence-packs` and does not prove report materialization, render, archive,
+   client-publication authority, or supported-feature promotion,
 19. CI is standardized but still lighter than some core domain services,
 20. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
@@ -142,9 +142,10 @@ Primary areas:
 9. `contracts/trust-telemetry/`
    repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
 10. `contracts/idea-evidence-intake/`
-   planned, not-certified report-owned contract posture for future `lotus-idea` evidence packet
-   intake into `ClientReportEvidencePack`; this directory must not be treated as route,
-   materialization, render, archive, or supported-feature proof.
+   implemented, not-certified report-owned route-foundation posture for `lotus-idea` evidence
+   packet intake into `ClientReportEvidencePack`; this directory must not be treated as report
+   job creation, materialization, render, archive, client-publication authority, or
+   supported-feature proof.
 11. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, bounded cancellation, and

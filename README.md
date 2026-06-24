@@ -42,8 +42,10 @@ It depends on:
 - `lotus-gateway`
   primary product-facing consumer for front-office reporting workflows
 - `lotus-idea`
-  planned producer of reviewed opportunity evidence packets for future report evidence-pack intake;
-  this is contract posture only until a live route and materialization flow are implemented
+  approved producer of reviewed opportunity evidence packets for report evidence-pack intake;
+  `POST /reports/idea-evidence-packs` proves the route foundation only, while report
+  materialization, render, archive, client-publication authority, and supported-feature promotion
+  remain not certified
 
 Boundary rules that matter:
 
@@ -80,10 +82,10 @@ Boundary rules that matter:
    request-body, and response fields use canonical snake_case names and do not publish camelCase
    compatibility aliases.
 7. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
-   planned, not-certified `lotus-idea` evidence-pack intake boundary for
-   `ClientReportEvidencePack`. It preserves source authority and explicitly does not prove a live
-   intake route, report materialization, render, archive, client-publication authority, or supported
-   feature.
+   implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
+   `ClientReportEvidencePack`. It proves only source-safe route intake through
+   `POST /reports/idea-evidence-packs`; it is not report materialization, render, archive,
+   client-publication authority, or supported-feature proof.
 
 ## First-Class Portfolio Review
 
@@ -338,9 +340,10 @@ Current orchestration model:
 
 - primary downstream consumer:
   `lotus-gateway` for front-office reporting workflows
-- planned upstream evidence producer:
-  `lotus-idea` for reviewed opportunity evidence packets once a live intake route and
-  materialization path are implemented and certified
+- upstream evidence producer:
+  `lotus-idea` for reviewed opportunity evidence packets through the implemented
+  `POST /reports/idea-evidence-packs` route foundation; materialization, render, archive, and
+  client-publication proof remain separate certification work
 - upstream dependencies:
   `lotus-core`, `lotus-performance`, `lotus-risk`
 - contract rule:

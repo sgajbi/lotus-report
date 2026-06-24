@@ -15,8 +15,10 @@ Current declarations:
    Producer declaration for `ClientReportEvidencePack`, including the first-class portfolio review
    report route once it carries report-level lineage and customer-consumable evidence metadata.
 3. `../idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json`
-   Planned, not-certified intake contract for reviewed `lotus-idea` evidence packets. It records
-   source-authority boundaries only; it is not route, render, archive, or supported-feature proof.
+   Implemented, not-certified intake-route contract for reviewed `lotus-idea` evidence packets.
+   It proves only source-safe route intake through `POST /reports/idea-evidence-packs`; it is not
+   report materialization, rendered output, archive record, client-publication authority, or
+   supported-feature proof.
 
 Local validation:
 
