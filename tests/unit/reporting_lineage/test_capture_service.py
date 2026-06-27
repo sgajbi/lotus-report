@@ -484,6 +484,7 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
         "supportability_status": "complete",
         "completeness_status": "complete",
         "proof_pack_id": "dpp_001",
+        "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
         "source_hash": "sha256:report-input",
         "portfolio_memory_status": "not_supplied",
     }
