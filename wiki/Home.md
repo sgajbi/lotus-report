@@ -20,6 +20,9 @@
 - rebalance-wave report jobs are live for manage-owned `DpmWaveReportInput` snapshots,
   proof-pack posture, internal handoff lineage, render-package assembly, and report-to-archive
   lifecycle handoff
+- reviewed `lotus-idea` evidence packs can be materialized into governed proof-pack report jobs
+  through `POST /reports/idea-evidence-packs/materializations`, with lineage preserved to
+  `lotus-idea` and client publication still blocked
 - DPM proof-pack, wave, and outcome-review report jobs can carry manage-owned
   `portfolio_memory_context` as bounded lineage for report packages without reconstructing
   portfolio-memory events or source-owner facts
@@ -44,6 +47,8 @@ This repo owns:
 - portfolio summary and portfolio review payload shaping
 - outcome-review report artifact orchestration from manage-owned bounded report input
 - proof-pack report artifact orchestration from manage-owned bounded report input
+- idea-evidence proof-pack materialization from reviewed `lotus-idea` evidence plus report-owned
+  portfolio scope
 - rebalance-wave report artifact orchestration from manage-owned bounded report input
 - report-side portfolio-memory lineage consumption for DPM report packages
 - report-owned portfolio-memory source events for report lifecycle, snapshot, render, and archive

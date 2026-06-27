@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+from types import ModuleType
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_idea_evidence_materialization_contract_gate_passes_current_contract() -> None:
+    module = _load_validator()
+
+    assert module.validate_idea_evidence_materialization_contract() == []
+
+
+def test_idea_evidence_materialization_contract_blocks_publication_drift(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract_path = (
+        ROOT
+        / "contracts"
+        / "idea-evidence-materialization"
+        / "lotus-report-idea-evidence-pack-materialization.v1.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["client_publication_authority_granted"] = True
+    drifted = tmp_path / "contract.json"
+    drifted.write_text(json.dumps(contract), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_materialization_contract(drifted)
+
+    assert "client_publication_authority_granted must be False" in errors
+
+
+def test_idea_evidence_materialization_contract_blocks_authority_drift(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract_path = (
+        ROOT
+        / "contracts"
+        / "idea-evidence-materialization"
+        / "lotus-report-idea-evidence-pack-materialization.v1.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["source_authority"]["rendering"] = "lotus-report"
+    drifted = tmp_path / "contract.json"
+    drifted.write_text(json.dumps(contract), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_materialization_contract(drifted)
+
+    assert "source_authority.rendering must be lotus-render" in errors
+
+
+def _load_validator() -> ModuleType:
+    script_path = ROOT / "scripts" / "validate_idea_evidence_materialization_contract.py"
+    spec = importlib.util.spec_from_file_location(
+        "validate_idea_evidence_materialization_contract",
+        script_path,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

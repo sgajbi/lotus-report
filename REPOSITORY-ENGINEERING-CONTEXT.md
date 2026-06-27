@@ -112,8 +112,15 @@ Current repository posture:
    `ClientReportEvidencePack`; it proves only source-safe route intake through
    `POST /reports/idea-evidence-packs` and does not prove report materialization, render, archive,
    client-publication authority, or supported-feature promotion,
-19. CI is standardized but still lighter than some core domain services,
-20. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+19. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
+   records the implemented, not-certified `lotus-idea` evidence-pack materialization route
+   boundary for `ClientReportEvidencePack`: `POST /reports/idea-evidence-packs/materializations`
+   accepts reviewed idea evidence plus report-owned portfolio scope, creates a governed proof-pack
+   report job, preserves immutable lineage to `lotus-idea`, invokes the existing render/archive
+   lifecycle for PDF output, and keeps suitability, mandate approval, execution, distribution,
+   client-publication authority, and supported-feature promotion blocked,
+20. CI is standardized but still lighter than some core domain services,
+21. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -146,21 +153,26 @@ Primary areas:
    packet intake into `ClientReportEvidencePack`; this directory must not be treated as report
    job creation, materialization, render, archive, client-publication authority, or
    supported-feature proof.
-11. `src/app/reporting_jobs/`
+11. `contracts/idea-evidence-materialization/`
+   implemented, not-certified report-owned materialization posture for `lotus-idea` evidence
+   packets; this directory proves report-job, render, and archive lifecycle wiring only and must
+   keep client publication, advisory suitability, mandate approval, execution, distribution, and
+   supported-feature promotion blocked.
+12. `src/app/reporting_jobs/`
    PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
    lifecycle, idempotency, request hashing, status retrieval, bounded cancellation, and
    report-owned portfolio-memory source events for the first asynchronous reporting wave.
-12. `src/app/reporting_lineage/`
+13. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101.
-13. `src/app/reporting_render/`
+14. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.
     `package_builder.py` owns the source-backed portfolio-review render package contract, while
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
-14. `src/app/report_batch_orchestrator/`
+15. `src/app/report_batch_orchestrator/`
     RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
     validation, durable batch/batch-item materialization, deterministic schedule-cycle
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure

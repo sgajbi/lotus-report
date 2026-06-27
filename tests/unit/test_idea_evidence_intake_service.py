@@ -4,10 +4,14 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.idea_evidence_intake.models import IdeaEvidencePackIntakeRequest
+from app.idea_evidence_intake.models import (
+    IdeaEvidencePackIntakeRequest,
+    IdeaEvidencePackMaterializationRequest,
+)
 from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
+    build_proof_pack_report_job_request_from_idea_evidence,
 )
 
 
@@ -58,6 +62,36 @@ def test_idea_evidence_intake_conflicts_when_idempotency_payload_changes() -> No
             _request(report_evidence_pack_id="irep_changed"),
             idempotency_key="idea-report-intake-001",
         )
+
+
+def test_idea_evidence_materialization_maps_to_source_owned_proof_pack_request() -> None:
+    request = IdeaEvidencePackMaterializationRequest(
+        idea_evidence_pack=_request(),
+        portfolio_id="PB_SG_GLOBAL_BAL_001",
+        mandate_id="MANDATE_PB_SG_GLOBAL_BAL_001",
+        as_of_date="2026-06-24",
+        requested_output_formats=["pdf"],
+        reporting_currency="USD",
+        options={"retention_policy_id": "generated-report-standard"},
+    )
+
+    report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
+
+    assert report_job_request.requested_output_formats == ["pdf"]
+    proof_pack_input = report_job_request.proof_pack_report_input
+    assert proof_pack_input["proof_pack_id"] == "irep_001"
+    assert proof_pack_input["source_contract_version"] == (
+        "lotus_idea_evidence_pack_report_input.v1"
+    )
+    assert proof_pack_input["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+    assert proof_pack_input["evidence_ref"] == {
+        "source_system": "lotus-idea",
+        "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",
+        "source_id": "irep_001:lotus_idea_evidence_pack_report_input",
+        "content_hash": "sha256:idea-evidence-content",
+    }
+    assert proof_pack_input["client_publication_authority_granted"] is False
+    assert proof_pack_input["sections"][0]["section_type"] == "IDEA_SOURCE_EVIDENCE"
 
 
 def _request(report_evidence_pack_id: str = "irep_001") -> IdeaEvidencePackIntakeRequest:

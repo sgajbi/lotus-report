@@ -120,7 +120,7 @@ def _payload_text(payload: dict[str, Any] | None) -> str:
     if not payload:
         return ""
     try:
-        return canonical_json_dumps(payload).lower()
+        return str(canonical_json_dumps(payload)).lower()
     except Exception:
         return str(payload).lower()
 
@@ -661,6 +661,15 @@ class PortfolioReviewSnapshotCaptureService:
             )
             return failed_job
 
+        source_ref = _as_dict(proof_pack_report_input.get("evidence_ref"))
+        source_system = _optional_str(source_ref.get("source_system")) or "lotus-manage"
+        source_type = _optional_str(source_ref.get("source_type")) or "DPM_PROOF_PACK_REPORT_INPUT"
+        source_id = _optional_str(source_ref.get("source_id")) or str(
+            proof_pack_report_input.get("proof_pack_id") or job.job_id
+        )
+        source_endpoint = _proof_pack_source_endpoint(source_system)
+        source_contract_version = _proof_pack_source_contract_version(source_system)
+
         snapshot = self._snapshot_store.create_snapshot(
             ReportInputSnapshotCreateRequest(
                 report_job_id=job.job_id,
@@ -673,11 +682,12 @@ class PortfolioReviewSnapshotCaptureService:
                 supportability_status="complete",
                 completeness_status="complete",
                 lineage_summary={
-                    "source_services": ["lotus-manage"],
+                    "source_services": [source_system],
                     "call_count": 0,
                     "supportability_status": "complete",
                     "completeness_status": "complete",
                     "proof_pack_id": proof_pack_report_input.get("proof_pack_id"),
+                    "source_type": source_type,
                     "source_hash": proof_pack_report_input.get("content_hash"),
                     **_portfolio_memory_lineage_summary(proof_pack_report_input),
                 },
@@ -691,20 +701,16 @@ class PortfolioReviewSnapshotCaptureService:
             snapshot_id=snapshot.snapshot_id,
             calls=[
                 ReportUpstreamCallCreateRequest(
-                    service_name="lotus-manage",
-                    endpoint="/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input",
+                    service_name=source_system,
+                    endpoint=source_endpoint,
                     method="GET",
-                    contract_version="DpmProofPackReportInput.1.0",
+                    contract_version=source_contract_version,
                     request_hash=str(
                         proof_pack_report_input.get("proof_pack_content_hash")
                         or "sha256:not-provided"
                     ),
                     response_hash=str(source_hash) if source_hash else None,
-                    response_ref=str(
-                        proof_pack_report_input.get("proof_pack_id")
-                        or job.options.get("proof_pack_id")
-                        or job.job_id
-                    ),
+                    response_ref=source_id,
                     status_code=200,
                     latency_ms=0,
                     supportability_status="complete",
@@ -1013,6 +1019,29 @@ def _portfolio_memory_lineage_summary(report_input: dict[str, Any]) -> dict[str,
         "portfolio_memory_supportability_state": context.get("supportability_state"),
         "portfolio_memory_event_ref_count": len(event_refs),
     }
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _proof_pack_source_endpoint(source_system: str) -> str:
+    if source_system == "lotus-idea":
+        return "/reports/idea-evidence-packs/materializations"
+    return "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
+
+
+def _proof_pack_source_contract_version(source_system: str) -> str:
+    if source_system == "lotus-idea":
+        return "LotusIdeaEvidencePackReportInput.1.0"
+    return "DpmProofPackReportInput.1.0"
 
 
 def _overall_posture(calls: list[_RecordedUpstreamCall]) -> str:
