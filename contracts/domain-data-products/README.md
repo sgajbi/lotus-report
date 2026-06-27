@@ -19,6 +19,10 @@ Current declarations:
    It proves only source-safe route intake through `POST /reports/idea-evidence-packs`; it is not
    report materialization, rendered output, archive record, client-publication authority, or
    supported-feature proof.
+4. `../idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
+   Implemented, not-certified materialization contract for reviewed `lotus-idea` evidence packets.
+   It proves report-owned proof-pack job materialization through the existing snapshot, render, and
+   archive lifecycle while keeping client publication and supported-feature promotion blocked.
 
 Local validation:
 
@@ -36,6 +40,12 @@ Idea evidence intake contract validation:
 
 ```powershell
 make idea-evidence-intake-contract-gate
+```
+
+Idea evidence materialization contract validation:
+
+```powershell
+make idea-evidence-materialization-contract-gate
 ```
 
 Current watchlist:

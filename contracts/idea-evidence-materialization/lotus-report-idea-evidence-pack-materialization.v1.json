@@ -1,0 +1,64 @@
+{
+  "contract_id": "lotus-report-idea-evidence-pack-materialization",
+  "contract_version": "1.0.0",
+  "repository": "lotus-report",
+  "approved_producer_repository": "lotus-idea",
+  "approved_producer_product": "lotus-idea:IdeaEvidencePacket:v1",
+  "owned_product": "lotus-report:ClientReportEvidencePack:v1",
+  "governed_by_rfc": "lotus-idea RFC-0002 Slice 13",
+  "lifecycle_status": "implemented",
+  "supportability_status": "not_certified",
+  "route_existence_proven": true,
+  "materialization_proven": true,
+  "rendered_output_creation_proven": true,
+  "archive_record_creation_proven": true,
+  "client_publication_authority_granted": false,
+  "supported_feature_promoted": false,
+  "target_route": "POST /reports/idea-evidence-packs/materializations",
+  "source_authority": {
+    "idea_evidence": "lotus-idea",
+    "report_materialization": "lotus-report",
+    "rendering": "lotus-render",
+    "archive_record": "lotus-archive",
+    "client_publication": "blocked"
+  },
+  "required_fields": [
+    "idea_evidence_pack",
+    "portfolio_id",
+    "as_of_date",
+    "requested_output_formats",
+    "grants_client_publication_authority"
+  ],
+  "required_nested_fields": {
+    "idea_evidence_pack": [
+      "report_evidence_pack_id",
+      "conversion_intent_id",
+      "candidate_id",
+      "evidence_packet_id",
+      "evidence_content_fingerprint",
+      "source_summaries",
+      "reason_codes"
+    ]
+  },
+  "non_proof_boundaries": [
+    "Proves report-owned materialization, rendered output creation, and archive record creation through the governed report job pipeline.",
+    "Does not grant suitability, advisory proposal approval, mandate approval, order, execution, settlement, distribution, or client-publication authority.",
+    "Does not recompute lotus-idea evidence or upstream portfolio, holding, performance, risk, mandate, or transaction facts.",
+    "Does not promote a supported feature in lotus-report or lotus-idea."
+  ],
+  "evidence_refs": [
+    "contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json",
+    "src/app/idea_evidence_intake/models.py",
+    "src/app/idea_evidence_intake/service.py",
+    "src/app/routers/idea_evidence_intake.py",
+    "src/app/reporting_lineage/capture_service.py",
+    "src/app/reporting_render/package_builder.py",
+    "tests/unit/test_idea_evidence_materialization_contract.py",
+    "tests/unit/test_idea_evidence_intake_service.py",
+    "tests/integration/test_idea_evidence_intake_api.py"
+  ],
+  "certification_blockers": [
+    "client_publication_authority_blocked",
+    "supported_feature_promotion_missing"
+  ]
+}

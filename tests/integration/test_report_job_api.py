@@ -311,6 +311,26 @@ class _FakeCaptureService:
                 trace_id=job.trace_id,
             )
             proof_pack_report_input = job.options["proof_pack_report_input"]
+            source_ref = proof_pack_report_input.get("evidence_ref", {})
+            if not isinstance(source_ref, dict):
+                source_ref = {}
+            source_system = str(source_ref.get("source_system") or "lotus-manage")
+            source_type = str(source_ref.get("source_type") or "DPM_PROOF_PACK_REPORT_INPUT")
+            source_id = str(
+                source_ref.get("source_id")
+                or proof_pack_report_input.get("proof_pack_id")
+                or job.job_id
+            )
+            source_endpoint = (
+                "/reports/idea-evidence-packs/materializations"
+                if source_system == "lotus-idea"
+                else "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
+            )
+            source_contract_version = (
+                "LotusIdeaEvidencePackReportInput.1.0"
+                if source_system == "lotus-idea"
+                else "DpmProofPackReportInput.1.0"
+            )
             snapshot = self._lineage_store.create_snapshot(
                 ReportInputSnapshotCreateRequest(
                     report_job_id=job.job_id,
@@ -323,9 +343,10 @@ class _FakeCaptureService:
                     supportability_status="complete",
                     completeness_status="complete",
                     lineage_summary={
-                        "source_services": ["lotus-manage"],
+                        "source_services": [source_system],
                         "call_count": 1,
                         "supportability_status": "complete",
+                        "source_type": source_type,
                     },
                     captured_at=datetime.now(UTC),
                     correlation_id=job.correlation_id,
@@ -336,13 +357,13 @@ class _FakeCaptureService:
                 snapshot_id=snapshot.snapshot_id,
                 calls=[
                     ReportUpstreamCallCreateRequest(
-                        service_name="lotus-manage",
-                        endpoint="/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input",
+                        service_name=source_system,
+                        endpoint=source_endpoint,
                         method="GET",
-                        contract_version="DpmProofPackReportInput.1.0",
+                        contract_version=source_contract_version,
                         request_hash="sha256:proof-pack",
                         response_hash="sha256:report-input",
-                        response_ref="dpp_001",
+                        response_ref=source_id,
                         status_code=200,
                         latency_ms=0,
                         supportability_status="complete",

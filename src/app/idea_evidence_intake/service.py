@@ -10,7 +10,9 @@ from typing import Mapping
 from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
+    IdeaEvidencePackMaterializationRequest,
 )
+from app.reporting_jobs.models import ProofPackReportJobRequest
 
 REPORT_IDEA_EVIDENCE_INTAKE_ROUTE = "POST /reports/idea-evidence-packs"
 REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS = (
@@ -24,6 +26,20 @@ REPORT_IDEA_EVIDENCE_INTAKE_EVIDENCE_REFS = (
     "contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json",
     "src/app/idea_evidence_intake/service.py",
     "src/app/routers/idea_evidence_intake.py",
+    "tests/unit/test_idea_evidence_intake_service.py",
+    "tests/integration/test_idea_evidence_intake_api.py",
+)
+
+IDEA_EVIDENCE_MATERIALIZATION_ROUTE = "POST /reports/idea-evidence-packs/materializations"
+IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS = (
+    "POST /reports/idea-evidence-packs/materializations",
+    "contracts/idea-evidence-materialization/"
+    "lotus-report-idea-evidence-pack-materialization.v1.json",
+    "src/app/idea_evidence_intake/service.py",
+    "src/app/routers/idea_evidence_intake.py",
+    "src/app/reporting_lineage/capture_service.py",
+    "src/app/reporting_render/package_builder.py",
+    "tests/unit/test_idea_evidence_materialization_contract.py",
     "tests/unit/test_idea_evidence_intake_service.py",
     "tests/integration/test_idea_evidence_intake_api.py",
 )
@@ -102,3 +118,113 @@ def _payload_fingerprint(request: IdeaEvidencePackIntakeRequest) -> str:
 def _intake_id(idempotency_key: str, payload_fingerprint: str) -> str:
     digest = hashlib.sha256(f"{idempotency_key}:{payload_fingerprint}".encode("utf-8")).hexdigest()
     return "idea_intake_" + digest[:24]
+
+
+def build_proof_pack_report_job_request_from_idea_evidence(
+    request: IdeaEvidencePackMaterializationRequest,
+) -> ProofPackReportJobRequest:
+    evidence_pack = request.idea_evidence_pack
+    proof_pack_input = {
+        "contract_version": "1.0",
+        "source_contract_version": "lotus_idea_evidence_pack_report_input.v1",
+        "proof_pack_id": evidence_pack.report_evidence_pack_id,
+        "proof_pack_content_hash": evidence_pack.evidence_content_fingerprint,
+        "portfolio_id": request.portfolio_id,
+        "mandate_id": request.mandate_id or "not_available",
+        "as_of_date": request.as_of_date,
+        "generated_at": evidence_pack.requested_at_utc.isoformat(),
+        "report_title": f"Idea Evidence Pack - {evidence_pack.report_evidence_pack_id}",
+        "report_audience": ["advisor", "investment_control", "audit"],
+        "state": "READY_FOR_REPORT_MATERIALIZATION",
+        "decision_summary": {
+            "recommended_action": "review_opportunity_evidence",
+            "rationale": ", ".join(evidence_pack.reason_codes),
+        },
+        "supportability": {
+            "status": "READY",
+            "reason_codes": tuple(evidence_pack.reason_codes),
+        },
+        "sections": _source_summary_sections(evidence_pack),
+        "markdown_summary": _markdown_summary(evidence_pack),
+        "source_hashes": {
+            "idea_evidence_packet": evidence_pack.evidence_content_fingerprint,
+        },
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "evidence_ref": {
+            "source_system": "lotus-idea",
+            "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",
+            "source_id": (
+                f"{evidence_pack.report_evidence_pack_id}:lotus_idea_evidence_pack_report_input"
+            ),
+            "content_hash": evidence_pack.evidence_content_fingerprint,
+        },
+        "content_hash": evidence_pack.evidence_content_fingerprint,
+        "source_lineage": [
+            {
+                "source_system": "lotus-idea",
+                "source_type": "IdeaEvidencePacket",
+                "source_id": evidence_pack.evidence_packet_id,
+                "content_hash": evidence_pack.evidence_content_fingerprint,
+            }
+        ],
+        "client_publication_authority_granted": False,
+    }
+    return ProofPackReportJobRequest(
+        proof_pack_report_input=proof_pack_input,
+        requested_output_formats=request.requested_output_formats,
+        reporting_currency=request.reporting_currency,
+        options=request.options,
+    )
+
+
+def _source_summary_sections(
+    request: IdeaEvidencePackIntakeRequest,
+) -> list[dict[str, object]]:
+    sections: list[dict[str, object]] = []
+    for index, summary in enumerate(request.source_summaries, start=1):
+        section_id = f"idea_source_{index}"
+        sections.append(
+            {
+                "section_id": section_id,
+                "section_type": "IDEA_SOURCE_EVIDENCE",
+                "state": "READY",
+                "title": f"{summary.source_system} evidence summary",
+                "summary": (
+                    f"{summary.product_id} {summary.product_version} as of "
+                    f"{summary.as_of_date}: {summary.data_quality_status}, "
+                    f"{summary.freshness}."
+                ),
+                "reason_codes": tuple(request.reason_codes),
+                "facts": {},
+                "metrics": {},
+                "evidence_refs": [
+                    {
+                        "source_system": summary.source_system,
+                        "product_id": summary.product_id,
+                        "product_version": summary.product_version,
+                        "as_of_date": summary.as_of_date,
+                    }
+                ],
+                "source_refs": [
+                    {
+                        "source_system": summary.source_system,
+                        "product_id": summary.product_id,
+                    }
+                ],
+                "content_hash": request.evidence_content_fingerprint,
+            }
+        )
+    return sections
+
+
+def _markdown_summary(request: IdeaEvidencePackIntakeRequest) -> str:
+    reason_codes = ", ".join(request.reason_codes)
+    source_count = len(request.source_summaries)
+    return (
+        "# Idea Evidence Pack\n\n"
+        f"- Report evidence pack: {request.report_evidence_pack_id}\n"
+        f"- Evidence packet: {request.evidence_packet_id}\n"
+        f"- Source summary count: {source_count}\n"
+        f"- Reason codes: {reason_codes}\n"
+        "- Client publication authority: blocked\n"
+    )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -14,6 +14,10 @@ class IdeaEvidenceIntakePurpose(StrEnum):
 
 class IdeaEvidenceIntakeBoundary(StrEnum):
     REPORT_INTAKE_ONLY = "REPORT_INTAKE_ONLY"
+
+
+class IdeaEvidenceMaterializationBoundary(StrEnum):
+    REPORT_JOB_MATERIALIZATION = "REPORT_JOB_MATERIALIZATION"
 
 
 class IdeaEvidenceSourceSummary(BaseModel):
@@ -112,3 +116,44 @@ class IdeaEvidencePackIntakeResponse(BaseModel):
     evidence_refs: tuple[str, ...]
     accepted_at_utc: datetime
     correlation_id: str | None = None
+
+
+class IdeaEvidencePackMaterializationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idea_evidence_pack: IdeaEvidencePackIntakeRequest
+    portfolio_id: str = Field(
+        min_length=3,
+        description=(
+            "Report-owned portfolio scope used to create the governed report job. This field is "
+            "accepted only on the materialization route; the intake-only route remains "
+            "source-safe and does not require portfolio identifiers."
+        ),
+        examples=["PB_SG_GLOBAL_BAL_001"],
+    )
+    mandate_id: str | None = Field(default=None, examples=["MANDATE_PB_SG_GLOBAL_BAL_001"])
+    as_of_date: str = Field(min_length=4, examples=["2026-06-24"])
+    requested_output_formats: list[str] = Field(
+        default_factory=lambda: ["pdf"],
+        description="Requested output formats for the generated report job.",
+        examples=[["pdf"], ["json"]],
+    )
+    reporting_currency: str | None = Field(default=None, examples=["USD"])
+    options: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Output-affecting report options such as retention policy controls.",
+        examples=[{"retention_policy_id": "generated-report-standard"}],
+    )
+    boundary: IdeaEvidenceMaterializationBoundary = (
+        IdeaEvidenceMaterializationBoundary.REPORT_JOB_MATERIALIZATION
+    )
+    grants_client_publication_authority: Literal[False] = False
+    producer: Literal["lotus-idea"] = "lotus-idea"
+    supportability_status: Literal["not_certified"] = "not_certified"
+
+    @field_validator("requested_output_formats")
+    @classmethod
+    def _reject_blank_output_formats(cls, values: list[str]) -> list[str]:
+        if not values or any(not value.strip() for value in values):
+            raise ValueError("requested_output_formats must not be blank")
+        return values
