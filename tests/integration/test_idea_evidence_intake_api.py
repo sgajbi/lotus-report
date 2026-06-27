@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.idea_evidence_intake.service import IdeaEvidenceIntakeLedger
 from app.main import app
-from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.ledger import MissingIdempotencyKeyError, ReportJobLedger
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
@@ -150,11 +150,18 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
             json=_materialization_payload(),
             headers=_headers("idea-report-materialization-001"),
         )
+        replay = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=_headers("idea-report-materialization-001"),
+        )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 202
+    assert replay.status_code == 202
     body = response.json()
+    assert replay.json() == body
     assert body["status"] == "archived"
     record = ledger.get_job(body["report_job_id"])
     assert record.report_type == "proof_pack"
@@ -165,6 +172,126 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     assert upstream_calls[0].service_name == "lotus-idea"
     assert upstream_calls[0].endpoint == "/reports/idea-evidence-packs/materializations"
     assert upstream_calls[0].contract_version == "LotusIdeaEvidencePackReportInput.1.0"
+
+
+def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    intake_ledger = IdeaEvidenceIntakeLedger()
+    capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_UnexpectedRenderClient(),
+        archive_client=_UnexpectedArchiveClient(),
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        render_service
+    )
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-json-only"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "data_ready"
+    record = ledger.get_job(body["report_job_id"])
+    assert record.requested_output_formats == ["json"]
+    assert record.archive_document_id is None
+    snapshot = lineage_store.get_snapshot_by_job(body["report_job_id"])
+    assert snapshot.lineage_summary["source_type"] == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT"
+
+
+def test_idea_evidence_materialization_route_requires_idempotency_key() -> None:
+    client = TestClient(app)
+    headers = _headers("idea-report-materialization-missing-key")
+    headers.pop("Idempotency-Key")
+
+    response = client.post(
+        "/reports/idea-evidence-packs/materializations",
+        json=_materialization_payload(),
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "missing_idempotency_key"
+
+
+def test_idea_evidence_materialization_route_conflicts_on_changed_payload_replay(
+    tmp_path,
+) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    intake_ledger = IdeaEvidenceIntakeLedger()
+    capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_SuccessfulRenderClient(),
+        archive_client=_SuccessfulArchiveClient(),
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        render_service
+    )
+    changed_payload = {
+        **_materialization_payload(),
+        "idea_evidence_pack": {
+            **_payload(),
+            "report_evidence_pack_id": "irep_changed",
+        },
+    }
+    client = TestClient(app)
+    try:
+        first = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=_headers("idea-report-materialization-conflict"),
+        )
+        second = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=changed_payload,
+            headers=_headers("idea-report-materialization-conflict"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "idempotency_conflict"
+
+
+def test_idea_evidence_materialization_route_maps_ledger_missing_key_error() -> None:
+    app.dependency_overrides[get_report_job_ledger] = lambda: _MissingKeyReportJobLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=_headers("idea-report-materialization-ledger-missing-key"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "missing_idempotency_key"
 
 
 def test_idea_evidence_materialization_route_keeps_publication_blocked() -> None:
@@ -334,3 +461,18 @@ class _SuccessfulRenderClient:
 class _SuccessfulArchiveClient:
     async def archive_document(self, payload, **kwargs):
         return 201, {"document_id": "doc_idea_evidence_pack_001"}
+
+
+class _UnexpectedRenderClient:
+    async def submit_render_package(self, payload, **kwargs):
+        raise AssertionError("JSON-only materialization must not call render")
+
+
+class _UnexpectedArchiveClient:
+    async def archive_document(self, payload, **kwargs):
+        raise AssertionError("JSON-only materialization must not call archive")
+
+
+class _MissingKeyReportJobLedger:
+    def create_proof_pack_report_job(self, **kwargs):
+        raise MissingIdempotencyKeyError("missing idempotency key")
