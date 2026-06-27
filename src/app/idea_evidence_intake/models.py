@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -157,3 +157,12 @@ class IdeaEvidencePackMaterializationRequest(BaseModel):
         if not values or any(not value.strip() for value in values):
             raise ValueError("requested_output_formats must not be blank")
         return values
+
+    @field_validator("as_of_date")
+    @classmethod
+    def _validate_as_of_date(cls, value: str) -> str:
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("as_of_date must be an ISO calendar date") from exc
+        return value

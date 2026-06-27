@@ -229,6 +229,24 @@ def test_idea_evidence_materialization_route_requires_idempotency_key() -> None:
     assert response.json()["detail"]["code"] == "missing_idempotency_key"
 
 
+def test_idea_evidence_materialization_route_validates_as_of_date_before_intake() -> None:
+    intake_ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    payload = {**_materialization_payload(), "as_of_date": "not-a-date"}
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-invalid-date"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert intake_ledger.snapshot() == {}
+
+
 def test_idea_evidence_materialization_route_conflicts_on_changed_payload_replay(
     tmp_path,
 ) -> None:
@@ -419,7 +437,7 @@ class _IdeaEvidenceCaptureService:
                 ReportUpstreamCallCreateRequest(
                     service_name="lotus-idea",
                     endpoint="/reports/idea-evidence-packs/materializations",
-                    method="GET",
+                    method="POST",
                     contract_version="LotusIdeaEvidencePackReportInput.1.0",
                     request_hash=report_input["proof_pack_content_hash"],
                     response_hash=report_input["content_hash"],

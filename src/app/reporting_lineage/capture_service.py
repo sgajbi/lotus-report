@@ -662,13 +662,17 @@ class PortfolioReviewSnapshotCaptureService:
             return failed_job
 
         source_ref = _as_dict(proof_pack_report_input.get("evidence_ref"))
-        source_system = _optional_str(source_ref.get("source_system")) or "lotus-manage"
         source_type = _optional_str(source_ref.get("source_type")) or "DPM_PROOF_PACK_REPORT_INPUT"
+        source_system = _proof_pack_source_system(
+            source_system=_optional_str(source_ref.get("source_system")),
+            source_type=source_type,
+        )
         source_id = _optional_str(source_ref.get("source_id")) or str(
             proof_pack_report_input.get("proof_pack_id") or job.job_id
         )
         source_endpoint = _proof_pack_source_endpoint(source_system)
         source_contract_version = _proof_pack_source_contract_version(source_system)
+        source_method = _proof_pack_source_method(source_system)
 
         snapshot = self._snapshot_store.create_snapshot(
             ReportInputSnapshotCreateRequest(
@@ -703,7 +707,7 @@ class PortfolioReviewSnapshotCaptureService:
                 ReportUpstreamCallCreateRequest(
                     service_name=source_system,
                     endpoint=source_endpoint,
-                    method="GET",
+                    method=source_method,
                     contract_version=source_contract_version,
                     request_hash=str(
                         proof_pack_report_input.get("proof_pack_content_hash")
@@ -1032,10 +1036,22 @@ def _optional_str(value: Any) -> str | None:
     return text or None
 
 
+def _proof_pack_source_system(source_system: str | None, source_type: str) -> str:
+    if source_system == "lotus-idea" and source_type == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT":
+        return "lotus-idea"
+    return "lotus-manage"
+
+
 def _proof_pack_source_endpoint(source_system: str) -> str:
     if source_system == "lotus-idea":
         return "/reports/idea-evidence-packs/materializations"
     return "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
+
+
+def _proof_pack_source_method(source_system: str) -> str:
+    if source_system == "lotus-idea":
+        return "POST"
+    return "GET"
 
 
 def _proof_pack_source_contract_version(source_system: str) -> str:

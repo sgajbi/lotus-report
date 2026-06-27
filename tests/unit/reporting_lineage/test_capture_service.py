@@ -503,6 +503,71 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
 
 
 @pytest.mark.asyncio
+async def test_capture_service_rejects_spoofed_idea_source_authority(tmp_path):
+    request = _proof_pack_request(
+        proof_pack_report_input={
+            **_proof_pack_request().proof_pack_report_input,
+            "evidence_ref": {
+                "source_system": "lotus-idea",
+                "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
+                "source_id": "spoofed-idea-source",
+                "content_hash": "sha256:report-input",
+            },
+        }
+    )
+    ledger, store, job = _create_proof_pack_job(
+        tmp_path,
+        suffix="proof-pack-spoofed-idea-source",
+        request=request,
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.lineage_summary["source_services"] == ["lotus-manage"]
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert calls[0].service_name == "lotus-manage"
+    assert calls[0].endpoint == "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
+    assert calls[0].method == "GET"
+    assert calls[0].contract_version == "DpmProofPackReportInput.1.0"
+
+
+@pytest.mark.asyncio
+async def test_capture_service_records_idea_materialization_lineage_as_post(tmp_path):
+    request = _proof_pack_request(
+        proof_pack_report_input={
+            **_proof_pack_request().proof_pack_report_input,
+            "evidence_ref": {
+                "source_system": "lotus-idea",
+                "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",
+                "source_id": "irep_001:lotus_idea_evidence_pack_report_input",
+                "content_hash": "sha256:report-input",
+            },
+        }
+    )
+    ledger, store, job = _create_proof_pack_job(
+        tmp_path,
+        suffix="proof-pack-idea-materialization-source",
+        request=request,
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.lineage_summary["source_services"] == ["lotus-idea"]
+    assert snapshot.lineage_summary["source_type"] == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT"
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert calls[0].service_name == "lotus-idea"
+    assert calls[0].endpoint == "/reports/idea-evidence-packs/materializations"
+    assert calls[0].method == "POST"
+    assert calls[0].contract_version == "LotusIdeaEvidencePackReportInput.1.0"
+
+
+@pytest.mark.asyncio
 async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path):
     ledger, store, job = _create_wave_job(tmp_path, suffix="wave-success")
     service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
