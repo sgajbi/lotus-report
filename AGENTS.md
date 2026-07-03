@@ -131,6 +131,10 @@ Treat the RFC-0076 contract files as the source of truth for canonical portfolio
 identity, governed as-of date, and minimum supportability thresholds. Runtime evidence should carry
 contract provenance instead of relying on implicit repo convention.
 
+Canonical platform QA includes `lotus-idea` by default. Do not reintroduce an opt-in flag or skip
+`lotus-idea` readiness and teardown evidence unless the task explicitly asks for a diagnostic
+partial run.
+
 Do not treat `lotus-platform/platform-stack` as the canonical front-office product bring-up path. It owns shared ingress and infrastructure support, not the full governed product-surface flow.
 
 Do not capture or share demo-ready screenshots before canonical API, calculation, and panel validation pass. If a pre-validation capture is necessary for diagnosis, label it with a `diagnostic-` prefix and keep it separate from demo evidence.
