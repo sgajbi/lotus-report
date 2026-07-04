@@ -20,6 +20,29 @@ Before doing substantial work, load context in this order:
 
 Use the smallest correct working set. Do not load broad context blindly if the task is narrow.
 
+## Target Repository Root Rule
+
+Do not assume the inherited shell working directory is the task repository. VS Code multi-root
+workspaces can start Codex in the first workspace folder, even when the user asks for another Lotus
+repository.
+
+Before substantial work:
+
+1. infer the target repository from the user request, active goal, issue, PR, branch, file path, or
+   explicit repo name,
+2. if the target is a Lotus repository and the current working directory is a different Lotus
+   repository, switch command `workdir` to that target repo before reading repo-local context,
+   running tests, inspecting git state, editing files, or creating issues,
+3. use `lotus-platform` only for central context, automation, platform contracts, skill source, and
+   cross-repo governance unless the task explicitly targets `lotus-platform`,
+4. for multi-repo work, state the active repo for each command group and never let one repo's
+   `AGENTS.md` or `REPOSITORY-ENGINEERING-CONTEXT.md` stand in for another repo's local truth,
+5. when delegating or launching background work, pass the exact repository name, absolute repo root,
+   branch, read/write scope, and expected evidence so child agents do not inherit the wrong cwd.
+
+If the inherited cwd conflicts with the named target repo, announce the correction briefly and keep
+all subsequent repo-local commands anchored to the target repo.
+
 ## Mandatory Operating Rules
 
 Always:
