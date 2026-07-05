@@ -251,14 +251,17 @@ Expected controls:
    item to replay work and does not change scheduler configuration,
 9. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
 10. every report job has one durable `report_request`, one durable `report_job`, and append-only
-   `report_status_event` rows.
+   `report_status_event` rows with a versioned support-safe payload contract.
 
 Use rerender for presentation, template, or rendering corrections where the source snapshot remains
 authoritative. Use regenerate when upstream domain data was corrected, late, or incomplete and the
 operator needs a replacement document backed by a new lineage bundle. Use failed-work replay only
 when the source job or implementation-backed batch item failed before producing a completed archive
 document. These commands require `Idempotency-Key` and caller context headers, and they do not
-expose raw snapshot payloads, storage keys, or upstream response bodies.
+expose raw snapshot payloads, storage keys, or upstream response bodies. New lifecycle events expose
+`event_schema_version`, `event_family`, typed `event_payload_json`, and optional
+`event_idempotency_key`; legacy rows remain readable as
+`report-status-event.legacy.v0` with `payload_posture=legacy_message_only`.
 
 ## RFC-0101 snapshot and lineage flow
 
@@ -332,12 +335,23 @@ WHERE req.idempotency_key = '<idempotency-key>';
 
 -- append-only lifecycle evidence
 SELECT event.status_event_id, event.report_job_id, event.from_status, event.to_status,
-       event.event_type, event.actor, event.correlation_id, event.trace_id, event.created_at
+       event.event_type, event.event_schema_version, event.event_family,
+       event.event_payload_json, event.event_idempotency_key,
+       event.actor, event.correlation_id, event.trace_id, event.created_at
 FROM report_status_event event
 JOIN report_job job ON job.report_job_id = event.report_job_id
 JOIN report_request req ON req.report_request_id = job.report_request_id
 WHERE req.idempotency_key = '<idempotency-key>'
 ORDER BY event.created_at;
+
+-- replay/regenerate lineage from typed payloads; do not parse message text
+SELECT event.report_job_id, event.event_type,
+       event.event_payload_json ->> 'replayed_job_id' AS replayed_job_id,
+       event.event_payload_json ->> 'regenerated_job_id' AS regenerated_job_id,
+       event.event_payload_json ->> 'source_job_id' AS batch_replay_source_job_id
+FROM report_status_event event
+WHERE event.event_family IN ('replay_lifecycle', 'regenerate_lifecycle', 'batch_item_replay')
+ORDER BY event.created_at DESC;
 
 -- durable snapshot evidence for one job
 SELECT snapshot_id, report_job_id, report_type, report_data_contract_version, as_of_date,

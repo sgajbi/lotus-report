@@ -2229,6 +2229,15 @@ def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_arch
             "job_regenerate_requested",
             "job_regenerate_archived",
         ]
+        regenerate_events = ledger.list_status_events(source.job_id)[-2:]
+        assert (
+            regenerate_events[0].event_payload["regenerated_job_id"]
+            == body["regenerated_report_job_id"]
+        )
+        assert regenerate_events[1].event_family == "regenerate_lifecycle"
+        assert regenerate_events[1].event_payload["archive_document_id"] == (
+            "doc_report_job_pdf_replacement"
+        )
     finally:
         _clear_overrides()
 
@@ -2529,6 +2538,14 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
             for event in ledger.list_status_events(source.job_id)
             if event.event_type == "job_replay_completed"
         ] == ["job_replay_completed"]
+        replay_event = [
+            event
+            for event in ledger.list_status_events(source.job_id)
+            if event.event_type == "job_replay_completed"
+        ][0]
+        assert replay_event.event_family == "replay_lifecycle"
+        assert replay_event.event_payload["replayed_job_id"] == body["replayed_report_job_id"]
+        assert replay_event.event_payload["replayed_status"] == "archived"
     finally:
         _clear_overrides()
 

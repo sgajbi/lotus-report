@@ -152,6 +152,7 @@ def test_batch_replay_same_key_returns_existing_relink(tmp_path):
         job_id=replayed.job_id,
         event_type="batch_item_replay_lineage_bound",
         message=f"Batch item replay source job {source.job_id}.",
+        event_payload={"source_job_id": source.job_id},
         actor="advisor-123",
         correlation_id="corr-batch-replay",
         trace_id="trace-batch-replay",
@@ -175,6 +176,11 @@ def test_batch_replay_same_key_returns_existing_relink(tmp_path):
     assert result.source_report_job.job_id == source.job_id
     assert result.replayed_report_job.job_id == replayed.job_id
     assert batch_ledger.relinks == 0
+    lineage_event = report_ledger.list_status_events(replayed.job_id)[-1]
+    assert lineage_event.event_schema_version == "report-status-event.v1"
+    assert lineage_event.event_family == "batch_item_replay"
+    assert lineage_event.event_payload["source_job_id"] == source.job_id
+    assert "source job" in (lineage_event.message or "")
 
 
 def test_batch_replay_rejects_missing_lineage_and_missing_key(tmp_path):

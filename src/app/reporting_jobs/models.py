@@ -685,6 +685,15 @@ REPORT_JOB_STATUS_EVENTS_RESPONSE_EXAMPLE: dict[str, Any] = {
             "from_status": None,
             "to_status": "accepted",
             "event_type": "job_accepted",
+            "event_schema_version": "report-status-event.v1",
+            "event_family": "job_lifecycle",
+            "event_payload": {
+                "event_type": "job_accepted",
+                "from_status": None,
+                "to_status": "accepted",
+                "report_type": "portfolio_review",
+            },
+            "event_idempotency_key": "portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22",
             "message": "Portfolio review report job accepted.",
             "actor": "advisor-123",
             "created_at": "2026-04-22T09:00:00Z",
@@ -1588,6 +1597,42 @@ class ReportStatusEvent(BaseModel):
         ...,
         description="Machine-readable lifecycle event type.",
         examples=["job_cancelled"],
+    )
+    event_schema_version: str = Field(
+        ...,
+        description=(
+            "Version of the support-safe lifecycle event payload contract. Legacy rows are "
+            "returned as report-status-event.legacy.v0 with payload_posture=legacy_message_only."
+        ),
+        examples=["report-status-event.v1"],
+    )
+    event_family: str = Field(
+        ...,
+        description="Bounded lifecycle event family used by operators and future outbox consumers.",
+        examples=["job_lifecycle"],
+    )
+    event_payload: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Support-safe typed payload for the event type. It carries identifiers and lifecycle "
+            "facts needed by diagnostics without requiring clients to parse message text."
+        ),
+        examples=[
+            {
+                "event_type": "job_cancelled",
+                "from_status": "accepted",
+                "to_status": "cancelled",
+                "current_step": "cancelled",
+            }
+        ],
+    )
+    event_idempotency_key: str | None = Field(
+        default=None,
+        description=(
+            "Optional support-safe idempotency or deduplication key for lifecycle events that "
+            "represent retry/replay/regenerate relationships."
+        ),
+        examples=["batch-item-replay:rbit_replay:rjob_source"],
     )
     message: str | None = Field(
         default=None,

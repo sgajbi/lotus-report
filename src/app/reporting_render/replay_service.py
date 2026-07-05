@@ -44,6 +44,8 @@ class ReplayLedger(Protocol):
         job_id: str,
         event_type: str,
         message: str,
+        event_payload: dict[str, object] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
@@ -96,6 +98,8 @@ class PortfolioReviewReplayService:
                 job_id=source_job.job_id,
                 event_type="job_replay_requested",
                 message=f"Report replay requested as {replayed.job_id}: {command.reason}",
+                event_payload={"replayed_job_id": replayed.job_id},
+                event_idempotency_key=replay_key,
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
                 trace_id=caller_context.trace_id,
@@ -115,6 +119,7 @@ class PortfolioReviewReplayService:
                 job_id=source_job.job_id,
                 event_type="job_replay_completed",
                 replayed_job_id=replayed.job_id,
+                replayed_status=replayed.status,
                 message=(
                     f"Report replay completed as {replayed.job_id} with status {replayed.status}."
                 ),
@@ -169,18 +174,28 @@ def append_source_event_once(
     job_id: str,
     event_type: str,
     replayed_job_id: str,
+    replayed_status: str,
     message: str,
     caller_context: ReportCallerContext,
+    event_payload: dict[str, object] | None = None,
 ) -> None:
     if any(
-        event.event_type == event_type and replayed_job_id in (event.message or "")
+        event.event_type == event_type
+        and event.event_payload.get("replayed_job_id") == replayed_job_id
         for event in ledger.list_status_events(job_id)
     ):
         return
+    payload = {
+        "replayed_job_id": replayed_job_id,
+        "replayed_status": replayed_status,
+        **(event_payload or {}),
+    }
     ledger.append_job_event(
         job_id=job_id,
         event_type=event_type,
         message=message,
+        event_payload=payload,
+        event_idempotency_key=f"{event_type}:{job_id}:{replayed_job_id}",
         actor=caller_context.triggered_by,
         correlation_id=caller_context.correlation_id,
         trace_id=caller_context.trace_id,

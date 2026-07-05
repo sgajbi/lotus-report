@@ -11,12 +11,17 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from app.postgres import PostgresConnectionProvider
+from app.reporting_jobs.event_contracts import (
+    build_report_status_event_contract,
+    legacy_report_status_event_contract,
+)
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobNotFoundError,
     _request_parts,
+    _transition_event_payload,
     compute_request_hash,
     utc_now,
 )
@@ -90,6 +95,33 @@ class PostgresReportJobLedger:
             missing = {"report_request", "report_job", "report_status_event"} - present
             if missing:
                 raise RuntimeError(f"report_job_ledger_schema_missing:{','.join(sorted(missing))}")
+
+            event_column_rows = connection.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'report_status_event'
+                  AND column_name IN (
+                      'event_schema_version',
+                      'event_family',
+                      'event_payload_json',
+                      'event_idempotency_key'
+                  )
+                """
+            ).fetchall()
+            event_columns = {str(row["column_name"]) for row in event_column_rows}
+            missing_event_columns = {
+                "event_schema_version",
+                "event_family",
+                "event_payload_json",
+                "event_idempotency_key",
+            } - event_columns
+            if missing_event_columns:
+                raise RuntimeError(
+                    "report_status_event_contract_schema_missing:"
+                    f"{','.join(sorted(missing_event_columns))}"
+                )
 
             archive_column_rows = connection.execute(
                 """
@@ -320,6 +352,8 @@ class PostgresReportJobLedger:
                     to_status="accepted",
                     event_type="job_accepted",
                     message=accepted_message,
+                    event_payload={"report_type": report_type},
+                    event_idempotency_key=normalized_key,
                     actor=caller_context.triggered_by,
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,
@@ -369,6 +403,8 @@ class PostgresReportJobLedger:
         job_id: str,
         event_type: str,
         message: str,
+        event_payload: dict[str, Any] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
@@ -388,6 +424,8 @@ class PostgresReportJobLedger:
                 to_status=current_status,
                 event_type=event_type,
                 message=message,
+                event_payload=event_payload,
+                event_idempotency_key=event_idempotency_key,
                 actor=actor,
                 correlation_id=correlation_id,
                 trace_id=trace_id,
@@ -466,6 +504,12 @@ class PostgresReportJobLedger:
                 to_status=job.status,
                 event_type="job_rerender_requested",
                 message=f"Report rerender requested from snapshot {snapshot_id}.",
+                event_payload={
+                    "snapshot_id": snapshot_id,
+                    "snapshot_hash": snapshot_hash,
+                    "rerender_attempt_id": attempt_id,
+                },
+                event_idempotency_key=normalized_key,
                 actor=actor,
                 correlation_id=correlation_id,
                 trace_id=trace_id,
@@ -540,6 +584,11 @@ class PostgresReportJobLedger:
                 to_status="archived",
                 event_type="job_rerender_archived",
                 message=f"Report rerender archived as correction document {archive_document_id}.",
+                event_payload={
+                    "rerender_attempt_id": rerender_attempt_id,
+                    "render_job_id": archived.render_job_id,
+                    "archive_document_id": archive_document_id,
+                },
                 actor=actor,
                 correlation_id=correlation_id,
                 trace_id=trace_id,
@@ -574,6 +623,10 @@ class PostgresReportJobLedger:
                 to_status="archived",
                 event_type="job_rerender_failed",
                 message=failure_message,
+                event_payload={
+                    "rerender_attempt_id": rerender_attempt_id,
+                    "failure_message": failure_message,
+                },
                 actor=actor,
                 correlation_id=correlation_id,
                 trace_id=trace_id,
@@ -1015,6 +1068,10 @@ class PostgresReportJobLedger:
                 to_status="cancelled",
                 event_type="job_cancelled",
                 message="Report job cancelled before render or archive processing.",
+                event_payload={
+                    "current_step": "cancelled",
+                    "cancel_requested": True,
+                },
                 actor=actor,
                 correlation_id=correlation_id,
                 trace_id=trace_id,
@@ -1047,18 +1104,28 @@ class PostgresReportJobLedger:
         to_status: ReportJobStatus,
         event_type: str,
         message: str | None,
+        event_payload: dict[str, Any] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
         created_at: datetime,
     ) -> None:
+        contract = build_report_status_event_contract(
+            event_type=event_type,
+            from_status=from_status,
+            to_status=to_status,
+            event_payload=event_payload,
+            event_idempotency_key=event_idempotency_key,
+        )
         connection.execute(
             """
             INSERT INTO report_status_event (
                 status_event_id, report_job_id, from_status, to_status, event_type,
+                event_schema_version, event_family, event_payload_json, event_idempotency_key,
                 message, actor, created_at, correlation_id, trace_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 f"rse_{uuid4().hex}",
@@ -1066,6 +1133,10 @@ class PostgresReportJobLedger:
                 from_status,
                 to_status,
                 event_type,
+                contract.schema_version,
+                contract.event_family,
+                Jsonb(contract.event_payload),
+                contract.event_idempotency_key,
                 message,
                 actor,
                 created_at,
@@ -1180,6 +1251,22 @@ class PostgresReportJobLedger:
             to_status=to_status,
             event_type=event_type,
             message=event_message,
+            event_payload=_transition_event_payload(
+                current_step=current_step,
+                failure_category=failure_category,
+                failure_message=failure_message,
+                render_job_id=render_job_id,
+                render_output_format=render_output_format,
+                render_template_id=render_template_id,
+                render_template_version=render_template_version,
+                render_artifact_sha256=render_artifact_sha256,
+                render_bounded_determinism_fingerprint=render_bounded_determinism_fingerprint,
+                render_runtime_engine=render_runtime_engine,
+                render_runtime_engine_version=render_runtime_engine_version,
+                render_duration_ms=render_duration_ms,
+                archive_request_id=archive_request_id,
+                archive_document_id=archive_document_id,
+            ),
             actor=actor,
             correlation_id=correlation_id,
             trace_id=trace_id,
@@ -1423,12 +1510,26 @@ def _rerender_attempt_from_row(row: Mapping[str, Any]) -> ReportRerenderAttemptR
 
 
 def _event_from_row(row: Mapping[str, Any]) -> ReportStatusEvent:
+    event_type = str(row["event_type"])
+    contract = legacy_report_status_event_contract(
+        event_type=event_type,
+        from_status=row["from_status"],
+        to_status=row["to_status"],
+    )
+    raw_payload = row.get("event_payload_json")
+    event_payload = (
+        dict(raw_payload) if isinstance(raw_payload, Mapping) else contract.event_payload
+    )
     return ReportStatusEvent(
         status_event_id=str(row["status_event_id"]),
         report_job_id=str(row["report_job_id"]),
         from_status=row["from_status"],
         to_status=row["to_status"],
-        event_type=str(row["event_type"]),
+        event_type=event_type,
+        event_schema_version=str(row.get("event_schema_version") or contract.schema_version),
+        event_family=str(row.get("event_family") or contract.event_family),
+        event_payload=event_payload,
+        event_idempotency_key=row.get("event_idempotency_key"),
         message=row["message"],
         actor=str(row["actor"]),
         created_at=_dt_from_value(row["created_at"]) or utc_now(),

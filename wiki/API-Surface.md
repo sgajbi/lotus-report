@@ -64,7 +64,9 @@ boundaries, and copy-paste request examples for direct service and support workf
   artifact refs, hashes, and retention/redaction/access/audit policy without exposing raw snapshot
   payloads or storage references
 - `GET /reports/jobs/{job_id}/events`
-  internal append-only report job lifecycle event history
+  internal append-only report job lifecycle event history with versioned support-safe typed
+  payloads; legacy rows remain readable as legacy message-only events, and replay/regenerate
+  lineage consumers must not parse human-readable event messages
 - `POST /reports/jobs/{job_id}/rerender`
   internal RFC-0105 rerender command for already archived PDF jobs; reuses the immutable snapshot,
   preserves snapshot id/hash, creates a new render/archive correction identity, and does not

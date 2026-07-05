@@ -406,6 +406,15 @@ def test_postgres_report_job_ledger_check_ready_reports_missing_archive_schema()
                         {"table_name": "report_status_event"},
                     ]
                 )
+            if "table_name = 'report_status_event'" in query:
+                return _Cursor(
+                    [
+                        {"column_name": "event_schema_version"},
+                        {"column_name": "event_family"},
+                        {"column_name": "event_payload_json"},
+                        {"column_name": "event_idempotency_key"},
+                    ]
+                )
             return _Cursor([{"column_name": "archive_request_id"}])
 
     @contextmanager

@@ -41,8 +41,11 @@ Current repository posture:
 6. `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` are the RFC-0100
    durable report job ledger foundation for gateway-first initiation, PostgreSQL-backed
-   idempotency, operator-safe job search, product-safe status, append-only event history,
-   database-aware readiness, and bounded cancellation before `rendering`,
+   idempotency, operator-safe job search, product-safe status, versioned typed append-only event
+   history, database-aware readiness, and bounded cancellation before `rendering`; new lifecycle
+   event rows carry `event_schema_version`, `event_family`, support-safe `event_payload`, and
+   optional `event_idempotency_key`, while legacy rows remain readable as
+   `report-status-event.legacy.v0`,
 7. RFC-0101 now adds durable `report_input_snapshot` and `report_upstream_call` persistence for
    immutable report input capture, append-only upstream lineage, canonical hashing, support-safe
    evidence APIs, PostgreSQL-backed migration smoke coverage, and readiness posture linked to
@@ -189,8 +192,10 @@ Primary areas:
 12. `src/app/reporting_jobs/`
    shared report-job lifecycle policy, PostgreSQL runtime ledger, and an isolated SQLite unit-test
    adapter for report request/job/status lifecycle, idempotency, request hashing, status retrieval,
-   bounded cancellation, and report-owned portfolio-memory source events for the first asynchronous
-   reporting wave.
+   bounded cancellation, versioned support-safe status-event contracts, and report-owned
+   portfolio-memory source events for the first asynchronous reporting wave. Replay, regenerate,
+   rerender, render/archive, and batch replay lineage logic must consume typed event payload fields
+   rather than parsing human-readable event messages.
 13. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
@@ -347,7 +352,8 @@ Update this document when:
 3. upstream dependency posture changes materially,
 4. canonical runtime identity or front-office integration role changes,
 5. current request-convention compatibility or canonical parameter naming changes,
-6. durable reporting job lifecycle, idempotency, or ledger persistence posture changes,
+6. durable reporting job lifecycle, typed status-event contract, idempotency, or ledger persistence
+   posture changes,
 7. durable report input snapshot or upstream-call lineage persistence, hashing, readiness, API, or
    migration posture changes,
 8. render-package composition, lotus-render integration, persisted render metadata, or job
