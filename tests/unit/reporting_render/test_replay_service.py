@@ -153,6 +153,12 @@ async def test_report_replay_records_failed_render_result(tmp_path):
     assert render.calls == 1
     assert result.replayed_job.status == "failed"
     assert result.replayed_job.failure_category == "render_execution_failed"
+    relationships = ledger.list_job_relationships(source.job_id)
+    assert len(relationships) == 1
+    assert relationships[0].relationship_type == "failed_work_replay"
+    assert relationships[0].derived_report_job_id == result.replayed_job.job_id
+    assert relationships[0].derived_status == "failed"
+    assert relationships[0].derived_failure_category == "render_execution_failed"
     assert [
         event.event_type
         for event in ledger.list_status_events(source.job_id)

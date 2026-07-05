@@ -331,6 +331,7 @@ def test_postgres_report_job_ledger_check_ready_requires_rerender_table() -> Non
                 {"table_name": "report_job"},
                 {"table_name": "report_status_event"},
             ],
+            [{"table_name": "report_job_relationship"}],
             [
                 {"column_name": "event_schema_version"},
                 {"column_name": "event_family"},
@@ -360,6 +361,7 @@ def test_postgres_report_job_ledger_check_ready_accepts_complete_schema() -> Non
                 {"table_name": "report_job"},
                 {"table_name": "report_status_event"},
             ],
+            [{"table_name": "report_job_relationship"}],
             [
                 {"column_name": "event_schema_version"},
                 {"column_name": "event_family"},
@@ -378,7 +380,7 @@ def test_postgres_report_job_ledger_check_ready_accepts_complete_schema() -> Non
 
     ledger.check_ready()
 
-    assert len(connection.calls) == 4
+    assert len(connection.calls) == 5
 
 
 def test_postgres_report_job_ledger_append_job_event_records_current_status() -> None:

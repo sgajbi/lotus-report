@@ -11,6 +11,8 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
+    ReportJobRelationshipRecord,
+    ReportJobRelationshipType,
     ReportJobReplayRequest,
     ReportStatusEvent,
 )
@@ -53,6 +55,19 @@ class ReplayLedger(Protocol):
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
 
+    def upsert_job_relationship(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        derived_job: ReportJobLedgerRecord,
+        relationship_type: ReportJobRelationshipType,
+        actor: str,
+        reason: str,
+        archive_consequence: str | None = None,
+        previous_archive_document_id: str | None = None,
+        new_archive_document_id: str | None = None,
+    ) -> ReportJobRelationshipRecord: ...
+
 
 class ReplayCaptureService(Protocol):
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
@@ -93,6 +108,13 @@ class PortfolioReviewReplayService:
             caller_context=caller_context,
             idempotency_key=replay_key,
         )
+        _upsert_replay_relationship(
+            self._ledger,
+            source_job=source_job,
+            replayed=replayed,
+            reason=command.reason,
+            actor=caller_context.triggered_by,
+        )
         if replayed.status == "accepted":
             self._ledger.append_job_event(
                 job_id=source_job.job_id,
@@ -125,6 +147,13 @@ class PortfolioReviewReplayService:
                 ),
                 caller_context=caller_context,
             )
+        _upsert_replay_relationship(
+            self._ledger,
+            source_job=source_job,
+            replayed=replayed,
+            reason=command.reason,
+            actor=caller_context.triggered_by,
+        )
         record_report_operation(
             operation="replay_command",
             status=replayed.status,
@@ -199,4 +228,22 @@ def append_source_event_once(
         actor=caller_context.triggered_by,
         correlation_id=caller_context.correlation_id,
         trace_id=caller_context.trace_id,
+    )
+
+
+def _upsert_replay_relationship(
+    ledger: ReplayLedger,
+    *,
+    source_job: ReportJobLedgerRecord,
+    replayed: ReportJobLedgerRecord,
+    reason: str,
+    actor: str,
+) -> None:
+    ledger.upsert_job_relationship(
+        source_job=source_job,
+        derived_job=replayed,
+        relationship_type="failed_work_replay",
+        actor=actor,
+        reason=reason,
+        new_archive_document_id=replayed.archive_document_id,
     )

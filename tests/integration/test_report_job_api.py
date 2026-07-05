@@ -2238,6 +2238,27 @@ def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_arch
         assert regenerate_events[1].event_payload["archive_document_id"] == (
             "doc_report_job_pdf_replacement"
         )
+        source_diagnostics = client.get(
+            f"/reports/jobs/{source.job_id}/diagnostics",
+            headers=_headers(f"diagnostics-{source.job_id}-regenerate-source"),
+        )
+        derived_diagnostics = client.get(
+            f"/reports/jobs/{body['regenerated_report_job_id']}/diagnostics",
+            headers=_headers(f"diagnostics-{body['regenerated_report_job_id']}-regenerate-derived"),
+        )
+        assert source_diagnostics.status_code == 200
+        assert derived_diagnostics.status_code == 200
+        source_relationship = source_diagnostics.json()["relationships"][0]
+        derived_relationship = derived_diagnostics.json()["relationships"][0]
+        assert source_relationship == derived_relationship
+        assert source_relationship["relationship_type"] == "regenerate_replacement"
+        assert source_relationship["source_report_job_id"] == source.job_id
+        assert source_relationship["derived_report_job_id"] == body["regenerated_report_job_id"]
+        assert source_relationship["source_status"] == "archived"
+        assert source_relationship["derived_status"] == "archived"
+        assert source_relationship["archive_consequence"] == "replacement"
+        assert source_relationship["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert source_relationship["new_archive_document_id"] == "doc_report_job_pdf_replacement"
     finally:
         _clear_overrides()
 
@@ -2367,6 +2388,20 @@ def test_report_job_regenerate_records_upstream_failure_without_render(tmp_path)
         assert body["new_snapshot_id"] is None
         assert len(render_client.payloads) == 0
         assert len(archive_client.payloads) == 0
+        diagnostics = client.get(
+            f"/reports/jobs/{body['regenerated_report_job_id']}/diagnostics",
+            headers=_headers(f"diagnostics-{body['regenerated_report_job_id']}-regenerate-failed"),
+        )
+        assert diagnostics.status_code == 200
+        relationship = diagnostics.json()["relationships"][0]
+        assert relationship["relationship_type"] == "regenerate_replacement"
+        assert relationship["source_report_job_id"] == source.job_id
+        assert relationship["derived_report_job_id"] == body["regenerated_report_job_id"]
+        assert relationship["source_status"] == "archived"
+        assert relationship["derived_status"] == "failed"
+        assert relationship["derived_failure_category"] == "upstream_data_failed"
+        assert relationship["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert relationship["new_archive_document_id"] is None
     finally:
         _clear_overrides()
 
@@ -2546,6 +2581,26 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
         assert replay_event.event_family == "replay_lifecycle"
         assert replay_event.event_payload["replayed_job_id"] == body["replayed_report_job_id"]
         assert replay_event.event_payload["replayed_status"] == "archived"
+        source_diagnostics = client.get(
+            f"/reports/jobs/{source.job_id}/diagnostics",
+            headers=_headers(f"diagnostics-{source.job_id}-replay-source"),
+        )
+        replayed_diagnostics = client.get(
+            f"/reports/jobs/{body['replayed_report_job_id']}/diagnostics",
+            headers=_headers(f"diagnostics-{body['replayed_report_job_id']}-replay-derived"),
+        )
+        assert source_diagnostics.status_code == 200
+        assert replayed_diagnostics.status_code == 200
+        source_relationship = source_diagnostics.json()["relationships"][0]
+        replayed_relationship = replayed_diagnostics.json()["relationships"][0]
+        assert source_relationship == replayed_relationship
+        assert source_relationship["relationship_type"] == "failed_work_replay"
+        assert source_relationship["source_report_job_id"] == source.job_id
+        assert source_relationship["derived_report_job_id"] == body["replayed_report_job_id"]
+        assert source_relationship["source_status"] == "failed"
+        assert source_relationship["derived_status"] == "archived"
+        assert source_relationship["source_failure_category"] == "upstream_data_failed"
+        assert source_relationship["new_archive_document_id"] == "doc_report_job_pdf_replay"
     finally:
         _clear_overrides()
 

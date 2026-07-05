@@ -130,6 +130,36 @@ class _ReplayLedger:
         return self.item
 
 
+def test_batch_replay_records_source_derived_relationship(tmp_path):
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedger(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+
+    result = service.replay_item(
+        batch_id="rbch_replay",
+        batch_item_id="rbit_replay",
+        command=BatchItemReplayRequest(reason="Retry batch item after upstream recovery."),
+        caller_context=_caller(),
+        idempotency_key="relationship-key",
+    )
+
+    relationships = report_ledger.list_job_relationships(source.job_id)
+    assert len(relationships) == 1
+    assert relationships[0].relationship_type == "batch_item_replay"
+    assert relationships[0].source_report_job_id == source.job_id
+    assert relationships[0].derived_report_job_id == result.replayed_report_job.job_id
+    assert relationships[0].source_status == "failed"
+    assert relationships[0].source_failure_category == "upstream_data_failed"
+    assert relationships[0].derived_status == "accepted"
+    assert report_ledger.list_job_relationships(result.replayed_report_job.job_id) == (
+        relationships
+    )
+
+
 def test_batch_replay_same_key_returns_existing_relink(tmp_path):
     report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     source = _source_job(report_ledger)

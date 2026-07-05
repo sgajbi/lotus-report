@@ -962,3 +962,64 @@ def test_report_job_ledger_rejects_invalid_event_payload(tmp_path):
             correlation_id="corr-sensitive-event",
             trace_id="trace-sensitive-event",
         )
+
+
+def test_report_job_ledger_records_relationships_from_source_and_derived(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="source-relationship",
+    )
+    source = ledger.mark_failed(
+        job_id=source.job_id,
+        actor="advisor-123",
+        correlation_id="corr-source-relationship",
+        trace_id="trace-source-relationship",
+        failure_category="upstream_data_failed",
+        failure_message="Upstream timeout.",
+        retry_eligible=True,
+    )
+    derived = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="derived-relationship",
+    )
+
+    relationship = ledger.upsert_job_relationship(
+        source_job=source,
+        derived_job=derived,
+        relationship_type="failed_work_replay",
+        actor="advisor-123",
+        reason="  Retry after upstream recovered.  ",
+    )
+
+    assert relationship.relationship_type == "failed_work_replay"
+    assert relationship.source_report_job_id == source.job_id
+    assert relationship.derived_report_job_id == derived.job_id
+    assert relationship.source_failure_category == "upstream_data_failed"
+    assert relationship.derived_status == "accepted"
+    assert relationship.reason == "Retry after upstream recovered."
+    assert ledger.list_job_relationships(source.job_id) == [relationship]
+    assert ledger.list_job_relationships(derived.job_id) == [relationship]
+
+    derived = ledger.mark_failed(
+        job_id=derived.job_id,
+        actor="advisor-123",
+        correlation_id="corr-derived-relationship",
+        trace_id="trace-derived-relationship",
+        failure_category="render_execution_failed",
+        failure_message="lotus-render timeout.",
+        retry_eligible=True,
+    )
+    updated = ledger.upsert_job_relationship(
+        source_job=source,
+        derived_job=derived,
+        relationship_type="failed_work_replay",
+        actor="advisor-123",
+        reason="Retry after upstream recovered.",
+    )
+
+    assert updated.relationship_id == relationship.relationship_id
+    assert updated.derived_status == "failed"
+    assert updated.derived_failure_category == "render_execution_failed"

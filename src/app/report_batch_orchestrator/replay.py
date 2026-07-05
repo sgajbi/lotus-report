@@ -18,6 +18,8 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobLedgerRecord,
+    ReportJobRelationshipRecord,
+    ReportJobRelationshipType,
     ReportStatusEvent,
 )
 from app.reporting_jobs.service import get_report_job_ledger
@@ -77,6 +79,19 @@ class BatchReplayReportJobLedger(Protocol):
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
 
+    def upsert_job_relationship(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        derived_job: ReportJobLedgerRecord,
+        relationship_type: ReportJobRelationshipType,
+        actor: str,
+        reason: str,
+        archive_consequence: str | None = None,
+        previous_archive_document_id: str | None = None,
+        new_archive_document_id: str | None = None,
+    ) -> ReportJobRelationshipRecord: ...
+
 
 class ReportBatchItemReplayService:
     def __init__(
@@ -122,6 +137,14 @@ class ReportBatchItemReplayService:
             request=self._request_for_item(batch=batch, item=item),
             caller_context=caller_context,
             idempotency_key=replay_key,
+        )
+        self._report_job_ledger.upsert_job_relationship(
+            source_job=source_job,
+            derived_job=replayed_job,
+            relationship_type="batch_item_replay",
+            actor=caller_context.triggered_by,
+            reason=command.reason,
+            new_archive_document_id=replayed_job.archive_document_id,
         )
         replayed_item = self._batch_ledger.relink_failed_item_for_replay(
             batch_id=batch_id,

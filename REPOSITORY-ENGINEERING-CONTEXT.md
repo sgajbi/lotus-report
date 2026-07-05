@@ -99,8 +99,9 @@ Current repository posture:
    failed retry-eligible report jobs and implementation-backed batch items. Runtime correlation,
    request, trace, structured-log, and safe operator lookup field vocabulary is owned in
    `src/app/observability.py`; bounded Prometheus metric vocabulary, implemented
-   rerender/regenerate/replay command posture, source-backed attention scan metrics, reserved
-   dedicated dashboard metrics, and high-cardinality label rejection are owned in
+   rerender/regenerate/replay command posture, source/derived job relationship posture,
+   source-backed attention scan metrics, reserved dedicated dashboard metrics, and
+   high-cardinality label rejection are owned in
    `src/app/reporting_metrics.py`; later RFC-0105
    slices must extend those owners rather than adding one-off literal fields in routers, clients,
    dashboards, or operator APIs,
@@ -192,10 +193,11 @@ Primary areas:
 12. `src/app/reporting_jobs/`
    shared report-job lifecycle policy, PostgreSQL runtime ledger, and an isolated SQLite unit-test
    adapter for report request/job/status lifecycle, idempotency, request hashing, status retrieval,
-   bounded cancellation, versioned support-safe status-event contracts, and report-owned
-   portfolio-memory source events for the first asynchronous reporting wave. Replay, regenerate,
-   rerender, render/archive, and batch replay lineage logic must consume typed event payload fields
-   rather than parsing human-readable event messages.
+   bounded cancellation, versioned support-safe status-event contracts, durable source/derived
+   report-job relationships, and report-owned portfolio-memory source events for the first
+   asynchronous reporting wave. Replay, regenerate, rerender, render/archive, and batch replay
+   lineage logic must consume typed event payload fields or `report_job_relationship` rows rather
+   than parsing human-readable event messages or idempotency-key prefixes.
 13. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call

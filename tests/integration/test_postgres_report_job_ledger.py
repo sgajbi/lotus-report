@@ -398,6 +398,8 @@ def test_postgres_report_job_ledger_check_ready_reports_missing_archive_schema()
 
     class _Connection:
         def execute(self, query: str, *_args: object, **_kwargs: object) -> _Cursor:
+            if "table_name = 'report_job_relationship'" in query:
+                return _Cursor([{"table_name": "report_job_relationship"}])
             if "information_schema.tables" in query:
                 return _Cursor(
                     [
