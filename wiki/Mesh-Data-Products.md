@@ -23,8 +23,10 @@
 - Report boundary: `lotus-report` remains the owner of report materialization and
   `ClientReportEvidencePack` product truth.
 - Current status: implemented route foundation and not certified. `POST /reports/idea-evidence-packs`
-  proves only source-safe route intake; materialization, rendered output, archive record,
-  client-publication authority, and supported feature promotion remain separate certification work.
+  proves only source-safe route intake with durable idempotency records in the
+  `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger; materialization, rendered output, archive
+  record, client-publication authority, and supported feature promotion remain separate
+  certification work.
 
 ## Platform relationship
 

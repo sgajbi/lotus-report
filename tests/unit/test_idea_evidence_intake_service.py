@@ -13,6 +13,7 @@ from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeLedger,
     build_proof_pack_report_job_request_from_idea_evidence,
 )
+from app.reporting_jobs.models import ReportCallerContext
 
 
 def test_idea_evidence_intake_accepts_source_safe_not_certified_handoff() -> None:
@@ -59,6 +60,67 @@ def test_idea_evidence_intake_conflicts_when_idempotency_payload_changes() -> No
 
     with pytest.raises(IdeaEvidenceIntakeConflictError):
         ledger.accept(
+            _request(report_evidence_pack_id="irep_changed"),
+            idempotency_key="idea-report-intake-001",
+        )
+
+
+def test_idea_evidence_intake_replays_same_payload_across_fresh_durable_ledger(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    first_ledger = IdeaEvidenceIntakeLedger(db_path)
+    second_ledger = IdeaEvidenceIntakeLedger(db_path)
+    accepted_at = datetime(2026, 6, 24, 8, 30, tzinfo=UTC)
+    caller_context = ReportCallerContext(
+        triggered_by="advisor-123",
+        caller_application="lotus-idea",
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="advisor",
+        correlation_id="corr-idea-report-intake",
+        trace_id="trace-idea-report-intake",
+    )
+
+    first = first_ledger.accept(
+        _request(),
+        idempotency_key="idea-report-intake-001",
+        accepted_at_utc=accepted_at,
+        correlation_id="corr-idea-report-intake",
+        trace_id="trace-idea-report-intake",
+        caller_context=caller_context,
+    )
+    second = second_ledger.accept(
+        _request(),
+        idempotency_key="idea-report-intake-001",
+        correlation_id="corr-idea-report-intake-retry",
+        trace_id="trace-idea-report-intake-retry",
+        caller_context=caller_context,
+    )
+
+    assert second == first
+    records = second_ledger.snapshot()
+    assert len(records) == 1
+    record = records["idea-report-intake-001"]
+    assert record.payload_fingerprint.startswith("sha256:")
+    assert record.response == first
+    assert record.accepted_at_utc == accepted_at
+    assert record.caller_context["triggered_by"] == "advisor-123"
+    assert record.caller_context["caller_application"] == "lotus-idea"
+    assert record.caller_context["correlation_id"] == "corr-idea-report-intake"
+    assert record.caller_context["trace_id"] == "trace-idea-report-intake"
+
+
+def test_idea_evidence_intake_conflicts_across_fresh_durable_ledger(tmp_path) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    first_ledger = IdeaEvidenceIntakeLedger(db_path)
+    first_ledger.accept(_request(), idempotency_key="idea-report-intake-001")
+
+    restarted_ledger = IdeaEvidenceIntakeLedger(db_path)
+
+    with pytest.raises(IdeaEvidenceIntakeConflictError):
+        restarted_ledger.accept(
             _request(report_evidence_pack_id="irep_changed"),
             idempotency_key="idea-report-intake-001",
         )

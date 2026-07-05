@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
 from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
+from app.config import settings
 from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
@@ -29,11 +32,10 @@ from app.routers.caller_context import caller_context_from_headers
 
 router = APIRouter(prefix="/reports/idea-evidence-packs", tags=["Report Evidence"])
 
-_IDEA_EVIDENCE_INTAKE_LEDGER = IdeaEvidenceIntakeLedger()
 
-
+@lru_cache(maxsize=1)
 def get_idea_evidence_intake_ledger() -> IdeaEvidenceIntakeLedger:
-    return _IDEA_EVIDENCE_INTAKE_LEDGER
+    return IdeaEvidenceIntakeLedger(Path(settings.idea_evidence_intake_ledger_path))
 
 
 @router.post(
@@ -72,7 +74,7 @@ async def accept_idea_evidence_pack(
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
     trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
 ) -> IdeaEvidencePackIntakeResponse:
-    caller_context_from_headers(
+    caller_context = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -95,6 +97,8 @@ async def accept_idea_evidence_pack(
             request,
             idempotency_key=idempotency_key.strip(),
             correlation_id=correlation_id,
+            trace_id=trace_id,
+            caller_context=caller_context,
         )
     except IdeaEvidenceIntakeConflictError as exc:
         raise HTTPException(
@@ -177,6 +181,8 @@ async def materialize_idea_evidence_pack(
             request.idea_evidence_pack,
             idempotency_key=materialization_key,
             correlation_id=correlation_id,
+            trace_id=trace_id,
+            caller_context=caller_context,
         )
         report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
         record = ledger.create_proof_pack_report_job(
