@@ -105,22 +105,26 @@ Current repository posture:
    ledger and report-input snapshot schema before serving readiness. The API, batch worker, and
    scheduler containers all use the same schema guard so canonical `report.dev.lotus` evidence
    fails fast on migration or volume drift instead of returning a misleading healthy container,
-17. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
+17. PostgreSQL-backed report-job, report-batch, and report-input snapshot/upstream-call adapters
+   share the bounded process-local provider in `src/app/postgres.py`; adapters own transaction
+   units while the provider owns connection reuse, max concurrency, acquisition timeout, connect
+   timeout, statement timeout, application name, and deterministic shutdown,
+18. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
-18. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
+19. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
    implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
    `ClientReportEvidencePack`; it proves only source-safe route intake through
    `POST /reports/idea-evidence-packs` and does not prove report materialization, render, archive,
    client-publication authority, or supported-feature promotion,
-19. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
+20. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
    records the implemented, not-certified `lotus-idea` evidence-pack materialization route
    boundary for `ClientReportEvidencePack`: `POST /reports/idea-evidence-packs/materializations`
    accepts reviewed idea evidence plus report-owned portfolio scope, creates a governed proof-pack
    report job, preserves immutable lineage to `lotus-idea`, invokes the existing render/archive
    lifecycle for PDF output, and keeps suitability, mandate approval, execution, distribution,
    client-publication authority, and supported-feature promotion blocked,
-20. CI is standardized but still lighter than some core domain services,
-21. direct local debugging is explicitly scoped to `ENTERPRISE_RUNTIME_PROFILE=local`; production-like
+21. CI is standardized but still lighter than some core domain services,
+22. direct local debugging is explicitly scoped to `ENTERPRISE_RUNTIME_PROFILE=local`; production-like
    profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed by enforcing read
    and write authorization and failing startup validation when write/read authz or primary key
    identity material is missing,

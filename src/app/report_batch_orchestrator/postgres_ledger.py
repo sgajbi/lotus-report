@@ -6,12 +6,11 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
-import psycopg
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
-from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from app.postgres import PostgresConnectionProvider
 from app.report_batch_orchestrator.ledger import (
     BatchIdempotencyConflictError,
     MissingBatchIdempotencyKeyError,
@@ -41,21 +40,30 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 class PostgresReportBatchLedger:
     """PostgreSQL-backed durable ledger for batch and batch-item materialization."""
 
-    def __init__(self, database_url: str):
-        self._database_url = database_url
+    def __init__(
+        self,
+        database_url: str | None = None,
+        *,
+        connection_provider: PostgresConnectionProvider | None = None,
+    ) -> None:
+        if connection_provider is None:
+            if database_url is None:
+                raise ValueError("report_batch_ledger_database_url_required")
+            connection_provider = PostgresConnectionProvider(database_url=database_url)
+            self._owns_connection_provider = True
+        else:
+            self._owns_connection_provider = False
+        self._connection_provider = connection_provider
         self.ensure_schema()
 
     @contextmanager
     def _connect(self) -> Iterator[Connection[Mapping[str, Any]]]:
-        connection = psycopg.connect(self._database_url, row_factory=dict_row)
-        try:
+        with self._connection_provider.connection() as connection:
             yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
+
+    def close(self) -> None:
+        if self._owns_connection_provider:
+            self._connection_provider.close()
 
     def ensure_schema(self) -> None:
         with self._connect() as connection:

@@ -8,6 +8,7 @@ from app.enterprise_readiness import (
     validate_enterprise_runtime_config,
 )
 from app.observability import setup_observability
+from app.postgres import close_postgres_connection_provider
 from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
 from app.routers.idea_evidence_intake import router as idea_evidence_intake_router
@@ -24,8 +25,11 @@ from app.routers.reports import router as reports_router
 @asynccontextmanager
 async def _app_lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.is_draining = False
-    yield
-    application.state.is_draining = True
+    try:
+        yield
+    finally:
+        application.state.is_draining = True
+        close_postgres_connection_provider()
 
 
 app = FastAPI(

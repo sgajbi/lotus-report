@@ -31,3 +31,5 @@
 5. stale placeholder routes should be removed rather than documented as product capabilities
 6. report-job and batch lifecycle policy lives in shared domain/application modules; PostgreSQL and
    SQLite adapters own persistence and locking only
+7. PostgreSQL runtime adapters share the bounded provider in `src/app/postgres.py`; adapters keep
+   transaction boundaries while the provider owns connection reuse, timeouts, and shutdown

@@ -20,6 +20,12 @@ def test_settings_default_to_canonical_service_identities(monkeypatch) -> None:
     assert settings.risk_base_url == DEFAULT_RISK_BASE_URL
     assert settings.report_transaction_max_rows == 5000
     assert settings.report_transaction_max_pages == 20
+    assert settings.report_postgres_pool_min_size == 1
+    assert settings.report_postgres_pool_max_size == 10
+    assert settings.report_postgres_pool_acquire_timeout_seconds == 5
+    assert settings.report_postgres_connect_timeout_seconds == 5
+    assert settings.report_postgres_statement_timeout_ms == 30000
+    assert settings.report_postgres_application_name == "lotus-report"
     assert settings.batch_worker_id == "lotus-report-batch-worker-1"
     assert settings.batch_worker_interval_seconds == 5.0
     assert settings.batch_worker_max_batches_per_pass == 5

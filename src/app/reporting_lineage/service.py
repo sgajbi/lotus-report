@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from app.config import settings
+from app.postgres import get_postgres_connection_provider
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.capture_service import PortfolioReviewSnapshotCaptureService
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
@@ -8,7 +8,7 @@ from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStor
 
 @lru_cache
 def get_report_input_snapshot_store() -> PostgresReportInputSnapshotStore:
-    return PostgresReportInputSnapshotStore(settings.report_job_ledger_database_url)
+    return PostgresReportInputSnapshotStore(connection_provider=get_postgres_connection_provider())
 
 
 @lru_cache(maxsize=1)

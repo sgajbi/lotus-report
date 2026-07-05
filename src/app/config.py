@@ -30,6 +30,36 @@ class Settings(BaseSettings):
         "postgresql://lotus_report:lotus_report@localhost:5439/lotus_report",
         alias="REPORT_JOB_LEDGER_DATABASE_URL",
     )
+    report_postgres_pool_min_size: int = Field(
+        1,
+        ge=0,
+        alias="REPORT_POSTGRES_POOL_MIN_SIZE",
+    )
+    report_postgres_pool_max_size: int = Field(
+        10,
+        ge=1,
+        alias="REPORT_POSTGRES_POOL_MAX_SIZE",
+    )
+    report_postgres_pool_acquire_timeout_seconds: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS",
+    )
+    report_postgres_connect_timeout_seconds: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS",
+    )
+    report_postgres_statement_timeout_ms: int = Field(
+        30000,
+        ge=1,
+        alias="REPORT_POSTGRES_STATEMENT_TIMEOUT_MS",
+    )
+    report_postgres_application_name: str = Field(
+        "lotus-report",
+        min_length=1,
+        alias="REPORT_POSTGRES_APPLICATION_NAME",
+    )
     batch_worker_id: str = Field(
         "lotus-report-batch-worker-1",
         alias="REPORT_BATCH_WORKER_ID",

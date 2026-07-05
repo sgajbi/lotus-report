@@ -2,9 +2,8 @@ import zlib
 from contextlib import contextmanager
 from typing import Iterator
 
-import psycopg
-
 from app.config import settings
+from app.postgres import PostgresConnectionProvider
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 
@@ -12,25 +11,25 @@ _SCHEMA_LOCK_KEY = zlib.crc32(b"lotus-report-runtime-schema")
 
 
 @contextmanager
-def _runtime_schema_lock(database_url: str) -> Iterator[None]:
-    connection = psycopg.connect(database_url)
-    try:
+def _runtime_schema_lock(connection_provider: PostgresConnectionProvider) -> Iterator[None]:
+    with connection_provider.connection() as connection:
         connection.execute("SELECT pg_advisory_lock(%s)", (_SCHEMA_LOCK_KEY,))
         connection.commit()
-        yield
-    finally:
         try:
+            yield
+        finally:
             connection.execute("SELECT pg_advisory_unlock(%s)", (_SCHEMA_LOCK_KEY,))
             connection.commit()
-        finally:
-            connection.close()
 
 
 def ensure_runtime_schema() -> None:
-    database_url = settings.report_job_ledger_database_url
-    with _runtime_schema_lock(database_url):
-        PostgresReportBatchLedger(database_url).check_ready()
-        PostgresReportInputSnapshotStore(database_url).check_ready()
+    connection_provider = PostgresConnectionProvider.from_settings(settings)
+    try:
+        with _runtime_schema_lock(connection_provider):
+            PostgresReportBatchLedger(connection_provider=connection_provider).check_ready()
+            PostgresReportInputSnapshotStore(connection_provider=connection_provider).check_ready()
+    finally:
+        connection_provider.close()
 
 
 if __name__ == "__main__":
