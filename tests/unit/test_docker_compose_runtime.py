@@ -46,7 +46,14 @@ def test_runtime_schema_guard_checks_ledger_and_snapshot_store() -> None:
     assert "pg_advisory_lock" in runtime_schema
     assert "pg_advisory_unlock" in runtime_schema
     assert "def ensure_runtime_schema() -> None:" in runtime_schema
-    assert "with _runtime_schema_lock(database_url):" in runtime_schema
-    assert "PostgresReportBatchLedger(database_url).check_ready()" in runtime_schema
-    assert "PostgresReportInputSnapshotStore(database_url).check_ready()" in runtime_schema
+    assert (
+        "connection_provider = PostgresConnectionProvider.from_settings(settings)" in runtime_schema
+    )
+    assert "with _runtime_schema_lock(connection_provider):" in runtime_schema
+    assert "PostgresReportBatchLedger(connection_provider=connection_provider)" in runtime_schema
+    assert (
+        "PostgresReportInputSnapshotStore(connection_provider=connection_provider)"
+        in runtime_schema
+    )
+    assert "connection_provider.close()" in runtime_schema
     assert 'if __name__ == "__main__":' in runtime_schema

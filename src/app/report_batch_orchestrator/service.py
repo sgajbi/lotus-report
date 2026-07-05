@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from app.clients.core_query_client import CoreQueryClient
 from app.config import settings
+from app.postgres import get_postgres_connection_provider
 from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
 from app.report_batch_orchestrator.execution import ReportBatchExecutionService
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
@@ -15,7 +16,7 @@ from app.reporting_render.service import get_portfolio_review_render_orchestrati
 
 @lru_cache(maxsize=1)
 def get_report_batch_ledger() -> PostgresReportBatchLedger:
-    return PostgresReportBatchLedger(settings.report_job_ledger_database_url)
+    return PostgresReportBatchLedger(connection_provider=get_postgres_connection_provider())
 
 
 def get_report_batch_worker() -> ReportBatchWorker:

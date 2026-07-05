@@ -64,6 +64,12 @@ for the implementation-backed `lotus-report` runtime.
 - report job lifecycle state is durable in PostgreSQL and configured by
   `REPORT_JOB_LEDGER_DATABASE_URL`; runtime readiness fails if the database or mandatory ledger
   schema is unavailable
+- report-job, report-batch, and snapshot/upstream-call PostgreSQL adapters share a bounded
+  process-local connection provider configured by `REPORT_POSTGRES_POOL_MIN_SIZE`,
+  `REPORT_POSTGRES_POOL_MAX_SIZE`, `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`,
+  `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`, `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS`, and
+  `REPORT_POSTGRES_APPLICATION_NAME`; tune the pool before increasing API, worker, or scheduler
+  concurrency
 - RFC-0101 extends readiness to fail when either `report_input_snapshot` or
   `report_upstream_call` schema is unavailable
 - report job support queries are backed by indexes for idempotency lookup, tenant/region/time

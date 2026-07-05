@@ -12,22 +12,19 @@ class _DependencyCapture:
 
 
 def test_get_report_batch_ledger_returns_configured_ledger(monkeypatch) -> None:
+    provider = _DependencyCapture(label="shared-provider")
     monkeypatch.setattr(
         batch_service,
         "PostgresReportBatchLedger",
-        lambda database_url: _DependencyCapture(database_url=database_url),
+        lambda **kwargs: _DependencyCapture(**kwargs),
     )
-    monkeypatch.setattr(
-        batch_service,
-        "settings",
-        SimpleNamespace(report_job_ledger_database_url="postgres://rpt-batch.local/db"),
-    )
+    monkeypatch.setattr(batch_service, "get_postgres_connection_provider", lambda: provider)
     batch_service.get_report_batch_ledger.cache_clear()
 
     ledger = batch_service.get_report_batch_ledger()
 
     assert isinstance(ledger, _DependencyCapture)
-    assert ledger.kwargs["database_url"] == "postgres://rpt-batch.local/db"
+    assert ledger.kwargs["connection_provider"] is provider
 
 
 def test_get_report_batch_worker_wires_dispatch_and_execution_dependencies(monkeypatch) -> None:

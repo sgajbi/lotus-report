@@ -315,6 +315,12 @@ Cross-app upstream defaults in local runtime:
 - `RISK_BASE_URL=http://risk.dev.lotus`
 - `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
 - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
+- `REPORT_POSTGRES_POOL_MIN_SIZE=1`
+- `REPORT_POSTGRES_POOL_MAX_SIZE=10`
+- `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS=5`
+- `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS=5`
+- `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS=30000`
+- `REPORT_POSTGRES_APPLICATION_NAME=lotus-report`
 
 When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
 container uses host-reachable upstream URLs instead:
@@ -373,6 +379,11 @@ Current orchestration model:
   reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
+- PostgreSQL-backed report-job, batch, and snapshot/upstream-call stores share one bounded
+  process-local connection provider; tune `REPORT_POSTGRES_POOL_MAX_SIZE`,
+  `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`, `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`,
+  `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS`, and `REPORT_POSTGRES_APPLICATION_NAME` before raising
+  worker or scheduler concurrency
 - use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
   job; it composes source-backed status, lifecycle-event, snapshot, lineage, render, and archive
   handoff posture while omitting raw payloads, storage references, and database internals
