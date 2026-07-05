@@ -57,3 +57,8 @@ Current watchlist:
 3. Portfolio review responses still identify `lotus-performance` and `lotus-risk` in report-level
    `evidence.source_refs` when those services are used, without upgrading the repo-native consumer
    declaration ahead of producer approval.
+4. `ClientReportEvidencePack:v1` therefore publishes core `lotus-core` evidence as governed and
+   marks analytics-enriched performance/risk evidence as partially certified until upstream
+   producer approval and consumer-declaration updates are complete.
+5. Do not set the trust telemetry snapshot to `complete`, `quality_passed`, and unblocked while
+   the analytics dependencies remain on this watchlist.

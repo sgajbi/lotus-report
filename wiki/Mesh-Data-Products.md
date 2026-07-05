@@ -7,9 +7,13 @@
 ## Governed product
 
 - Product ID: `lotus-report:ClientReportEvidencePack:v1`
-- Product role: governed client-report evidence pack for customer/operator evidence workflows and Workbench discovery
+- Product role: client-report evidence pack for customer/operator evidence workflows and Workbench discovery
 - Source declaration: `contracts/domain-data-products/lotus-report-products.v1.json`
 - Trust telemetry: `contracts/trust-telemetry/client-report-evidence-pack.telemetry.v1.json`
+- Certification boundary: core `lotus-core` evidence is governed through current repo-native
+  consumer declarations; analytics-enriched performance/risk evidence is partial and blocked for
+  mesh certification until `lotus-performance` and `lotus-risk` producer declarations approve
+  `lotus-report` as a governed consumer.
 
 ## Idea evidence intake route foundation
 

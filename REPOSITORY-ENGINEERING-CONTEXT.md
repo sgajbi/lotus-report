@@ -186,9 +186,13 @@ Primary areas:
    canonical authored source for repository wiki publication and reporting operator onboarding summaries.
 8. `contracts/domain-data-products/`
    repo-native producer and consumer declarations for governed upstream domain data products and
-   reporting evidence products.
+   reporting evidence products. `ClientReportEvidencePack:v1` is governed for current
+   `lotus-core` evidence and explicitly partial for analytics-enriched performance/risk evidence
+   while `lotus-performance` and `lotus-risk` remain watchlisted.
 9. `contracts/trust-telemetry/`
-   repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products.
+   repo-native RFC-0087/RFC-0091 trust telemetry snapshots for governed reporting products. The
+   client-report evidence-pack snapshot must surface the analytics dependency watchlist as partial,
+   quality-warning, and blocked for analytics-enriched certification until upstream approval exists.
 10. `contracts/idea-evidence-intake/`
    implemented, not-certified report-owned route-foundation posture for `lotus-idea` evidence
    packet intake into `ClientReportEvidencePack`; this directory must not be treated as report
@@ -353,7 +357,9 @@ Most relevant current governance:
 6. the current repo-native domain-data-product declaration intentionally records only governed
    `lotus-core` dependencies approved for `lotus-report`; `lotus-performance` and `lotus-risk`
    reporting dependencies remain on the watchlist until their producer declarations explicitly
-   approve `lotus-report` as a governed consumer.
+   approve `lotus-report` as a governed consumer. Do not publish complete, quality-passed,
+   unblocked `ClientReportEvidencePack` trust telemetry for analytics-enriched evidence while
+   those dependencies remain watchlisted.
 
 ## Context Maintenance Rule
 

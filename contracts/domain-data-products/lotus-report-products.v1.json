@@ -40,11 +40,24 @@
       ],
       "freshness_policy": {
         "freshness_class": "daily",
-        "max_allowed_age_description": "Client report evidence packs are generated from the latest certified upstream portfolio, performance, and risk evidence for the reporting as-of date."
+        "max_allowed_age_description": "Client report evidence packs are generated from governed lotus-core portfolio evidence for the reporting as-of date. Analytics-enriched performance and risk sections may include live lotus-performance and lotus-risk service evidence, but those analytics dependencies are not certified domain-product dependencies until upstream producer declarations approve lotus-report as a governed consumer."
       },
       "completeness_policy": {
-        "default_status": "complete",
-        "partial_allowed": true
+        "default_status": "partial",
+        "partial_allowed": true,
+        "completion_boundary": "Core portfolio and transaction evidence can be complete under current governed consumer declarations. Analytics-enriched performance and risk evidence remains partially certified while lotus-performance and lotus-risk dependencies are watchlisted."
+      },
+      "dependency_certification_boundary": {
+        "governed_consumer_dependencies": [
+          "lotus-core:HoldingsAsOf:v1",
+          "lotus-core:TransactionLedgerWindow:v1"
+        ],
+        "watchlisted_analytics_dependencies": [
+          "lotus-performance",
+          "lotus-risk"
+        ],
+        "analytics_enriched_evidence_certification": "partial_until_upstream_consumer_approval",
+        "consumer_safe_summary": "Do not treat performance/risk-enriched ClientReportEvidencePack evidence as mesh-certified until lotus-performance and lotus-risk producer declarations approve lotus-report and the consumer declaration is updated."
       },
       "lineage_policy": {
         "lineage_required": true,

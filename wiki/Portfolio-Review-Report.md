@@ -100,6 +100,12 @@ metadata in archive handoff without approving, rewriting, or inferring memo fact
 | `lotus-advise` | optional approved `proposal_narrative_package` and `proposal_memo_package` on asynchronous portfolio-review jobs | Source of advisory narrative and memo approval, review state, source hashes, sections, guardrails, limitations, disclosures, and client-ready blocked posture |
 | `lotus-report` | report shape, section ordering, readiness, coverage, observations, evidence, and meeting-pack composition | Reporting contract owner only |
 
+Domain-product certification boundary: current repo-native consumer declarations govern the
+`lotus-core` evidence dependencies. `lotus-performance` and `lotus-risk` remain live runtime source
+services for analytics sections, but analytics-enriched `ClientReportEvidencePack` evidence is
+partial and blocked for mesh certification until those producer declarations approve `lotus-report`
+as a governed consumer.
+
 ## Request
 
 Canonical local probe for the governed front-office portfolio:
