@@ -27,6 +27,10 @@ _REDACT_FIELDS = {
 }
 
 
+def _api_error_response(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"detail": detail})
+
+
 def _env_enabled(name: str, default: str = "true") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -208,15 +212,54 @@ def emit_audit_event(
     )
 
 
+def _declared_content_length(request: Request) -> int | None:
+    raw_content_length = request.headers.get("content-length")
+    if raw_content_length is None:
+        return None
+    try:
+        declared = int(raw_content_length)
+    except ValueError:
+        return -1
+    return declared if declared >= 0 else -1
+
+
+async def _read_limited_body(request: Request, max_bytes: int) -> bytes | None:
+    chunks: list[bytes] = []
+    total_size = 0
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        total_size += len(chunk)
+        if total_size > max_bytes:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _replay_body_for_downstream(request: Request, body: bytes) -> None:
+    sent = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    setattr(request, "_body", body)
+    setattr(request, "_receive", receive)
+
+
 def build_enterprise_audit_middleware() -> MiddlewareCallable:
     async def middleware(request: Request, call_next: MiddlewareNext) -> Response:
         max_write_payload_bytes = _env_int("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", 1_048_576)
-        try:
-            content_length = int(request.headers.get("content-length", "0"))
-        except ValueError:
-            content_length = 0
-        if request.method in _WRITE_METHODS and content_length > max_write_payload_bytes:
-            return JSONResponse(status_code=413, content={"detail": "payload_too_large"})
+        method_is_write = request.method in _WRITE_METHODS
+        if method_is_write:
+            declared_length = _declared_content_length(request)
+            if declared_length == -1:
+                return _api_error_response(400, "invalid_content_length")
+            if declared_length is not None and declared_length > max_write_payload_bytes:
+                return _api_error_response(413, "payload_too_large")
 
         authorized, reason = authorize_request(
             request.method, request.url.path, dict(request.headers)
@@ -234,9 +277,15 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
                 status_code=403, content={"detail": "authorization_policy_denied", "reason": reason}
             )
 
+        if method_is_write:
+            body = await _read_limited_body(request, max_write_payload_bytes)
+            if body is None:
+                return _api_error_response(413, "payload_too_large")
+            _replay_body_for_downstream(request, body)
+
         response = await call_next(request)
         response.headers["X-Enterprise-Policy-Version"] = enterprise_policy_version()
-        if request.method in _WRITE_METHODS:
+        if method_is_write:
             emit_audit_event(
                 action=f"{request.method} {request.url.path}",
                 actor_id=request.headers.get("X-Actor-Id", "unknown"),

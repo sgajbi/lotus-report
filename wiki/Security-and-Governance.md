@@ -21,6 +21,9 @@
 - time-bounded dependency vulnerability exceptions are governed by
   `docs/standards/dependency-vulnerability-exceptions.json`; `make security-audit` fails when an
   exception is expired, missing ownership, or not linked to a GitHub issue
+- direct write requests are bounded by `ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES`; malformed
+  `Content-Length`, missing-length oversized bodies, and streamed bodies over the cap are rejected
+  before route handling
 - enterprise readiness and observability behavior are covered by unit tests
 - enterprise read authorization is toggle-backed with `ENTERPRISE_ENFORCE_READ_AUTHZ`; read audit
   events are toggle-backed with `ENTERPRISE_AUDIT_READS`

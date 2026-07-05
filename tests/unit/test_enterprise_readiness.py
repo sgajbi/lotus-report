@@ -13,6 +13,27 @@ from app.enterprise_readiness import (
 )
 
 
+def _request(
+    scope: dict,
+    *,
+    body: bytes = b"",
+    chunks: list[bytes] | None = None,
+) -> Request:
+    body_chunks = chunks if chunks is not None else [body]
+    messages = [{"type": "http.request", "body": chunk, "more_body": True} for chunk in body_chunks]
+    if messages:
+        messages[-1]["more_body"] = False
+    else:
+        messages.append({"type": "http.request", "body": b"", "more_body": False})
+
+    async def receive():
+        if messages:
+            return messages.pop(0)
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request(scope, receive)
+
+
 def test_feature_flags_resolution(monkeypatch):
     monkeypatch.setenv(
         "ENTERPRISE_FEATURE_FLAGS_JSON",
@@ -106,7 +127,7 @@ async def test_middleware_blocks_oversized_payload(monkeypatch):
         "path": "/reports/portfolios/P1/review",
         "headers": [(b"content-length", b"2")],
     }
-    request = Request(scope)
+    request = _request(scope, body=b"xx")
     response = await middleware(request, lambda req: None)  # pragma: no cover
     assert response.status_code == 413
 
@@ -127,21 +148,16 @@ async def test_middleware_denies_missing_service_identity(monkeypatch):
             (b"x-capabilities", b"reports.write"),
         ],
     }
-    request = Request(scope)
+    request = _request(scope)
     response = await middleware(request, lambda req: None)  # pragma: no cover
     assert response.status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_middleware_accepts_invalid_content_length_and_sets_policy_header(monkeypatch):
+async def test_middleware_rejects_invalid_content_length(monkeypatch):
     monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
     monkeypatch.setenv("ENTERPRISE_POLICY_VERSION", "2.0.0")
     middleware = build_enterprise_audit_middleware()
-
-    async def _call_next(_request):
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse({"ok": True}, status_code=200)
 
     scope = {
         "type": "http",
@@ -149,7 +165,82 @@ async def test_middleware_accepts_invalid_content_length_and_sets_policy_header(
         "path": "/reports/portfolios/P1/review",
         "headers": [(b"content-length", b"abc")],
     }
-    request = Request(scope)
+    request = _request(scope, body=b"{}")
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 400
+    assert json.loads(response.body) == {"detail": "invalid_content_length"}
+
+
+@pytest.mark.asyncio
+async def test_middleware_blocks_missing_content_length_oversized_body(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", "1")
+    middleware = build_enterprise_audit_middleware()
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/portfolios/P1/review",
+        "headers": [],
+    }
+    request = _request(scope, body=b"xx")
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 413
+    assert json.loads(response.body) == {"detail": "payload_too_large"}
+
+
+@pytest.mark.asyncio
+async def test_middleware_blocks_streamed_oversized_body(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", "1")
+    middleware = build_enterprise_audit_middleware()
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/portfolios/P1/review",
+        "headers": [],
+    }
+    request = _request(scope, chunks=[b"x", b"y"])
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_middleware_rejects_underdeclared_oversized_body(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", "1")
+    middleware = build_enterprise_audit_middleware()
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/portfolios/P1/review",
+        "headers": [(b"content-length", b"1")],
+    }
+    request = _request(scope, body=b"xx")
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_middleware_accepts_valid_body_without_content_length(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", "64")
+    monkeypatch.setenv("ENTERPRISE_POLICY_VERSION", "2.0.0")
+    middleware = build_enterprise_audit_middleware()
+    body = b'{"ok":true}'
+
+    async def _call_next(request: Request):
+        from fastapi.responses import JSONResponse
+
+        assert await request.body() == body
+        return JSONResponse({"ok": True}, status_code=200)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/portfolios/P1/review",
+        "headers": [],
+    }
+    request = _request(scope, body=body)
     response = await middleware(request, _call_next)
     assert response.status_code == 200
     assert response.headers["X-Enterprise-Policy-Version"] == "2.0.0"
@@ -302,7 +393,7 @@ async def test_middleware_audits_read_access_when_enabled(monkeypatch):
             (b"x-correlation-id", b"c1"),
         ],
     }
-    request = Request(scope)
+    request = _request(scope)
     response = await middleware(request, _call_next)
     assert response.status_code == 200
     assert len(audit_events) == 1
@@ -338,7 +429,7 @@ async def test_middleware_audits_write_access(monkeypatch):
             (b"content-length", b"0"),
         ],
     }
-    request = Request(scope)
+    request = _request(scope)
     response = await middleware(request, _call_next)
     assert response.status_code == 202
     assert len(audit_events) == 1
@@ -362,7 +453,7 @@ async def test_middleware_read_denies_missing_service_identity(monkeypatch):
             (b"x-correlation-id", b"c1"),
         ],
     }
-    request = Request(scope)
+    request = _request(scope)
     response = await middleware(request, lambda req: None)  # pragma: no cover
     assert response.status_code == 403
 
