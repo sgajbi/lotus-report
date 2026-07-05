@@ -254,6 +254,30 @@ Important validation expectations:
 8. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
    policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
 
+## Codebase Review And Issue Discovery
+
+Use these repo-local review artifacts for governed implementation review:
+
+1. `docs/architecture/CODEBASE-REVIEW-PLAYBOOK.md`
+   canonical methodology for review units, evidence requirements, GitHub issue-discovery steps,
+   duplicate handling, required issue fields, and sign-off standards,
+2. `docs/architecture/CODEBASE-REVIEW-LEDGER.md`
+   historical review evidence and implementation closure manifest; active backlog state must link
+   GitHub issues instead of existing only in this local ledger,
+3. [GitHub issue #109](https://github.com/sgajbi/lotus-report/issues/109)
+   current enterprise refactor issue-discovery ledger for this campaign.
+
+Before filing a review finding or marking one fixed locally:
+
+1. search all GitHub issues with affected file names, lens labels, and failure-pattern terms,
+2. reuse duplicate issues when the root cause and acceptance criteria already match,
+3. create or reuse one high-value issue per validated finding or coherent finding cluster,
+4. include evidence, expected direction, acceptance criteria, duplicate-search proof, and
+   validation proof in the issue,
+5. update #109 with the issue number, lens, duplicate-search proof, and status,
+6. link the issue from local ledger rows only when the ledger records accepted work or closure
+   evidence.
+
 ## Standards And RFCs That Govern This Repository
 
 Most relevant current governance:
@@ -298,7 +322,9 @@ Update this document when:
     planned-vocabulary scope changes,
 12. RFC-0105 observability, metrics, dashboard, alert, operator API, replay, rerender, or
     regenerate support posture changes,
-13. planned or implemented `lotus-idea` evidence-pack intake posture, source-authority boundaries,
+13. codebase review methodology, issue-discovery workflow, review ledger semantics, or GitHub issue
+    lifecycle expectations change,
+14. planned or implemented `lotus-idea` evidence-pack intake posture, source-authority boundaries,
     route/materialization proof, or supported-feature promotion changes.
 
 ## Cross-Links
@@ -309,3 +335,5 @@ Update this document when:
 4. `../lotus-platform/context/Repository-Engineering-Context-Contract.md`
 5. [Lotus Developer Onboarding](../lotus-platform/docs/onboarding/LOTUS-DEVELOPER-ONBOARDING.md)
 6. [Lotus Agent Ramp-Up](../lotus-platform/docs/onboarding/LOTUS-AGENT-RAMP-UP.md)
+7. [Codebase Review Playbook](docs/architecture/CODEBASE-REVIEW-PLAYBOOK.md)
+8. [Codebase Review Ledger](docs/architecture/CODEBASE-REVIEW-LEDGER.md)

@@ -18,7 +18,7 @@
 - OpenAPI quality gate is active
 - typecheck is part of the fast gate
 - migration smoke and security audit are part of PR-grade validation
-- temporary dependency vulnerability exceptions are governed by
+- time-bounded dependency vulnerability exceptions are governed by
   `docs/standards/dependency-vulnerability-exceptions.json`; `make security-audit` fails when an
   exception is expired, missing ownership, or not linked to a GitHub issue
 - enterprise readiness and observability behavior are covered by unit tests

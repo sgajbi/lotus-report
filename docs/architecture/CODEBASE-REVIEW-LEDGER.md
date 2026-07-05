@@ -2,6 +2,18 @@
 
 This ledger records governed review findings for `lotus-report`.
 
+Tracking model:
+
+1. historical review evidence remains in this ledger for audit and closure context,
+2. active validated backlog findings live in GitHub issues, not local-only ledger rows,
+3. the current enterprise refactor discovery ledger is
+   [#109](https://github.com/sgajbi/lotus-report/issues/109),
+4. new local ledger rows for active work must link the corresponding GitHub issue and include the
+   focused validation evidence used to move that issue to `status/fixed-local`, `status/pr-open`,
+   or `status/merged-main`,
+5. local review notes without a linked issue are historical evidence only unless an explicit issue
+   is created or reused.
+
 ## RFC-0105 Gold-Pass Audit
 
 Review id: `RFC-0105-GOLD-PASS-2026-04-29`
@@ -34,6 +46,7 @@ Follow-up:
 
 | Issue | Status | Finding | Actions taken | Evidence | Docs/wiki/context decision |
 | --- | --- | --- | --- | --- | --- |
+| [#132](https://github.com/sgajbi/lotus-report/issues/132) | Hardened | The review playbook and repo context did not tell agents to search/reuse GitHub issues, update the issue-discovery ledger, or keep active backlog state out of local-only docs. | Added GitHub issue-discovery workflow steps, required issue fields, duplicate-search proof, #109 ledger comment format, and active-backlog versus historical-ledger guidance; updated repo context and wiki navigation; added docs regression coverage for these controls. | Focused docs guidance test passed; `make check` passed after the slice. Wiki audit direct findings in touched pages were fixed; residual audit findings are legacy bare-URL reports in executable curl/example pages outside this issue's scope. | Updated `wiki/Development-Workflow.md` because review-to-issue workflow is agent/operator-facing delivery truth; normalized `_Sidebar.md` title and `Security-and-Governance.md` wording found during wiki audit. Wiki publication required after merge. |
 | [#123](https://github.com/sgajbi/lotus-report/issues/123) | Hardened | Feature, PR, and main workflows duplicated raw pytest/coverage commands even though Makefile owns the repository-native test and coverage contract. | Added `test-suite-coverage` and `coverage-gate` Make targets; updated Feature Lane, PR Merge Gate, and Main Releasability workflows to consume Make targets; added workflow contract tests blocking raw pytest/coverage command drift. | Focused workflow contract tests passed; `make test-suite-coverage TEST_SUITE=unit TEST_PATH=tests/unit` passed; `make check` passed after the slice. | No wiki change: existing wiki command mapping (`make check`, `make ci`, coverage floor) remains true; workflows now align to that documented command contract. |
 | [#122](https://github.com/sgajbi/lotus-report/issues/122) | Hardened | `make security-audit` carried raw inline `pip-audit --ignore-vuln` flags without owner, expiry, linked issue, or deterministic expiration enforcement. | Added governed dependency vulnerability exception records; added a security-audit runner that validates non-expired, issue-linked exceptions before invoking `pip-audit`; updated Makefile routing and tests to reject raw ignore drift. | Focused dependency-exception tests passed; `make security-audit` passed; `make check` passed after the slice. | Updated `docs/standards/dependency-vulnerability-exceptions.md` and `wiki/Security-and-Governance.md` because security exception governance is operator/reviewer-facing truth. Wiki publication required after merge. |
 | [#112](https://github.com/sgajbi/lotus-report/issues/112) | Hardened | Batch-item failed-work replay did not emit the documented bounded replay operation metric, leaving operators with job-level replay telemetry but no batch-item replay pressure signal. | Reused existing `operation="replay_command"` metric vocabulary for accepted/idempotent batch-item replay and rejected replay attempts; added integration assertions for accepted, conflict, missing-key, and missing-item metric labels without forbidden identifiers. | Focused batch replay API tests passed; `make check` passed after the slice. | No wiki/docs change: the existing operations docs already describe failed-work replay under `lotus_report_operations_total{operation="replay_command"}` and the implementation now matches that published contract. |
