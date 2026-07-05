@@ -68,6 +68,7 @@ from app.reporting_metrics import (
     record_batch_pressure_metrics,
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
+    record_report_operation,
 )
 from app.routers.caller_context import caller_context_dependency
 
@@ -779,22 +780,36 @@ async def replay_report_batch_item(
         Header(alias="Idempotency-Key", description="Idempotency key for this replay command."),
     ] = None,
 ) -> BatchItemReplayResponse:
+    started_at = perf_counter()
     try:
-        return _batch_item_replay_response(
-            replay_service.replay_item(
-                batch_id=batch_id,
-                batch_item_id=batch_item_id,
-                command=command,
-                caller_context=caller_context,
-                idempotency_key=idempotency_key,
-            )
+        result = replay_service.replay_item(
+            batch_id=batch_id,
+            batch_item_id=batch_item_id,
+            command=command,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
         )
+        record_report_operation(
+            operation="replay_command",
+            status=result.replayed_report_job.status,
+            failure_category=result.replayed_report_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return _batch_item_replay_response(result)
     except MissingIdempotencyKeyError as exc:
+        _record_failed_batch_item_replay_metric(
+            failure_category="missing_idempotency_key",
+            started_at=started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["missing_idempotency_key"]["detail"],
         ) from exc
     except InvalidReportJobTransitionError as exc:
+        _record_failed_batch_item_replay_metric(
+            failure_category="report_batch_item_cannot_be_replayed",
+            started_at=started_at,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_cannot_be_replayed"][
@@ -803,13 +818,34 @@ async def replay_report_batch_item(
         ) from exc
     except ValueError as exc:
         if str(exc) == "report_batch_item_cannot_be_replayed":
+            _record_failed_batch_item_replay_metric(
+                failure_category="report_batch_item_cannot_be_replayed",
+                started_at=started_at,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["report_batch_item_cannot_be_replayed"][
                     "detail"
                 ],
             ) from exc
+        _record_failed_batch_item_replay_metric(
+            failure_category=str(exc) or "batch_item_replay_failed",
+            started_at=started_at,
+        )
         raise _not_found_error(exc) from exc
+
+
+def _record_failed_batch_item_replay_metric(
+    *,
+    failure_category: str,
+    started_at: float,
+) -> None:
+    record_report_operation(
+        operation="replay_command",
+        status="failed",
+        failure_category=failure_category,
+        duration_seconds=perf_counter() - started_at,
+    )
 
 
 @router.post(
