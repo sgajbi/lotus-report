@@ -122,6 +122,8 @@ class ReportingReadService:
                 "period_end_date": as_of_date,
             }
         }
+        transaction_result: _TransactionRowsResult | None = None
+        transaction_rows: list[dict[str, object]] | None = None
         if "WEALTH" in requested_sections:
             totals = self._as_dict(summary.get("totals"))
             response["wealth"] = {
@@ -150,11 +152,10 @@ class ReportingReadService:
             )
 
         if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
-            transaction_params = self._build_transaction_window_params(request_payload)
             transaction_result = await self._list_transaction_rows_result(
                 portfolio_id=portfolio_id,
                 correlation_id=correlation_id,
-                params=transaction_params,
+                params=self._build_transaction_window_params(request_payload),
             )
             transaction_rows = transaction_result.rows
             if "INCOME" in requested_sections:
@@ -164,7 +165,31 @@ class ReportingReadService:
             response["transactionWindowSupportability"] = transaction_result.supportability
 
         if "PNL" in requested_sections:
-            response["pnlSummary"] = self._map_pnl_summary(summary)
+            (
+                positions_status,
+                positions_payload,
+            ) = await self._core_query_client.get_portfolio_positions(
+                portfolio_id=portfolio_id,
+                params=self._build_position_params(request_payload),
+                correlation_id=correlation_id,
+            )
+            holdings = self._unwrap_core_query_positions(
+                status_code=positions_status,
+                payload=positions_payload,
+            )
+            if transaction_rows is None:
+                transaction_result = await self._list_transaction_rows_result(
+                    portfolio_id=portfolio_id,
+                    correlation_id=correlation_id,
+                    params=self._build_transaction_window_params(request_payload),
+                )
+                transaction_rows = transaction_result.rows
+            response["pnlSummary"] = self._map_pnl_summary(
+                summary=summary,
+                holdings=holdings,
+                transaction_rows=transaction_rows,
+                transaction_result=transaction_result,
+            )
         return response
 
     async def get_portfolio_review(
@@ -1165,19 +1190,162 @@ class ReportingReadService:
             ),
         }
 
-    def _map_pnl_summary(self, summary: dict[str, object]) -> dict[str, object]:
+    def _map_pnl_summary(
+        self,
+        *,
+        summary: dict[str, object],
+        holdings: dict[str, object],
+        transaction_rows: list[dict[str, object]],
+        transaction_result: _TransactionRowsResult | None,
+    ) -> dict[str, object]:
         totals = self._as_dict(summary.get("totals"))
-        total_market_value = self._to_float(totals.get("total_market_value_reporting_currency"))
         invested_market_value = self._to_float(
             totals.get("invested_market_value_reporting_currency")
         )
-        total_pnl = total_market_value - invested_market_value
+        holding_rows = self._holding_rows(holdings)
+        unrealized_pnl_rows = [
+            row
+            for row in holding_rows
+            if self._optional_number_raw(row.get("unrealized_pnl_reporting_currency")) is not None
+        ]
+        realized_pnl_rows = [
+            row for row in transaction_rows if self._realized_pnl_reporting_amount(row) is not None
+        ]
+        unrealized_pnl = (
+            sum(
+                self._to_float(row.get("unrealized_pnl_reporting_currency"))
+                for row in unrealized_pnl_rows
+            )
+            if unrealized_pnl_rows
+            else None
+        )
+        realized_pnl = (
+            sum(
+                self._to_float(self._realized_pnl_reporting_amount(row))
+                for row in realized_pnl_rows
+            )
+            if realized_pnl_rows
+            else None
+        )
+        unrealized_status = self._coverage_status(len(unrealized_pnl_rows), len(holding_rows))
+        realized_status = self._summary_realized_pnl_status(
+            realized_count=len(realized_pnl_rows),
+            transaction_count=len(transaction_rows),
+            transaction_result=transaction_result,
+        )
+        sourced_components = [
+            component for component in (unrealized_pnl, realized_pnl) if component is not None
+        ]
         return {
             "invested_market_value_reporting_currency": invested_market_value,
-            "unrealized_pnl_reporting_currency": total_pnl,
-            "realized_pnl_reporting_currency": 0.0,
-            "total_pnl": total_pnl,
+            "unrealized_pnl_reporting_currency": unrealized_pnl,
+            "unrealized_pnl_status": unrealized_status,
+            "realized_pnl_reporting_currency": realized_pnl,
+            "realized_pnl_status": realized_status,
+            "total_pnl": sum(sourced_components) if sourced_components else None,
+            "total_pnl_status": self._summary_total_pnl_status(
+                unrealized_status=unrealized_status,
+                realized_status=realized_status,
+                sourced_component_count=len(sourced_components),
+            ),
+            "source_methodology": "sourced_position_unrealized_and_transaction_realized_pnl",
+            "supportability": {
+                "status": self._summary_pnl_supportability_status(
+                    unrealized_status=unrealized_status,
+                    realized_status=realized_status,
+                    transaction_result=transaction_result,
+                ),
+                "notes": self._summary_pnl_supportability_notes(
+                    unrealized_status=unrealized_status,
+                    realized_status=realized_status,
+                    transaction_result=transaction_result,
+                ),
+            },
         }
+
+    def _summary_realized_pnl_status(
+        self,
+        *,
+        realized_count: int,
+        transaction_count: int,
+        transaction_result: _TransactionRowsResult | None,
+    ) -> str:
+        supportability = self._transaction_rows_supportability(transaction_result)
+        if supportability.get("status") == "partial":
+            return "partial" if realized_count else "not_sourced"
+        if realized_count:
+            return "present"
+        if transaction_count:
+            return "not_applicable"
+        return "not_applicable"
+
+    @staticmethod
+    def _summary_total_pnl_status(
+        *,
+        unrealized_status: str,
+        realized_status: str,
+        sourced_component_count: int,
+    ) -> str:
+        if sourced_component_count == 0:
+            return "not_sourced"
+        if unrealized_status == "present" and realized_status in {"present", "not_applicable"}:
+            return "present"
+        return "partial"
+
+    def _summary_pnl_supportability_status(
+        self,
+        *,
+        unrealized_status: str,
+        realized_status: str,
+        transaction_result: _TransactionRowsResult | None,
+    ) -> str:
+        transaction_supportability = self._transaction_rows_supportability(transaction_result)
+        if transaction_supportability.get("status") == "partial":
+            return "partial"
+        if unrealized_status == "present" and realized_status in {"present", "not_applicable"}:
+            return "ready"
+        if unrealized_status == "not_sourced" and realized_status == "not_applicable":
+            return "not_sourced"
+        return "partial"
+
+    def _summary_pnl_supportability_notes(
+        self,
+        *,
+        unrealized_status: str,
+        realized_status: str,
+        transaction_result: _TransactionRowsResult | None,
+    ) -> list[dict[str, object]]:
+        notes: list[dict[str, object]] = []
+        if unrealized_status != "present":
+            notes.append(
+                {
+                    "code": "summary_unrealized_pnl_not_fully_sourced",
+                    "severity": "warning",
+                    "status": unrealized_status,
+                    "message": (
+                        "Summary unrealized P&L uses lotus-core position rows only when "
+                        "position-level unrealized P&L is sourced."
+                    ),
+                }
+            )
+        if realized_status in {"not_sourced", "partial"}:
+            notes.append(
+                {
+                    "code": "summary_realized_pnl_not_fully_sourced",
+                    "severity": "warning",
+                    "status": realized_status,
+                    "message": (
+                        "Summary realized P&L uses lotus-core transaction rows only when "
+                        "transaction-level realized gain/loss is sourced within report-owned "
+                        "query budgets."
+                    ),
+                }
+            )
+        for note in self._as_list(
+            self._transaction_rows_supportability(transaction_result).get("notes")
+        ):
+            notes.append(self._as_dict(note))
+        return notes
 
     def _map_holdings_from_positions(self, payload: dict[str, object]) -> dict[str, object]:
         holdings_by_asset_class: dict[str, list[dict[str, object]]] = {}

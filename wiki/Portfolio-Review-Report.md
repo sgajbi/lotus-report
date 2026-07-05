@@ -53,7 +53,9 @@ The contract is deliberately strict about missing information. If an enterprise-
 include suitability, target allocation, mandate restrictions, liquidity needs, open tax-lot
 attribution, or jurisdiction-specific tax treatment but the source system has not provided that data,
 the response marks the gap explicitly instead of inventing report content. Transaction-level
-realized gain/loss is sourced from `lotus-core` transaction rows where present.
+realized gain/loss is sourced from `lotus-core` transaction rows where present. Summary P&L uses
+the same source-backed posture: it does not derive unrealized or total P&L from market-value minus
+invested-value totals when source P&L fields are absent.
 
 ## Audience Model
 
@@ -151,6 +153,8 @@ Current implementation-backed figures include:
 - income/activity totals and transaction categorization
 - transaction-level realized gain/loss totals and transaction-row enrichment where sourced from
   `lotus-core`
+- summary `pnlSummary` fields for sourced position unrealized P&L, sourced transaction realized
+  gain/loss, component status, total status, source methodology, and supportability notes
 - bounded transaction-window supportability; oversized windows are truncated by
   `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES` and marked partial instead of
   paging `lotus-core` without a report-owned budget
