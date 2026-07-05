@@ -209,12 +209,61 @@ def _build_render_package(
     }
 
 
+def _validate_dpm_common_snapshot(
+    *,
+    snapshot: dict[str, Any],
+    report_type: str,
+    identity_field: str,
+    content_hash_field: str,
+) -> None:
+    _require_dpm_value(snapshot, report_type, identity_field)
+    _require_dpm_sha256(snapshot, report_type, "content_hash")
+    _require_dpm_sha256(snapshot, report_type, content_hash_field)
+    _require_dpm_value(snapshot, report_type, "redaction_policy")
+    _require_dpm_value(snapshot, report_type, "retention_policy")
+    evidence_ref = _as_dict(snapshot.get("evidence_ref"))
+    if not evidence_ref:
+        raise ValueError(f"{report_type}.evidence_ref is required")
+    evidence_hash = _optional_str(evidence_ref.get("content_hash"))
+    if not evidence_hash or not evidence_hash.startswith("sha256:"):
+        raise ValueError(f"{report_type}.evidence_ref.content_hash must use sha256 lineage")
+
+
+def _require_dpm_value(snapshot: dict[str, Any], report_type: str, field_name: str) -> str:
+    value = _optional_str(snapshot.get(field_name))
+    if not value or value == "not_available":
+        raise ValueError(f"{report_type}.{field_name} is required")
+    return value
+
+
+def _require_dpm_sha256(snapshot: dict[str, Any], report_type: str, field_name: str) -> str:
+    value = _require_dpm_value(snapshot, report_type, field_name)
+    if not value.startswith("sha256:"):
+        raise ValueError(f"{report_type}.{field_name} must use sha256 lineage")
+    return value
+
+
+def _require_dpm_list(snapshot: dict[str, Any], report_type: str, field_name: str) -> list[Any]:
+    value = snapshot.get(field_name)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{report_type}.{field_name} is required")
+    return value
+
+
 def _build_proof_pack_render_package(
     *,
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
 ) -> dict[str, Any]:
+    _validate_dpm_common_snapshot(
+        snapshot=snapshot,
+        report_type="proof_pack_report_input",
+        identity_field="proof_pack_id",
+        content_hash_field="proof_pack_content_hash",
+    )
+    _require_dpm_value(snapshot, "proof_pack_report_input", "portfolio_id")
+    _require_dpm_list(snapshot, "proof_pack_report_input", "sections")
     sections = [
         {
             "section_id": _optional_str(item.get("section_id")) or "not_available",
@@ -223,7 +272,11 @@ def _build_proof_pack_render_package(
             "title": _optional_str(item.get("title")) or "Not available",
             "summary": _optional_str(item.get("summary")) or "No section summary supplied.",
             "reason_codes": _string_list(item.get("reason_codes")),
-            "content_hash": _optional_str(item.get("content_hash")) or "not_available",
+            "content_hash": _require_dpm_sha256(
+                item,
+                "proof_pack_report_input.sections",
+                "content_hash",
+            ),
         }
         for item in snapshot.get("sections", [])
         if isinstance(item, dict)
@@ -242,9 +295,16 @@ def _build_proof_pack_render_package(
         "supportability": _as_dict(snapshot.get("supportability")),
         "sections": sections,
         "source_hashes": _as_dict(snapshot.get("source_hashes")),
-        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
-        "proof_pack_content_hash": _optional_str(snapshot.get("proof_pack_content_hash"))
-        or "not_available",
+        "content_hash": _require_dpm_sha256(
+            snapshot,
+            "proof_pack_report_input",
+            "content_hash",
+        ),
+        "proof_pack_content_hash": _require_dpm_sha256(
+            snapshot,
+            "proof_pack_report_input",
+            "proof_pack_content_hash",
+        ),
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }
@@ -281,6 +341,15 @@ def _build_outcome_review_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
 ) -> dict[str, Any]:
+    _validate_dpm_common_snapshot(
+        snapshot=snapshot,
+        report_type="outcome_report_input",
+        identity_field="outcome_review_id",
+        content_hash_field="outcome_review_content_hash",
+    )
+    _require_dpm_value(snapshot, "outcome_report_input", "portfolio_id")
+    _require_dpm_list(snapshot, "outcome_report_input", "dimensions")
+    _require_dpm_list(snapshot, "outcome_report_input", "source_lineage")
     review_window = _as_dict(snapshot.get("review_window"))
     dimensions = [
         {
@@ -326,9 +395,16 @@ def _build_outcome_review_render_package(
         "source_services": source_services,
         "source_hashes": _as_dict(snapshot.get("source_hashes")),
         "section_hashes": _as_dict(snapshot.get("section_hashes")),
-        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
-        "outcome_review_content_hash": _optional_str(snapshot.get("outcome_review_content_hash"))
-        or "not_available",
+        "content_hash": _require_dpm_sha256(
+            snapshot,
+            "outcome_report_input",
+            "content_hash",
+        ),
+        "outcome_review_content_hash": _require_dpm_sha256(
+            snapshot,
+            "outcome_report_input",
+            "outcome_review_content_hash",
+        ),
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }
@@ -365,6 +441,15 @@ def _build_wave_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
 ) -> dict[str, Any]:
+    _validate_dpm_common_snapshot(
+        snapshot=snapshot,
+        report_type="wave_report_input",
+        identity_field="wave_id",
+        content_hash_field="wave_content_hash",
+    )
+    _require_dpm_value(snapshot, "wave_report_input", "wave_state")
+    _require_dpm_list(snapshot, "wave_report_input", "items")
+    _require_dpm_list(snapshot, "wave_report_input", "source_refs")
     items = [
         {
             "wave_item_id": _optional_str(item.get("wave_item_id")) or "not_available",
@@ -411,8 +496,16 @@ def _build_wave_render_package(
         if isinstance(snapshot.get("handoff_refs"), list)
         else 0,
         "external_execution_claimed": bool(snapshot.get("external_execution_claimed")),
-        "content_hash": _optional_str(snapshot.get("content_hash")) or "not_available",
-        "wave_content_hash": _optional_str(snapshot.get("wave_content_hash")) or "not_available",
+        "content_hash": _require_dpm_sha256(
+            snapshot,
+            "wave_report_input",
+            "content_hash",
+        ),
+        "wave_content_hash": _require_dpm_sha256(
+            snapshot,
+            "wave_report_input",
+            "wave_content_hash",
+        ),
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }

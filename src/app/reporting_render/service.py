@@ -140,11 +140,29 @@ class PortfolioReviewRenderOrchestrationService:
 
         snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
         render_job_id = job.render_job_id or f"rdr_{job.job_id}_pdf"
-        payload = _build_render_package(
-            job=job,
-            snapshot=snapshot.snapshot_payload,
-            render_job_id=render_job_id,
-        )
+        try:
+            payload = _build_render_package(
+                job=job,
+                snapshot=snapshot.snapshot_payload,
+                render_job_id=render_job_id,
+            )
+        except ValueError as exc:
+            failed_job = self._job_ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="render_validation_failed",
+                failure_message=str(exc),
+                retry_eligible=False,
+            )
+            record_report_operation(
+                operation="render_handoff",
+                status=failed_job.status,
+                failure_category=failed_job.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed_job
         self._job_ledger.mark_rendering(
             job_id=job.job_id,
             actor=job.triggered_by,

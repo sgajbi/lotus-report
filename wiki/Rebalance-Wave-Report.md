@@ -10,10 +10,12 @@ outcome-review, and proof-pack artifacts.
 This endpoint is not a wave engine. `lotus-manage` remains the source of wave state, item posture,
 proof-pack linkage, supportability, source refs, and internal operations handoff evidence.
 `lotus-report` persists the bounded handoff, records lineage, builds the render package, and
-orchestrates render/archive state transitions. When `lotus-manage` supplies bounded
-`portfolio_memory_context`, `lotus-report` carries the event identity, content hash,
-supportability, retention, redaction, access, and audit posture into snapshot lineage and
-render-package lineage without reconstructing portfolio-memory events.
+orchestrates render/archive state transitions. Missing source hashes, source evidence refs,
+redaction policy, retention policy, or supportability posture are rejected before durable capture;
+`lotus-report` does not create complete snapshots or render packages with placeholder lineage.
+When `lotus-manage` supplies bounded `portfolio_memory_context`, `lotus-report` carries the event
+identity, content hash, supportability, retention, redaction, access, and audit posture into
+snapshot lineage and render-package lineage without reconstructing portfolio-memory events.
 
 ## Business Flow
 
@@ -43,7 +45,7 @@ sequenceDiagram
 | Capability | Current state |
 | --- | --- |
 | Job initiation | `POST /reports/rebalance-waves` with required `Idempotency-Key` and governed caller context headers |
-| Source input | Manage-owned `DpmWaveReportInput` supplied as `wave_report_input` |
+| Source input | Typed manage-owned `DpmWaveReportInput` supplied as `wave_report_input`; source hashes, evidence refs, redaction, retention, and supportability posture are required |
 | Portfolio memory context | Optional Manage-owned `portfolio_memory_context` carried as bounded lineage only |
 | Snapshot | Immutable `report_input_snapshot` row with contract `dpm_wave_report_input.v1` |
 | Lineage | Append-only upstream-call evidence to `lotus-manage` wave report-input source plus portfolio-memory content hash when supplied |

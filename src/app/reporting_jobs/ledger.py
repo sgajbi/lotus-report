@@ -107,8 +107,8 @@ def _request_parts(
             options,
         )
     if isinstance(request, ProofPackReportJobRequest):
-        report_input = request.proof_pack_report_input
-        portfolio_id = str(report_input.get("portfolio_id") or "").strip()
+        report_input = request.proof_pack_report_input.model_dump(mode="json")
+        portfolio_id = request.proof_pack_report_input.portfolio_id.strip()
         if not portfolio_id:
             raise ValueError("proof_pack_report_input.portfolio_id is required")
         as_of_text = report_input.get("as_of_date") or report_input.get("generated_at")
@@ -129,8 +129,8 @@ def _request_parts(
             options,
         )
     if isinstance(request, WaveReportJobRequest):
-        report_input = request.wave_report_input
-        wave_id = str(report_input.get("wave_id") or "").strip()
+        report_input = request.wave_report_input.model_dump(mode="json")
+        wave_id = request.wave_report_input.wave_id.strip()
         if not wave_id:
             raise ValueError("wave_report_input.wave_id is required")
         as_of_text = report_input.get("as_of_date") or report_input.get("generated_at")
@@ -162,8 +162,8 @@ def _request_parts(
             request.reporting_currency,
             options,
         )
-    report_input = request.outcome_report_input
-    portfolio_id = str(report_input.get("portfolio_id") or "").strip()
+    report_input = request.outcome_report_input.model_dump(mode="json")
+    portfolio_id = request.outcome_report_input.portfolio_id.strip()
     if not portfolio_id:
         raise ValueError("outcome_report_input.portfolio_id is required")
     review_window = report_input.get("review_window")

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -249,6 +249,7 @@ def _proof_pack_report_input() -> dict:
         "markdown_summary": "# Pre-Trade Proof Pack",
         "source_hashes": {"mandate": "sha256:mandate"},
         "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
         "evidence_ref": {
             "source_system": "lotus-manage",
             "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
@@ -1421,6 +1422,7 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
         request=OutcomeReviewReportJobRequest.model_validate(
             {
                 "outcome_report_input": {
+                    "contract_version": "1.0",
                     "outcome_review_id": "dor_001",
                     "outcome_review_content_hash": "sha256:outcome-review",
                     "portfolio_id": "PB_SG_GLOBAL_BAL_001",
@@ -1430,7 +1432,9 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
                     "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
                     "report_title": "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001",
                     "state": "READY",
+                    "generated_at": "2026-04-23T09:00:00Z",
                     "overall_outcome": "Execution outcome aligned with pre-trade proof.",
+                    "supportability": {"state": "READY", "reason_codes": ["outcome_ready"]},
                     "dimensions": [
                         {
                             "dimension": "PERFORMANCE",
@@ -1442,11 +1446,25 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
                             "explanation": "Realized performance exceeded expected performance.",
                         }
                     ],
-                    "source_lineage": [{"source_system": "lotus-manage"}],
+                    "source_lineage": [
+                        {
+                            "source_system": "lotus-manage",
+                            "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                            "source_id": "dor_001:dpm_outcome_report_input",
+                            "content_hash": "sha256:report-input",
+                        }
+                    ],
                     "source_hashes": {"realized": "sha256:realized"},
                     "section_hashes": {"proof_pack": "sha256:proof-pack"},
                     "content_hash": "sha256:report-input",
                     "redaction_policy": "NO_RAW_PAYLOADS",
+                    "retention_policy": "generated-report-standard",
+                    "evidence_ref": {
+                        "source_system": "lotus-manage",
+                        "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                        "source_id": "dor_001:dpm_outcome_report_input",
+                        "content_hash": "sha256:report-input",
+                    },
                     "portfolio_memory_context": _portfolio_memory_context(),
                 },
                 "requested_output_formats": ["pdf"],
@@ -1528,6 +1546,7 @@ def test_build_render_package_emits_wave_contract(tmp_path):
         request=WaveReportJobRequest.model_validate(
             {
                 "wave_report_input": {
+                    "contract_version": "1.0",
                     "wave_id": "dwv_001",
                     "wave_content_hash": "sha256:wave",
                     "wave_state": "HANDOFF_READY",
@@ -1535,6 +1554,7 @@ def test_build_render_package_emits_wave_contract(tmp_path):
                     "trigger_id": "manual-wave-001",
                     "trigger_rationale": "Review explicit affected portfolio list.",
                     "as_of_date": "2026-05-03",
+                    "generated_at": "2026-05-03T09:00:00Z",
                     "report_title": "Rebalance Wave Evidence - dwv_001",
                     "aggregate_metrics": {"item_count": 1, "state_counts": {"HANDOFF_READY": 1}},
                     "supportability": {"supportability_state": "ready"},
@@ -1563,6 +1583,21 @@ def test_build_render_package_emits_wave_contract(tmp_path):
                     "external_execution_claimed": False,
                     "content_hash": "sha256:report-input",
                     "redaction_policy": "NO_RAW_PAYLOADS",
+                    "retention_policy": "generated-report-standard",
+                    "source_refs": [
+                        {
+                            "source_system": "lotus-manage",
+                            "source_type": "DPM_WAVE_REPORT_INPUT",
+                            "source_id": "dwv_001:dpm_wave_report_input",
+                            "content_hash": "sha256:report-input",
+                        }
+                    ],
+                    "evidence_ref": {
+                        "source_system": "lotus-manage",
+                        "ref_type": "DPM_WAVE_REPORT_INPUT",
+                        "ref_id": "dwv_001:dpm_wave_report_input",
+                        "content_hash": "sha256:report-input",
+                    },
                     "portfolio_memory_context": _portfolio_memory_context(),
                 },
                 "requested_output_formats": ["pdf"],
@@ -1596,114 +1631,70 @@ def test_build_render_package_emits_wave_contract(tmp_path):
     ]
 
 
-def test_build_render_package_applies_proof_pack_fallbacks(tmp_path):
+def test_build_render_package_rejects_incomplete_proof_pack_source_evidence(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    job = ledger.create_proof_pack_report_job(
-        request=ProofPackReportJobRequest.model_validate(
+    job = ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest.model_validate(
             {
-                "proof_pack_report_input": {
-                    "proof_pack_id": "dpp_minimal",
-                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                    "as_of_date": "2026-05-03",
-                    "sections": [
-                        {
-                            "title": " ",
-                            "reason_codes": "not-a-list",
-                        },
-                        "ignored",
-                    ],
-                    "source_hashes": "ignored",
-                },
+                "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+                "as_of_date": "2026-05-03",
                 "requested_output_formats": ["pdf"],
             }
         ),
         caller_context=_caller(),
-        idempotency_key="idem-proof-pack-render-fallbacks",
+        idempotency_key="idem-proof-pack-render-rejects-incomplete",
     )
-
-    payload = _build_render_package(
-        job=job,
-        snapshot=job.options["proof_pack_report_input"],
-        render_job_id="rdr-proof-pack-fallbacks",
-    )
-
-    report_data = payload["report_data"]
-    assert report_data["title"] == "Pre-Trade Proof Pack - PB_SG_GLOBAL_BAL_001"
-    assert report_data["proof_pack_content_hash"] == "not_available"
-    assert report_data["source_hashes"] == {}
-    assert report_data["sections"] == [
-        {
-            "section_id": "not_available",
-            "section_type": "not_available",
-            "state": "not_available",
-            "title": "Not available",
-            "summary": "No section summary supplied.",
-            "reason_codes": [],
-            "content_hash": "not_available",
+    job = job.model_copy(
+        update={
+            "report_type": "proof_pack",
+            "requested_output_formats": ["pdf"],
+            "as_of_date": date(2026, 5, 3),
         }
-    ]
-    assert report_data["portfolio_memory"] == {
-        "status": "not_supplied",
-        "event_count": 0,
-        "content_hash": "not_available",
-        "event_refs": [],
-        "governance_policy": {},
-    }
-    assert payload["lineage_refs"] == [job.job_id, "dpp_minimal", "not_available"]
+    )
+
+    with pytest.raises(ValueError, match="proof_pack_report_input.content_hash is required"):
+        _build_render_package(
+            job=job,
+            snapshot={
+                "proof_pack_id": "dpp_minimal",
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "as_of_date": "2026-05-03",
+            },
+            render_job_id="rdr-proof-pack-fallbacks",
+        )
 
 
-def test_build_render_package_applies_outcome_review_fallbacks(tmp_path):
+def test_build_render_package_rejects_incomplete_outcome_review_source_evidence(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    job = ledger.create_outcome_review_report_job(
-        request=OutcomeReviewReportJobRequest.model_validate(
+    job = ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest.model_validate(
             {
-                "outcome_report_input": {
-                    "outcome_review_id": "dor_minimal",
-                    "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-                    "review_window": {"end_date": "2026-04-23"},
-                    "dimensions": [
-                        {
-                            "dimension": " ",
-                            "expected": "",
-                        },
-                        "ignored",
-                    ],
-                    "source_lineage": ["ignored"],
-                    "source_hashes": "ignored",
-                    "section_hashes": "ignored",
-                },
+                "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+                "as_of_date": "2026-04-23",
                 "requested_output_formats": ["pdf"],
             }
         ),
         caller_context=_caller(),
-        idempotency_key="idem-outcome-render-fallbacks",
+        idempotency_key="idem-outcome-render-rejects-incomplete",
     )
-
-    payload = _build_render_package(
-        job=job,
-        snapshot=job.options["outcome_report_input"],
-        render_job_id="rdr-outcome-fallbacks",
-    )
-
-    report_data = payload["report_data"]
-    assert report_data["title"] == "Post-Trade Outcome Review - PB_SG_GLOBAL_BAL_001"
-    assert report_data["overall_outcome"] == "Outcome summary was not supplied."
-    assert report_data["dimensions"] == [
-        {
-            "dimension": "not_available",
-            "state": "not_available",
-            "reason_code": "not_available",
-            "expected": "not_available",
-            "realized": "not_available",
-            "variance": "not_available",
-            "explanation": "No explanation supplied.",
+    job = job.model_copy(
+        update={
+            "report_type": "outcome_review",
+            "requested_output_formats": ["pdf"],
+            "as_of_date": date(2026, 4, 23),
         }
-    ]
-    assert report_data["source_services"] == ["lotus-manage"]
-    assert report_data["source_hashes"] == {}
-    assert report_data["section_hashes"] == {}
-    assert report_data["content_hash"] == "not_available"
-    assert payload["lineage_refs"] == [job.job_id, "dor_minimal", "not_available"]
+    )
+
+    with pytest.raises(ValueError, match="outcome_report_input.content_hash is required"):
+        _build_render_package(
+            job=job,
+            snapshot={
+                "outcome_review_id": "dor_minimal",
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "review_window": {"end_date": "2026-04-23"},
+            },
+            render_job_id="rdr-outcome-fallbacks",
+        )
 
 
 def test_render_service_helpers_cover_fallback_branches(monkeypatch):

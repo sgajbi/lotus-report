@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
@@ -154,6 +155,7 @@ def _outcome_payload():
             "source_hashes": {"realized": "sha256:realized"},
             "section_hashes": {"proof_pack": "sha256:proof-pack"},
             "redaction_policy": "NO_RAW_PAYLOADS",
+            "retention_policy": "generated-report-standard",
             "evidence_ref": {
                 "source_system": "lotus-manage",
                 "source_type": "DPM_OUTCOME_REPORT_INPUT",
@@ -204,6 +206,7 @@ def _proof_pack_payload():
             "markdown_summary": "# Pre-Trade Proof Pack",
             "source_hashes": {"mandate": "sha256:mandate"},
             "redaction_policy": "NO_RAW_PAYLOADS",
+            "retention_policy": "generated-report-standard",
             "evidence_ref": {
                 "source_system": "lotus-manage",
                 "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
@@ -264,16 +267,24 @@ def _wave_payload():
             ],
             "events": [],
             "handoff_refs": [],
-            "source_refs": [],
+            "source_refs": [
+                {
+                    "source_system": "lotus-manage",
+                    "source_type": "DPM_WAVE_REPORT_INPUT",
+                    "source_id": "dwv_001:dpm_wave_report_input",
+                    "content_hash": "sha256:wave-report-input",
+                }
+            ],
             "redaction_policy": "NO_RAW_PAYLOADS",
+            "retention_policy": "generated-report-standard",
             "external_execution_claimed": False,
             "evidence_ref": {
                 "source_system": "lotus-manage",
                 "ref_type": "DPM_WAVE_REPORT_INPUT",
                 "ref_id": "dwv_001:dpm_wave_report_input",
-                "content_hash": "sha256:report-input",
+                "content_hash": "sha256:wave-report-input",
             },
-            "content_hash": "sha256:report-input",
+            "content_hash": "sha256:wave-report-input",
         },
         "requested_output_formats": ["json"],
         "reporting_currency": "USD",
@@ -478,7 +489,7 @@ class _FakeCaptureService:
                         method="GET",
                         contract_version="DpmWaveReportInput.1.0",
                         request_hash="sha256:wave",
-                        response_hash="sha256:report-input",
+                        response_hash=str(wave_report_input["content_hash"]),
                         response_ref="dwv_001",
                         status_code=200,
                         latency_ms=0,
@@ -1053,7 +1064,7 @@ def test_wave_report_job_captures_manage_report_input_snapshot(tmp_path):
         assert snapshot_body["report_type"] == "rebalance_wave"
         assert snapshot_body["report_data_contract_version"] == "dpm_wave_report_input.v1"
         assert snapshot_body["snapshot_payload"]["wave_id"] == "dwv_001"
-        assert snapshot_body["snapshot_payload"]["content_hash"] == "sha256:report-input"
+        assert snapshot_body["snapshot_payload"]["content_hash"] == "sha256:wave-report-input"
 
         lineage_response = client.get(
             f"/reports/jobs/{handle['report_job_id']}/lineage",
@@ -1062,10 +1073,46 @@ def test_wave_report_job_captures_manage_report_input_snapshot(tmp_path):
         assert lineage_response.status_code == 200
         lineage_body = lineage_response.json()
         assert lineage_body["upstream_calls"][0]["service_name"] == "lotus-manage"
-        assert lineage_body["upstream_calls"][0]["response_hash"] == "sha256:report-input"
+        assert lineage_body["upstream_calls"][0]["response_hash"] == "sha256:wave-report-input"
         assert lineage_body["upstream_calls"][0]["endpoint"].endswith(
             "/waves/{wave_id}/report-input"
         )
+    finally:
+        _clear_overrides()
+
+
+def test_dpm_report_jobs_reject_missing_required_source_evidence(tmp_path):
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        outcome_payload = deepcopy(_outcome_payload())
+        outcome_payload["outcome_report_input"].pop("content_hash")
+        proof_payload = deepcopy(_proof_pack_payload())
+        proof_payload["proof_pack_report_input"].pop("proof_pack_content_hash")
+        wave_payload = deepcopy(_wave_payload())
+        wave_payload["wave_report_input"]["source_refs"] = []
+
+        outcome = client.post(
+            "/reports/outcome-reviews",
+            json=outcome_payload,
+            headers=_headers("outcome-review-missing-source-evidence"),
+        )
+        proof = client.post(
+            "/reports/proof-packs",
+            json=proof_payload,
+            headers=_headers("proof-pack-missing-source-evidence"),
+        )
+        wave = client.post(
+            "/reports/rebalance-waves",
+            json=wave_payload,
+            headers=_headers("wave-missing-source-evidence"),
+        )
+
+        assert outcome.status_code == 422
+        assert proof.status_code == 422
+        assert wave.status_code == 422
+        assert "content_hash" in str(outcome.json()["detail"])
+        assert "proof_pack_content_hash" in str(proof.json()["detail"])
+        assert "source_refs" in str(wave.json()["detail"])
     finally:
         _clear_overrides()
 
@@ -1810,6 +1857,33 @@ def test_report_job_openapi_examples_are_full_and_do_not_leak_rfc_names():
         properties = schema["components"]["schemas"][schema_name]["properties"]
         for property_contract in properties.values():
             assert property_contract.get("description")
+
+
+def test_dpm_report_job_openapi_uses_bounded_input_schemas():
+    client = TestClient(app)
+    schema = client.get("/openapi.json").json()
+    schemas = schema["components"]["schemas"]
+
+    assert schemas["OutcomeReviewReportJobRequest"]["properties"]["outcome_report_input"][
+        "$ref"
+    ].endswith("/DpmOutcomeReportInput")
+    assert schemas["ProofPackReportJobRequest"]["properties"]["proof_pack_report_input"][
+        "$ref"
+    ].endswith("/DpmProofPackReportInput")
+    assert schemas["WaveReportJobRequest"]["properties"]["wave_report_input"]["$ref"].endswith(
+        "/DpmWaveReportInput"
+    )
+    for schema_name, hash_field in [
+        ("DpmOutcomeReportInput", "outcome_review_content_hash"),
+        ("DpmProofPackReportInput", "proof_pack_content_hash"),
+        ("DpmWaveReportInput", "wave_content_hash"),
+    ]:
+        dpm_schema = schemas[schema_name]
+        assert hash_field in dpm_schema["required"]
+        assert "content_hash" in dpm_schema["required"]
+        assert "evidence_ref" in dpm_schema["required"]
+        assert "redaction_policy" in dpm_schema["required"]
+        assert "retention_policy" in dpm_schema["required"]
 
 
 def test_report_job_snapshot_and_lineage_endpoints_are_support_safe(tmp_path):
