@@ -44,7 +44,7 @@
 - use canonical service identity for cross-app validation
 - keep request-convention documentation explicit while the surface is mixed
 - expose suitability, mandate-control, open tax-lot, and jurisdiction-specific tax gaps explicitly
-  until governed upstream sources provide them; transaction-level realized gain/loss is sourced
-  from lotus-core where present, transaction source-product/trust metadata is preserved in report
-  evidence, and summary P&L uses source-backed component status rather than synthetic market-value
-  deltas
+  until governed upstream sources provide them; holdings and transaction source-product/trust
+  metadata is preserved in report evidence, transaction-level realized gain/loss is sourced from
+  lotus-core where present, and summary P&L uses source-backed component status rather than
+  synthetic market-value deltas

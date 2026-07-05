@@ -1065,6 +1065,9 @@ class ReportingReadService:
             source_service="lotus-core",
             source_endpoint=f"/portfolios/{portfolio_id}/positions",
             source_entity_id=portfolio_id,
+            source_product=self._as_dict(
+                self._as_dict(response.get("holdings")).get("sourceProduct")
+            ),
         )
         self._append_source_ref(
             refs,
@@ -1360,11 +1363,13 @@ class ReportingReadService:
 
     def _map_holdings_from_positions(self, payload: dict[str, object]) -> dict[str, object]:
         holdings_by_asset_class: dict[str, list[dict[str, object]]] = {}
+        source_product = self._holdings_source_product(payload)
         for item in self._as_list(payload.get("positions")):
             row = self._as_dict(item)
             asset_class = self._safe_str(row.get("asset_class")) or "UNKNOWN"
             holdings_by_asset_class.setdefault(asset_class, []).append(
                 {
+                    "position_id": self._safe_str(row.get("position_id")) or None,
                     "security_id": self._safe_str(row.get("security_id")),
                     "instrument_name": self._safe_str(
                         row.get("instrument_name") or row.get("description")
@@ -1378,6 +1383,22 @@ class ReportingReadService:
                     "rating": self._safe_str(row.get("rating")) or None,
                     "liquidity_tier": self._safe_str(row.get("liquidity_tier")) or None,
                     "held_since_date": self._safe_str(row.get("held_since_date")) or None,
+                    "maturity_date": self._safe_str(row.get("maturity_date")) or None,
+                    "position_state_status": self._safe_str(
+                        row.get("position_state_status") or row.get("position_status")
+                    )
+                    or None,
+                    "position_state_epoch": self._safe_str(row.get("position_state_epoch")) or None,
+                    "row_evidence_timestamp": self._safe_str(
+                        row.get("latest_evidence_timestamp") or row.get("evidence_timestamp")
+                    )
+                    or None,
+                    "row_snapshot_id": self._safe_str(row.get("snapshot_id")) or None,
+                    "source_system": self._safe_str(row.get("source_system")) or None,
+                    "source_record_id": self._safe_str(row.get("source_record_id")) or None,
+                    "source_transaction_id": self._safe_str(row.get("source_transaction_id"))
+                    or None,
+                    "lot_status": self._safe_str(row.get("lot_status")) or None,
                     "market_price": self._position_number(
                         row, ("market_price",), ("market_price",)
                     ),
@@ -1415,7 +1436,111 @@ class ReportingReadService:
             "holdingsByAssetClass": holdings_by_asset_class,
             "positionCount": self._to_int(payload.get("total"))
             or sum(len(rows) for rows in holdings_by_asset_class.values()),
+            "supportability": self._holdings_supportability(source_product),
+            "sourceProduct": source_product,
         }
+
+    def _holdings_source_product(self, payload: dict[str, object]) -> dict[str, object]:
+        source_product: dict[str, object] = {}
+        for source_key, target_key in (
+            ("product_name", "product_name"),
+            ("product_version", "product_version"),
+            ("tenant_id", "tenant_id"),
+            ("generated_at", "generated_at"),
+            ("as_of_date", "as_of_date"),
+            ("data_quality_status", "data_quality_status"),
+            ("reconciliation_status", "reconciliation_status"),
+            ("latest_evidence_timestamp", "latest_evidence_timestamp"),
+            ("restatement_version", "restatement_version"),
+            ("source_batch_fingerprint", "source_batch_fingerprint"),
+            ("snapshot_id", "snapshot_id"),
+            ("content_hash", "content_hash"),
+            ("policy_version", "policy_version"),
+            ("correlation_id", "correlation_id"),
+            ("portfolio_id", "portfolio_id"),
+            ("reporting_currency", "reporting_currency"),
+            ("position_state_supportability", "position_state_supportability"),
+            ("source_reported_cash_weight_supportability", "cash_weight_supportability"),
+        ):
+            if payload.get(source_key) is not None:
+                source_product[target_key] = payload.get(source_key)
+        source_product.setdefault("product_name", "HoldingsAsOf")
+        source_product.setdefault("product_version", "v1")
+        source_product["source_service"] = "lotus-core"
+        source_product["source_endpoint"] = "/portfolios/{portfolio_id}/positions"
+        source_product["source_total"] = self._to_int(payload.get("total"))
+        reason_codes = self._as_list(payload.get("reason_codes"))
+        if reason_codes:
+            source_product["reason_codes"] = [
+                self._safe_str(reason_code) for reason_code in reason_codes
+            ]
+        return source_product
+
+    def _holdings_supportability(self, source_product: dict[str, object]) -> dict[str, object]:
+        notes = self._holdings_source_product_supportability_notes(source_product)
+        return {"status": "partial" if notes else "ready", "notes": notes}
+
+    def _holdings_source_product_supportability_notes(
+        self, source_product: dict[str, object]
+    ) -> list[dict[str, object]]:
+        notes: list[dict[str, object]] = []
+        required_fields = (
+            "product_name",
+            "product_version",
+            "tenant_id",
+            "generated_at",
+            "as_of_date",
+            "data_quality_status",
+            "reconciliation_status",
+            "latest_evidence_timestamp",
+            "restatement_version",
+            "source_batch_fingerprint",
+            "snapshot_id",
+            "policy_version",
+            "correlation_id",
+        )
+        missing_fields = [
+            field for field in required_fields if source_product.get(field) in (None, "", [], {})
+        ]
+        if missing_fields:
+            notes.append(
+                {
+                    "code": "holdings_as_of_trust_metadata_incomplete",
+                    "severity": "warning",
+                    "missing_fields": missing_fields,
+                    "message": (
+                        "HoldingsAsOf source-product metadata is incomplete; holdings "
+                        "supportability is partial until core trust metadata is available."
+                    ),
+                }
+            )
+        data_quality_status = self._safe_str(source_product.get("data_quality_status")).upper()
+        if data_quality_status and data_quality_status != "COMPLETE":
+            notes.append(
+                {
+                    "code": "holdings_as_of_source_quality_not_complete",
+                    "severity": "warning",
+                    "data_quality_status": data_quality_status,
+                    "reason_codes": source_product.get("reason_codes", []),
+                    "message": (
+                        "lotus-core marked the holdings source-data product as not complete; "
+                        "report holdings coverage must remain partial."
+                    ),
+                }
+            )
+        reconciliation_status = self._safe_str(source_product.get("reconciliation_status")).upper()
+        if reconciliation_status and reconciliation_status not in {"RECONCILED", "COMPLETE"}:
+            notes.append(
+                {
+                    "code": "holdings_as_of_reconciliation_not_complete",
+                    "severity": "warning",
+                    "reconciliation_status": reconciliation_status,
+                    "message": (
+                        "lotus-core holdings reconciliation is not complete for this as-of date."
+                    ),
+                }
+            )
+        return notes
 
     def _map_review_transactions(
         self,
@@ -2809,6 +2934,8 @@ class ReportingReadService:
 
     def _holdings_key_figures(self, holdings: dict[str, object]) -> dict[str, object]:
         rows = self._holding_rows(holdings)
+        supportability = self._as_dict(holdings.get("supportability"))
+        source_product = self._as_dict(holdings.get("sourceProduct"))
         positive_rows = [
             row for row in rows if self._to_float(row.get("market_value_reporting_currency")) > 0
         ]
@@ -2841,6 +2968,11 @@ class ReportingReadService:
             and self._to_float(row.get("market_value_reporting_currency")) < 0
         ]
         return {
+            "supportability_status": supportability.get("status", "ready"),
+            "source_product": source_product,
+            "source_data_quality_status": source_product.get("data_quality_status"),
+            "source_reconciliation_status": source_product.get("reconciliation_status"),
+            "latest_evidence_timestamp": source_product.get("latest_evidence_timestamp"),
             "position_count": self._to_int(holdings.get("positionCount")),
             "positive_exposure_reporting_currency": positive_exposure,
             "cost_basis_coverage": self._coverage_status(len(cost_basis_rows), len(rows)),
@@ -3011,6 +3143,21 @@ class ReportingReadService:
                     "severity": "gap",
                     "message": (
                         "Not all holdings include source-backed cost basis and unrealized P&L."
+                    ),
+                    "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        holdings_supportability = self._as_dict(
+            self._as_dict(response.get("holdings")).get("supportability")
+        )
+        if holdings_supportability.get("status") == "partial":
+            observations.append(
+                {
+                    "observation_id": "holdings_source_quality_partial",
+                    "severity": "watch",
+                    "message": self._supportability_message(
+                        holdings_supportability,
+                        "Holdings Appendix",
                     ),
                     "source_section_ids": ["holdings_appendix"],
                 }
@@ -3602,6 +3749,8 @@ class ReportingReadService:
     def _report_side_findings(self, response: dict[str, object]) -> list[dict[str, object]]:
         findings: list[dict[str, object]] = []
         holdings = self._as_dict(self._as_dict(response.get("keyFigures")).get("holdings"))
+        holdings_section = self._as_dict(response.get("holdings"))
+        holdings_supportability = self._as_dict(holdings_section.get("supportability"))
         transactions = self._as_dict(response.get("transactions"))
         transaction_supportability = self._as_dict(transactions.get("supportability"))
         if holdings.get("unrealized_pnl_coverage") not in {"present", None}:
@@ -3626,6 +3775,18 @@ class ReportingReadService:
                         "income_cash_activity",
                         "transactions_appendix",
                     ],
+                }
+            )
+        if holdings_supportability.get("status") == "partial":
+            findings.append(
+                {
+                    "finding_id": "holdings_source_quality_partial",
+                    "severity": "watch",
+                    "message": self._supportability_message(
+                        holdings_supportability,
+                        "Holdings Appendix",
+                    ),
+                    "source_section_ids": ["holdings_appendix"],
                 }
             )
         if not self._as_list(response.get("client_sections")):
@@ -4251,6 +4412,8 @@ class ReportingReadService:
             {
                 "item_type": "holdings_summary",
                 "position_count": self._to_int(holdings.get("positionCount")),
+                "source_product": self._as_dict(holdings.get("sourceProduct")),
+                "supportability": self._as_dict(holdings.get("supportability")),
             }
         ]
         holdings_by_asset_class = self._as_dict(holdings.get("holdingsByAssetClass"))
@@ -4265,8 +4428,17 @@ class ReportingReadService:
                         "security_id": row.get("security_id"),
                         "instrument_name": row.get("instrument_name"),
                         "isin": row.get("isin"),
+                        "position_id": row.get("position_id"),
                         "quantity": row.get("quantity"),
                         "position_date": row.get("position_date"),
+                        "position_state_status": row.get("position_state_status"),
+                        "position_state_epoch": row.get("position_state_epoch"),
+                        "row_evidence_timestamp": row.get("row_evidence_timestamp"),
+                        "row_snapshot_id": row.get("row_snapshot_id"),
+                        "source_system": row.get("source_system"),
+                        "source_record_id": row.get("source_record_id"),
+                        "source_transaction_id": row.get("source_transaction_id"),
+                        "lot_status": row.get("lot_status"),
                         "product_type": row.get("product_type"),
                         "sector": row.get("sector"),
                         "country_of_risk": row.get("country_of_risk"),
