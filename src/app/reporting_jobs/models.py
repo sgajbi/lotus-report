@@ -44,6 +44,12 @@ ReportRerenderAttemptStatus = Literal[
 
 ReportRegenerateStatus = ReportJobStatus
 
+ReportJobRelationshipType = Literal[
+    "regenerate_replacement",
+    "failed_work_replay",
+    "batch_item_replay",
+]
+
 
 class ProposalNarrativeReviewPackage(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -727,6 +733,25 @@ REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
         "completeness_status": "complete",
         "failure_categories": [],
     },
+    "relationships": [
+        {
+            "relationship_id": "rjr_3e6d73f12e344448bc9a6607959dfb6a",
+            "relationship_type": "regenerate_replacement",
+            "source_report_job_id": "rjob_source_001",
+            "derived_report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+            "source_status": "archived",
+            "derived_status": "archived",
+            "source_failure_category": None,
+            "derived_failure_category": None,
+            "archive_consequence": "replacement",
+            "previous_archive_document_id": "doc_previous",
+            "new_archive_document_id": "doc_replacement",
+            "actor": "advisor-123",
+            "reason": "Certified upstream position correction.",
+            "created_at": "2026-04-22T09:02:00Z",
+            "updated_at": "2026-04-22T09:02:10Z",
+        }
+    ],
     "render": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["render"],
     "archive": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["archive"],
     "diagnostic_flags": [],
@@ -1730,6 +1755,78 @@ class ReportJobLineageDiagnostics(BaseModel):
     )
 
 
+class ReportJobRelationshipRecord(BaseModel):
+    relationship_id: str = Field(
+        ...,
+        description="Opaque durable relationship identifier.",
+        examples=["rjr_3e6d73f12e344448bc9a6607959dfb6a"],
+    )
+    relationship_type: ReportJobRelationshipType = Field(
+        ...,
+        description="Bounded source-to-derived report job relationship type.",
+        examples=["regenerate_replacement"],
+    )
+    source_report_job_id: str = Field(
+        ...,
+        description="Opaque source report job identifier.",
+        examples=["rjob_source_001"],
+    )
+    derived_report_job_id: str = Field(
+        ...,
+        description="Opaque regenerated or replayed report job identifier.",
+        examples=["rjob_derived_001"],
+    )
+    source_status: ReportJobStatus = Field(
+        ...,
+        description="Current or command-time source job status captured for support navigation.",
+        examples=["archived"],
+    )
+    derived_status: ReportJobStatus = Field(
+        ...,
+        description="Current or latest derived job status captured for support navigation.",
+        examples=["archived"],
+    )
+    source_failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Source job failure category when the relationship starts from failed work.",
+    )
+    derived_failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Derived job failure category when the derived work fails.",
+    )
+    archive_consequence: str | None = Field(
+        default=None,
+        description="Archive consequence such as `replacement` when applicable.",
+        examples=["replacement"],
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Source archive document superseded by the derived work when applicable.",
+    )
+    new_archive_document_id: str | None = Field(
+        default=None,
+        description="Derived archive document produced by the relationship when applicable.",
+    )
+    actor: str = Field(
+        ...,
+        description="Actor or system principal that requested the relationship.",
+        examples=["advisor-123"],
+    )
+    reason: str = Field(
+        ...,
+        description="Bounded operator reason captured from the command request.",
+        examples=["Certified upstream position correction."],
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the relationship was first recorded.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the relationship was last updated.",
+    )
+
+
 class ReportJobOperationLinks(BaseModel):
     status_url: str = Field(
         ...,
@@ -1780,6 +1877,14 @@ class ReportJobDiagnosticsResponse(BaseModel):
     lineage: ReportJobLineageDiagnostics | None = Field(
         default=None,
         description="Support-safe lineage summary without request or response payloads.",
+    )
+    relationships: list[ReportJobRelationshipRecord] = Field(
+        default_factory=list,
+        description=(
+            "Support-safe source-to-derived job relationships for regenerate, replay, and "
+            "batch-item replay navigation."
+        ),
+        examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["relationships"]],
     )
     render: ReportJobRenderInfo | None = Field(
         default=None,

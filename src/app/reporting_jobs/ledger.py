@@ -25,6 +25,8 @@ from app.reporting_jobs.models import (
     ReportCallerContext,
     ReportJobLedgerRecord,
     ReportJobListFilters,
+    ReportJobRelationshipRecord,
+    ReportJobRelationshipType,
     ReportJobStatus,
     ReportRerenderAttemptRecord,
     ReportStatusEvent,
@@ -342,6 +344,42 @@ class ReportJobLedger:
                 ON report_rerender_attempt(report_job_id, created_at)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS report_job_relationship (
+                    relationship_id TEXT PRIMARY KEY,
+                    source_report_job_id TEXT NOT NULL,
+                    derived_report_job_id TEXT NOT NULL,
+                    relationship_type TEXT NOT NULL,
+                    source_status TEXT NOT NULL,
+                    derived_status TEXT NOT NULL,
+                    source_failure_category TEXT,
+                    derived_failure_category TEXT,
+                    archive_consequence TEXT,
+                    previous_archive_document_id TEXT,
+                    new_archive_document_id TEXT,
+                    actor TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(source_report_job_id, derived_report_job_id, relationship_type),
+                    FOREIGN KEY(source_report_job_id) REFERENCES report_job(report_job_id),
+                    FOREIGN KEY(derived_report_job_id) REFERENCES report_job(report_job_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_job_relationship_source_created
+                ON report_job_relationship(source_report_job_id, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_job_relationship_derived_created
+                ON report_job_relationship(derived_report_job_id, created_at)
+                """
+            )
 
     def create_portfolio_review_job(
         self,
@@ -550,6 +588,94 @@ class ReportJobLedger:
                 (job_id,),
             ).fetchall()
         return [_event_from_row(row) for row in rows]
+
+    def upsert_job_relationship(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        derived_job: ReportJobLedgerRecord,
+        relationship_type: ReportJobRelationshipType,
+        actor: str,
+        reason: str,
+        archive_consequence: str | None = None,
+        previous_archive_document_id: str | None = None,
+        new_archive_document_id: str | None = None,
+    ) -> ReportJobRelationshipRecord:
+        bounded_reason = _bounded_relationship_reason(reason)
+        now = utc_now()
+        with self._lock:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT relationship_id, created_at
+                    FROM report_job_relationship
+                    WHERE source_report_job_id = ?
+                      AND derived_report_job_id = ?
+                      AND relationship_type = ?
+                    """,
+                    (source_job.job_id, derived_job.job_id, relationship_type),
+                ).fetchone()
+                relationship_id = existing["relationship_id"] if existing else f"rjr_{uuid4().hex}"
+                created_at = _dt_from_text(existing["created_at"]) if existing else now
+                connection.execute(
+                    """
+                    INSERT INTO report_job_relationship (
+                        relationship_id, source_report_job_id, derived_report_job_id,
+                        relationship_type, source_status, derived_status,
+                        source_failure_category, derived_failure_category,
+                        archive_consequence, previous_archive_document_id,
+                        new_archive_document_id, actor, reason, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_report_job_id, derived_report_job_id, relationship_type)
+                    DO UPDATE SET
+                        source_status = excluded.source_status,
+                        derived_status = excluded.derived_status,
+                        source_failure_category = excluded.source_failure_category,
+                        derived_failure_category = excluded.derived_failure_category,
+                        archive_consequence = excluded.archive_consequence,
+                        previous_archive_document_id = excluded.previous_archive_document_id,
+                        new_archive_document_id = excluded.new_archive_document_id,
+                        actor = excluded.actor,
+                        reason = excluded.reason,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        relationship_id,
+                        source_job.job_id,
+                        derived_job.job_id,
+                        relationship_type,
+                        source_job.status,
+                        derived_job.status,
+                        source_job.failure_category,
+                        derived_job.failure_category,
+                        archive_consequence,
+                        previous_archive_document_id,
+                        new_archive_document_id,
+                        actor,
+                        bounded_reason,
+                        _dt_to_text(created_at or now),
+                        _dt_to_text(now),
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM report_job_relationship WHERE relationship_id = ?",
+                    (relationship_id,),
+                ).fetchone()
+                return _relationship_from_row(row)
+
+    def list_job_relationships(self, job_id: str) -> list[ReportJobRelationshipRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_job_relationship
+                WHERE source_report_job_id = ? OR derived_report_job_id = ?
+                ORDER BY created_at ASC, relationship_id ASC
+                """,
+                (job_id, job_id),
+            ).fetchall()
+        return [_relationship_from_row(row) for row in rows]
 
     def append_job_event(
         self,
@@ -1622,6 +1748,33 @@ def _rerender_attempt_from_row(row: sqlite3.Row) -> ReportRerenderAttemptRecord:
         created_at=_dt_from_text(row["created_at"]) or utc_now(),
         updated_at=_dt_from_text(row["updated_at"]) or utc_now(),
     )
+
+
+def _relationship_from_row(row: sqlite3.Row) -> ReportJobRelationshipRecord:
+    return ReportJobRelationshipRecord(
+        relationship_id=row["relationship_id"],
+        relationship_type=row["relationship_type"],
+        source_report_job_id=row["source_report_job_id"],
+        derived_report_job_id=row["derived_report_job_id"],
+        source_status=row["source_status"],
+        derived_status=row["derived_status"],
+        source_failure_category=row["source_failure_category"],
+        derived_failure_category=row["derived_failure_category"],
+        archive_consequence=row["archive_consequence"],
+        previous_archive_document_id=row["previous_archive_document_id"],
+        new_archive_document_id=row["new_archive_document_id"],
+        actor=row["actor"],
+        reason=row["reason"],
+        created_at=_dt_from_text(row["created_at"]) or utc_now(),
+        updated_at=_dt_from_text(row["updated_at"]) or utc_now(),
+    )
+
+
+def _bounded_relationship_reason(reason: str) -> str:
+    normalized = " ".join((reason or "").split())
+    if not normalized:
+        return "not_provided"
+    return normalized[:240]
 
 
 def _optional_row_value(row: sqlite3.Row, key: str) -> Any | None:

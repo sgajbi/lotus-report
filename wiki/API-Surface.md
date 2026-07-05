@@ -57,7 +57,8 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal product-safe report job status and diagnostics
 - `GET /reports/jobs/{job_id}/diagnostics`
   internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
-  lineage, render, and archive handoff state; omits raw payloads and storage references
+  lineage, durable regenerate/replay source-derived relationships, render, and archive handoff
+  state; omits raw payloads, storage references, correlation ids, trace ids, and database internals
 - `GET /reports/jobs/{job_id}/portfolio-memory-events`
   internal report-owned source-event family for downstream portfolio memory; maps report
   lifecycle, snapshot, render, and archive evidence into stable event identities, source refs,
@@ -73,12 +74,13 @@ boundaries, and copy-paste request examples for direct service and support workf
   recollect upstream data
 - `POST /reports/jobs/{job_id}/regenerate`
   internal RFC-0105 regenerate command for already archived PDF jobs; recollects upstream data into
-  a fresh snapshot and lineage bundle, creates a replacement archive document, and returns explicit
-  old/new job, snapshot, hash, and archive document identities
+  a fresh snapshot and lineage bundle, creates a replacement archive document, persists a
+  source-derived relationship, and returns explicit old/new job, snapshot, hash, and archive
+  document identities
 - `POST /reports/jobs/{job_id}/replay`
   internal RFC-0105 failed-work replay command for failed retry-eligible report jobs; creates or
-  reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
-  source jobs
+  reuses a replay-scoped report job, persists a source-derived relationship, and rejects completed,
+  archived, cancelled, or non-retryable source jobs
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`

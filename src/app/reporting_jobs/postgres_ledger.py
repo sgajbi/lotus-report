@@ -36,6 +36,8 @@ from app.reporting_jobs.models import (
     ReportCallerContext,
     ReportJobLedgerRecord,
     ReportJobListFilters,
+    ReportJobRelationshipRecord,
+    ReportJobRelationshipType,
     ReportJobStatus,
     ReportRerenderAttemptRecord,
     ReportStatusEvent,
@@ -95,6 +97,16 @@ class PostgresReportJobLedger:
             missing = {"report_request", "report_job", "report_status_event"} - present
             if missing:
                 raise RuntimeError(f"report_job_ledger_schema_missing:{','.join(sorted(missing))}")
+            relationship_rows = connection.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'report_job_relationship'
+                """
+            ).fetchall()
+            if not relationship_rows:
+                raise RuntimeError("report_job_relationship_schema_missing")
 
             event_column_rows = connection.execute(
                 """
@@ -396,6 +408,97 @@ class PostgresReportJobLedger:
                 (job_id,),
             ).fetchall()
         return [_event_from_row(row) for row in rows]
+
+    def upsert_job_relationship(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        derived_job: ReportJobLedgerRecord,
+        relationship_type: ReportJobRelationshipType,
+        actor: str,
+        reason: str,
+        archive_consequence: str | None = None,
+        previous_archive_document_id: str | None = None,
+        new_archive_document_id: str | None = None,
+    ) -> ReportJobRelationshipRecord:
+        bounded_reason = _bounded_relationship_reason(reason)
+        now = utc_now()
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT relationship_id, created_at
+                FROM report_job_relationship
+                WHERE source_report_job_id = %s
+                  AND derived_report_job_id = %s
+                  AND relationship_type = %s
+                """,
+                (source_job.job_id, derived_job.job_id, relationship_type),
+            ).fetchone()
+            relationship_id = str(existing["relationship_id"]) if existing else f"rjr_{uuid4().hex}"
+            created_at = _dt_from_value(existing["created_at"]) if existing else now
+            connection.execute(
+                """
+                INSERT INTO report_job_relationship (
+                    relationship_id, source_report_job_id, derived_report_job_id,
+                    relationship_type, source_status, derived_status,
+                    source_failure_category, derived_failure_category,
+                    archive_consequence, previous_archive_document_id,
+                    new_archive_document_id, actor, reason, created_at, updated_at
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT(source_report_job_id, derived_report_job_id, relationship_type)
+                DO UPDATE SET
+                    source_status = EXCLUDED.source_status,
+                    derived_status = EXCLUDED.derived_status,
+                    source_failure_category = EXCLUDED.source_failure_category,
+                    derived_failure_category = EXCLUDED.derived_failure_category,
+                    archive_consequence = EXCLUDED.archive_consequence,
+                    previous_archive_document_id = EXCLUDED.previous_archive_document_id,
+                    new_archive_document_id = EXCLUDED.new_archive_document_id,
+                    actor = EXCLUDED.actor,
+                    reason = EXCLUDED.reason,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (
+                    relationship_id,
+                    source_job.job_id,
+                    derived_job.job_id,
+                    relationship_type,
+                    source_job.status,
+                    derived_job.status,
+                    source_job.failure_category,
+                    derived_job.failure_category,
+                    archive_consequence,
+                    previous_archive_document_id,
+                    new_archive_document_id,
+                    actor,
+                    bounded_reason,
+                    created_at or now,
+                    now,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM report_job_relationship WHERE relationship_id = %s",
+                (relationship_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("report_job_relationship_write_failed")
+            return _relationship_from_row(row)
+
+    def list_job_relationships(self, job_id: str) -> list[ReportJobRelationshipRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_job_relationship
+                WHERE source_report_job_id = %s OR derived_report_job_id = %s
+                ORDER BY created_at ASC, relationship_id ASC
+                """,
+                (job_id, job_id),
+            ).fetchall()
+        return [_relationship_from_row(row) for row in rows]
 
     def append_job_event(
         self,
@@ -1507,6 +1610,33 @@ def _rerender_attempt_from_row(row: Mapping[str, Any]) -> ReportRerenderAttemptR
         created_at=_dt_from_value(row["created_at"]) or utc_now(),
         updated_at=_dt_from_value(row["updated_at"]) or utc_now(),
     )
+
+
+def _relationship_from_row(row: Mapping[str, Any]) -> ReportJobRelationshipRecord:
+    return ReportJobRelationshipRecord(
+        relationship_id=str(row["relationship_id"]),
+        relationship_type=row["relationship_type"],
+        source_report_job_id=str(row["source_report_job_id"]),
+        derived_report_job_id=str(row["derived_report_job_id"]),
+        source_status=row["source_status"],
+        derived_status=row["derived_status"],
+        source_failure_category=row.get("source_failure_category"),
+        derived_failure_category=row.get("derived_failure_category"),
+        archive_consequence=row.get("archive_consequence"),
+        previous_archive_document_id=row.get("previous_archive_document_id"),
+        new_archive_document_id=row.get("new_archive_document_id"),
+        actor=str(row["actor"]),
+        reason=str(row["reason"]),
+        created_at=_dt_from_value(row["created_at"]) or utc_now(),
+        updated_at=_dt_from_value(row["updated_at"]) or utc_now(),
+    )
+
+
+def _bounded_relationship_reason(reason: str) -> str:
+    normalized = " ".join((reason or "").split())
+    if not normalized:
+        return "not_provided"
+    return normalized[:240]
 
 
 def _event_from_row(row: Mapping[str, Any]) -> ReportStatusEvent:

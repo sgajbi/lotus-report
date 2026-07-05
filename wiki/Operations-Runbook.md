@@ -251,7 +251,10 @@ Expected controls:
    item to replay work and does not change scheduler configuration,
 9. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
 10. every report job has one durable `report_request`, one durable `report_job`, and append-only
-   `report_status_event` rows with a versioned support-safe payload contract.
+   `report_status_event` rows with a versioned support-safe payload contract,
+11. regenerate, job replay, and batch-item replay persist durable `report_job_relationship` rows
+   so operators can navigate source-to-derived and derived-to-source relationships from
+   `GET /reports/jobs/{job_id}/diagnostics`.
 
 Use rerender for presentation, template, or rendering corrections where the source snapshot remains
 authoritative. Use regenerate when upstream domain data was corrected, late, or incomplete and the
@@ -261,7 +264,10 @@ document. These commands require `Idempotency-Key` and caller context headers, a
 expose raw snapshot payloads, storage keys, or upstream response bodies. New lifecycle events expose
 `event_schema_version`, `event_family`, typed `event_payload_json`, and optional
 `event_idempotency_key`; legacy rows remain readable as
-`report-status-event.legacy.v0` with `payload_posture=legacy_message_only`.
+`report-status-event.legacy.v0` with `payload_posture=legacy_message_only`. New
+source/derived relationships expose bounded status, failure category, archive consequence,
+archive document ids, actor, and reason; they do not expose raw snapshot payloads, storage keys,
+tenant/client/portfolio labels, correlation ids, trace ids, or database internals.
 
 ## RFC-0101 snapshot and lineage flow
 
@@ -352,6 +358,19 @@ SELECT event.report_job_id, event.event_type,
 FROM report_status_event event
 WHERE event.event_family IN ('replay_lifecycle', 'regenerate_lifecycle', 'batch_item_replay')
 ORDER BY event.created_at DESC;
+
+-- durable source/derived relationships for regenerate, replay, and batch item replay
+SELECT relationship.relationship_id, relationship.relationship_type,
+       relationship.source_report_job_id, relationship.derived_report_job_id,
+       relationship.source_status, relationship.derived_status,
+       relationship.source_failure_category, relationship.derived_failure_category,
+       relationship.archive_consequence, relationship.previous_archive_document_id,
+       relationship.new_archive_document_id, relationship.actor, relationship.reason,
+       relationship.created_at, relationship.updated_at
+FROM report_job_relationship relationship
+WHERE relationship.source_report_job_id = '<report-job-id>'
+   OR relationship.derived_report_job_id = '<report-job-id>'
+ORDER BY relationship.created_at;
 
 -- durable snapshot evidence for one job
 SELECT snapshot_id, report_job_id, report_type, report_data_contract_version, as_of_date,

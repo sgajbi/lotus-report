@@ -1311,6 +1311,7 @@ async def get_report_job_diagnostics(
 
     status_response = _record_to_status(record)
     events = ledger.list_status_events(job_id)
+    relationships = ledger.list_job_relationships(job_id)
     snapshot: ReportInputSnapshotRecord | None = None
     upstream_calls: list[ReportUpstreamCallRecord] = []
     diagnostic_flags: list[str] = []
@@ -1339,6 +1340,7 @@ async def get_report_job_diagnostics(
         latest_event=events[-1] if events else None,
         snapshot=_snapshot_to_diagnostics(snapshot) if snapshot else None,
         lineage=_lineage_to_diagnostics(snapshot, upstream_calls) if snapshot else None,
+        relationships=relationships,
         render=status_response.render,
         archive=status_response.archive,
         diagnostic_flags=diagnostic_flags,

@@ -12,6 +12,8 @@ from app.reporting_jobs.models import (
     ReportCallerContext,
     ReportJobLedgerRecord,
     ReportJobRegenerateRequest,
+    ReportJobRelationshipRecord,
+    ReportJobRelationshipType,
     ReportStatusEvent,
 )
 from app.reporting_jobs.service import get_report_job_ledger
@@ -61,6 +63,19 @@ class RegenerateLedger(Protocol):
     ) -> None: ...
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
+
+    def upsert_job_relationship(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        derived_job: ReportJobLedgerRecord,
+        relationship_type: ReportJobRelationshipType,
+        actor: str,
+        reason: str,
+        archive_consequence: str | None = None,
+        previous_archive_document_id: str | None = None,
+        new_archive_document_id: str | None = None,
+    ) -> ReportJobRelationshipRecord: ...
 
 
 class RegenerateSnapshotStore(Protocol):
@@ -123,6 +138,13 @@ class PortfolioReviewRegenerateService:
             caller_context=caller_context,
             idempotency_key=regenerate_key,
         )
+        _upsert_regenerate_relationship(
+            self._ledger,
+            source_job=source_job,
+            regenerated=regenerated,
+            reason=command.reason,
+            actor=caller_context.triggered_by,
+        )
         if regenerated.status == "accepted":
             self._ledger.append_job_event(
                 job_id=source_job.job_id,
@@ -162,6 +184,13 @@ class PortfolioReviewRegenerateService:
                 archive_document_id=regenerated.archive_document_id,
                 caller_context=caller_context,
             )
+        _upsert_regenerate_relationship(
+            self._ledger,
+            source_job=source_job,
+            regenerated=regenerated,
+            reason=command.reason,
+            actor=caller_context.triggered_by,
+        )
         new_snapshot = _optional_snapshot(self._snapshot_store, regenerated.job_id)
         record_report_operation(
             operation="regenerate_from_upstream",
@@ -240,4 +269,24 @@ def _append_source_event_once(
         actor=caller_context.triggered_by,
         correlation_id=caller_context.correlation_id,
         trace_id=caller_context.trace_id,
+    )
+
+
+def _upsert_regenerate_relationship(
+    ledger: RegenerateLedger,
+    *,
+    source_job: ReportJobLedgerRecord,
+    regenerated: ReportJobLedgerRecord,
+    reason: str,
+    actor: str,
+) -> None:
+    ledger.upsert_job_relationship(
+        source_job=source_job,
+        derived_job=regenerated,
+        relationship_type="regenerate_replacement",
+        actor=actor,
+        reason=reason,
+        archive_consequence="replacement",
+        previous_archive_document_id=source_job.archive_document_id,
+        new_archive_document_id=regenerated.archive_document_id,
     )
