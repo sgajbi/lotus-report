@@ -124,7 +124,11 @@ Current repository posture:
    profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed by enforcing read
    and write authorization and failing startup validation when write/read authz or primary key
    identity material is missing,
-22. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+22. shared downstream retry behavior is owned in `src/app/clients/http_resilience.py`; retries cover
+   transport failures plus transient HTTP statuses `429`, `502`, `503`, and `504` within
+   `UPSTREAM_MAX_RETRIES`, while validation, authorization, not-found, conflict, and business-rule
+   statuses pass through immediately,
+23. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
