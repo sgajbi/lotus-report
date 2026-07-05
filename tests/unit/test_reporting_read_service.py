@@ -658,7 +658,16 @@ async def test_summary_uses_strategic_core_query_routes_for_summary_details():
     assert response["allocation"]["byAssetClass"][0]["market_value"] == 600000.0
     assert response["incomeSummary"]["net_amount_reporting_currency"] == 90.0
     assert response["activitySummary"]["total_inflows"] == 1000.0
-    assert response["pnlSummary"]["total_pnl"] == 1_200.0
+    assert response["pnlSummary"]["unrealized_pnl_reporting_currency"] == 100_000.0
+    assert response["pnlSummary"]["unrealized_pnl_status"] == "present"
+    assert response["pnlSummary"]["realized_pnl_reporting_currency"] == 1_250.0
+    assert response["pnlSummary"]["realized_pnl_status"] == "present"
+    assert response["pnlSummary"]["total_pnl"] == 101_250.0
+    assert response["pnlSummary"]["total_pnl_status"] == "present"
+    assert response["pnlSummary"]["source_methodology"] == (
+        "sourced_position_unrealized_and_transaction_realized_pnl"
+    )
+    assert response["pnlSummary"]["supportability"] == {"status": "ready", "notes": []}
 
 
 @pytest.mark.asyncio

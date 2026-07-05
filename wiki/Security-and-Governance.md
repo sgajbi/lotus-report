@@ -45,4 +45,5 @@
 - keep request-convention documentation explicit while the surface is mixed
 - expose suitability, mandate-control, open tax-lot, and jurisdiction-specific tax gaps explicitly
   until governed upstream sources provide them; transaction-level realized gain/loss is sourced
-  from lotus-core where present
+  from lotus-core where present, and summary P&L uses source-backed component status rather than
+  synthetic market-value deltas

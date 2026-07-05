@@ -1410,9 +1410,83 @@ async def test_summary_with_explicit_sections_can_exclude_wealth_and_allocation(
         {"as_of_date": "2026-02-24", "sections": ["pnl"]},
         None,
     )
-    assert response["pnlSummary"]["total_pnl"] == 10.0
+    assert response["pnlSummary"]["unrealized_pnl_reporting_currency"] is None
+    assert response["pnlSummary"]["unrealized_pnl_status"] == "not_sourced"
+    assert response["pnlSummary"]["realized_pnl_reporting_currency"] is None
+    assert response["pnlSummary"]["realized_pnl_status"] == "not_applicable"
+    assert response["pnlSummary"]["total_pnl"] is None
+    assert response["pnlSummary"]["total_pnl_status"] == "not_sourced"
+    assert response["pnlSummary"]["supportability"]["status"] == "not_sourced"
+    assert response["pnlSummary"]["supportability"]["notes"][0]["code"] == (
+        "summary_unrealized_pnl_not_fully_sourced"
+    )
     assert "wealth" not in response
     assert "allocation" not in response
+
+
+@pytest.mark.asyncio
+async def test_summary_pnl_preserves_sourced_zero_realized_pnl():
+    class _CoreQuerySourcedZeroRealizedPnl(_CoreQuerySuccessMinimal):
+        async def get_portfolio_transactions(
+            self,
+            portfolio_id: str,
+            params: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            _ = portfolio_id, params, correlation_id
+            return 200, {
+                "portfolio_id": "P1",
+                "total": 1,
+                "transactions": [
+                    {
+                        "transaction_id": "TXN-SELL-ZERO",
+                        "transaction_date": "2026-02-01",
+                        "transaction_type": "SELL",
+                        "realized_gain_loss_reporting_currency": 0.0,
+                    }
+                ],
+            }
+
+        async def get_portfolio_positions(
+            self,
+            portfolio_id: str,
+            params: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            _ = portfolio_id, params, correlation_id
+            return 200, {
+                "portfolio_id": "P1",
+                "total": 1,
+                "positions": [
+                    {
+                        "security_id": "EQ-1",
+                        "asset_class": "EQUITY",
+                        "market_value_reporting_currency": 110.0,
+                        "cost_basis_reporting_currency": 100.0,
+                        "unrealized_pnl_reporting_currency": 10.0,
+                    }
+                ],
+            }
+
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySourcedZeroRealizedPnl(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_summary(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["PNL"]},
+        None,
+    )
+
+    assert response["pnlSummary"]["unrealized_pnl_reporting_currency"] == 10.0
+    assert response["pnlSummary"]["unrealized_pnl_status"] == "present"
+    assert response["pnlSummary"]["realized_pnl_reporting_currency"] == 0.0
+    assert response["pnlSummary"]["realized_pnl_status"] == "present"
+    assert response["pnlSummary"]["total_pnl"] == 10.0
+    assert response["pnlSummary"]["total_pnl_status"] == "present"
+    assert response["pnlSummary"]["supportability"] == {"status": "ready", "notes": []}
 
 
 def test_to_float_returns_zero_for_non_numeric_string():
