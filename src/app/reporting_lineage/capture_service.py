@@ -7,8 +7,12 @@ from time import perf_counter
 from typing import Any, Protocol
 
 import httpx
-from fastapi import HTTPException
 
+from app.application_errors import (
+    ReportingNotFoundError,
+    ReportingUpstreamError,
+    ReportingValidationError,
+)
 from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
@@ -985,7 +989,7 @@ class PortfolioReviewSnapshotCaptureService:
 def _first_portfolio_id(job: ReportJobLedgerRecord) -> str:
     portfolio_ids = job.portfolio_scope.get("portfolio_ids", [])
     if not portfolio_ids:
-        raise HTTPException(status_code=422, detail="portfolio_scope_portfolio_ids_required")
+        raise ReportingValidationError("portfolio_scope_portfolio_ids_required")
     return str(portfolio_ids[0])
 
 
@@ -1123,9 +1127,8 @@ def _lineage_summary(
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:
     if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         return "timeout", "Upstream report-data capture timed out.", True
-    if isinstance(exc, HTTPException):
-        if exc.status_code in {502, 503, 504}:
-            return "upstream_data_failed", "Upstream report-data capture failed.", True
-        if exc.status_code in {400, 404, 422}:
-            return "validation_failed", "Requested report inputs were not fully supported.", False
+    if isinstance(exc, ReportingUpstreamError):
+        return "upstream_data_failed", "Upstream report-data capture failed.", True
+    if isinstance(exc, (ReportingValidationError, ReportingNotFoundError)):
+        return "validation_failed", "Requested report inputs were not fully supported.", False
     return "upstream_data_failed", "Upstream report-data capture failed.", True

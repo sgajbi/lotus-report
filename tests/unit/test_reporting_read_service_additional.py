@@ -1,6 +1,10 @@
 import pytest
-from fastapi import HTTPException
 
+from app.application_errors import (
+    ReportingNotFoundError,
+    ReportingUpstreamError,
+    ReportingValidationError,
+)
 from app.services.reporting_read_service import ReportingReadService
 
 
@@ -397,9 +401,8 @@ async def test_summary_requires_as_of_date():
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskZeroRate(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingValidationError) as exc:
         await service.get_portfolio_summary("P1", {}, None)
-    assert exc.value.status_code == 422
     assert "as_of_date" in str(exc.value.detail)
 
 
@@ -479,9 +482,8 @@ async def test_summary_contract_missing_raises_502():
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingUpstreamError):
         await service.get_portfolio_summary("P1", {"as_of_date": "2026-02-24"}, None)
-    assert exc.value.status_code == 502
 
 
 @pytest.mark.asyncio
@@ -491,7 +493,7 @@ async def test_summary_rejects_unknown_allocation_dimension():
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingValidationError) as exc:
         await service.get_portfolio_summary(
             "P1",
             {
@@ -501,7 +503,6 @@ async def test_summary_rejects_unknown_allocation_dimension():
             },
             None,
         )
-    assert exc.value.status_code == 422
     assert "Unsupported allocation dimension" in str(exc.value.detail)
 
 
@@ -867,9 +868,8 @@ def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingValidationError):
         service._allocation_dimensions({"allocation_dimensions": dimensions})
-    assert exc.value.status_code == 422
 
 
 def test_map_allocation_views_skips_non_conforming_items_and_uses_default_key():
@@ -1339,53 +1339,56 @@ async def test_list_transaction_rows_rejects_missing_transaction_shape():
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingUpstreamError):
         await service._list_transaction_rows(
             portfolio_id="P1",
             correlation_id=None,
             params={"limit": 500},
         )
-    assert exc.value.status_code == 502
 
 
 @pytest.mark.parametrize(
-    ("status_code", "expected_status"),
+    ("status_code", "expected_error"),
     [
-        (404, 404),
-        (422, 422),
-        (503, 502),
+        (404, ReportingNotFoundError),
+        (422, ReportingValidationError),
+        (503, ReportingUpstreamError),
     ],
 )
 @pytest.mark.asyncio
-async def test_list_transaction_rows_maps_core_errors(status_code, expected_status):
+async def test_list_transaction_rows_maps_core_errors(status_code, expected_error):
     service = ReportingReadService(
         core_query_client=_CoreQueryTransactionStatus(status_code, {"detail": "bad upstream"}),
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(expected_error):
         await service._list_transaction_rows(
             portfolio_id="P1",
             correlation_id=None,
             params={"limit": 500},
         )
-    assert exc.value.status_code == expected_status
 
 
 @pytest.mark.parametrize(
-    ("method_name", "status_code", "payload", "expected_status"),
+    ("method_name", "status_code", "payload", "expected_error"),
     [
-        ("_unwrap_core_query_allocation", 200, {"unexpected": "shape"}, 502),
-        ("_unwrap_core_query_allocation", 404, {"detail": "missing"}, 404),
-        ("_unwrap_core_query_allocation", 422, {"detail": "bad request"}, 422),
-        ("_unwrap_core_query_allocation", 503, {"detail": "down"}, 502),
-        ("_unwrap_core_query_positions", 200, {"unexpected": "shape"}, 502),
-        ("_unwrap_core_query_positions", 404, {"detail": "missing"}, 404),
-        ("_unwrap_core_query_positions", 503, {"detail": "down"}, 502),
+        ("_unwrap_core_query_allocation", 200, {"unexpected": "shape"}, ReportingUpstreamError),
+        ("_unwrap_core_query_allocation", 404, {"detail": "missing"}, ReportingNotFoundError),
+        (
+            "_unwrap_core_query_allocation",
+            422,
+            {"detail": "bad request"},
+            ReportingValidationError,
+        ),
+        ("_unwrap_core_query_allocation", 503, {"detail": "down"}, ReportingUpstreamError),
+        ("_unwrap_core_query_positions", 200, {"unexpected": "shape"}, ReportingUpstreamError),
+        ("_unwrap_core_query_positions", 404, {"detail": "missing"}, ReportingNotFoundError),
+        ("_unwrap_core_query_positions", 503, {"detail": "down"}, ReportingUpstreamError),
     ],
 )
 def test_core_unwrap_helpers_map_invalid_and_error_payloads(
-    method_name, status_code, payload, expected_status
+    method_name, status_code, payload, expected_error
 ):
     service = ReportingReadService(
         core_query_client=_CoreQuerySuccessMinimal(),
@@ -1393,9 +1396,8 @@ def test_core_unwrap_helpers_map_invalid_and_error_payloads(
         risk_client=_RiskSuccess(),
     )
     method = getattr(service, method_name)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(expected_error):
         method(status_code=status_code, payload=payload)
-    assert exc.value.status_code == expected_status
 
 
 class _PerformanceWorkspaceStatusError(_PerformanceSuccessEmpty):

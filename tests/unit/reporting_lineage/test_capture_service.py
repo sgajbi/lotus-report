@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
+from app.application_errors import ReportingUpstreamError, ReportingValidationError
 from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
@@ -356,7 +356,7 @@ class _ValidationFailureReportingReadService:
         pass
 
     async def get_portfolio_review(self, *_args, **_kwargs):
-        raise HTTPException(status_code=422, detail="unsupported")
+        raise ReportingValidationError("unsupported")
 
 
 @pytest.mark.asyncio
@@ -1053,7 +1053,7 @@ def test_capture_service_request_and_failure_helpers(tmp_path):
     }
 
     empty_scope = job.model_copy(update={"portfolio_scope": {"portfolio_ids": []}})
-    with pytest.raises(HTTPException, match="portfolio_scope_portfolio_ids_required"):
+    with pytest.raises(ReportingValidationError, match="portfolio_scope_portfolio_ids_required"):
         _first_portfolio_id(empty_scope)
 
     assert _map_job_failure(httpx.TimeoutException("timeout")) == (
@@ -1061,12 +1061,12 @@ def test_capture_service_request_and_failure_helpers(tmp_path):
         "Upstream report-data capture timed out.",
         True,
     )
-    assert _map_job_failure(HTTPException(status_code=503, detail="down")) == (
+    assert _map_job_failure(ReportingUpstreamError("down")) == (
         "upstream_data_failed",
         "Upstream report-data capture failed.",
         True,
     )
-    assert _map_job_failure(HTTPException(status_code=422, detail="unsupported")) == (
+    assert _map_job_failure(ReportingValidationError("unsupported")) == (
         "validation_failed",
         "Requested report inputs were not fully supported.",
         False,

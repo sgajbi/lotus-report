@@ -1,7 +1,13 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Path, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
 
+from app.application_errors import (
+    ReportingApplicationError,
+    ReportingNotFoundError,
+    ReportingUpstreamError,
+    ReportingValidationError,
+)
 from app.models.contracts import (
     PORTFOLIO_REVIEW_FULL_REQUEST_EXAMPLE,
     PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE,
@@ -15,6 +21,16 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 
 def get_reporting_read_service() -> ReportingReadService:
     return ReportingReadService()
+
+
+def _reporting_application_error_to_http(exc: ReportingApplicationError) -> HTTPException:
+    if isinstance(exc, ReportingValidationError):
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.detail)
+    if isinstance(exc, ReportingNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.detail)
+    if isinstance(exc, ReportingUpstreamError):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.detail)
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=exc.detail)
 
 
 def _apply_requested_section_limit(payload: dict[str, Any], section_limit: int) -> dict[str, Any]:
@@ -49,11 +65,14 @@ async def get_portfolio_summary(
     service: ReportingReadService = Depends(get_reporting_read_service),
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
 ) -> dict[str, Any]:
-    return await service.get_portfolio_summary(
-        portfolio_id=portfolio_id,
-        request_payload=_apply_requested_section_limit(request, section_limit),
-        correlation_id=correlation_id,
-    )
+    try:
+        return await service.get_portfolio_summary(
+            portfolio_id=portfolio_id,
+            request_payload=_apply_requested_section_limit(request, section_limit),
+            correlation_id=correlation_id,
+        )
+    except ReportingApplicationError as exc:
+        raise _reporting_application_error_to_http(exc) from exc
 
 
 @router.post(
@@ -129,10 +148,13 @@ async def get_portfolio_review(
         ),
     ] = None,
 ) -> dict[str, Any]:
-    return await service.get_portfolio_review(
-        portfolio_id=portfolio_id,
-        request_payload=_apply_requested_section_limit(
-            request.model_dump(exclude_none=True, mode="json"), section_limit
-        ),
-        correlation_id=correlation_id,
-    )
+    try:
+        return await service.get_portfolio_review(
+            portfolio_id=portfolio_id,
+            request_payload=_apply_requested_section_limit(
+                request.model_dump(exclude_none=True, mode="json"), section_limit
+            ),
+            correlation_id=correlation_id,
+        )
+    except ReportingApplicationError as exc:
+        raise _reporting_application_error_to_http(exc) from exc
