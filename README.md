@@ -385,6 +385,9 @@ Current orchestration model:
 - use `POST /reports/jobs/{job_id}/replay` only for failed retry-eligible report jobs; it creates
   or reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
   source jobs
+- portfolio review and summary transaction windows are bounded by
+  `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES`; oversized windows return a
+  partial transaction supportability state instead of issuing unbounded lotus-core pagination calls
 - use `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay` only for failed
   retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
   item to replay work without scheduler CRUD, registry mutation, distribution, or archive
