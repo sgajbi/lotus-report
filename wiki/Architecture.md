@@ -33,3 +33,6 @@
    SQLite adapters own persistence and locking only
 7. PostgreSQL runtime adapters share the bounded provider in `src/app/postgres.py`; adapters keep
    transaction boundaries while the provider owns connection reuse, timeouts, and shutdown
+8. portfolio-review snapshot capture depends on a report-input provider port; downstream
+   core/performance/risk adapters are composed behind that port so lineage capture stays an
+   application workflow

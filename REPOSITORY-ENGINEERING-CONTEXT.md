@@ -181,7 +181,9 @@ Primary areas:
 13. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
-   lineage, support-safe evidence query models, and readiness checks for RFC-0101.
+   lineage, support-safe evidence query models, and readiness checks for RFC-0101. Portfolio-review
+   snapshot capture depends on an injected input-provider port; concrete core/performance/risk
+   client construction belongs to the provider adapter, not the capture workflow.
 14. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.
