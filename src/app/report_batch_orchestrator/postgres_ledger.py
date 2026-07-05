@@ -18,6 +18,10 @@ from app.report_batch_orchestrator.ledger import (
     compute_batch_request_hash,
     utc_now,
 )
+from app.report_batch_orchestrator.lifecycle_policy import (
+    batch_item_failure_outcome,
+    reconciled_batch_status,
+)
 from app.report_batch_orchestrator.models import (
     BatchControlResult,
     BatchCreateRequest,
@@ -385,12 +389,11 @@ class PostgresReportBatchLedger:
             if not existing:
                 raise ValueError("report_batch_item_not_found")
             attempt_count = int(existing["attempt_count"]) + 1
-            status = (
-                "failed_retryable"
-                if retryable and attempt_count < policy.max_attempts
-                else "failed_terminal"
+            status, retry_eligible = batch_item_failure_outcome(
+                retryable=retryable,
+                attempt_count=attempt_count,
+                max_attempts=policy.max_attempts,
             )
-            retry_eligible = status == "failed_retryable"
             row = connection.execute(
                 """
                 UPDATE report_batch_item
@@ -962,14 +965,8 @@ class PostgresReportBatchLedger:
         ).fetchall()
         if not rows:
             return
-        statuses = {str(row["status"]) for row in rows}
-        if statuses <= {"succeeded", "cancelled"}:
-            status = "completed" if "cancelled" not in statuses else "cancelled"
-        elif statuses <= {"succeeded", "failed_terminal", "cancelled"}:
-            status = "completed_with_failures"
-        elif "failed_retryable" in statuses and statuses <= {"succeeded", "failed_retryable"}:
-            status = "failed"
-        else:
+        status = reconciled_batch_status(str(row["status"]) for row in rows)
+        if status is None:
             return
         connection.execute(
             """

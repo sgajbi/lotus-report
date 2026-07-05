@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
+from app.reporting_jobs.lifecycle_policy import (
+    is_report_job_cancellable,
+    is_report_job_transition_allowed,
+)
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
@@ -834,7 +838,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"accepted"},
                     to_status="collecting_data",
                     failure_category=None,
                     failure_message=None,
@@ -874,7 +877,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"accepted", "collecting_data"},
                     to_status="data_ready",
                     failure_category=None,
                     failure_message=None,
@@ -918,7 +920,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"data_ready"},
                     to_status="rendering",
                     failure_category=None,
                     failure_message=None,
@@ -967,7 +968,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"data_ready", "rendering"},
                     to_status="completed",
                     failure_category=None,
                     failure_message=None,
@@ -1008,7 +1008,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"completed"},
                     to_status="archiving",
                     failure_category=None,
                     failure_message=None,
@@ -1050,7 +1049,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={"completed", "archiving"},
                     to_status="archived",
                     failure_category=None,
                     failure_message=None,
@@ -1093,14 +1091,6 @@ class ReportJobLedger:
                 return self._transition_job(
                     connection=connection,
                     job_id=job_id,
-                    allowed_from={
-                        "accepted",
-                        "collecting_data",
-                        "data_ready",
-                        "rendering",
-                        "completed",
-                        "archiving",
-                    },
                     to_status="failed",
                     failure_category=failure_category,
                     failure_message=failure_message,
@@ -1144,14 +1134,7 @@ class ReportJobLedger:
                 if not existing:
                     raise ReportJobNotFoundError("report_job_not_found")
                 current_status = existing["status"]
-                if current_status in {
-                    "rendering",
-                    "completed",
-                    "archiving",
-                    "archived",
-                    "completed_with_warnings",
-                    "cancelled",
-                }:
+                if not is_report_job_cancellable(str(current_status)):
                     raise InvalidReportJobTransitionError("report_job_cannot_be_cancelled")
 
                 now = utc_now()
@@ -1234,7 +1217,6 @@ class ReportJobLedger:
         *,
         connection: sqlite3.Connection,
         job_id: str,
-        allowed_from: set[str],
         to_status: ReportJobStatus,
         failure_category: str | None,
         failure_message: str | None,
@@ -1274,7 +1256,10 @@ class ReportJobLedger:
             ).fetchone()
             assert row is not None
             return self._load_by_request_id(connection, row["report_request_id"])
-        if current_status not in allowed_from:
+        if not is_report_job_transition_allowed(
+            current_status=current_status,
+            to_status=to_status,
+        ):
             raise InvalidReportJobTransitionError("report_job_invalid_transition")
 
         now = utc_now()

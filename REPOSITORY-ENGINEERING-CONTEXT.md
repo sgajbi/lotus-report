@@ -170,9 +170,10 @@ Primary areas:
    keep client publication, advisory suitability, mandate approval, execution, distribution, and
    supported-feature promotion blocked.
 12. `src/app/reporting_jobs/`
-   PostgreSQL runtime ledger plus an isolated SQLite unit-test adapter for report request/job/status
-   lifecycle, idempotency, request hashing, status retrieval, bounded cancellation, and
-   report-owned portfolio-memory source events for the first asynchronous reporting wave.
+   shared report-job lifecycle policy, PostgreSQL runtime ledger, and an isolated SQLite unit-test
+   adapter for report request/job/status lifecycle, idempotency, request hashing, status retrieval,
+   bounded cancellation, and report-owned portfolio-memory source events for the first asynchronous
+   reporting wave.
 13. `src/app/reporting_lineage/`
    PostgreSQL runtime store plus an isolated SQLite unit-test adapter for durable report input
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
@@ -184,7 +185,9 @@ Primary areas:
     `service.py` owns job lifecycle orchestration, render submission, persisted render metadata,
     archive handoff, and render/archive failure mapping.
 15. `src/app/report_batch_orchestrator/`
-    RFC-0104 batch reporting orchestration boundary. Current slices own source-backed selector
+    RFC-0104 batch reporting orchestration boundary. Shared lifecycle policy owns retry/failure
+    outcome and terminal batch status reconciliation; adapters own persistence and transaction
+    safety. Current slices own source-backed selector
     validation, durable batch/batch-item materialization, deterministic schedule-cycle
     materialization, scheduled idempotency identity, internal dispatch/lease/back-pressure
     primitives, report-job creation/reuse for leased items, idempotent duplicate prevention,
