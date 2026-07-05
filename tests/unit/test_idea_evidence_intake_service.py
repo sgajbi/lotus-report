@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -124,6 +125,83 @@ def test_idea_evidence_intake_conflicts_across_fresh_durable_ledger(tmp_path) ->
             _request(report_evidence_pack_id="irep_changed"),
             idempotency_key="idea-report-intake-001",
         )
+
+
+def test_idea_evidence_intake_durable_insert_race_replays_existing_record(tmp_path) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    first_ledger = IdeaEvidenceIntakeLedger(db_path)
+    first_ledger.accept(_request(), idempotency_key="idea-report-intake-001")
+    record = first_ledger.snapshot()["idea-report-intake-001"]
+
+    restarted_ledger = IdeaEvidenceIntakeLedger(db_path)
+
+    stored = restarted_ledger._store_record(  # noqa: SLF001 - race contract regression test
+        record,
+        request=_request(),
+        correlation_id="corr-idea-report-intake-retry",
+        trace_id="trace-idea-report-intake-retry",
+    )
+
+    assert stored == record
+
+
+def test_idea_evidence_intake_durable_insert_race_conflicts_on_changed_fingerprint(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    first_ledger = IdeaEvidenceIntakeLedger(db_path)
+    first_ledger.accept(_request(), idempotency_key="idea-report-intake-001")
+    record = first_ledger.snapshot()["idea-report-intake-001"]
+    changed_record = replace(record, payload_fingerprint="sha256:changed")
+
+    restarted_ledger = IdeaEvidenceIntakeLedger(db_path)
+
+    with pytest.raises(IdeaEvidenceIntakeConflictError):
+        restarted_ledger._store_record(  # noqa: SLF001 - race contract regression test
+            changed_record,
+            request=_request(),
+            correlation_id="corr-idea-report-intake-retry",
+            trace_id="trace-idea-report-intake-retry",
+        )
+
+
+def test_idea_evidence_intake_normalizes_naive_accepted_at_for_durable_records(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    ledger = IdeaEvidenceIntakeLedger(db_path)
+    accepted_at = datetime(2026, 6, 24, 8, 30)
+
+    ledger.accept(
+        _request(),
+        idempotency_key="idea-report-intake-001",
+        accepted_at_utc=accepted_at,
+    )
+
+    record = IdeaEvidenceIntakeLedger(db_path).snapshot()["idea-report-intake-001"]
+    assert record.accepted_at_utc == datetime(2026, 6, 24, 8, 30, tzinfo=UTC)
+
+
+def test_idea_evidence_intake_rolls_back_failed_durable_write_context(tmp_path) -> None:
+    ledger = IdeaEvidenceIntakeLedger(tmp_path / "idea-intake.sqlite3")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with ledger._connect() as connection:  # noqa: SLF001 - rollback regression test
+            connection.execute(
+                "INSERT INTO idea_evidence_intake ("
+                "idempotency_key, intake_id, payload_fingerprint, response_json, "
+                "caller_context_json, report_evidence_pack_id, conversion_intent_id, "
+                "candidate_id, evidence_packet_id, evidence_content_fingerprint, producer, "
+                "supportability_status, accepted_at_utc, created_at_utc"
+                ") VALUES ("
+                "'rolled-back-key', 'intake', 'sha256:test', '{}', '{}', 'irep', 'icnv', "
+                "'icand', 'ievp', 'sha256:test', 'lotus-idea', 'not_certified', "
+                "'2026-06-24T08:30:00Z', '2026-06-24T08:30:00Z'"
+                ")"
+            )
+            raise RuntimeError("boom")
+
+    assert "rolled-back-key" not in ledger.snapshot()
 
 
 def test_idea_evidence_materialization_maps_to_source_owned_proof_pack_request() -> None:

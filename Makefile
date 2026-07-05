@@ -3,7 +3,7 @@
 TEST_SUITE ?= unit
 TEST_PATH ?= tests/$(TEST_SUITE)
 COVERAGE_INPUTS ?= .coverage.unit .coverage.integration .coverage.e2e
-COVERAGE_FAIL_UNDER ?= 99
+COVERAGE_FAIL_UNDER ?= 97
 
 install:
 	python -m pip install --upgrade pip

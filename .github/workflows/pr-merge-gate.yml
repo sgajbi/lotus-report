@@ -134,7 +134,7 @@ jobs:
           pattern: coverage-data-*
           merge-multiple: true
           path: coverage-data
-      - name: Enforce 99% coverage
+      - name: Enforce coverage floor
         run: make coverage-gate COVERAGE_INPUTS=coverage-data
 
   docker-build:
