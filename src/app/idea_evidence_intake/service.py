@@ -150,6 +150,7 @@ def build_proof_pack_report_job_request_from_idea_evidence(
             "idea_evidence_packet": evidence_pack.evidence_content_fingerprint,
         },
         "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": evidence_pack.retention_policy_ref,
         "evidence_ref": {
             "source_system": "lotus-idea",
             "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",

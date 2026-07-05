@@ -67,21 +67,27 @@ Current repository posture:
    client-ready blocked; `lotus-report` preserves it in the immutable snapshot, render package,
    and archive handoff metadata without approving, rewriting, or inferring memo facts,
 12. RFC40-WTBD-004 first-wave report materialization is implemented for manage-owned
-   `DpmProofPackReportInput`: `POST /reports/proof-packs` persists the bounded handoff as an
-   immutable report snapshot, records lineage to `lotus-manage`, builds a `proof_pack` render
-   package for `lotus-render` template `proof-pack v1`, and reuses the existing archive handoff
-   lifecycle for PDF artifacts without recomputing proof-pack evidence,
+   `DpmProofPackReportInput`: `POST /reports/proof-packs` exposes a typed source-owned input
+   schema, rejects missing hash/evidence/redaction/retention/supportability posture before durable
+   capture, persists the bounded handoff as an immutable report snapshot, records lineage to
+   `lotus-manage`, builds a `proof_pack` render package for `lotus-render` template `proof-pack
+   v1`, and reuses the existing archive handoff lifecycle for PDF artifacts without recomputing
+   proof-pack evidence,
 13. RFC41-WTBD-008 first-wave wave report materialization is implemented for manage-owned
-   `DpmWaveReportInput`: `POST /reports/rebalance-waves` persists the bounded handoff as an
-   immutable report snapshot, records lineage to `lotus-manage`, builds a `rebalance_wave` render
-   package for `lotus-render` template `rebalance-wave v1`, and reuses the existing archive
-   handoff lifecycle for PDF artifacts without recomputing wave state, proof-pack linkage,
-   supportability, internal handoff evidence, or external execution posture,
+   `DpmWaveReportInput`: `POST /reports/rebalance-waves` exposes a typed source-owned input
+   schema, rejects missing hash/evidence/redaction/retention/supportability posture before durable
+   capture, persists the bounded handoff as an immutable report snapshot, records lineage to
+   `lotus-manage`, builds a `rebalance_wave` render package for `lotus-render` template
+   `rebalance-wave v1`, and reuses the existing archive handoff lifecycle for PDF artifacts
+   without recomputing wave state, proof-pack linkage, supportability, internal handoff evidence,
+   or external execution posture,
 14. RFC40-WTBD-010 report-side portfolio-memory consumption is implemented for the first-wave DPM
-   report jobs: proof-pack, rebalance-wave, and outcome-review report inputs may carry a
-   manage-owned bounded `portfolio_memory_context`, and `lotus-report` persists that context in
-   immutable snapshot lineage and render-package lineage without reconstructing manage-owned
-   portfolio-memory events. `lotus-report` also owns a report source-event family at
+   report jobs: proof-pack, rebalance-wave, and outcome-review report inputs are typed
+   source-owned DPM schemas that require source hashes, evidence refs, redaction, retention, and
+   supportability posture before durable capture. They may also carry a manage-owned bounded
+   `portfolio_memory_context`, and `lotus-report` persists that context in immutable snapshot
+   lineage and render-package lineage without reconstructing manage-owned portfolio-memory events.
+   `lotus-report` also owns a report source-event family at
    `GET /reports/jobs/{job_id}/portfolio-memory-events` that maps report lifecycle, snapshot,
    render, and archive evidence into support-safe event identities, source refs, artifact refs,
    content hashes, and retention/redaction/access/audit policy without exposing raw snapshot

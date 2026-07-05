@@ -9,10 +9,13 @@ other governed report artifacts.
 
 This endpoint is not a proof-pack engine. `lotus-manage` remains the source of proof-pack evidence,
 supportability, source hashes, and decision facts. `lotus-report` persists the bounded handoff,
-records lineage, builds the render package, and orchestrates render/archive state transitions. When
-`lotus-manage` supplies bounded `portfolio_memory_context`, `lotus-report` carries the event
-identity, content hash, supportability, retention, redaction, access, and audit posture into
-snapshot lineage and render-package lineage without reconstructing portfolio-memory events.
+records lineage, builds the render package, and orchestrates render/archive state transitions.
+Missing source hashes, source evidence refs, redaction policy, retention policy, or supportability
+posture are rejected before durable capture; `lotus-report` does not create complete snapshots or
+render packages with placeholder lineage. When `lotus-manage` supplies bounded
+`portfolio_memory_context`, `lotus-report` carries the event identity, content hash,
+supportability, retention, redaction, access, and audit posture into snapshot lineage and
+render-package lineage without reconstructing portfolio-memory events.
 
 ## Business Flow
 
@@ -42,7 +45,7 @@ sequenceDiagram
 | Capability | Current state |
 | --- | --- |
 | Job initiation | `POST /reports/proof-packs` with required `Idempotency-Key` and governed caller context headers |
-| Source input | Manage-owned `DpmProofPackReportInput` supplied as `proof_pack_report_input` |
+| Source input | Typed manage-owned `DpmProofPackReportInput` supplied as `proof_pack_report_input`; source hashes, evidence ref, redaction, retention, and supportability posture are required |
 | Portfolio memory context | Optional Manage-owned `portfolio_memory_context` carried as bounded lineage only |
 | Snapshot | Immutable `report_input_snapshot` row with contract `dpm_proof_pack_report_input.v1` |
 | Lineage | Append-only upstream-call evidence to `lotus-manage` proof-pack report-input source plus portfolio-memory content hash when supplied |

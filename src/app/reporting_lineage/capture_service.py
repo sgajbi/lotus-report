@@ -785,7 +785,11 @@ class PortfolioReviewSnapshotCaptureService:
                 trace_id=job.trace_id,
             )
         )
-        source_hash = proof_pack_report_input.get("content_hash")
+        source_hash = _required_sha256(
+            proof_pack_report_input,
+            "content_hash",
+            "proof_pack_report_input",
+        )
         self._snapshot_store.create_upstream_calls(
             snapshot_id=snapshot.snapshot_id,
             calls=[
@@ -794,11 +798,12 @@ class PortfolioReviewSnapshotCaptureService:
                     endpoint=source_endpoint,
                     method=source_method,
                     contract_version=source_contract_version,
-                    request_hash=str(
-                        proof_pack_report_input.get("proof_pack_content_hash")
-                        or "sha256:not-provided"
+                    request_hash=_required_sha256(
+                        proof_pack_report_input,
+                        "proof_pack_content_hash",
+                        "proof_pack_report_input",
                     ),
-                    response_hash=str(source_hash) if source_hash else None,
+                    response_hash=source_hash,
                     response_ref=source_id,
                     status_code=200,
                     latency_ms=0,
@@ -903,7 +908,11 @@ class PortfolioReviewSnapshotCaptureService:
                 trace_id=job.trace_id,
             )
         )
-        source_hash = outcome_report_input.get("content_hash")
+        source_hash = _required_sha256(
+            outcome_report_input,
+            "content_hash",
+            "outcome_report_input",
+        )
         self._snapshot_store.create_upstream_calls(
             snapshot_id=snapshot.snapshot_id,
             calls=[
@@ -912,11 +921,12 @@ class PortfolioReviewSnapshotCaptureService:
                     endpoint="/api/v1/rebalance/outcome-reviews/{outcome_review_id}/report-input",
                     method="GET",
                     contract_version="DpmOutcomeReportInput.1.0",
-                    request_hash=str(
-                        outcome_report_input.get("outcome_review_content_hash")
-                        or "sha256:not-provided"
+                    request_hash=_required_sha256(
+                        outcome_report_input,
+                        "outcome_review_content_hash",
+                        "outcome_report_input",
                     ),
-                    response_hash=str(source_hash) if source_hash else None,
+                    response_hash=source_hash,
                     response_ref=str(
                         outcome_report_input.get("outcome_review_id")
                         or job.options.get("outcome_review_id")
@@ -1025,7 +1035,7 @@ class PortfolioReviewSnapshotCaptureService:
                 trace_id=job.trace_id,
             )
         )
-        source_hash = wave_report_input.get("content_hash")
+        source_hash = _required_sha256(wave_report_input, "content_hash", "wave_report_input")
         self._snapshot_store.create_upstream_calls(
             snapshot_id=snapshot.snapshot_id,
             calls=[
@@ -1034,10 +1044,12 @@ class PortfolioReviewSnapshotCaptureService:
                     endpoint="/api/v1/rebalance/waves/{wave_id}/report-input",
                     method="GET",
                     contract_version="DpmWaveReportInput.1.0",
-                    request_hash=str(
-                        wave_report_input.get("wave_content_hash") or "sha256:not-provided"
+                    request_hash=_required_sha256(
+                        wave_report_input,
+                        "wave_content_hash",
+                        "wave_report_input",
                     ),
-                    response_hash=str(source_hash) if source_hash else None,
+                    response_hash=source_hash,
                     response_ref=str(
                         wave_report_input.get("wave_id") or job.options.get("wave_id") or job.job_id
                     ),
@@ -1119,6 +1131,13 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _required_sha256(report_input: dict[str, Any], field_name: str, owner: str) -> str:
+    value = _optional_str(report_input.get(field_name))
+    if not value or not value.startswith("sha256:"):
+        raise ValueError(f"{owner}.{field_name} must use sha256 lineage")
+    return value
 
 
 def _proof_pack_source_system(source_system: str | None, source_type: str) -> str:

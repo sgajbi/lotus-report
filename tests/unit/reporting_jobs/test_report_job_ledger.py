@@ -130,9 +130,38 @@ def _outcome_request(**overrides):
     outcome_report_input = {
         "contract_version": "1.0",
         "outcome_review_id": "dor_001",
+        "outcome_review_content_hash": "sha256:outcome-review",
         "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "proof_pack_id": "dpp_001",
         "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
         "generated_at": "2026-04-23T09:00:00Z",
+        "state": "READY",
+        "supportability": {"state": "READY", "reason_codes": ["outcome_review_ready"]},
+        "dimensions": [
+            {
+                "dimension": "PERFORMANCE",
+                "state": "READY",
+                "reason_code": "performance_realized",
+            }
+        ],
+        "source_lineage": [
+            {
+                "source_system": "lotus-manage",
+                "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                "source_id": "dor_001:dpm_outcome_report_input",
+                "content_hash": "sha256:report-input",
+            }
+        ],
+        "source_hashes": {"realized": "sha256:realized"},
+        "section_hashes": {"proof_pack": "sha256:proof-pack"},
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "source_type": "DPM_OUTCOME_REPORT_INPUT",
+            "source_id": "dor_001:dpm_outcome_report_input",
+            "content_hash": "sha256:report-input",
+        },
         "content_hash": "sha256:report-input",
     }
     payload = {
@@ -153,6 +182,27 @@ def _proof_pack_request(**overrides):
         "portfolio_id": "PB_SG_GLOBAL_BAL_001",
         "as_of_date": "2026-05-03",
         "generated_at": "2026-05-03T09:00:00Z",
+        "state": "READY",
+        "supportability": {"status": "READY", "reason_codes": ["proof_pack_ready"]},
+        "sections": [
+            {
+                "section_id": "sec_mandate",
+                "section_type": "MANDATE_CONTEXT",
+                "state": "READY",
+                "title": "Mandate context",
+                "summary": "Mandate, model, and policy evidence are aligned.",
+                "content_hash": "sha256:section-mandate",
+            }
+        ],
+        "source_hashes": {"mandate": "sha256:mandate"},
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
+            "source_id": "dpp_001:dpm_proof_pack_report_input",
+            "content_hash": "sha256:report-input",
+        },
         "content_hash": "sha256:report-input",
     }
     payload = {
@@ -175,16 +225,47 @@ def _wave_request(**overrides):
         "trigger_id": "manual-wave-001",
         "as_of_date": "2026-05-03",
         "generated_at": "2026-05-03T09:00:00Z",
+        "supportability": {
+            "supportability_state": "ready",
+            "reason": "wave_supportability_ready",
+        },
+        "proof_pack_posture": {
+            "linked_item_count": 2,
+            "ready_proof_pack_count": 2,
+            "degraded_proof_pack_count": 0,
+        },
         "items": [
             {
+                "wave_item_id": "dwi_001",
                 "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "state": "HANDOFF_READY",
                 "proof_pack_id": "dpp_001",
+                "proof_pack_state": "READY",
             },
             {
+                "wave_item_id": "dwi_002",
                 "portfolio_id": "PB_SG_INCOME_002",
+                "state": "HANDOFF_READY",
                 "proof_pack_id": "dpp_002",
+                "proof_pack_state": "READY",
             },
         ],
+        "source_refs": [
+            {
+                "source_system": "lotus-manage",
+                "source_type": "DPM_WAVE_REPORT_INPUT",
+                "source_id": "dwv_001:dpm_wave_report_input",
+                "content_hash": "sha256:wave-report-input",
+            }
+        ],
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "ref_type": "DPM_WAVE_REPORT_INPUT",
+            "ref_id": "dwv_001:dpm_wave_report_input",
+            "content_hash": "sha256:wave-report-input",
+        },
         "content_hash": "sha256:wave-report-input",
     }
     payload = {
@@ -329,91 +410,44 @@ def test_report_job_ledger_creates_wave_request_job(tmp_path):
 
 def test_report_job_ledger_validates_outcome_review_identity_and_window(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    missing_portfolio_request = _outcome_request(
-        outcome_report_input={
-            "contract_version": "1.0",
-            "outcome_review_id": "dor_001",
-            "review_window": {"end_date": "2026-04-23"},
-        }
-    )
-    missing_window_request = _outcome_request(
-        outcome_report_input={
-            "contract_version": "1.0",
-            "outcome_review_id": "dor_001",
-            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-        }
-    )
+    assert ledger
+    missing_portfolio = _outcome_request().outcome_report_input.model_dump(mode="json")
+    missing_portfolio.pop("portfolio_id")
+    missing_window = _outcome_request().outcome_report_input.model_dump(mode="json")
+    missing_window["review_window"] = {}
 
-    with pytest.raises(ValueError, match="portfolio_id is required"):
-        ledger.create_outcome_review_report_job(
-            request=missing_portfolio_request,
-            caller_context=_caller(),
-            idempotency_key="idem-missing-portfolio",
-        )
+    with pytest.raises(ValueError, match="portfolio_id"):
+        _outcome_request(outcome_report_input=missing_portfolio)
     with pytest.raises(ValueError, match="review window end date is required"):
-        ledger.create_outcome_review_report_job(
-            request=missing_window_request,
-            caller_context=_caller(),
-            idempotency_key="idem-missing-window",
-        )
+        _outcome_request(outcome_report_input=missing_window)
 
 
 def test_report_job_ledger_validates_proof_pack_identity_and_as_of_date(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    missing_portfolio_request = _proof_pack_request(
-        proof_pack_report_input={
-            "proof_pack_id": "dpp_001",
-            "as_of_date": "2026-05-03",
-        }
-    )
-    missing_as_of_request = _proof_pack_request(
-        proof_pack_report_input={
-            "proof_pack_id": "dpp_001",
-            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-        }
-    )
+    assert ledger
+    missing_portfolio = _proof_pack_request().proof_pack_report_input.model_dump(mode="json")
+    missing_portfolio.pop("portfolio_id")
+    missing_as_of = _proof_pack_request().proof_pack_report_input.model_dump(mode="json")
+    missing_as_of.pop("as_of_date")
 
-    with pytest.raises(ValueError, match="portfolio_id is required"):
-        ledger.create_proof_pack_report_job(
-            request=missing_portfolio_request,
-            caller_context=_caller(),
-            idempotency_key="idem-proof-missing-portfolio",
-        )
-    with pytest.raises(ValueError, match="as_of_date is required"):
-        ledger.create_proof_pack_report_job(
-            request=missing_as_of_request,
-            caller_context=_caller(),
-            idempotency_key="idem-proof-missing-as-of",
-        )
+    with pytest.raises(ValueError, match="portfolio_id"):
+        _proof_pack_request(proof_pack_report_input=missing_portfolio)
+    with pytest.raises(ValueError, match="as_of_date"):
+        _proof_pack_request(proof_pack_report_input=missing_as_of)
 
 
 def test_report_job_ledger_validates_wave_identity_and_as_of_date(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    missing_wave_id_request = _wave_request(
-        wave_report_input={
-            "as_of_date": "2026-05-03",
-            "items": [{"portfolio_id": "PB_SG_GLOBAL_BAL_001"}],
-        }
-    )
-    missing_as_of_request = _wave_request(
-        wave_report_input={
-            "wave_id": "dwv_001",
-            "items": [{"portfolio_id": "PB_SG_GLOBAL_BAL_001"}],
-        }
-    )
+    assert ledger
+    missing_wave_id = _wave_request().wave_report_input.model_dump(mode="json")
+    missing_wave_id.pop("wave_id")
+    missing_as_of = _wave_request().wave_report_input.model_dump(mode="json")
+    missing_as_of.pop("as_of_date")
 
-    with pytest.raises(ValueError, match="wave_report_input.wave_id is required"):
-        ledger.create_wave_report_job(
-            request=missing_wave_id_request,
-            caller_context=_caller(),
-            idempotency_key="idem-wave-missing-id",
-        )
-    with pytest.raises(ValueError, match="wave_report_input.as_of_date is required"):
-        ledger.create_wave_report_job(
-            request=missing_as_of_request,
-            caller_context=_caller(),
-            idempotency_key="idem-wave-missing-as-of",
-        )
+    with pytest.raises(ValueError, match="wave_id"):
+        _wave_request(wave_report_input=missing_wave_id)
+    with pytest.raises(ValueError, match="as_of_date"):
+        _wave_request(wave_report_input=missing_as_of)
 
 
 def test_report_job_ledger_returns_duplicate_for_same_idempotency_key_and_hash(tmp_path):
@@ -459,16 +493,11 @@ def test_report_job_ledger_rejects_proof_pack_idempotency_key_reuse(tmp_path):
         idempotency_key="idem-proof-conflict",
     )
 
-    changed_request = _proof_pack_request(
-        proof_pack_report_input={
-            "proof_pack_id": "dpp_001",
-            "proof_pack_content_hash": "sha256:changed-proof-pack",
-            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
-            "as_of_date": "2026-05-03",
-            "generated_at": "2026-05-03T09:00:00Z",
-            "content_hash": "sha256:changed-report-input",
-        }
-    )
+    changed_input = _proof_pack_request().proof_pack_report_input.model_dump(mode="json")
+    changed_input["proof_pack_content_hash"] = "sha256:changed-proof-pack"
+    changed_input["content_hash"] = "sha256:changed-report-input"
+    changed_input["evidence_ref"]["content_hash"] = "sha256:changed-report-input"
+    changed_request = _proof_pack_request(proof_pack_report_input=changed_input)
 
     with pytest.raises(IdempotencyConflictError):
         ledger.create_proof_pack_report_job(

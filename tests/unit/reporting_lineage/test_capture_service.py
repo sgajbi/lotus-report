@@ -94,13 +94,30 @@ def _outcome_request(**overrides):
         "outcome_review_id": "dor_001",
         "outcome_review_content_hash": "sha256:outcome-review",
         "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "proof_pack_id": "dpp_001",
         "review_window": {"start_date": "2026-04-22", "end_date": "2026-04-23"},
         "generated_at": "2026-04-23T09:00:00Z",
         "state": "READY",
-        "dimensions": [],
-        "source_lineage": [],
+        "supportability": {"state": "READY", "reason_codes": ["outcome_review_ready"]},
+        "dimensions": [{"dimension": "PERFORMANCE", "state": "READY"}],
+        "source_lineage": [
+            {
+                "source_system": "lotus-manage",
+                "source_type": "DPM_OUTCOME_REPORT_INPUT",
+                "source_id": "dor_001:dpm_outcome_report_input",
+                "content_hash": "sha256:report-input",
+            }
+        ],
         "source_hashes": {"realized": "sha256:realized"},
         "section_hashes": {"proof_pack": "sha256:proof-pack"},
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "source_type": "DPM_OUTCOME_REPORT_INPUT",
+            "source_id": "dor_001:dpm_outcome_report_input",
+            "content_hash": "sha256:report-input",
+        },
         "content_hash": "sha256:report-input",
     }
     payload = {
@@ -122,8 +139,26 @@ def _proof_pack_request(**overrides):
         "as_of_date": "2026-05-03",
         "generated_at": "2026-05-03T09:00:00Z",
         "state": "READY",
-        "sections": [],
+        "supportability": {"status": "READY", "reason_codes": ["proof_pack_ready"]},
+        "sections": [
+            {
+                "section_id": "sec_mandate",
+                "section_type": "MANDATE_CONTEXT",
+                "state": "READY",
+                "title": "Mandate context",
+                "summary": "Mandate, model, and policy evidence are aligned.",
+                "content_hash": "sha256:section-mandate",
+            }
+        ],
         "source_hashes": {"mandate": "sha256:mandate"},
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
+            "source_id": "dpp_001:dpm_proof_pack_report_input",
+            "content_hash": "sha256:report-input",
+        },
         "content_hash": "sha256:report-input",
     }
     payload = {
@@ -146,12 +181,40 @@ def _wave_request(**overrides):
         "trigger_id": "manual-wave-001",
         "as_of_date": "2026-05-03",
         "generated_at": "2026-05-03T09:00:00Z",
+        "supportability": {
+            "supportability_state": "ready",
+            "reason": "wave_supportability_ready",
+        },
+        "proof_pack_posture": {
+            "linked_item_count": 1,
+            "ready_proof_pack_count": 1,
+            "degraded_proof_pack_count": 0,
+        },
         "items": [
             {
+                "wave_item_id": "dwi_001",
                 "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "state": "HANDOFF_READY",
                 "proof_pack_id": "dpp_001",
+                "proof_pack_state": "READY",
             }
         ],
+        "source_refs": [
+            {
+                "source_system": "lotus-manage",
+                "source_type": "DPM_WAVE_REPORT_INPUT",
+                "source_id": "dwv_001:dpm_wave_report_input",
+                "content_hash": "sha256:wave-report-input",
+            }
+        ],
+        "redaction_policy": "NO_RAW_PAYLOADS",
+        "retention_policy": "generated-report-standard",
+        "evidence_ref": {
+            "source_system": "lotus-manage",
+            "ref_type": "DPM_WAVE_REPORT_INPUT",
+            "ref_id": "dwv_001:dpm_wave_report_input",
+            "content_hash": "sha256:wave-report-input",
+        },
         "content_hash": "sha256:wave-report-input",
     }
     payload = {
@@ -568,7 +631,7 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
     assert calls[0].endpoint == "/api/v1/rebalance/proof-packs/{proof_pack_id}/report-input"
     assert calls[0].request_hash == "sha256:proof-pack"
     assert calls[0].response_hash == "sha256:report-input"
-    assert calls[0].response_ref == "dpp_001"
+    assert calls[0].response_ref == "dpp_001:dpm_proof_pack_report_input"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",
@@ -578,9 +641,10 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
 
 @pytest.mark.asyncio
 async def test_capture_service_rejects_spoofed_idea_source_authority(tmp_path):
+    proof_pack_input = _proof_pack_request().proof_pack_report_input.model_dump(mode="json")
     request = _proof_pack_request(
         proof_pack_report_input={
-            **_proof_pack_request().proof_pack_report_input,
+            **proof_pack_input,
             "evidence_ref": {
                 "source_system": "lotus-idea",
                 "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
@@ -610,9 +674,10 @@ async def test_capture_service_rejects_spoofed_idea_source_authority(tmp_path):
 
 @pytest.mark.asyncio
 async def test_capture_service_records_idea_materialization_lineage_as_post(tmp_path):
+    proof_pack_input = _proof_pack_request().proof_pack_report_input.model_dump(mode="json")
     request = _proof_pack_request(
         proof_pack_report_input={
-            **_proof_pack_request().proof_pack_report_input,
+            **proof_pack_input,
             "evidence_ref": {
                 "source_system": "lotus-idea",
                 "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",
@@ -678,8 +743,9 @@ async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path
 
 @pytest.mark.asyncio
 async def test_capture_service_records_portfolio_memory_lineage_without_recomputing(tmp_path):
-    request = _proof_pack_request()
-    request.proof_pack_report_input["portfolio_memory_context"] = _portfolio_memory_context()
+    payload = _proof_pack_request().model_dump(mode="json")
+    payload["proof_pack_report_input"]["portfolio_memory_context"] = _portfolio_memory_context()
+    request = ProofPackReportJobRequest.model_validate(payload)
     ledger, store, job = _create_proof_pack_job(
         tmp_path,
         suffix="proof-pack-portfolio-memory",

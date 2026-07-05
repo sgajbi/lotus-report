@@ -338,8 +338,227 @@ class PortfolioReviewJobRequest(BaseModel):
     )
 
 
+def _require_sha256(value: str, field_name: str) -> str:
+    normalized = value.strip()
+    if not normalized.startswith("sha256:"):
+        raise ValueError(f"{field_name} must use sha256 lineage")
+    return normalized
+
+
+class DpmSourceRef(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source_system: str = Field(
+        ...,
+        min_length=1,
+        description="Authoritative source system for the DPM handoff evidence.",
+        examples=["lotus-manage"],
+    )
+    source_type: str | None = Field(
+        default=None,
+        description="Authoritative source contract type when supplied by lotus-manage.",
+        examples=["DPM_PROOF_PACK_REPORT_INPUT"],
+    )
+    ref_type: str | None = Field(
+        default=None,
+        description="Alternative source contract type field used by some manage handoff payloads.",
+        examples=["DPM_WAVE_REPORT_INPUT"],
+    )
+    source_id: str | None = Field(
+        default=None,
+        description="Stable source evidence identifier when supplied by lotus-manage.",
+        examples=["dpp_001:dpm_proof_pack_report_input"],
+    )
+    ref_id: str | None = Field(
+        default=None,
+        description="Alternative stable source evidence identifier field.",
+        examples=["dwv_001:dpm_wave_report_input"],
+    )
+    content_hash: str = Field(
+        ...,
+        description="SHA-256 content hash for the source evidence reference.",
+        examples=["sha256:report-input"],
+    )
+
+    @model_validator(mode="after")
+    def validate_source_ref(self) -> "DpmSourceRef":
+        self.content_hash = _require_sha256(self.content_hash, "source_ref.content_hash")
+        if not (self.source_type or self.ref_type):
+            raise ValueError("source_ref source_type or ref_type is required")
+        if not (self.source_id or self.ref_id):
+            raise ValueError("source_ref source_id or ref_id is required")
+        return self
+
+
+class DpmProofPackSectionInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    section_id: str = Field(..., min_length=1)
+    section_type: str = Field(..., min_length=1)
+    state: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1)
+    reason_codes: list[str] = Field(default_factory=list)
+    evidence_refs: list[dict[str, Any]] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    content_hash: str = Field(..., description="SHA-256 section content hash.")
+
+    @model_validator(mode="after")
+    def validate_section_hash(self) -> "DpmProofPackSectionInput":
+        self.content_hash = _require_sha256(
+            self.content_hash,
+            "proof_pack_report_input.sections.content_hash",
+        )
+        return self
+
+
+class DpmOutcomeDimensionInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    dimension: str = Field(..., min_length=1)
+    state: str = Field(..., min_length=1)
+    reason_code: str | None = None
+    expected: str | None = None
+    realized: str | None = None
+    variance: str | None = None
+    explanation: str | None = None
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    supportability: dict[str, Any] = Field(default_factory=dict)
+
+
+class DpmWaveItemInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    wave_item_id: str = Field(..., min_length=1)
+    portfolio_id: str = Field(..., min_length=1)
+    state: str = Field(..., min_length=1)
+    proof_pack_id: str = Field(..., min_length=1)
+    proof_pack_state: str = Field(..., min_length=1)
+    reason_codes: list[str] = Field(default_factory=list)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DpmManagedReportInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    contract_version: str = Field(..., min_length=1)
+    generated_at: datetime = Field(...)
+    redaction_policy: str = Field(..., min_length=1)
+    retention_policy: str = Field(
+        ...,
+        min_length=1,
+        description="Source-owned retention posture for the DPM report input.",
+        examples=["generated-report-standard"],
+    )
+    content_hash: str = Field(..., description="SHA-256 hash for the full DPM report input.")
+    evidence_ref: DpmSourceRef = Field(
+        ...,
+        description="Stable source evidence reference for the manage-owned DPM report input.",
+    )
+
+    @model_validator(mode="after")
+    def validate_managed_input_hash(self) -> "DpmManagedReportInput":
+        self.content_hash = _require_sha256(self.content_hash, "content_hash")
+        return self
+
+
+class DpmOutcomeReportInput(DpmManagedReportInput):
+    outcome_review_id: str = Field(..., min_length=1)
+    outcome_review_content_hash: str = Field(
+        ...,
+        description="SHA-256 hash for the outcome-review source content.",
+    )
+    portfolio_id: str = Field(..., min_length=1)
+    proof_pack_id: str = Field(..., min_length=1)
+    review_window: dict[str, Any] = Field(...)
+    state: str = Field(..., min_length=1)
+    supportability: dict[str, Any] = Field(...)
+    dimensions: list[DpmOutcomeDimensionInput] = Field(..., min_length=1)
+    source_lineage: list[DpmSourceRef] = Field(..., min_length=1)
+    source_hashes: dict[str, str] = Field(..., min_length=1)
+    section_hashes: dict[str, str] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_outcome_input(self) -> "DpmOutcomeReportInput":
+        self.outcome_review_content_hash = _require_sha256(
+            self.outcome_review_content_hash,
+            "outcome_report_input.outcome_review_content_hash",
+        )
+        for key, value in self.source_hashes.items():
+            self.source_hashes[key] = _require_sha256(value, "outcome_report_input.source_hashes")
+        for key, value in self.section_hashes.items():
+            self.section_hashes[key] = _require_sha256(value, "outcome_report_input.section_hashes")
+        review_end = self.review_window.get("end_date") or self.review_window.get("period_end")
+        if not review_end:
+            raise ValueError("outcome_report_input review window end date is required")
+        if not _supportability_state(self.supportability):
+            raise ValueError("outcome_report_input.supportability state is required")
+        return self
+
+
+class DpmProofPackReportInput(DpmManagedReportInput):
+    proof_pack_id: str = Field(..., min_length=1)
+    proof_pack_content_hash: str = Field(
+        ...,
+        description="SHA-256 hash for the proof-pack source content.",
+    )
+    portfolio_id: str = Field(..., min_length=1)
+    as_of_date: date = Field(...)
+    state: str = Field(..., min_length=1)
+    supportability: dict[str, Any] = Field(...)
+    sections: list[DpmProofPackSectionInput] = Field(..., min_length=1)
+    source_hashes: dict[str, str] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_proof_pack_input(self) -> "DpmProofPackReportInput":
+        self.proof_pack_content_hash = _require_sha256(
+            self.proof_pack_content_hash,
+            "proof_pack_report_input.proof_pack_content_hash",
+        )
+        for key, value in self.source_hashes.items():
+            self.source_hashes[key] = _require_sha256(
+                value,
+                "proof_pack_report_input.source_hashes",
+            )
+        if not _supportability_state(self.supportability):
+            raise ValueError("proof_pack_report_input.supportability state is required")
+        return self
+
+
+class DpmWaveReportInput(DpmManagedReportInput):
+    wave_id: str = Field(..., min_length=1)
+    wave_content_hash: str = Field(..., description="SHA-256 hash for the wave source content.")
+    wave_state: str = Field(..., min_length=1)
+    trigger_type: str = Field(..., min_length=1)
+    trigger_id: str = Field(..., min_length=1)
+    as_of_date: date = Field(...)
+    supportability: dict[str, Any] = Field(...)
+    proof_pack_posture: dict[str, Any] = Field(...)
+    items: list[DpmWaveItemInput] = Field(..., min_length=1)
+    source_refs: list[DpmSourceRef] = Field(..., min_length=1)
+    external_execution_claimed: bool = False
+
+    @model_validator(mode="after")
+    def validate_wave_input(self) -> "DpmWaveReportInput":
+        self.wave_content_hash = _require_sha256(
+            self.wave_content_hash,
+            "wave_report_input.wave_content_hash",
+        )
+        if not _supportability_state(self.supportability):
+            raise ValueError("wave_report_input.supportability state is required")
+        return self
+
+
+def _supportability_state(value: dict[str, Any]) -> str | None:
+    for key in ("status", "state", "supportability_state"):
+        candidate = str(value.get(key) or "").strip()
+        if candidate:
+            return candidate
+    return None
+
+
 class OutcomeReviewReportJobRequest(BaseModel):
-    outcome_report_input: dict[str, Any] = Field(
+    outcome_report_input: DpmOutcomeReportInput = Field(
         ...,
         description=(
             "Manage-owned DpmOutcomeReportInput payload. lotus-report treats this as bounded "
@@ -366,6 +585,7 @@ class OutcomeReviewReportJobRequest(BaseModel):
                 "source_hashes": {"realized": "sha256:realized"},
                 "section_hashes": {"proof_pack": "sha256:proof-pack"},
                 "redaction_policy": "NO_RAW_PAYLOADS",
+                "retention_policy": "generated-report-standard",
                 "evidence_ref": {
                     "source_system": "lotus-manage",
                     "source_type": "DPM_OUTCOME_REPORT_INPUT",
@@ -399,7 +619,7 @@ class OutcomeReviewReportJobRequest(BaseModel):
 
 
 class ProofPackReportJobRequest(BaseModel):
-    proof_pack_report_input: dict[str, Any] = Field(
+    proof_pack_report_input: DpmProofPackReportInput = Field(
         ...,
         description=(
             "Manage-owned DpmProofPackReportInput payload. lotus-report treats this as bounded "
@@ -440,6 +660,7 @@ class ProofPackReportJobRequest(BaseModel):
                 "markdown_summary": "# Pre-Trade Proof Pack",
                 "source_hashes": {"mandate": "sha256:mandate"},
                 "redaction_policy": "NO_RAW_PAYLOADS",
+                "retention_policy": "generated-report-standard",
                 "evidence_ref": {
                     "source_system": "lotus-manage",
                     "source_type": "DPM_PROOF_PACK_REPORT_INPUT",
@@ -473,7 +694,7 @@ class ProofPackReportJobRequest(BaseModel):
 
 
 class WaveReportJobRequest(BaseModel):
-    wave_report_input: dict[str, Any] = Field(
+    wave_report_input: DpmWaveReportInput = Field(
         ...,
         description=(
             "Manage-owned DpmWaveReportInput payload. lotus-report treats this as bounded source "
@@ -525,8 +746,16 @@ class WaveReportJobRequest(BaseModel):
                 ],
                 "events": [],
                 "handoff_refs": [],
-                "source_refs": [],
+                "source_refs": [
+                    {
+                        "source_system": "lotus-manage",
+                        "source_type": "DPM_WAVE_REPORT_INPUT",
+                        "source_id": "dwv_001:dpm_wave_report_input",
+                        "content_hash": "sha256:report-input",
+                    }
+                ],
                 "redaction_policy": "NO_RAW_PAYLOADS",
+                "retention_policy": "generated-report-standard",
                 "external_execution_claimed": False,
                 "evidence_ref": {
                     "source_system": "lotus-manage",

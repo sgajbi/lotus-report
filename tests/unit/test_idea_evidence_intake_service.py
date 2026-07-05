@@ -78,12 +78,16 @@ def test_idea_evidence_materialization_maps_to_source_owned_proof_pack_request()
     report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
 
     assert report_job_request.requested_output_formats == ["pdf"]
-    proof_pack_input = report_job_request.proof_pack_report_input
+    proof_pack_input = report_job_request.proof_pack_report_input.model_dump(
+        mode="json",
+        exclude_none=True,
+    )
     assert proof_pack_input["proof_pack_id"] == "irep_001"
     assert proof_pack_input["source_contract_version"] == (
         "lotus_idea_evidence_pack_report_input.v1"
     )
     assert proof_pack_input["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+    assert proof_pack_input["retention_policy"] == "generated-report-standard"
     assert proof_pack_input["evidence_ref"] == {
         "source_system": "lotus-idea",
         "source_type": "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT",
