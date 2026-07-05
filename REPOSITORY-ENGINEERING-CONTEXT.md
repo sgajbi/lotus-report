@@ -120,7 +120,11 @@ Current repository posture:
    lifecycle for PDF output, and keeps suitability, mandate approval, execution, distribution,
    client-publication authority, and supported-feature promotion blocked,
 20. CI is standardized but still lighter than some core domain services,
-21. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+21. direct local debugging is explicitly scoped to `ENTERPRISE_RUNTIME_PROFILE=local`; production-like
+   profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed by enforcing read
+   and write authorization and failing startup validation when write/read authz or primary key
+   identity material is missing,
+22. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 
@@ -206,7 +210,10 @@ Boundary rules:
 2. this service owns reporting aggregation and reporting contract shape,
 3. canonical service identity should be used for cross-app validation,
 4. report-ready payloads must remain faithful to upstream evidence,
-5. advisor-only review material must remain separated from client-ready report sections.
+5. advisor-only review material must remain separated from client-ready report sections,
+6. production-like direct service access must not rely on permissive authz defaults; configure
+   `ENTERPRISE_ENFORCE_AUTHZ=true`, `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and
+   `ENTERPRISE_PRIMARY_KEY_ID` outside explicit local debugging.
 
 ## Repo-Native Commands
 

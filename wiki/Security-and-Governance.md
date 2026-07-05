@@ -25,8 +25,13 @@
   `Content-Length`, missing-length oversized bodies, and streamed bodies over the cap are rejected
   before route handling
 - enterprise readiness and observability behavior are covered by unit tests
-- enterprise read authorization is toggle-backed with `ENTERPRISE_ENFORCE_READ_AUTHZ`; read audit
-  events are toggle-backed with `ENTERPRISE_AUDIT_READS`
+- direct local debugging must use `ENTERPRISE_RUNTIME_PROFILE=local`; production-like profiles
+  (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed by enforcing read and write
+  authorization even when authz toggles are omitted
+- production-like direct service startup requires `ENTERPRISE_ENFORCE_AUTHZ=true`,
+  `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and `ENTERPRISE_PRIMARY_KEY_ID`; otherwise runtime
+  validation raises `enterprise_runtime_config_invalid`
+- enterprise read audit events are toggle-backed with `ENTERPRISE_AUDIT_READS`
 - portfolio review responses preserve source refs, readiness state, report coverage, and
   advisor/client separation so downstream consumers can distinguish sourced facts from missing
   evidence

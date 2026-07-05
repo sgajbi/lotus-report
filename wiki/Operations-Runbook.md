@@ -75,6 +75,12 @@ for the implementation-backed `lotus-report` runtime.
   features and must not be simulated with manual deletes in support workflows
 - direct process port `8300` is useful for local debugging, but canonical cross-app validation
   should use `report.dev.lotus`
+- direct local debugging must set `ENTERPRISE_RUNTIME_PROFILE=local`; production-like profiles
+  (`prod`, `production`, `preprod`, `staging`, and `uat`) enforce read and write authorization
+  even when authz toggles are omitted
+- production-like direct service startup requires `ENTERPRISE_ENFORCE_AUTHZ=true`,
+  `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and `ENTERPRISE_PRIMARY_KEY_ID`; otherwise the service
+  raises `enterprise_runtime_config_invalid` during startup validation
 - Docker Compose uses `host.docker.internal` upstream URLs so the container can reach the
   host-published canonical upstream ports while callers continue to use `report.dev.lotus`
 - Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger

@@ -7,13 +7,19 @@
 ## Security and IAM Baseline
 
 - Write-path/privileged action audit middleware is enabled.
-- Read-path authorization can be enabled with `ENTERPRISE_ENFORCE_READ_AUTHZ=true`; when enabled,
-  `GET` and `HEAD` requests require caller audit headers plus either `X-Service-Identity` or
-  `Authorization`.
+- Direct local debugging is the only permissive runtime posture. Set
+  `ENTERPRISE_RUNTIME_PROFILE=local` for direct process debugging on `127.0.0.1:8300`.
+- Production-like profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed:
+  write and read authorization are enforced even if the authz toggles are omitted, and runtime
+  validation fails unless `ENTERPRISE_ENFORCE_AUTHZ=true`,
+  `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and `ENTERPRISE_PRIMARY_KEY_ID` are configured.
+- Read and write authorization require caller audit headers plus either `X-Service-Identity` or
+  `Authorization` whenever the matching enforcement toggle is enabled or the runtime profile is
+  production-like.
 - Read-path audit events can be enabled with `ENTERPRISE_AUDIT_READS=true`; emitted metadata stays
   identifier-only and records status code plus `access_type=read`.
 - Capability rules in `ENTERPRISE_CAPABILITY_RULES_JSON` apply to both read and write paths when
-  the matching enforcement toggle is enabled.
+  the matching enforcement toggle is enabled or the runtime profile is production-like.
 - Audit metadata includes actor/tenant/role/correlation with sensitive-field redaction.
 
 Evidence:

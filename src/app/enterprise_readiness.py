@@ -16,6 +16,22 @@ _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _READ_AUTHZ_METHODS = {"GET", "HEAD"}
 _READ_AUDIT_METHODS = {"GET", "HEAD"}
 _REQUIRED_HEADERS = {"x-actor-id", "x-tenant-id", "x-role", "x-correlation-id"}
+_RUNTIME_PROFILE_ENV_NAMES = (
+    "ENTERPRISE_RUNTIME_PROFILE",
+    "LOTUS_RUNTIME_PROFILE",
+    "DEPLOYMENT_ENV",
+    "APP_ENV",
+    "ENVIRONMENT",
+)
+_PRODUCTION_LIKE_RUNTIME_PROFILES = {
+    "prod",
+    "production",
+    "preprod",
+    "pre-production",
+    "pre_production",
+    "staging",
+    "uat",
+}
 _REDACT_FIELDS = {
     "password",
     "secret",
@@ -55,6 +71,30 @@ def enterprise_policy_version() -> str:
     return os.getenv("ENTERPRISE_POLICY_VERSION", "1.0.0")
 
 
+def enterprise_runtime_profile() -> str:
+    for name in _RUNTIME_PROFILE_ENV_NAMES:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return "local"
+
+
+def _normalized_runtime_profile() -> str:
+    return enterprise_runtime_profile().strip().lower()
+
+
+def _is_production_like_runtime() -> bool:
+    return _normalized_runtime_profile() in _PRODUCTION_LIKE_RUNTIME_PROFILES
+
+
+def _write_authorization_enforced() -> bool:
+    return _env_enabled("ENTERPRISE_ENFORCE_AUTHZ", "false") or _is_production_like_runtime()
+
+
+def _read_authorization_enforced() -> bool:
+    return _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false") or _is_production_like_runtime()
+
+
 def validate_enterprise_runtime_config() -> list[str]:
     issues: list[str] = []
     if not enterprise_policy_version().strip():
@@ -64,13 +104,19 @@ def validate_enterprise_runtime_config() -> list[str]:
     if rotation_days <= 0 or rotation_days > 90:
         issues.append("secret_rotation_days_out_of_range")
 
-    if (
-        _env_enabled("ENTERPRISE_ENFORCE_AUTHZ", "false")
-        or _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
-    ) and not os.getenv("ENTERPRISE_PRIMARY_KEY_ID", "").strip():
+    if _is_production_like_runtime() and not _env_enabled("ENTERPRISE_ENFORCE_AUTHZ", "false"):
+        issues.append("production_write_authz_not_enabled")
+    if _is_production_like_runtime() and not _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false"):
+        issues.append("production_read_authz_not_enabled")
+
+    if (_write_authorization_enforced() or _read_authorization_enforced()) and not os.getenv(
+        "ENTERPRISE_PRIMARY_KEY_ID", ""
+    ).strip():
         issues.append("missing_primary_key_id")
 
-    if issues and _env_enabled("ENTERPRISE_ENFORCE_RUNTIME_CONFIG", "false"):
+    if issues and (
+        _env_enabled("ENTERPRISE_ENFORCE_RUNTIME_CONFIG", "false") or _is_production_like_runtime()
+    ):
         raise RuntimeError(f"enterprise_runtime_config_invalid:{','.join(issues)}")
     return issues
 
@@ -143,12 +189,10 @@ def authorize_write_request(
 def authorize_request(method: str, path: str, headers: dict[str, str]) -> tuple[bool, str | None]:
     method_upper = method.upper()
     required_capability = _required_capability(method_upper, path)
-    requires_write_auth = method_upper in _WRITE_METHODS and _env_enabled(
-        "ENTERPRISE_ENFORCE_AUTHZ", "false"
-    )
+    requires_write_auth = method_upper in _WRITE_METHODS and _write_authorization_enforced()
     requires_read_auth = (
         method_upper in _READ_AUTHZ_METHODS or required_capability
-    ) and _env_enabled("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    ) and _read_authorization_enforced()
     if not (requires_write_auth or requires_read_auth):
         return True, None
 
