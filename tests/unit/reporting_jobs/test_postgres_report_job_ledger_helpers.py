@@ -310,6 +310,26 @@ def test_postgres_report_job_ledger_rerender_row_helper_maps_operational_fields(
     assert attempt.retry_eligible is False
 
 
+def test_postgres_report_job_ledger_lists_rerender_attempts_for_job() -> None:
+    ledger = object.__new__(PostgresReportJobLedger)
+    connection = _Connection([_rerender_row()])
+
+    @contextmanager
+    def _connect() -> Iterator[_Connection]:
+        yield connection
+
+    ledger._connect = _connect  # type: ignore[method-assign]
+
+    attempts = ledger.list_rerender_attempts("rjob_123", limit=10)
+
+    assert [attempt.rerender_attempt_id for attempt in attempts] == ["rrnd_123"]
+    assert connection.query is not None
+    assert "FROM report_rerender_attempt" in connection.query
+    assert "WHERE report_job_id = %s" in connection.query
+    assert "ORDER BY updated_at DESC" in connection.query
+    assert connection.params == ("rjob_123", 10)
+
+
 def test_postgres_report_job_ledger_rerender_update_raises_for_unknown_attempt() -> None:
     ledger = object.__new__(PostgresReportJobLedger)
     connection = _Connection([])

@@ -1929,6 +1929,27 @@ def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_
             "job_rerender_requested",
             "job_rerender_archived",
         ]
+
+        diagnostics = client.get(
+            f"/reports/jobs/{job.job_id}/diagnostics",
+            headers=_headers(),
+        )
+        assert diagnostics.status_code == 200
+        attempts = diagnostics.json()["rerender_attempts"]
+        assert len(attempts) == 1
+        attempt = attempts[0]
+        assert attempt["rerender_attempt_id"] == body["rerender_attempt_id"]
+        assert attempt["status"] == "archived"
+        assert attempt["snapshot_id"] == snapshot.snapshot_id
+        assert attempt["snapshot_hash"] == snapshot.snapshot_hash
+        assert attempt["previous_render_job_id"] == f"rdr_{job.job_id}_pdf"
+        assert attempt["previous_archive_document_id"] == "doc_report_job_pdf"
+        assert attempt["archive_consequence"] == "correction"
+        assert attempt["render"]["render_job_id"] == body["render"]["render_job_id"]
+        assert attempt["archive"]["document_id"] == "doc_report_job_pdf_correction"
+        assert "idempotency_key" not in attempt
+        assert "correlation_id" not in attempt
+        assert "trace_id" not in attempt
     finally:
         _clear_overrides()
 
@@ -2049,6 +2070,24 @@ def test_report_job_rerender_records_render_validation_failure(tmp_path):
         assert body["archive"] is None
         assert len(archive_client.payloads) == 0
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
+
+        diagnostics = client.get(
+            f"/reports/jobs/{job.job_id}/diagnostics",
+            headers=_headers(),
+        )
+        assert diagnostics.status_code == 200
+        attempts = diagnostics.json()["rerender_attempts"]
+        assert len(attempts) == 1
+        attempt = attempts[0]
+        assert attempt["rerender_attempt_id"] == body["rerender_attempt_id"]
+        assert attempt["status"] == "failed"
+        assert attempt["failure_category"] == "render_validation_failed"
+        assert attempt["failure_message"] == body["failure_message"]
+        assert attempt["retry_eligible"] is False
+        assert attempt["archive"] is None
+        assert "idempotency_key" not in attempt
+        assert "correlation_id" not in attempt
+        assert "trace_id" not in attempt
     finally:
         _clear_overrides()
 

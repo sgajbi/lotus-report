@@ -238,9 +238,11 @@ Expected controls:
    database internals,
 4. `GET /reports/jobs/{job_id}/diagnostics` is the first stop for one-job operator review because
    it composes source-backed status, latest event, snapshot posture, upstream-lineage summary,
-   render metadata, archive handoff identifiers, and evidence links without raw payloads,
+   recent rerender attempt history, render metadata, archive handoff identifiers, and evidence
+   links without raw payloads,
 5. `POST /reports/jobs/{job_id}/rerender` is only for archived PDF jobs and creates a new
-   rerender attempt from the existing immutable snapshot without recollecting upstream data,
+   rerender attempt from the existing immutable snapshot without recollecting upstream data; the
+   latest attempts remain discoverable later from the diagnostics view,
 6. `POST /reports/jobs/{job_id}/regenerate` is only for archived PDF jobs and creates a new report
    job, fresh upstream snapshot and lineage bundle, and replacement archive document when source
    data must be refreshed,
@@ -266,8 +268,10 @@ expose raw snapshot payloads, storage keys, or upstream response bodies. New lif
 `event_idempotency_key`; legacy rows remain readable as
 `report-status-event.legacy.v0` with `payload_posture=legacy_message_only`. New
 source/derived relationships expose bounded status, failure category, archive consequence,
-archive document ids, actor, and reason; they do not expose raw snapshot payloads, storage keys,
-tenant/client/portfolio labels, correlation ids, trace ids, or database internals.
+archive document ids, actor, and reason; rerender attempt diagnostics expose bounded correction
+render/archive state and failed retry posture. These read models do not expose raw snapshot
+payloads, storage keys, command idempotency keys, tenant/client/portfolio labels, correlation ids,
+trace ids, or database internals.
 
 ## RFC-0101 snapshot and lineage flow
 

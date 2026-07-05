@@ -964,6 +964,59 @@ def test_report_job_ledger_rejects_invalid_event_payload(tmp_path):
         )
 
 
+def test_report_job_ledger_lists_rerender_attempts_for_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-list-job",
+    )
+
+    first, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_001",
+        snapshot_hash="sha256:snapshot-001",
+        idempotency_key="rerender-list-one",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id="corr-rerender-list-one",
+        trace_id="trace-rerender-list-one",
+    )
+    assert created is True
+    failed = ledger.mark_rerender_failed(
+        rerender_attempt_id=first.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-rerender-list-one",
+        trace_id="trace-rerender-list-one",
+        failure_category="render_execution_failed",
+        failure_message="lotus-render unavailable.",
+        retry_eligible=True,
+    )
+    second, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_001",
+        snapshot_hash="sha256:snapshot-001",
+        idempotency_key="rerender-list-two",
+        actor="advisor-123",
+        reason="Template correction retry.",
+        correlation_id="corr-rerender-list-two",
+        trace_id="trace-rerender-list-two",
+    )
+    assert created is True
+
+    attempts = ledger.list_rerender_attempts(job.job_id)
+
+    assert {attempt.rerender_attempt_id for attempt in attempts} == {
+        failed.rerender_attempt_id,
+        second.rerender_attempt_id,
+    }
+    assert any(
+        attempt.failure_category == "render_execution_failed" and attempt.retry_eligible
+        for attempt in attempts
+    )
+    assert len(ledger.list_rerender_attempts(job.job_id, limit=1)) == 1
+
+
 def test_report_job_ledger_records_relationships_from_source_and_derived(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     source = ledger.create_portfolio_review_job(
