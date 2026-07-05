@@ -135,15 +135,20 @@ Current repository posture:
 23. portfolio review and summary transaction windows are bounded by
    `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES`; oversized windows surface
    partial transaction supportability rather than issuing unbounded lotus-core pagination calls,
-24. portfolio review transaction output preserves `lotus-core` `TransactionLedgerWindow:v1`
+24. portfolio review holdings output preserves `lotus-core` `HoldingsAsOf:v1` source-product
+    metadata, source data-quality/reconciliation posture, latest evidence and lineage fields,
+    position-state status, maturity date, row snapshot/evidence identity, and row source
+    identifiers where sourced; partial, stale, unknown, reconciliation-incomplete, or
+    trust-metadata-incomplete holdings degrade supportability instead of appearing complete,
+25. portfolio review transaction output preserves `lotus-core` `TransactionLedgerWindow:v1`
     source-product metadata, source data-quality/reconciliation posture, latest evidence and
     lineage fields, settlement dates, and linked cost/cashflow evidence where sourced; partial,
     unknown, paged, or trust-metadata-incomplete windows degrade transaction supportability instead
     of appearing complete,
-25. portfolio summary P&L is source-aware: unrealized P&L is sourced from lotus-core positions,
+26. portfolio summary P&L is source-aware: unrealized P&L is sourced from lotus-core positions,
     realized P&L is sourced from transaction realized gain/loss rows, and unavailable components
     carry explicit supportability instead of synthetic market-value delta figures,
-26. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+27. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 

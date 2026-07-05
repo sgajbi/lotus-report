@@ -11,10 +11,16 @@
       "required_trust_metadata": [
         "product_name",
         "product_version",
+        "tenant_id",
         "generated_at",
         "as_of_date",
+        "restatement_version",
         "reconciliation_status",
         "data_quality_status",
+        "latest_evidence_timestamp",
+        "source_batch_fingerprint",
+        "snapshot_id",
+        "policy_version",
         "correlation_id"
       ],
       "migration_posture": {

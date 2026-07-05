@@ -34,6 +34,31 @@ def _transaction_ledger_metadata(
     }
 
 
+def _holdings_as_of_metadata(
+    *,
+    as_of_date: object = "2026-02-24",
+    data_quality_status: str = "COMPLETE",
+    reason_codes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "product_name": "HoldingsAsOf",
+        "product_version": "v1",
+        "tenant_id": "default",
+        "generated_at": "2026-02-24T09:30:00Z",
+        "as_of_date": as_of_date,
+        "data_quality_status": data_quality_status,
+        "reconciliation_status": "RECONCILED",
+        "latest_evidence_timestamp": "2026-02-24T09:15:00Z",
+        "restatement_version": "positions-restatement:2026-02-24:USD",
+        "source_batch_fingerprint": "core-holdings-batch:2026-02-24",
+        "snapshot_id": "holdings-as-of:P1:2026-02-24",
+        "content_hash": "sha256:holdings-as-of",
+        "policy_version": "holdings-as-of:v1",
+        "correlation_id": "CID-CORE-HOLDINGS",
+        "reason_codes": reason_codes or ["HOLDINGS_AS_OF_READY"],
+    }
+
+
 class _CoreQuerySnapshotMissing:
     async def get_portfolio_summary(
         self,
@@ -154,13 +179,16 @@ class _CoreQuerySuccessMinimal:
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_holdings_as_of_metadata(as_of_date=params.get("as_of_date")),
             "portfolio_id": portfolio_id,
             "total": 1,
             "positions": [
                 {
+                    "position_id": "POS-EQ-1",
                     "security_id": "EQ-1",
                     "instrument_name": "Equity 1",
                     "asset_class": "EQUITY",
+                    "position_state_status": "CURRENT",
                     "quantity": 2,
                     "market_value_reporting_currency": 90.0,
                     "weight": 0.9,
@@ -198,6 +226,11 @@ class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_holdings_as_of_metadata(
+                as_of_date=params.get("as_of_date"),
+                data_quality_status="UNKNOWN",
+                reason_codes=["HOLDINGS_AS_OF_EMPTY"],
+            ),
             "portfolio_id": portfolio_id,
             "total": 0,
             "positions": [],
@@ -1163,6 +1196,90 @@ async def test_review_transactions_preserve_source_product_and_degrade_missing_t
 
 
 @pytest.mark.asyncio
+async def test_review_holdings_preserve_source_product_and_degrade_stale_posture():
+    class _CoreQueryStaleHoldings(_CoreQuerySuccessMinimal):
+        async def get_portfolio_positions(
+            self,
+            portfolio_id: str,
+            params: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            _ = portfolio_id, params, correlation_id
+            return 200, {
+                "product_name": "HoldingsAsOf",
+                "product_version": "v1",
+                "as_of_date": "2026-02-24",
+                "data_quality_status": "STALE",
+                "reconciliation_status": "PENDING",
+                "reason_codes": ["HOLDINGS_AS_OF_STALE_PRICE"],
+                "portfolio_id": "P1",
+                "total": 1,
+                "positions": [
+                    {
+                        "position_id": "POS-EQ-STALE",
+                        "security_id": "EQ-STALE",
+                        "asset_class": "Equity",
+                        "position_date": "2026-02-24",
+                        "position_state_status": "STALE",
+                        "position_state_epoch": "3",
+                        "latest_evidence_timestamp": "2026-02-23T22:00:00Z",
+                        "snapshot_id": "position-snapshot:EQ-STALE:2026-02-24",
+                        "source_system": "core-position-state",
+                        "source_record_id": "SRC-POS-STALE",
+                        "quantity": 2,
+                        "market_value_reporting_currency": 90.0,
+                        "cost_basis_reporting_currency": 100.0,
+                    }
+                ],
+            }
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryStaleHoldings(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["HOLDINGS"]},
+        None,
+    )
+
+    holdings = response["holdings"]
+    assert holdings["sourceProduct"]["product_name"] == "HoldingsAsOf"
+    assert holdings["sourceProduct"]["data_quality_status"] == "STALE"
+    assert holdings["supportability"]["status"] == "partial"
+    assert {note["code"] for note in holdings["supportability"]["notes"]} >= {
+        "holdings_as_of_trust_metadata_incomplete",
+        "holdings_as_of_source_quality_not_complete",
+        "holdings_as_of_reconciliation_not_complete",
+    }
+    holding = holdings["holdingsByAssetClass"]["Equity"][0]
+    assert holding["position_state_status"] == "STALE"
+    assert holding["position_state_epoch"] == "3"
+    assert holding["row_snapshot_id"] == "position-snapshot:EQ-STALE:2026-02-24"
+    assert holding["source_record_id"] == "SRC-POS-STALE"
+    sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert sections["holdings_appendix"]["status"] == "partial"
+    coverage_by_group = {
+        group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
+    }
+    assert coverage_by_group["holdings"] == "partial"
+    assert "holdings_source_quality_partial" in {
+        item["observation_id"] for item in response["reviewObservations"]
+    }
+    assert "holdings_source_quality_partial" in {
+        item["finding_id"] for item in response["upstreamCapabilityAudit"]["report_side_findings"]
+    }
+    source_ref = next(
+        source_ref
+        for source_ref in response["evidence"]["source_refs"]
+        if source_ref["section_id"] == "holdings_appendix"
+    )
+    assert source_ref["source_product"]["reason_codes"] == ["HOLDINGS_AS_OF_STALE_PRICE"]
+
+
+@pytest.mark.asyncio
 async def test_summary_transaction_window_surfaces_row_budget_supportability(monkeypatch):
     monkeypatch.setattr(settings, "report_transaction_max_rows", 1)
     monkeypatch.setattr(settings, "report_transaction_max_pages", 10)
@@ -1508,19 +1625,18 @@ async def test_review_marks_empty_supporting_sections_not_applicable():
     )
 
     sections = {section["section_id"]: section for section in response["client_sections"]}
-    assert sections["holdings_appendix"]["status"] == "not_applicable"
-    assert sections["holdings_appendix"]["reason_code"] == "no_applicable_activity"
-    for section_id in ("income_cash_activity", "transactions_appendix"):
+    for section_id in ("income_cash_activity", "holdings_appendix", "transactions_appendix"):
         assert sections[section_id]["status"] == "partial"
-        assert sections[section_id]["reason_code"] == (
-            "transaction_window_source_quality_not_complete"
-        )
+        assert sections[section_id]["reason_code"] in {
+            "holdings_as_of_source_quality_not_complete",
+            "transaction_window_source_quality_not_complete",
+        }
         assert sections[section_id]["items"]
     assert response["readiness"] == {
         "status": "partial",
         "reason": (
             "Partial sections for the selected request: Income, Cash, And Activity, "
-            "Transactions Appendix"
+            "Holdings Appendix, Transactions Appendix"
         ),
     }
     source_ref_ids = {

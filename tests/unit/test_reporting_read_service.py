@@ -43,6 +43,31 @@ def _transaction_ledger_metadata(
     }
 
 
+def _holdings_as_of_metadata(
+    *,
+    as_of_date: object = "2026-02-24",
+    data_quality_status: str = "COMPLETE",
+    reason_codes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "product_name": "HoldingsAsOf",
+        "product_version": "v1",
+        "tenant_id": "default",
+        "generated_at": "2026-02-24T09:30:00Z",
+        "as_of_date": as_of_date,
+        "data_quality_status": data_quality_status,
+        "reconciliation_status": "RECONCILED",
+        "latest_evidence_timestamp": "2026-02-24T09:15:00Z",
+        "restatement_version": "positions-restatement:2026-02-24:USD",
+        "source_batch_fingerprint": "core-holdings-batch:2026-02-24",
+        "snapshot_id": "holdings-as-of:P1:2026-02-24",
+        "content_hash": "sha256:holdings-as-of",
+        "policy_version": "holdings-as-of:v1",
+        "correlation_id": "CID-CORE-HOLDINGS",
+        "reason_codes": reason_codes or ["HOLDINGS_AS_OF_READY"],
+    }
+
+
 class _CoreQueryClientSuccess:
     async def get_portfolio_summary(
         self,
@@ -173,10 +198,12 @@ class _CoreQueryClientSuccess:
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_holdings_as_of_metadata(as_of_date=params.get("as_of_date")),
             "portfolio_id": portfolio_id,
             "total": 2,
             "positions": [
                 {
+                    "position_id": "POS-EQ-1",
                     "security_id": "EQ-1",
                     "instrument_name": "Equity 1",
                     "asset_class": "Equity",
@@ -186,6 +213,13 @@ class _CoreQueryClientSuccess:
                     "product_type": "Equity",
                     "liquidity_tier": "L1",
                     "held_since_date": "2025-01-15",
+                    "maturity_date": None,
+                    "position_state_status": "CURRENT",
+                    "position_state_epoch": "7",
+                    "latest_evidence_timestamp": "2026-02-24T09:10:00Z",
+                    "snapshot_id": "position-snapshot:EQ-1:2026-02-24",
+                    "source_system": "core-position-state",
+                    "source_record_id": "SRC-POS-EQ-1",
                     "quantity": 10,
                     "cost_basis": "500000.0",
                     "valuation": {
@@ -199,6 +233,7 @@ class _CoreQueryClientSuccess:
                     "currency": "USD",
                 },
                 {
+                    "position_id": "POS-CASH-1",
                     "security_id": "CASH-1",
                     "instrument_name": "Cash",
                     "asset_class": "Cash",
@@ -206,6 +241,7 @@ class _CoreQueryClientSuccess:
                     "product_type": "Cash",
                     "liquidity_tier": "L1",
                     "quantity": 1,
+                    "position_state_status": "CURRENT",
                     "cost_basis": 50000.0,
                     "market_value_reporting_currency": 50000.0,
                     "valuation": {"unrealized_gain_loss": 0.0},
@@ -870,6 +906,9 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["keyFigures"]["holdings"]["unrealized_pnl_coverage"] == "present"
     assert response["keyFigures"]["holdings"]["total_unrealized_pnl_reporting_currency"] == 100000.0
     assert response["keyFigures"]["holdings"]["top_five_positive_exposure_pct"] == 100.0
+    assert response["keyFigures"]["holdings"]["supportability_status"] == "ready"
+    assert response["keyFigures"]["holdings"]["source_data_quality_status"] == "COMPLETE"
+    assert response["keyFigures"]["holdings"]["source_product"]["product_name"] == "HoldingsAsOf"
     assert response["keyFigures"]["income_and_activity"]["realized_pnl_status"] == "present"
     assert (
         response["keyFigures"]["income_and_activity"]["total_realized_pnl_reporting_currency"]
@@ -1006,6 +1045,7 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert source_refs["executive_summary"]["source_service"] == "lotus-core"
     assert source_refs["client_profile"]["source_endpoint"] == "/portfolios/P1"
+    assert source_refs["holdings_appendix"]["source_product"]["product_version"] == "v1"
     assert source_refs["performance_review"]["source_service"] == "lotus-performance"
     assert source_refs["risk_review"]["source_service"] == "lotus-risk"
     assert source_refs["transactions_appendix"]["source_product"]["product_version"] == "v1"
@@ -1142,15 +1182,22 @@ async def test_review_composes_core_query_performance_and_risk():
             "information_ratio": 0.72,
         }
     ]
-    assert client_sections["holdings_appendix"]["items"][0] == {
-        "item_type": "holdings_summary",
-        "position_count": 2,
-    }
+    assert client_sections["holdings_appendix"]["items"][0]["item_type"] == "holdings_summary"
+    assert client_sections["holdings_appendix"]["items"][0]["position_count"] == 2
+    assert (
+        client_sections["holdings_appendix"]["items"][0]["source_product"]["product_name"]
+        == "HoldingsAsOf"
+    )
     assert client_sections["holdings_appendix"]["items"][1]["item_type"] == "holding"
     assert (
         client_sections["holdings_appendix"]["items"][1]["market_value_reporting_currency"]
         == 600000.0
     )
+    assert client_sections["holdings_appendix"]["items"][1]["position_state_status"] == "CURRENT"
+    assert client_sections["holdings_appendix"]["items"][1]["row_snapshot_id"] == (
+        "position-snapshot:EQ-1:2026-02-24"
+    )
+    assert client_sections["holdings_appendix"]["items"][1]["source_record_id"] == "SRC-POS-EQ-1"
     assert (
         client_sections["holdings_appendix"]["items"][1]["unrealized_pnl_reporting_currency"]
         == 100000.0

@@ -150,6 +150,9 @@ Current implementation-backed figures include:
   sourced or derivable
 - position-level market value, cost basis, unrealized P&L, unrealized P&L percentage, product type,
   sector, country of risk, rating, liquidity tier, and held-since date where sourced
+- `HoldingsAsOf:v1` source-product metadata, data-quality posture, reconciliation posture, latest
+  evidence timestamp, restatement/source-lineage fields, maturity date, position-state status, row
+  snapshot identity, and row source identifiers where `lotus-core` provides them
 - income/activity totals and transaction categorization
 - transaction-level realized gain/loss totals and transaction-row enrichment where sourced from
   `lotus-core`
@@ -161,6 +164,9 @@ Current implementation-backed figures include:
 - transaction rows preserve sourced settlement date, linked transaction-cost evidence, linked
   cashflow evidence, source-product metadata, data-quality posture, reconciliation posture, latest
   evidence timestamp, and restatement/source-lineage fields where `lotus-core` provides them
+- tax-lot and jurisdiction-specific tax treatment remain unsupported until backed by
+  `PortfolioTaxLotWindow:v1` source transaction, lot status, quantity, cost-basis, paging, and
+  calculation-policy lineage evidence
 - negative cash and concentration observations
 - client profile and mandate context where sourced from `lotus-core`
 
