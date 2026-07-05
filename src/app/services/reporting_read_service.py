@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.application_errors import (
@@ -49,6 +50,14 @@ REVIEW_SECTION_DEFINITIONS = (
     ("HOLDINGS", "holdings_appendix", "Holdings Appendix", "holdings"),
     ("TRANSACTIONS", "transactions_appendix", "Transactions Appendix", "transactions"),
 )
+
+
+@dataclass(frozen=True)
+class _TransactionRowsResult:
+    rows: list[dict[str, object]]
+    source_total: int | None
+    fetched_pages: int
+    supportability: dict[str, object]
 
 
 class ReportingReadService:
@@ -142,15 +151,17 @@ class ReportingReadService:
 
         if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
             transaction_params = self._build_transaction_window_params(request_payload)
-            transaction_rows = await self._list_transaction_rows(
+            transaction_result = await self._list_transaction_rows_result(
                 portfolio_id=portfolio_id,
                 correlation_id=correlation_id,
                 params=transaction_params,
             )
+            transaction_rows = transaction_result.rows
             if "INCOME" in requested_sections:
                 response["incomeSummary"] = self._map_income_summary_from_rows(transaction_rows)
             if "ACTIVITY" in requested_sections:
                 response["activitySummary"] = self._map_activity_summary_from_rows(transaction_rows)
+            response["transactionWindowSupportability"] = transaction_result.supportability
 
         if "PNL" in requested_sections:
             response["pnlSummary"] = self._map_pnl_summary(summary)
@@ -197,6 +208,7 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             correlation_id=correlation_id,
         )
+        transaction_result: _TransactionRowsResult | None = None
         transaction_rows: list[dict[str, object]] | None = None
 
         if "OVERVIEW" in requested_sections:
@@ -220,15 +232,17 @@ class ReportingReadService:
             )
         if "INCOME_AND_ACTIVITY" in requested_sections:
             if transaction_rows is None:
-                transaction_rows = await self._list_transaction_rows(
+                transaction_result = await self._list_transaction_rows_result(
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
                 )
+                transaction_rows = transaction_result.rows
             response["incomeAndActivity"] = {
                 "incomeSummary": self._map_income_summary_from_rows(transaction_rows),
                 "activitySummary": self._map_activity_summary_from_rows(transaction_rows),
                 "realizedPnlSummary": self._summarize_realized_pnl_rows(transaction_rows),
+                "supportability": self._transaction_rows_supportability(transaction_result),
             }
         if "HOLDINGS" in requested_sections:
             (
@@ -245,12 +259,16 @@ class ReportingReadService:
             )
         if "TRANSACTIONS" in requested_sections:
             if transaction_rows is None:
-                transaction_rows = await self._list_transaction_rows(
+                transaction_result = await self._list_transaction_rows_result(
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
                 )
-            response["transactions"] = self._map_review_transactions(transaction_rows)
+                transaction_rows = transaction_result.rows
+            response["transactions"] = self._map_review_transactions(
+                transaction_rows,
+                transaction_result=transaction_result,
+            )
 
         workspace_summary_payload: dict[str, object] | None = None
         if "PERFORMANCE" in requested_sections:
@@ -1220,7 +1238,12 @@ class ReportingReadService:
             or sum(len(rows) for rows in holdings_by_asset_class.values()),
         }
 
-    def _map_review_transactions(self, rows: list[dict[str, object]]) -> dict[str, object]:
+    def _map_review_transactions(
+        self,
+        rows: list[dict[str, object]],
+        *,
+        transaction_result: _TransactionRowsResult | None = None,
+    ) -> dict[str, object]:
         transactions_by_asset_class: dict[str, list[dict[str, object]]] = {}
         transactions_by_category: dict[str, list[dict[str, object]]] = {}
         for row in rows:
@@ -1233,6 +1256,13 @@ class ReportingReadService:
             "transactionsByAssetClass": transactions_by_asset_class,
             "transactionsByCategory": transactions_by_category,
             "transactionCount": len(rows),
+            "sourceTransactionCount": transaction_result.source_total
+            if transaction_result is not None
+            else len(rows),
+            "fetchedPageCount": transaction_result.fetched_pages
+            if transaction_result is not None
+            else 0,
+            "supportability": self._transaction_rows_supportability(transaction_result),
         }
 
     def _build_allocation_request(self, request_payload: dict[str, object]) -> dict[str, object]:
@@ -1378,20 +1408,47 @@ class ReportingReadService:
         correlation_id: str | None,
         params: dict[str, object],
     ) -> list[dict[str, object]]:
+        return (
+            await self._list_transaction_rows_result(
+                portfolio_id=portfolio_id,
+                correlation_id=correlation_id,
+                params=params,
+            )
+        ).rows
+
+    async def _list_transaction_rows_result(
+        self,
+        *,
+        portfolio_id: str,
+        correlation_id: str | None,
+        params: dict[str, object],
+    ) -> _TransactionRowsResult:
         rows: list[dict[str, object]] = []
         skip = 0
         limit = self._to_int(params.get("limit")) or 500
+        max_rows = max(1, settings.report_transaction_max_rows)
+        max_pages = max(1, settings.report_transaction_max_pages)
+        source_total: int | None = None
+        fetched_pages = 0
+        stop_reason: str | None = None
 
         while True:
+            if len(rows) >= max_rows:
+                stop_reason = "max_rows_reached"
+                break
+            if fetched_pages >= max_pages:
+                stop_reason = "max_pages_reached"
+                break
             query_params = dict(params)
             query_params["skip"] = skip
-            query_params["limit"] = limit
+            query_params["limit"] = min(limit, max_rows - len(rows))
             status_code, payload = await self._core_query_client.get_portfolio_transactions(
                 portfolio_id=portfolio_id,
                 params=query_params,
                 correlation_id=correlation_id,
             )
             if status_code < HTTP_BAD_REQUEST:
+                fetched_pages += 1
                 if not isinstance(payload, dict) or "transactions" not in payload:
                     raise ReportingUpstreamError(
                         "lotus-core transactions payload missing required fields."
@@ -1401,10 +1458,14 @@ class ReportingReadService:
                     for item in self._as_list(payload.get("transactions"))
                     if isinstance(item, dict)
                 ]
-                rows.extend(page_rows)
-                total = self._to_int(payload.get("total"))
+                remaining_budget = max_rows - len(rows)
+                rows.extend(page_rows[:remaining_budget])
+                source_total = self._to_int(payload.get("total"))
                 skip += len(page_rows)
-                if not page_rows or skip >= total:
+                if len(page_rows) > remaining_budget or len(rows) >= max_rows:
+                    stop_reason = "max_rows_reached"
+                    break
+                if not page_rows or skip >= source_total:
                     break
                 continue
             if status_code == HTTP_NOT_FOUND:
@@ -1413,7 +1474,63 @@ class ReportingReadService:
                 raise ReportingValidationError(payload.get("detail"))
             raise ReportingUpstreamError(f"lotus-core transactions upstream failure: {payload}")
 
-        return rows
+        return _TransactionRowsResult(
+            rows=rows,
+            source_total=source_total,
+            fetched_pages=fetched_pages,
+            supportability=self._transaction_window_supportability(
+                returned_count=len(rows),
+                source_total=source_total,
+                fetched_pages=fetched_pages,
+                stop_reason=stop_reason,
+            ),
+        )
+
+    def _transaction_rows_supportability(
+        self, transaction_result: _TransactionRowsResult | None
+    ) -> dict[str, object]:
+        if transaction_result is None:
+            return {"status": "ready", "notes": []}
+        return transaction_result.supportability
+
+    def _transaction_window_supportability(
+        self,
+        *,
+        returned_count: int,
+        source_total: int | None,
+        fetched_pages: int,
+        stop_reason: str | None,
+    ) -> dict[str, object]:
+        if stop_reason is None:
+            return {"status": "ready", "notes": []}
+        max_rows = settings.report_transaction_max_rows
+        max_pages = settings.report_transaction_max_pages
+        if stop_reason == "max_rows_reached":
+            message = (
+                "Transaction rows were truncated at the report-owned row budget "
+                f"of {max_rows}; request a narrower window for complete transaction detail."
+            )
+        else:
+            message = (
+                "Transaction paging stopped at the report-owned page budget "
+                f"of {max_pages}; request a narrower window for complete transaction detail."
+            )
+        return {
+            "status": "partial",
+            "notes": [
+                {
+                    "code": "transaction_window_truncated",
+                    "severity": "warning",
+                    "reason": stop_reason,
+                    "message": message,
+                    "returned_count": returned_count,
+                    "source_total": source_total,
+                    "fetched_pages": fetched_pages,
+                    "max_rows": max_rows,
+                    "max_pages": max_pages,
+                }
+            ],
+        }
 
     def _summarize_income_rows(
         self,
@@ -2321,7 +2438,9 @@ class ReportingReadService:
         income = self._as_dict(income_activity.get("incomeSummary"))
         activity = self._as_dict(income_activity.get("activitySummary"))
         realized_pnl = self._as_dict(income_activity.get("realizedPnlSummary"))
+        supportability = self._as_dict(income_activity.get("supportability"))
         return {
+            "supportability_status": supportability.get("status", "ready"),
             "gross_income_reporting_currency": self._to_float(
                 income.get("gross_amount_reporting_currency")
             ),
@@ -2433,6 +2552,7 @@ class ReportingReadService:
 
     def _transaction_key_figures(self, transactions: dict[str, object]) -> dict[str, object]:
         by_category = self._as_dict(transactions.get("transactionsByCategory"))
+        supportability = self._as_dict(transactions.get("supportability"))
         rows = [
             self._as_dict(row)
             for category_rows in by_category.values()
@@ -2449,7 +2569,10 @@ class ReportingReadService:
             if isinstance(category, str)
         }
         return {
+            "supportability_status": supportability.get("status", "ready"),
             "transaction_count": self._to_int(transactions.get("transactionCount")),
+            "source_transaction_count": transactions.get("sourceTransactionCount"),
+            "fetched_page_count": transactions.get("fetchedPageCount"),
             "transaction_count_by_category": counts,
             "realized_pnl_status": "present" if realized_rows else "not_applicable",
             "realized_pnl_transaction_count": len(realized_rows),
@@ -2475,6 +2598,8 @@ class ReportingReadService:
         key_figures = self._as_dict(response.get("keyFigures"))
         performance = self._as_dict(key_figures.get("performance"))
         holdings = self._as_dict(key_figures.get("holdings"))
+        transactions = self._as_dict(response.get("transactions"))
+        transaction_supportability = self._as_dict(transactions.get("supportability"))
         risk = self._as_dict(response.get("riskAnalytics"))
         client_profile = self._as_dict(response.get("clientProfile"))
         missing_profile_fields = [
@@ -2538,6 +2663,21 @@ class ReportingReadService:
                         "Not all holdings include source-backed cost basis and unrealized P&L."
                     ),
                     "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        if transaction_supportability.get("status") == "partial":
+            observations.append(
+                {
+                    "observation_id": "transaction_window_truncated",
+                    "severity": "watch",
+                    "message": self._supportability_message(
+                        transaction_supportability,
+                        "Transactions Appendix",
+                    ),
+                    "source_section_ids": [
+                        "income_cash_activity",
+                        "transactions_appendix",
+                    ],
                 }
             )
         ytd_return = self._optional_number_raw(performance.get("ytd_net_return_pct"))
@@ -3112,6 +3252,8 @@ class ReportingReadService:
     def _report_side_findings(self, response: dict[str, object]) -> list[dict[str, object]]:
         findings: list[dict[str, object]] = []
         holdings = self._as_dict(self._as_dict(response.get("keyFigures")).get("holdings"))
+        transactions = self._as_dict(response.get("transactions"))
+        transaction_supportability = self._as_dict(transactions.get("supportability"))
         if holdings.get("unrealized_pnl_coverage") not in {"present", None}:
             findings.append(
                 {
@@ -3119,6 +3261,21 @@ class ReportingReadService:
                     "severity": "gap",
                     "message": "Some position rows are missing unrealized P&L or cost basis.",
                     "source_section_ids": ["holdings_appendix"],
+                }
+            )
+        if transaction_supportability.get("status") == "partial":
+            findings.append(
+                {
+                    "finding_id": "transaction_window_truncated",
+                    "severity": "watch",
+                    "message": self._supportability_message(
+                        transaction_supportability,
+                        "Transactions Appendix",
+                    ),
+                    "source_section_ids": [
+                        "income_cash_activity",
+                        "transactions_appendix",
+                    ],
                 }
             )
         if not self._as_list(response.get("client_sections")):
@@ -3143,10 +3300,18 @@ class ReportingReadService:
         self, group_id: str, key_figures: dict[str, object], *, required: bool
     ) -> dict[str, object]:
         group = self._as_dict(key_figures.get(group_id))
-        populated = any(value not in (None, "", {}, []) for value in group.values())
+        supportability_status = self._safe_str(group.get("supportability_status"))
+        populated = any(
+            key != "supportability_status" and value not in (None, "", {}, [])
+            for key, value in group.items()
+        )
+        if supportability_status in {"partial", "unavailable"}:
+            status_value = supportability_status
+        else:
+            status_value = "present" if populated else "missing"
         return {
             "group_id": group_id,
-            "status": "present" if populated else "missing",
+            "status": status_value,
             "required": required,
         }
 
@@ -3189,6 +3354,8 @@ class ReportingReadService:
     def _transaction_realized_pnl_coverage(self, response: dict[str, object]) -> str:
         transactions = self._as_dict(response.get("transactions"))
         key_figures = self._as_dict(self._as_dict(response.get("keyFigures")).get("transactions"))
+        if key_figures.get("supportability_status") == "partial":
+            return "partial"
         if key_figures.get("realized_pnl_status") == "present":
             return "present"
         if not transactions:

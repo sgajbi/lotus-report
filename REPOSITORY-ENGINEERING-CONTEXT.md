@@ -128,7 +128,10 @@ Current repository posture:
    transport failures plus transient HTTP statuses `429`, `502`, `503`, and `504` within
    `UPSTREAM_MAX_RETRIES`, while validation, authorization, not-found, conflict, and business-rule
    statuses pass through immediately,
-23. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+23. portfolio review and summary transaction windows are bounded by
+   `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES`; oversized windows surface
+   partial transaction supportability rather than issuing unbounded lotus-core pagination calls,
+24. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
 
 ## Architecture And Module Map
 

@@ -1,5 +1,18 @@
 # Portfolio Review Report
 
+## Current Scope
+
+Current scope: implementation-backed portfolio review payload behavior for direct service,
+gateway, Workbench, and asynchronous report-job consumers. Evidence posture: code and tests back
+the JSON contract, section readiness, source lineage, transaction-window budgets, render-package
+handoff, and archive handoff boundaries described here.
+
+| Reader | Start Here | Decision Supported |
+| --- | --- | --- |
+| Product and business | Product Standard | What the review can truthfully claim in a client-advisor meeting |
+| Operations and support | Runtime And Evidence | How to prove source-backed output and diagnose partial supportability |
+| Engineering and agents | Contract Shape | Which fields, sections, ownership boundaries, and tests protect the route |
+
 ## Purpose
 
 `POST /reports/portfolios/{portfolio_id}/review` is the portfolio review contract for
@@ -138,6 +151,9 @@ Current implementation-backed figures include:
 - income/activity totals and transaction categorization
 - transaction-level realized gain/loss totals and transaction-row enrichment where sourced from
   `lotus-core`
+- bounded transaction-window supportability; oversized windows are truncated by
+  `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES` and marked partial instead of
+  paging `lotus-core` without a report-owned budget
 - negative cash and concentration observations
 - client profile and mandate context where sourced from `lotus-core`
 

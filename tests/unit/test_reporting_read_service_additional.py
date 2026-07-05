@@ -5,6 +5,7 @@ from app.application_errors import (
     ReportingUpstreamError,
     ReportingValidationError,
 )
+from app.config import settings
 from app.services.reporting_read_service import ReportingReadService
 
 
@@ -344,6 +345,41 @@ class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
                     "transaction_type": "WITHDRAWAL",
                     "gross_transaction_amount_reporting_currency": 4.0,
                 }
+            ],
+        }
+
+
+class _CoreQueryLargeTransactionWindow(_CoreQuerySuccessMinimal):
+    def __init__(self, *, source_total: int = 10):
+        self.source_total = source_total
+        self.seen_params: list[dict[str, object]] = []
+
+    async def get_portfolio_transactions(
+        self,
+        portfolio_id: str,
+        params: dict[str, object],
+        correlation_id: str | None = None,
+    ):
+        _ = portfolio_id, correlation_id
+        self.seen_params.append(dict(params))
+        skip = int(params.get("skip", 0))
+        limit = int(params.get("limit", 500))
+        remaining = max(self.source_total - skip, 0)
+        count = min(limit, remaining)
+        return 200, {
+            "total": self.source_total,
+            "skip": skip,
+            "limit": limit,
+            "transactions": [
+                {
+                    "transaction_id": f"TXN-{skip + index + 1}",
+                    "transaction_date": "2026-01-02",
+                    "transaction_type": "SELL",
+                    "asset_class": "Equity",
+                    "gross_transaction_amount_reporting_currency": 10.0,
+                    "realized_gain_loss": 1.0,
+                }
+                for index in range(count)
             ],
         }
 
@@ -945,6 +981,104 @@ async def test_review_transactions_only_fetches_transactions_without_reuse():
         for row in response["transactions"]["transactionsByCategory"]["Cash Flow"]
     ] == ["TXN-1", "TXN-2"]
     assert core_query_client.seen_skips == [0, 1]
+
+
+@pytest.mark.asyncio
+async def test_review_transactions_are_bounded_by_row_budget(monkeypatch):
+    monkeypatch.setattr(settings, "report_transaction_max_rows", 2)
+    monkeypatch.setattr(settings, "report_transaction_max_pages", 10)
+    core_query_client = _CoreQueryLargeTransactionWindow(source_total=5)
+    service = ReportingReadService(
+        core_query_client=core_query_client,
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["TRANSACTIONS"]},
+        None,
+    )
+
+    transactions = response["transactions"]
+    assert transactions["transactionCount"] == 2
+    assert transactions["sourceTransactionCount"] == 5
+    assert transactions["supportability"]["status"] == "partial"
+    assert transactions["supportability"]["notes"][0]["reason"] == "max_rows_reached"
+    assert core_query_client.seen_params == [
+        {
+            "start_date": "2026-01-01",
+            "end_date": "2026-02-24",
+            "sort_by": "transaction_date",
+            "sort_order": "asc",
+            "include_projected": "false",
+            "limit": 2,
+            "skip": 0,
+            "as_of_date": "2026-02-24",
+        }
+    ]
+
+    sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert sections["transactions_appendix"]["status"] == "partial"
+    assert sections["transactions_appendix"]["reason_code"] == "transaction_window_truncated"
+    assert response["readiness"]["status"] == "partial"
+    assert response["audience"]["client_ready"] is False
+    assert response["keyFigures"]["transactions"]["supportability_status"] == "partial"
+    coverage_by_group = {
+        group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
+    }
+    assert coverage_by_group["transactions"] == "partial"
+    assert coverage_by_group["transaction_realized_gain_loss"] == "partial"
+    assert "transaction_window_truncated" in {
+        item["observation_id"] for item in response["reviewObservations"]
+    }
+    assert "transaction_window_truncated" in {
+        item["finding_id"] for item in response["upstreamCapabilityAudit"]["report_side_findings"]
+    }
+
+
+@pytest.mark.asyncio
+async def test_summary_transaction_window_surfaces_row_budget_supportability(monkeypatch):
+    monkeypatch.setattr(settings, "report_transaction_max_rows", 1)
+    monkeypatch.setattr(settings, "report_transaction_max_pages", 10)
+    service = ReportingReadService(
+        core_query_client=_CoreQueryLargeTransactionWindow(source_total=3),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_summary(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["INCOME"]},
+        None,
+    )
+
+    assert response["transactionWindowSupportability"]["status"] == "partial"
+    assert response["transactionWindowSupportability"]["notes"][0]["reason"] == "max_rows_reached"
+
+
+@pytest.mark.asyncio
+async def test_list_transaction_rows_result_stops_at_page_budget(monkeypatch):
+    monkeypatch.setattr(settings, "report_transaction_max_rows", 10)
+    monkeypatch.setattr(settings, "report_transaction_max_pages", 2)
+    core_query_client = _CoreQueryLargeTransactionWindow(source_total=5)
+    service = ReportingReadService(
+        core_query_client=core_query_client,
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    result = await service._list_transaction_rows_result(
+        portfolio_id="P1",
+        correlation_id=None,
+        params={"limit": 1},
+    )
+
+    assert len(result.rows) == 2
+    assert result.fetched_pages == 2
+    assert result.supportability["status"] == "partial"
+    assert result.supportability["notes"][0]["reason"] == "max_pages_reached"
+    assert [params["skip"] for params in core_query_client.seen_params] == [0, 1]
 
 
 @pytest.mark.asyncio
