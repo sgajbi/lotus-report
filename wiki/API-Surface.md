@@ -36,22 +36,24 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to
   `lotus-manage`, requires source hashes/evidence refs/redaction/retention/supportability posture
-  before durable capture, carries optional `portfolio_memory_context` as bounded lineage only, and
-  uses the governed render/archive lifecycle for PDF artifacts
+  before durable capture, carries optional `portfolio_memory_context` as bounded lineage only
+  including context hash and event-ref selection/truncation posture when supplied, and uses the
+  governed render/archive lifecycle for PDF artifacts
 - `POST /reports/proof-packs`
   internal durable pre-trade proof-pack report job initiation from manage-owned
   `DpmProofPackReportInput`; persists the handoff as the immutable snapshot, records lineage to
   `lotus-manage`, requires source hashes/evidence refs/redaction/retention/supportability posture
-  before durable capture, carries optional `portfolio_memory_context` as bounded lineage only,
-  builds a `proof_pack` render package for `lotus-render`, and uses the governed render/archive
-  lifecycle for PDF artifacts
+  before durable capture, carries optional `portfolio_memory_context` as bounded lineage only
+  including context hash and event-ref selection/truncation posture when supplied, builds a
+  `proof_pack` render package for `lotus-render`, and uses the governed render/archive lifecycle
+  for PDF artifacts
 - `POST /reports/rebalance-waves`
   internal durable rebalance-wave report job initiation from manage-owned `DpmWaveReportInput`;
   persists the handoff as the immutable snapshot, records lineage to `lotus-manage`, requires
   source hashes/evidence refs/redaction/retention/supportability posture before durable capture,
-  carries optional `portfolio_memory_context` as bounded lineage only, builds a `rebalance_wave`
-  render package for `lotus-render`, and uses the governed render/archive lifecycle for PDF
-  artifacts
+  carries optional `portfolio_memory_context` as bounded lineage only including context hash and
+  event-ref selection/truncation posture when supplied, builds a `rebalance_wave` render package
+  for `lotus-render`, and uses the governed render/archive lifecycle for PDF artifacts
   without recomputing wave state, proof-pack linkage, internal handoff evidence, or external
   execution posture
 - `GET /reports/jobs`

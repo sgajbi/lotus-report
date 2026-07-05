@@ -268,6 +268,13 @@ def _portfolio_memory_context() -> dict:
         "source_systems": ["lotus-manage"],
         "reason_codes": ["proof_pack_ready"],
         "content_hash": "sha256:portfolio-memory",
+        "context_content_hash": "sha256:portfolio-memory-context",
+        "support_boundary": "BOUNDED_EVENT_REFS_ONLY",
+        "event_ref_limit": 12,
+        "event_ref_selection_policy": "MOST_RECENT_RELEVANT_FIRST",
+        "event_refs_returned": 1,
+        "event_refs_omitted": 2,
+        "event_refs_truncated": True,
         "governance_policy": {
             "retention_policy": "DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y",
             "redaction_policy": "NO_RAW_PAYLOADS",
@@ -286,9 +293,25 @@ def _portfolio_memory_context() -> dict:
                 "redaction_policy": "NO_RAW_PAYLOADS",
                 "audit_policy": "AUDIT_READ_AND_EXPORT",
                 "access_classification": "CLIENT_CONFIDENTIAL_INTERNAL",
+                "event_time": "2026-05-03T08:59:00Z",
+                "event_ref_selection_rank": 1,
+                "manage_lookup_id": "pmem_lookup_dpp_001",
             }
         ],
     }
+
+
+def _assert_portfolio_memory_controls(memory: dict) -> None:
+    assert memory["context_content_hash"] == "sha256:portfolio-memory-context"
+    assert memory["support_boundary"] == "BOUNDED_EVENT_REFS_ONLY"
+    assert memory["event_ref_limit"] == 12
+    assert memory["event_ref_selection_policy"] == "MOST_RECENT_RELEVANT_FIRST"
+    assert memory["event_refs_returned"] == 1
+    assert memory["event_refs_omitted"] == 2
+    assert memory["event_refs_truncated"] is True
+    assert memory["event_refs"][0]["event_time"] == "2026-05-03T08:59:00Z"
+    assert memory["event_refs"][0]["event_ref_selection_rank"] == 1
+    assert memory["event_refs"][0]["manage_lookup_id"] == "pmem_lookup_dpp_001"
 
 
 def _seed_data_ready_job(tmp_path):
@@ -1491,6 +1514,7 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
     assert payload["report_data"]["portfolio_memory"]["event_refs"][0]["event_type"] == (
         "PROOF_PACK_CREATED"
     )
+    _assert_portfolio_memory_controls(payload["report_data"]["portfolio_memory"])
     assert payload["lineage_refs"] == [
         job.job_id,
         "dor_001",
@@ -1532,6 +1556,7 @@ def test_build_render_package_emits_proof_pack_contract(tmp_path):
     assert payload["report_data"]["portfolio_memory"]["governance_policy"]["audit_policy"] == (
         "AUDIT_READ_AND_EXPORT"
     )
+    _assert_portfolio_memory_controls(payload["report_data"]["portfolio_memory"])
     assert payload["lineage_refs"] == [
         job.job_id,
         "dpp_001",
@@ -1623,6 +1648,7 @@ def test_build_render_package_emits_wave_contract(tmp_path):
     assert payload["report_data"]["handoff_count"] == 1
     assert payload["report_data"]["external_execution_claimed"] is False
     assert payload["report_data"]["portfolio_memory"]["content_hash"] == "sha256:portfolio-memory"
+    _assert_portfolio_memory_controls(payload["report_data"]["portfolio_memory"])
     assert payload["lineage_refs"] == [
         job.job_id,
         "dwv_001",
