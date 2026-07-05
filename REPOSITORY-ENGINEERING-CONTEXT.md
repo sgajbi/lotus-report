@@ -128,7 +128,10 @@ Current repository posture:
    implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
    `ClientReportEvidencePack`; it proves only source-safe route intake through
    `POST /reports/idea-evidence-packs` and does not prove report materialization, render, archive,
-   client-publication authority, or supported-feature promotion,
+   client-publication authority, or supported-feature promotion. Intake idempotency is durable in
+   a SQLite ledger configured by `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`; records store support-safe
+   payload fingerprints, source identifiers, caller context, correlation id, and trace id without
+   raw evidence payloads,
 20. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
    records the implemented, not-certified `lotus-idea` evidence-pack materialization route
    boundary for `ClientReportEvidencePack`: `POST /reports/idea-evidence-packs/materializations`
@@ -197,7 +200,8 @@ Primary areas:
    implemented, not-certified report-owned route-foundation posture for `lotus-idea` evidence
    packet intake into `ClientReportEvidencePack`; this directory must not be treated as report
    job creation, materialization, render, archive, client-publication authority, or
-   supported-feature proof.
+   supported-feature proof. The route uses the durable idea-evidence intake ledger for
+   restart-safe idempotency conflict semantics.
 11. `contracts/idea-evidence-materialization/`
    implemented, not-certified report-owned materialization posture for `lotus-idea` evidence
    packets; this directory proves report-job, render, and archive lifecycle wiring only and must

@@ -95,6 +95,42 @@ def test_idea_evidence_intake_route_conflicts_on_changed_payload_replay() -> Non
     assert second.json()["detail"]["code"] == "idea_evidence_intake_conflict"
 
 
+def test_idea_evidence_intake_route_conflicts_after_fresh_ledger_restart(tmp_path) -> None:
+    db_path = tmp_path / "idea-intake.sqlite3"
+    first_ledger = IdeaEvidenceIntakeLedger(db_path)
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: first_ledger
+    client = TestClient(app)
+    try:
+        first = client.post(
+            "/reports/idea-evidence-packs",
+            json=_payload(),
+            headers=_headers("idea-report-intake-restart"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    restarted_ledger = IdeaEvidenceIntakeLedger(db_path)
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: restarted_ledger
+    changed_payload = {**_payload(), "report_evidence_pack_id": "irep_changed"}
+    try:
+        replay = client.post(
+            "/reports/idea-evidence-packs",
+            json=changed_payload,
+            headers=_headers("idea-report-intake-restart"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 202
+    assert replay.status_code == 409
+    assert replay.json()["detail"]["code"] == "idea_evidence_intake_conflict"
+    records = restarted_ledger.snapshot()
+    assert records["idea-report-intake-restart"].caller_context["triggered_by"] == "advisor-123"
+    assert records["idea-report-intake-restart"].caller_context["trace_id"] == (
+        "trace-idea-report-intake"
+    )
+
+
 def test_idea_evidence_intake_route_rejects_publication_or_render_claims() -> None:
     client = TestClient(app)
     payload = {
@@ -214,24 +250,45 @@ def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_pat
     assert snapshot.lineage_summary["source_type"] == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT"
 
 
-def test_idea_evidence_materialization_route_requires_idempotency_key() -> None:
+def test_idea_evidence_materialization_route_requires_idempotency_key(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
     client = TestClient(app)
     headers = _headers("idea-report-materialization-missing-key")
     headers.pop("Idempotency-Key")
 
-    response = client.post(
-        "/reports/idea-evidence-packs/materializations",
-        json=_materialization_payload(),
-        headers=headers,
-    )
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "missing_idempotency_key"
 
 
-def test_idea_evidence_materialization_route_validates_as_of_date_before_intake() -> None:
+def test_idea_evidence_materialization_route_validates_as_of_date_before_intake(
+    tmp_path,
+) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     intake_ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
     app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
     payload = {**_materialization_payload(), "as_of_date": "not-a-date"}
     client = TestClient(app)
     try:
@@ -298,6 +355,12 @@ def test_idea_evidence_materialization_route_conflicts_on_changed_payload_replay
 def test_idea_evidence_materialization_route_maps_ledger_missing_key_error() -> None:
     app.dependency_overrides[get_report_job_ledger] = lambda: _MissingKeyReportJobLedger()
     app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
     client = TestClient(app)
     try:
         response = client.post(
@@ -312,18 +375,29 @@ def test_idea_evidence_materialization_route_maps_ledger_missing_key_error() -> 
     assert response.json()["detail"]["code"] == "missing_idempotency_key"
 
 
-def test_idea_evidence_materialization_route_keeps_publication_blocked() -> None:
+def test_idea_evidence_materialization_route_keeps_publication_blocked(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
     client = TestClient(app)
     payload = {
         **_materialization_payload(),
         "grants_client_publication_authority": True,
     }
 
-    response = client.post(
-        "/reports/idea-evidence-packs/materializations",
-        json=payload,
-        headers=_headers("idea-report-materialization-unsafe"),
-    )
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-unsafe"),
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 422
 
@@ -460,6 +534,16 @@ class _IdeaEvidenceCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
+
+
+class _UnexpectedCaptureService:
+    async def capture_for_job(self, job):
+        raise AssertionError("Invalid materialization requests must not capture snapshots")
+
+
+class _UnexpectedRenderService:
+    async def render_for_job(self, job):
+        raise AssertionError("Invalid materialization requests must not render reports")
 
 
 class _SuccessfulRenderClient:

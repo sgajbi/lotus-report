@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Iterator, Mapping
 
 from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
 )
-from app.reporting_jobs.models import ProofPackReportJobRequest
+from app.reporting_jobs.models import ProofPackReportJobRequest, ReportCallerContext
 
 REPORT_IDEA_EVIDENCE_INTAKE_ROUTE = "POST /reports/idea-evidence-packs"
 REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS = (
@@ -55,11 +58,17 @@ class IdeaEvidenceIntakeRecord:
     idempotency_key: str
     payload_fingerprint: str
     response: IdeaEvidencePackIntakeResponse
+    caller_context: dict[str, object]
+    accepted_at_utc: datetime
+    created_at_utc: datetime
 
 
 class IdeaEvidenceIntakeLedger:
-    def __init__(self) -> None:
+    def __init__(self, database_path: Path | str | None = None) -> None:
+        self._database_path = Path(database_path) if database_path is not None else None
         self._records_by_key: dict[str, IdeaEvidenceIntakeRecord] = {}
+        if self._database_path is not None:
+            self._ensure_schema()
 
     def accept(
         self,
@@ -68,14 +77,17 @@ class IdeaEvidenceIntakeLedger:
         idempotency_key: str,
         accepted_at_utc: datetime | None = None,
         correlation_id: str | None = None,
+        trace_id: str | None = None,
+        caller_context: ReportCallerContext | None = None,
     ) -> IdeaEvidencePackIntakeResponse:
         payload_fingerprint = _payload_fingerprint(request)
-        existing = self._records_by_key.get(idempotency_key)
+        existing = self._get_record(idempotency_key)
         if existing:
             if existing.payload_fingerprint != payload_fingerprint:
                 raise IdeaEvidenceIntakeConflictError("idea evidence intake payload changed")
             return existing.response
 
+        accepted_at = accepted_at_utc or datetime.now(UTC)
         intake_id = _intake_id(idempotency_key, payload_fingerprint)
         response = IdeaEvidencePackIntakeResponse(
             intake_id=intake_id,
@@ -94,25 +106,190 @@ class IdeaEvidenceIntakeLedger:
             grants_client_publication_authority=False,
             remaining_blockers=REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS,
             evidence_refs=REPORT_IDEA_EVIDENCE_INTAKE_EVIDENCE_REFS,
-            accepted_at_utc=accepted_at_utc or datetime.now(UTC),
+            accepted_at_utc=accepted_at,
             correlation_id=correlation_id,
         )
-        self._records_by_key[idempotency_key] = IdeaEvidenceIntakeRecord(
+        record = IdeaEvidenceIntakeRecord(
             intake_id=intake_id,
             idempotency_key=idempotency_key,
             payload_fingerprint=payload_fingerprint,
             response=response,
+            caller_context=caller_context.model_dump(mode="json") if caller_context else {},
+            accepted_at_utc=accepted_at,
+            created_at_utc=datetime.now(UTC),
         )
-        return response
+        stored_record = self._store_record(
+            record,
+            request=request,
+            correlation_id=correlation_id,
+            trace_id=trace_id,
+        )
+        return stored_record.response
 
     def snapshot(self) -> Mapping[str, IdeaEvidenceIntakeRecord]:
-        return MappingProxyType(dict(self._records_by_key))
+        if self._database_path is None:
+            return MappingProxyType(dict(self._records_by_key))
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM idea_evidence_intake ORDER BY created_at_utc, idempotency_key"
+            ).fetchall()
+        return MappingProxyType({row["idempotency_key"]: _record_from_row(row) for row in rows})
+
+    def _get_record(self, idempotency_key: str) -> IdeaEvidenceIntakeRecord | None:
+        if self._database_path is None:
+            return self._records_by_key.get(idempotency_key)
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM idea_evidence_intake WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+        return _record_from_row(row) if row else None
+
+    def _store_record(
+        self,
+        record: IdeaEvidenceIntakeRecord,
+        *,
+        request: IdeaEvidencePackIntakeRequest,
+        correlation_id: str | None,
+        trace_id: str | None,
+    ) -> IdeaEvidenceIntakeRecord:
+        if self._database_path is None:
+            self._records_by_key[record.idempotency_key] = record
+            return record
+
+        with self._connect() as connection:
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO idea_evidence_intake (
+                        idempotency_key,
+                        intake_id,
+                        payload_fingerprint,
+                        response_json,
+                        caller_context_json,
+                        report_evidence_pack_id,
+                        conversion_intent_id,
+                        candidate_id,
+                        evidence_packet_id,
+                        evidence_content_fingerprint,
+                        producer,
+                        supportability_status,
+                        accepted_at_utc,
+                        created_at_utc,
+                        correlation_id,
+                        trace_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.idempotency_key,
+                        record.intake_id,
+                        record.payload_fingerprint,
+                        record.response.model_dump_json(),
+                        json.dumps(record.caller_context, sort_keys=True, separators=(",", ":")),
+                        request.report_evidence_pack_id,
+                        request.conversion_intent_id,
+                        request.candidate_id,
+                        request.evidence_packet_id,
+                        request.evidence_content_fingerprint,
+                        request.producer,
+                        request.supportability_status,
+                        _dt_to_text(record.accepted_at_utc),
+                        _dt_to_text(record.created_at_utc),
+                        correlation_id,
+                        trace_id,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                existing = self._get_record(record.idempotency_key)
+                if existing and existing.payload_fingerprint == record.payload_fingerprint:
+                    return existing
+                raise IdeaEvidenceIntakeConflictError(
+                    "idea evidence intake payload changed"
+                ) from exc
+        return record
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        assert self._database_path is not None
+        if self._database_path != Path(":memory:"):
+            self._database_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self._database_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _ensure_schema(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS idea_evidence_intake (
+                    idempotency_key TEXT PRIMARY KEY,
+                    intake_id TEXT NOT NULL,
+                    payload_fingerprint TEXT NOT NULL,
+                    response_json TEXT NOT NULL,
+                    caller_context_json TEXT NOT NULL,
+                    report_evidence_pack_id TEXT NOT NULL,
+                    conversion_intent_id TEXT NOT NULL,
+                    candidate_id TEXT NOT NULL,
+                    evidence_packet_id TEXT NOT NULL,
+                    evidence_content_fingerprint TEXT NOT NULL,
+                    producer TEXT NOT NULL,
+                    supportability_status TEXT NOT NULL,
+                    accepted_at_utc TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    correlation_id TEXT,
+                    trace_id TEXT
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_idea_evidence_intake_source
+                ON idea_evidence_intake(report_evidence_pack_id, evidence_packet_id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_idea_evidence_intake_created
+                ON idea_evidence_intake(created_at_utc)
+                """
+            )
 
 
 def _payload_fingerprint(request: IdeaEvidencePackIntakeRequest) -> str:
     payload = request.model_dump(mode="json")
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _record_from_row(row: sqlite3.Row) -> IdeaEvidenceIntakeRecord:
+    response = IdeaEvidencePackIntakeResponse.model_validate_json(row["response_json"])
+    return IdeaEvidenceIntakeRecord(
+        intake_id=str(row["intake_id"]),
+        idempotency_key=str(row["idempotency_key"]),
+        payload_fingerprint=str(row["payload_fingerprint"]),
+        response=response,
+        caller_context=json.loads(row["caller_context_json"]),
+        accepted_at_utc=_dt_from_text(row["accepted_at_utc"]),
+        created_at_utc=_dt_from_text(row["created_at_utc"]),
+    )
+
+
+def _dt_to_text(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _dt_from_text(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
 def _intake_id(idempotency_key: str, payload_fingerprint: str) -> str:

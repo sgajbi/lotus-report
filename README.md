@@ -85,7 +85,10 @@ Boundary rules that matter:
    implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
    `ClientReportEvidencePack`. It proves only source-safe route intake through
    `POST /reports/idea-evidence-packs`; it is not report materialization, render, archive,
-   client-publication authority, or supported-feature proof.
+   client-publication authority, or supported-feature proof. Intake idempotency is persisted in a
+   SQLite ledger configured by `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`; records store support-safe
+   fingerprints, source identifiers, caller context, correlation id, and trace id, not raw evidence
+   payloads.
 
 ## First-Class Portfolio Review
 

@@ -60,6 +60,11 @@ class Settings(BaseSettings):
         min_length=1,
         alias="REPORT_POSTGRES_APPLICATION_NAME",
     )
+    idea_evidence_intake_ledger_path: str = Field(
+        "data/idea-evidence-intake.sqlite3",
+        min_length=1,
+        alias="IDEA_EVIDENCE_INTAKE_LEDGER_PATH",
+    )
     batch_worker_id: str = Field(
         "lotus-report-batch-worker-1",
         alias="REPORT_BATCH_WORKER_ID",

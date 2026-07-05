@@ -32,6 +32,12 @@ boundaries, and copy-paste request examples for direct service and support workf
   may advance through render completion before the response returns. It can carry an optional
   `proposal_narrative_package` from `lotus-advise` when that package is already approved for
   advisor use.
+- `POST /reports/idea-evidence-packs`
+  implemented, not-certified source-safe intake route for reviewed `lotus-idea` evidence packs.
+  The route requires `Idempotency-Key`, persists support-safe intake fingerprints and caller
+  context in the `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger, replays same-payload retries
+  across process restarts, and rejects changed-payload replays. It does not create report jobs,
+  render output, archive records, or client-publication authority.
 - `POST /reports/outcome-reviews`
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to

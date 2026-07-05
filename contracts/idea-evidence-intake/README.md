@@ -14,6 +14,16 @@ Current contract:
    Implemented, not-certified intake-route contract for reviewed `lotus-idea`
    evidence packs.
 
+Idempotency posture:
+
+- `POST /reports/idea-evidence-packs` requires `Idempotency-Key`.
+- Intake replay/conflict state is durable in the `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`
+  SQLite ledger, so same-key changed-payload retries are rejected across process
+  restarts.
+- The ledger stores support-safe payload fingerprints, source identifiers, caller
+  context, correlation id, and trace id. It does not store raw idea evidence
+  payloads.
+
 Materialization is governed separately in
 [`../idea-evidence-materialization`](../idea-evidence-materialization). Keep the
 two contracts separate so intake proof cannot be mistaken for report-job,
