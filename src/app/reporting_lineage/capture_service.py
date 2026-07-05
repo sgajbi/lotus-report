@@ -20,9 +20,9 @@ from app.config import settings
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
+    ReportInputSnapshotRecord,
     ReportUpstreamCallCreateRequest,
 )
-from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from app.reporting_lineage.store import canonical_json_dumps
 from app.reporting_metrics import record_report_operation
 from app.services.reporting_read_service import ReportingReadService
@@ -58,6 +58,22 @@ class ReportJobCaptureLedger(Protocol):
         failure_message: str,
         retry_eligible: bool,
     ) -> ReportJobLedgerRecord: ...
+
+
+class ReportInputSnapshotStorePort(Protocol):
+    def get_snapshot_by_job(self, report_job_id: str) -> ReportInputSnapshotRecord: ...
+
+    def create_snapshot(
+        self,
+        request: ReportInputSnapshotCreateRequest,
+    ) -> ReportInputSnapshotRecord: ...
+
+    def create_upstream_calls(
+        self,
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> list[Any]: ...
 
 
 @dataclass(slots=True)
@@ -101,6 +117,31 @@ class _RecordedUpstreamCall:
             correlation_id=self.correlation_id,
             trace_id=self.trace_id,
         )
+
+
+@dataclass(slots=True)
+class PortfolioReviewInputCapture:
+    snapshot_payload: dict[str, Any]
+    upstream_calls: list[_RecordedUpstreamCall]
+
+
+class PortfolioReviewInputCaptureError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        original_error: Exception,
+        upstream_calls: list[_RecordedUpstreamCall],
+    ) -> None:
+        super().__init__(str(original_error))
+        self.original_error = original_error
+        self.upstream_calls = upstream_calls
+
+
+class PortfolioReviewInputProvider(Protocol):
+    async def collect_for_job(
+        self,
+        job: ReportJobLedgerRecord,
+    ) -> PortfolioReviewInputCapture: ...
 
 
 def _utc_now() -> datetime:
@@ -455,15 +496,77 @@ class _RecordingRiskClient(RiskClient):
         return status_code, response_payload
 
 
+class ReportingReadPortfolioReviewInputProvider:
+    def __init__(self, *, read_service: ReportingReadService | None = None) -> None:
+        self._read_service = read_service
+
+    async def collect_for_job(
+        self,
+        job: ReportJobLedgerRecord,
+    ) -> PortfolioReviewInputCapture:
+        recorder = _UpstreamRecorder(
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        read_service = self._read_service or ReportingReadService(
+            core_query_client=_RecordingCoreQueryClient(
+                CoreQueryClient(
+                    base_url=settings.core_query_base_url,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                ),
+                recorder,
+            ),
+            performance_client=_RecordingPerformanceClient(
+                PerformanceClient(
+                    base_url=settings.performance_base_url,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                ),
+                recorder,
+            ),
+            risk_client=_RecordingRiskClient(
+                RiskClient(
+                    base_url=settings.risk_base_url,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                ),
+                recorder,
+            ),
+        )
+        try:
+            snapshot_payload = await read_service.get_portfolio_review(
+                portfolio_id=_first_portfolio_id(job),
+                request_payload=_request_payload(job),
+                correlation_id=job.correlation_id or None,
+            )
+        except Exception as exc:
+            raise PortfolioReviewInputCaptureError(
+                original_error=exc,
+                upstream_calls=recorder.calls,
+            ) from exc
+        return PortfolioReviewInputCapture(
+            snapshot_payload=snapshot_payload,
+            upstream_calls=recorder.calls,
+        )
+
+
 class PortfolioReviewSnapshotCaptureService:
     def __init__(
         self,
         *,
-        snapshot_store: PostgresReportInputSnapshotStore,
+        snapshot_store: ReportInputSnapshotStorePort,
         job_ledger: ReportJobCaptureLedger,
+        portfolio_review_input_provider: PortfolioReviewInputProvider | None = None,
     ) -> None:
         self._snapshot_store = snapshot_store
         self._job_ledger = job_ledger
+        self._portfolio_review_input_provider = (
+            portfolio_review_input_provider or ReportingReadPortfolioReviewInputProvider()
+        )
 
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
         started_at = perf_counter()
@@ -498,53 +601,31 @@ class PortfolioReviewSnapshotCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
-        recorder = _UpstreamRecorder(
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
-        service = ReportingReadService(
-            core_query_client=_RecordingCoreQueryClient(
-                CoreQueryClient(
-                    base_url=settings.core_query_base_url,
-                    timeout_seconds=settings.upstream_timeout_seconds,
-                    max_retries=settings.upstream_max_retries,
-                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
-                ),
-                recorder,
-            ),
-            performance_client=_RecordingPerformanceClient(
-                PerformanceClient(
-                    base_url=settings.performance_base_url,
-                    timeout_seconds=settings.upstream_timeout_seconds,
-                    max_retries=settings.upstream_max_retries,
-                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
-                ),
-                recorder,
-            ),
-            risk_client=_RecordingRiskClient(
-                RiskClient(
-                    base_url=settings.risk_base_url,
-                    timeout_seconds=settings.upstream_timeout_seconds,
-                    max_retries=settings.upstream_max_retries,
-                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
-                ),
-                recorder,
-            ),
-        )
-
+        upstream_calls: list[_RecordedUpstreamCall] = []
         failure_message = None
         failure_category = "upstream_data_failed"
         retry_eligible = True
         try:
-            snapshot_payload = await service.get_portfolio_review(
-                portfolio_id=_first_portfolio_id(job),
-                request_payload=_request_payload(job),
-                correlation_id=job.correlation_id or None,
-            )
+            input_capture = await self._portfolio_review_input_provider.collect_for_job(job)
+            snapshot_payload = input_capture.snapshot_payload
+            upstream_calls = input_capture.upstream_calls
             proposal_narrative_package = _proposal_narrative_package(job)
             if proposal_narrative_package is not None:
                 snapshot_payload = dict(snapshot_payload)
                 snapshot_payload["proposal_narrative_package"] = proposal_narrative_package
+        except PortfolioReviewInputCaptureError as exc:
+            upstream_calls = exc.upstream_calls
+            failure_category, failure_message, retry_eligible = _map_job_failure(exc.original_error)
+            snapshot_payload = {
+                "report_id": (
+                    f"portfolio-review:{_first_portfolio_id(job)}:{job.as_of_date.isoformat()}"
+                ),
+                "portfolio_id": _first_portfolio_id(job),
+                "as_of_date": job.as_of_date.isoformat(),
+                "capture_status": "failed",
+                "failure_category": failure_category,
+                "failure_message": failure_message,
+            }
         except Exception as exc:
             failure_category, failure_message, retry_eligible = _map_job_failure(exc)
             snapshot_payload = {
@@ -566,10 +647,10 @@ class PortfolioReviewSnapshotCaptureService:
             as_of_date=job.as_of_date,
             snapshot_payload=snapshot_payload,
             snapshot_storage_ref=None,
-            supportability_status=_overall_posture(recorder.calls),
-            completeness_status=_overall_posture(recorder.calls),
+            supportability_status=_overall_posture(upstream_calls),
+            completeness_status=_overall_posture(upstream_calls),
             lineage_summary=_lineage_summary(
-                recorder.calls,
+                upstream_calls,
                 proposal_narrative_package=_proposal_narrative_package(job),
             ),
             captured_at=_utc_now(),
@@ -579,7 +660,7 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot = self._snapshot_store.create_snapshot(snapshot_request)
         self._snapshot_store.create_upstream_calls(
             snapshot_id=snapshot.snapshot_id,
-            calls=[call.to_create_request() for call in recorder.calls],
+            calls=[call.to_create_request() for call in upstream_calls],
         )
 
         if failure_message:

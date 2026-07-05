@@ -17,6 +17,8 @@ from app.reporting_jobs.models import (
 )
 from app.reporting_lineage import service as lineage_service
 from app.reporting_lineage.capture_service import (
+    PortfolioReviewInputCapture,
+    PortfolioReviewInputCaptureError,
     PortfolioReviewSnapshotCaptureService,
     _classify_call,
     _first_portfolio_id,
@@ -25,6 +27,7 @@ from app.reporting_lineage.capture_service import (
     _map_job_failure,
     _overall_posture,
     _payload_contract_version,
+    _RecordedUpstreamCall,
     _RecordingCoreQueryClient,
     _RecordingPerformanceClient,
     _RecordingRiskClient,
@@ -359,22 +362,93 @@ class _ValidationFailureReportingReadService:
         raise ReportingValidationError("unsupported")
 
 
+def _recorded_call(
+    *,
+    service_name: str = "lotus-core",
+    endpoint: str = "/reporting/portfolio-summary/query",
+) -> _RecordedUpstreamCall:
+    return _RecordedUpstreamCall(
+        service_name=service_name,
+        endpoint=endpoint,
+        method="POST",
+        contract_version="v1",
+        request_payload={"portfolio_id": "PB_SG_GLOBAL_BAL_001"},
+        response_payload={"contract_version": "v1"},
+        response_ref=None,
+        status_code=200,
+        latency_ms=1,
+        supportability_status="complete",
+        completeness_status="complete",
+        failure_category="none",
+        failure_message=None,
+        captured_at=datetime.now(UTC),
+        correlation_id="corr-001",
+        trace_id="trace-001",
+    )
+
+
+def _portfolio_review_calls() -> list[_RecordedUpstreamCall]:
+    return [
+        _recorded_call(endpoint="/reporting/portfolio-summary/query"),
+        _recorded_call(endpoint="/reporting/asset-allocation/query"),
+        _recorded_call(endpoint="/portfolios/PB_SG_GLOBAL_BAL_001/transactions"),
+        _recorded_call(endpoint="/portfolios/PB_SG_GLOBAL_BAL_001/positions"),
+        _recorded_call(endpoint="/portfolios/PB_SG_GLOBAL_BAL_001"),
+        _recorded_call(
+            service_name="lotus-performance",
+            endpoint="/performance/workspace-summary",
+        ),
+        _recorded_call(service_name="lotus-performance", endpoint="/performance/contribution"),
+        _recorded_call(service_name="lotus-risk", endpoint="/analytics/risk/calculate"),
+    ]
+
+
+class _FakePortfolioReviewInputProvider:
+    def __init__(
+        self,
+        *,
+        snapshot_payload: dict | None = None,
+        upstream_calls: list[_RecordedUpstreamCall] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.snapshot_payload = snapshot_payload or {
+            "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "as_of_date": "2026-04-22",
+            "contract_version": "v1",
+        }
+        self.upstream_calls = (
+            _portfolio_review_calls() if upstream_calls is None else upstream_calls
+        )
+        self.error = error
+        self.jobs: list[str] = []
+
+    async def collect_for_job(self, job):
+        self.jobs.append(job.job_id)
+        if self.error is not None:
+            raise PortfolioReviewInputCaptureError(
+                original_error=self.error,
+                upstream_calls=self.upstream_calls,
+            )
+        return PortfolioReviewInputCapture(
+            snapshot_payload=self.snapshot_payload,
+            upstream_calls=self.upstream_calls,
+        )
+
+
 @pytest.mark.asyncio
-async def test_capture_service_records_snapshot_and_lineage_for_success(monkeypatch, tmp_path):
-    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
-    monkeypatch.setattr(
-        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
-    )
-    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
-    monkeypatch.setattr(
-        "app.reporting_lineage.capture_service.ReportingReadService",
-        _HappyReportingReadService,
-    )
+async def test_capture_service_records_snapshot_and_lineage_for_success(tmp_path):
     ledger, store, job = _create_job(tmp_path, suffix="success")
-    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+    input_provider = _FakePortfolioReviewInputProvider()
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=input_provider,
+    )
 
     record = await service.capture_for_job(job)
 
+    assert input_provider.jobs == [job.job_id]
     assert record.status == "data_ready"
     snapshot = store.get_snapshot_by_job(job.job_id)
     assert snapshot.report_job_id == job.job_id
@@ -832,18 +906,16 @@ async def test_capture_service_fails_outcome_review_without_report_input(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_capture_service_marks_failed_and_persists_failed_snapshot(monkeypatch, tmp_path):
-    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
-    monkeypatch.setattr(
-        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
-    )
-    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
-    monkeypatch.setattr(
-        "app.reporting_lineage.capture_service.ReportingReadService",
-        _ValidationFailureReportingReadService,
-    )
+async def test_capture_service_marks_failed_and_persists_failed_snapshot(tmp_path):
     ledger, store, job = _create_job(tmp_path, suffix="failed")
-    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            upstream_calls=[],
+            error=ReportingValidationError("unsupported"),
+        ),
+    )
 
     record = await service.capture_for_job(job)
 
@@ -1117,18 +1189,28 @@ def test_capture_service_getter_returns_cached_service(monkeypatch):
     class _SentinelLedger:
         pass
 
+    class _SentinelInputProvider:
+        pass
+
     sentinel_store = _SentinelStore()
     sentinel_ledger = _SentinelLedger()
+    sentinel_input_provider = _SentinelInputProvider()
 
     lineage_service.get_report_input_snapshot_store.cache_clear()
     lineage_service.get_portfolio_review_snapshot_capture_service.cache_clear()
     monkeypatch.setattr(lineage_service, "get_report_input_snapshot_store", lambda: sentinel_store)
     monkeypatch.setattr(lineage_service, "get_report_job_ledger", lambda: sentinel_ledger)
+    monkeypatch.setattr(
+        lineage_service,
+        "ReportingReadPortfolioReviewInputProvider",
+        lambda: sentinel_input_provider,
+    )
 
     service = lineage_service.get_portfolio_review_snapshot_capture_service()
 
     assert isinstance(service, PortfolioReviewSnapshotCaptureService)
     assert service._snapshot_store is sentinel_store
     assert service._job_ledger is sentinel_ledger
+    assert service._portfolio_review_input_provider is sentinel_input_provider
 
     lineage_service.get_portfolio_review_snapshot_capture_service.cache_clear()
