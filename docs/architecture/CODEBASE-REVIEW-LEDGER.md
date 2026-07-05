@@ -29,3 +29,9 @@ Follow-up:
    evidence directory in the platform RFC.
 2. Keep the known published-wiki drift as a pre-existing publication issue unless this branch takes
    ownership of wiki publication cleanup.
+
+## Enterprise Backend Refactor Issue Closure
+
+| Issue | Status | Finding | Actions taken | Evidence | Docs/wiki/context decision |
+| --- | --- | --- | --- | --- | --- |
+| [#116](https://github.com/sgajbi/lotus-report/issues/116) | Hardened | `ReportingReadService` and lineage capture raised or classified FastAPI `HTTPException` inside application behavior, coupling report orchestration to HTTP delivery. | Added typed reporting application errors; moved `/reports` HTTP translation into the router; updated lineage failure classification to use application failure categories; updated service tests to assert application errors and API tests to assert HTTP mapping. | `make check` passed; focused service/lineage/API tests passed; boundary scan found no FastAPI imports or `HTTPException` assertions in the service and lineage paths covered by #116. | No wiki change: external API behavior is preserved; this is an internal architecture-boundary refactor. Monetary-float allowlist was refreshed only for line-number drift caused by this service refactor, with prior review dates preserved. |

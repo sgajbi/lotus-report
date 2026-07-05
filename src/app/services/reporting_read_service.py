@@ -1,12 +1,19 @@
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, status
-
+from app.application_errors import (
+    ReportingNotFoundError,
+    ReportingUpstreamError,
+    ReportingValidationError,
+)
 from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.services.portfolio_review_advisor import build_advisor_sections
+
+HTTP_BAD_REQUEST = 400
+HTTP_NOT_FOUND = 404
+HTTP_UNPROCESSABLE_ENTITY = 422
 
 AS_OF_DATE_KEYS = ("as_of_date",)
 REPORTING_CURRENCY_KEYS = ("reporting_currency",)
@@ -366,7 +373,7 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             correlation_id=correlation_id,
         )
-        if status_code >= status.HTTP_400_BAD_REQUEST:
+        if status_code >= HTTP_BAD_REQUEST:
             return self._client_profile_unavailable(
                 portfolio_id=portfolio_id,
                 reason_code="source_unavailable",
@@ -599,7 +606,7 @@ class ReportingReadService:
                     periods=["YTD", "5Y", "SI"],
                 )
             )
-            if summary_status >= status.HTTP_400_BAD_REQUEST:
+            if summary_status >= HTTP_BAD_REQUEST:
                 return self._risk_unavailable(
                     reason_code="risk_return_history_unavailable",
                     message=(
@@ -639,7 +646,7 @@ class ReportingReadService:
         }
         risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
         period_failures: list[dict[str, object]] = []
-        if risk_status >= status.HTTP_400_BAD_REQUEST:
+        if risk_status >= HTTP_BAD_REQUEST:
             risk_response, period_failures = await self._calculate_risk_by_period(
                 risk_payload,
                 fallback_reason_code="risk_period_upstream_failure",
@@ -709,7 +716,7 @@ class ReportingReadService:
             period_name = self._safe_str(period_payload.get("name")) or self._safe_str(
                 period_payload.get("type")
             )
-            if period_status >= status.HTTP_400_BAD_REQUEST:
+            if period_status >= HTTP_BAD_REQUEST:
                 period_failures.append(
                     {
                         "period": period_name,
@@ -1086,59 +1093,43 @@ class ReportingReadService:
     def _unwrap_core_query_summary(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
-        if status_code < status.HTTP_400_BAD_REQUEST:
+        if status_code < HTTP_BAD_REQUEST:
             if isinstance(payload, dict) and {"portfolio_id", "totals", "snapshot_metadata"} <= set(
                 payload
             ):
                 return payload
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="lotus-core portfolio summary payload missing required fields.",
+            raise ReportingUpstreamError(
+                "lotus-core portfolio summary payload missing required fields."
             )
-        if status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"lotus-core portfolio summary upstream failure: {payload}",
-        )
+        if status_code == HTTP_NOT_FOUND:
+            raise ReportingNotFoundError(payload.get("detail"))
+        raise ReportingUpstreamError(f"lotus-core portfolio summary upstream failure: {payload}")
 
     def _unwrap_core_query_allocation(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
-        if status_code < status.HTTP_400_BAD_REQUEST:
+        if status_code < HTTP_BAD_REQUEST:
             if isinstance(payload, dict) and "views" in payload:
                 return payload
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="lotus-core asset allocation payload missing required fields.",
+            raise ReportingUpstreamError(
+                "lotus-core asset allocation payload missing required fields."
             )
-        if status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=payload.get("detail")
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"lotus-core asset allocation upstream failure: {payload}",
-        )
+        if status_code == HTTP_NOT_FOUND:
+            raise ReportingNotFoundError(payload.get("detail"))
+        if status_code == HTTP_UNPROCESSABLE_ENTITY:
+            raise ReportingValidationError(payload.get("detail"))
+        raise ReportingUpstreamError(f"lotus-core asset allocation upstream failure: {payload}")
 
     def _unwrap_core_query_positions(
         self, status_code: int, payload: dict[str, object]
     ) -> dict[str, object]:
-        if status_code < status.HTTP_400_BAD_REQUEST:
+        if status_code < HTTP_BAD_REQUEST:
             if isinstance(payload, dict) and "positions" in payload:
                 return self._map_holdings_from_positions(payload)
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="lotus-core positions payload missing required fields.",
-            )
-        if status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=payload.get("detail"))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"lotus-core positions upstream failure: {payload}",
-        )
+            raise ReportingUpstreamError("lotus-core positions payload missing required fields.")
+        if status_code == HTTP_NOT_FOUND:
+            raise ReportingNotFoundError(payload.get("detail"))
+        raise ReportingUpstreamError(f"lotus-core positions upstream failure: {payload}")
 
     def _map_review_overview(self, summary: dict[str, object]) -> dict[str, object]:
         totals = self._as_dict(summary.get("totals"))
@@ -1313,9 +1304,8 @@ class ReportingReadService:
         if raw_dimensions is None:
             return ["asset_class"]
         if not isinstance(raw_dimensions, list) or not raw_dimensions:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="allocation_dimensions must be a non-empty list when provided.",
+            raise ReportingValidationError(
+                "allocation_dimensions must be a non-empty list when provided."
             )
         dimensions: list[str] = []
         supported_dimensions = {
@@ -1329,16 +1319,10 @@ class ReportingReadService:
         }
         for raw_dimension in raw_dimensions:
             if not isinstance(raw_dimension, str) or not raw_dimension.strip():
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail="allocation_dimensions cannot contain blank values.",
-                )
+                raise ReportingValidationError("allocation_dimensions cannot contain blank values.")
             normalized = raw_dimension.strip().lower()
             if normalized not in supported_dimensions:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=f"Unsupported allocation dimension: {raw_dimension}",
-                )
+                raise ReportingValidationError(f"Unsupported allocation dimension: {raw_dimension}")
             dimensions.append(normalized)
         return dimensions
 
@@ -1407,11 +1391,10 @@ class ReportingReadService:
                 params=query_params,
                 correlation_id=correlation_id,
             )
-            if status_code < status.HTTP_400_BAD_REQUEST:
+            if status_code < HTTP_BAD_REQUEST:
                 if not isinstance(payload, dict) or "transactions" not in payload:
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail="lotus-core transactions payload missing required fields.",
+                    raise ReportingUpstreamError(
+                        "lotus-core transactions payload missing required fields."
                     )
                 page_rows = [
                     item
@@ -1424,20 +1407,11 @@ class ReportingReadService:
                 if not page_rows or skip >= total:
                     break
                 continue
-            if status_code == status.HTTP_404_NOT_FOUND:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=payload.get("detail"),
-                )
-            if status_code == status.HTTP_422_UNPROCESSABLE_CONTENT:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=payload.get("detail"),
-                )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"lotus-core transactions upstream failure: {payload}",
-            )
+            if status_code == HTTP_NOT_FOUND:
+                raise ReportingNotFoundError(payload.get("detail"))
+            if status_code == HTTP_UNPROCESSABLE_ENTITY:
+                raise ReportingValidationError(payload.get("detail"))
+            raise ReportingUpstreamError(f"lotus-core transactions upstream failure: {payload}")
 
         return rows
 
@@ -1877,7 +1851,7 @@ class ReportingReadService:
 
     @staticmethod
     def _contribution_ready(status_code: int, payload: dict[str, object]) -> bool:
-        return status_code < status.HTTP_400_BAD_REQUEST and "results_by_period" in payload
+        return status_code < HTTP_BAD_REQUEST and "results_by_period" in payload
 
     def _map_position_contributions(self, rows: list[object]) -> list[dict[str, object]]:
         mapped: list[dict[str, object]] = []
@@ -2076,10 +2050,7 @@ class ReportingReadService:
             value = payload.get(key)
             if isinstance(value, str) and value:
                 return value
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Missing required request field: {keys[0]}",
-        )
+        raise ReportingValidationError(f"Missing required request field: {keys[0]}")
 
     def _request_as_of_date(self, payload: dict[str, object]) -> str:
         return self._required_string(payload, *AS_OF_DATE_KEYS)
@@ -3542,7 +3513,7 @@ class ReportingReadService:
 
     @staticmethod
     def _workspace_summary_ready(status_code: int, payload: dict[str, object]) -> bool:
-        return status_code < status.HTTP_400_BAD_REQUEST and "results_by_period" in payload
+        return status_code < HTTP_BAD_REQUEST and "results_by_period" in payload
 
     def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
         section = self._as_dict(section_payload)

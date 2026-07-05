@@ -1,6 +1,6 @@
 import pytest
-from fastapi import HTTPException
 
+from app.application_errors import ReportingNotFoundError, ReportingUpstreamError
 from app.services.reporting_read_service import ReportingReadService
 
 FORBIDDEN_ADVISOR_PROMPT_WORDS = {"create", "creates", "approve", "approves", "mutate", "mutates"}
@@ -1190,9 +1190,8 @@ async def test_core_query_not_found_maps_to_404():
         performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingNotFoundError):
         await service.get_portfolio_summary("P404", {"as_of_date": "2026-02-24"}, None)
-    assert exc.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -1202,6 +1201,5 @@ async def test_core_query_failure_maps_to_502():
         performance_client=_PerformanceClientSuccess(),
         risk_client=_RiskClientSuccess(),
     )
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportingUpstreamError):
         await service.get_portfolio_review("P1", {"as_of_date": "2026-02-24"}, None)
-    assert exc.value.status_code == 502

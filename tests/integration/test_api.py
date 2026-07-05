@@ -1,9 +1,9 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app.application_errors import ReportingUpstreamError, ReportingValidationError
 from app.main import app
 from app.routers import health as health_router
 from app.routers.reports import get_reporting_read_service
@@ -382,12 +382,12 @@ class _StubReportingReadServiceFailure:
     async def get_portfolio_summary(
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
     ) -> dict:
-        raise HTTPException(status_code=422, detail="Missing required request field: as_of_date")
+        raise ReportingValidationError("Missing required request field: as_of_date")
 
     async def get_portfolio_review(
         self, portfolio_id: str, request_payload: dict, correlation_id: str | None
     ) -> dict:
-        raise HTTPException(status_code=502, detail="lotus-core upstream failure")
+        raise ReportingUpstreamError("lotus-core upstream failure")
 
 
 def test_ras_portfolio_summary_endpoint():
