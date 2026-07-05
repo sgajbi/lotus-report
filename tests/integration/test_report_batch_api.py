@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
@@ -66,6 +67,22 @@ def _headers(idempotency_key: str = "batch-portfolio-review-2026-04-22") -> dict
         "X-Correlation-ID": "corr-batch-1",
         "X-Trace-ID": "trace-batch-1",
     }
+
+
+def _operation_metric_value(
+    metrics_body: str,
+    *,
+    operation: str,
+    status: str,
+    failure_category: str,
+) -> float:
+    pattern = re.compile(
+        rf'lotus_report_operations_total\{{failure_category="{re.escape(failure_category)}",'
+        rf'operation="{re.escape(operation)}",status="{re.escape(status)}"\}} ([0-9.]+)'
+    )
+    match = pattern.search(metrics_body)
+    assert match is not None
+    return float(match.group(1))
 
 
 def _caller_context() -> ReportCallerContext:
@@ -397,6 +414,32 @@ def test_report_batch_item_replay_relinks_failed_item_idempotently(tmp_path):
             for event in report_ledger.list_status_events(source_job.job_id)
             if event.event_type == "batch_item_replay_requested"
         ] == ["batch_item_replay_requested"]
+        metrics_body = client.get("/metrics").text
+        assert (
+            _operation_metric_value(
+                metrics_body,
+                operation="replay_command",
+                status="accepted",
+                failure_category="none",
+            )
+            >= 2.0
+        )
+        assert (
+            _operation_metric_value(
+                metrics_body,
+                operation="replay_command",
+                status="failed",
+                failure_category="report_batch_item_cannot_be_replayed",
+            )
+            >= 1.0
+        )
+        operation_metric_lines = "\n".join(
+            line
+            for line in metrics_body.splitlines()
+            if line.startswith("lotus_report_operations_total")
+        )
+        assert "batch_item_id" not in operation_metric_lines
+        assert "report_job_id" not in operation_metric_lines
     finally:
         _clear_overrides()
 
@@ -521,6 +564,25 @@ def test_report_batch_item_replay_error_mappings(tmp_path):
         assert missing_key.json()["detail"]["code"] == "missing_idempotency_key"
         assert missing_item.status_code == 404
         assert missing_item.json()["detail"]["code"] == "report_batch_item_not_found"
+        metrics_body = client.get("/metrics").text
+        assert (
+            _operation_metric_value(
+                metrics_body,
+                operation="replay_command",
+                status="failed",
+                failure_category="missing_idempotency_key",
+            )
+            >= 1.0
+        )
+        assert (
+            _operation_metric_value(
+                metrics_body,
+                operation="replay_command",
+                status="failed",
+                failure_category="report_batch_item_not_found",
+            )
+            >= 1.0
+        )
     finally:
         _clear_overrides()
 
