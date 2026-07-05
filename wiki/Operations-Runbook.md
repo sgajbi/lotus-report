@@ -1,5 +1,16 @@
 # Operations Runbook
 
+Current scope: operator-facing checks, support-safe evidence paths, and copy-paste command examples
+for the implementation-backed `lotus-report` runtime.
+
+## First Response Matrix
+
+| Situation | First action | Evidence path |
+| --- | --- | --- |
+| Service readiness concern | Check health/readiness and PostgreSQL-backed ledger posture | `/health/ready`, migration smoke, indexed ledger queries |
+| One report job needs support review | Use product-safe status, events, diagnostics, snapshot, and lineage paths | `GET /api/v1/report-jobs/{job_id}`, `/events`, direct diagnostics |
+| Failed report or batch work needs intervention | Use rerender, regenerate, failed-work replay, batch control, or run-once only when eligibility rules match | caller-context config plus operation-specific idempotency where required |
+
 ## Important operational checks
 
 - confirm canonical reporting identity is `report.dev.lotus` before cross-app validation
@@ -189,6 +200,22 @@ Required caller context for job creation:
 8. `X-Correlation-ID`
 9. distributed trace context through `traceparent` or `X-Trace-ID`
 
+Use this reusable curl config for direct `lotus-report` and gateway support commands. Keep
+operation-specific `Idempotency-Key` headers inline on mutations that require duplicate-safe retry
+semantics.
+
+```text
+file: report-operator-headers.curl
+header = "X-Actor-Id: support-operator-1"
+header = "X-Caller-Application: lotus-report-ops"
+header = "X-Tenant-Id: tenant-sg"
+header = "X-Region: APAC"
+header = "X-Booking-Center-Code: SG"
+header = "X-Role: support_operator"
+header = "X-Correlation-ID: report-operator-local-proof"
+header = "X-Trace-ID: trace-report-operator-local-proof"
+```
+
 Expected controls:
 
 1. a duplicate request with the same `Idempotency-Key` and same canonical request hash returns the
@@ -354,15 +381,9 @@ Portfolio review report job proof:
 
 ```powershell
 curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
+  --config report-operator-headers.curl `
   -H "Content-Type: application/json" `
   -H "Idempotency-Key: portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22" `
-  -H "X-Actor-Id: advisor-123" `
-  -H "X-Caller-Application: lotus-workbench" `
-  -H "X-Tenant-Id: tenant-sg" `
-  -H "X-Region: APAC" `
-  -H "X-Booking-Center-Code: SG" `
-  -H "X-Role: advisor" `
-  -H "X-Correlation-ID: portfolio-review-job-local-proof" `
   -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
 ```
 
@@ -380,6 +401,99 @@ paths `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs
 `GET /reports/jobs/{job_id}/events`, `GET /reports/jobs/{job_id}/snapshot`,
 `GET /reports/jobs/{job_id}/lineage`, `GET /reports/snapshots/{snapshot_id}`,
 `GET /reports/snapshots/{snapshot_id}/lineage`, and `POST /reports/jobs/{job_id}/cancel`.
+
+Reusable operator command examples:
+
+Job status, events, and support-safe reads:
+
+```powershell
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example" `
+  --config report-operator-headers.curl
+
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/events" `
+  --config report-operator-headers.curl
+
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/diagnostics" `
+  --config report-operator-headers.curl
+
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/snapshot" `
+  --config report-operator-headers.curl
+
+curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" `
+  --config report-operator-headers.curl
+```
+
+Job cancellation and correction commands:
+
+```powershell
+curl -X POST "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/cancel" `
+  --config report-operator-headers.curl
+
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_example/rerender" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: rerender-rjob_example-v1" `
+  -d "{\"reason\":\"correct_template_or_presentation\"}"
+
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_example/regenerate" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: regenerate-rjob_example-v1" `
+  -d "{\"reason\":\"refresh_corrected_upstream_data\"}"
+
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_failed_example/replay" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: replay-rjob_failed_example-v1" `
+  -d "{\"reason\":\"retry_failed_work\"}"
+```
+
+Batch materialization and status:
+
+```powershell
+curl -X POST "http://127.0.0.1:8300/reports/batches" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: batch-PB_SG_GLOBAL_BAL_001-2026-04-22" `
+  -d "{\"selector_mode\":\"explicit_portfolio_list\",\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"],\"source_candidates\":[{\"portfolio_id\":\"PB_SG_GLOBAL_BAL_001\",\"tenant_id\":\"tenant-sg\",\"region\":\"APAC\",\"active\":true,\"selected\":true,\"source_system\":\"lotus-core\",\"source_object\":\"PortfolioScope\"}],\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\"}"
+
+curl "http://127.0.0.1:8300/reports/batches/rbatch_example" `
+  --config report-operator-headers.curl
+```
+
+Batch controls:
+
+```powershell
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:pause" `
+  --config report-operator-headers.curl
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:resume" `
+  --config report-operator-headers.curl
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:cancel" `
+  --config report-operator-headers.curl
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:retry-failed" `
+  --config report-operator-headers.curl
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expired-leases" `
+  --config report-operator-headers.curl
+```
+
+Batch item replay and bounded run-once:
+
+```powershell
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example/items/rbci_failed_example/replay" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: batch-item-replay-rbci_failed_example-v1" `
+  -d "{\"reason\":\"retry_failed_batch_item\"}"
+
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:run-once" `
+  --config report-operator-headers.curl `
+  -H "Content-Type: application/json" `
+  -d "{\"worker_id\":\"lotus-report-batch-worker-1\",\"recover_expired_leases\":true,\"dispatch_policy\":{\"max_active_batches\":1,\"max_active_items\":5,\"max_active_upstream_jobs\":3,\"max_active_render_jobs\":2,\"max_active_archive_jobs\":2,\"lease_seconds\":300},\"runtime_load\":{\"active_batches\":0,\"active_items\":0,\"active_upstream_jobs\":0,\"active_render_jobs\":0,\"active_archive_jobs\":0}}"
+```
 
 ## Key references
 
