@@ -68,6 +68,8 @@ class BatchReplayReportJobLedger(Protocol):
         job_id: str,
         event_type: str,
         message: str,
+        event_payload: dict[str, object] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
@@ -131,10 +133,12 @@ class ReportBatchItemReplayService:
             job_id=source_job.job_id,
             event_type="batch_item_replay_requested",
             replayed_job_id=replayed_job.job_id,
+            replayed_status=replayed_job.status,
             message=(
                 f"Batch item {batch_item_id} replay requested as {replayed_job.job_id}: "
                 f"{command.reason}"
             ),
+            event_payload={"batch_item_id": batch_item_id},
             caller_context=caller_context,
         )
         append_source_event_once(
@@ -142,7 +146,9 @@ class ReportBatchItemReplayService:
             job_id=replayed_job.job_id,
             event_type="batch_item_replay_lineage_bound",
             replayed_job_id=source_job.job_id,
+            replayed_status=source_job.status,
             message=f"Batch item replay source job {source_job.job_id}.",
+            event_payload={"batch_item_id": batch_item_id, "source_job_id": source_job.job_id},
             caller_context=caller_context,
         )
         return BatchItemReplayResult(
@@ -164,10 +170,11 @@ class ReportBatchItemReplayService:
         self, replayed_job: ReportJobLedgerRecord
     ) -> ReportJobLedgerRecord:
         for event in self._report_job_ledger.list_status_events(replayed_job.job_id):
-            prefix = "Batch item replay source job "
-            message = event.message or ""
-            if event.event_type == "batch_item_replay_lineage_bound" and message.startswith(prefix):
-                source_job_id = message.removeprefix(prefix).rstrip(".")
+            source_job_id = event.event_payload.get("source_job_id")
+            if event.event_type == "batch_item_replay_lineage_bound" and isinstance(
+                source_job_id,
+                str,
+            ):
                 return self._report_job_ledger.get_job(source_job_id)
         raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 

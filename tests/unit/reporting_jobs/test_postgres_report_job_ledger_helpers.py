@@ -270,6 +270,30 @@ def test_postgres_report_job_ledger_existing_or_conflict_and_row_helpers() -> No
     )
     assert event.to_status == "accepted"
     assert event.created_at == datetime(2026, 4, 23, 12, 0, tzinfo=UTC)
+    assert event.event_schema_version == "report-status-event.legacy.v0"
+    assert event.event_payload["payload_posture"] == "legacy_message_only"
+
+    typed_event = _event_from_row(
+        {
+            "status_event_id": "rse_456",
+            "report_job_id": "rjob_123",
+            "from_status": "archiving",
+            "to_status": "archived",
+            "event_type": "job_archived",
+            "event_schema_version": "report-status-event.v1",
+            "event_family": "archive_lifecycle",
+            "event_payload_json": {"archive_document_id": "doc_123"},
+            "event_idempotency_key": "job_archived:rjob_123:doc_123",
+            "message": "archived",
+            "actor": "advisor-123",
+            "created_at": datetime(2026, 4, 23, 12, 1, tzinfo=UTC),
+            "correlation_id": "corr-helpers",
+            "trace_id": "trace-helpers",
+        }
+    )
+    assert typed_event.event_family == "archive_lifecycle"
+    assert typed_event.event_payload["archive_document_id"] == "doc_123"
+    assert typed_event.event_idempotency_key == "job_archived:rjob_123:doc_123"
 
 
 def test_postgres_report_job_ledger_rerender_row_helper_maps_operational_fields() -> None:
@@ -308,6 +332,12 @@ def test_postgres_report_job_ledger_check_ready_requires_rerender_table() -> Non
                 {"table_name": "report_status_event"},
             ],
             [
+                {"column_name": "event_schema_version"},
+                {"column_name": "event_family"},
+                {"column_name": "event_payload_json"},
+                {"column_name": "event_idempotency_key"},
+            ],
+            [
                 {"column_name": "archive_request_id"},
                 {"column_name": "archive_document_id"},
                 {"column_name": "archive_completed_at"},
@@ -331,6 +361,12 @@ def test_postgres_report_job_ledger_check_ready_accepts_complete_schema() -> Non
                 {"table_name": "report_status_event"},
             ],
             [
+                {"column_name": "event_schema_version"},
+                {"column_name": "event_family"},
+                {"column_name": "event_payload_json"},
+                {"column_name": "event_idempotency_key"},
+            ],
+            [
                 {"column_name": "archive_request_id"},
                 {"column_name": "archive_document_id"},
                 {"column_name": "archive_completed_at"},
@@ -342,7 +378,7 @@ def test_postgres_report_job_ledger_check_ready_accepts_complete_schema() -> Non
 
     ledger.check_ready()
 
-    assert len(connection.calls) == 3
+    assert len(connection.calls) == 4
 
 
 def test_postgres_report_job_ledger_append_job_event_records_current_status() -> None:
@@ -354,6 +390,7 @@ def test_postgres_report_job_ledger_append_job_event_records_current_status() ->
         job_id="rjob_123",
         event_type="job_rerender_requested",
         message="Report rerender requested.",
+        event_payload={"snapshot_id": "rsnap_123"},
         actor="advisor-123",
         correlation_id="corr-rerender",
         trace_id="trace-rerender",

@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS report_status_event (
         )
     ),
     event_type TEXT NOT NULL,
+    event_schema_version TEXT NOT NULL DEFAULT 'report-status-event.v1',
+    event_family TEXT NOT NULL DEFAULT 'job_lifecycle',
+    event_payload_json JSONB NOT NULL DEFAULT '{}',
+    event_idempotency_key TEXT,
     message TEXT,
     actor TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
@@ -118,3 +122,10 @@ ON report_job(report_request_id);
 
 CREATE INDEX IF NOT EXISTS idx_report_status_event_job_created
 ON report_status_event(report_job_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_report_status_event_family_created
+ON report_status_event(event_family, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_report_status_event_idempotency_key
+ON report_status_event(event_idempotency_key)
+WHERE event_idempotency_key IS NOT NULL;

@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
+from app.reporting_jobs.event_contracts import (
+    build_report_status_event_contract,
+    legacy_report_status_event_contract,
+)
 from app.reporting_jobs.lifecycle_policy import (
     is_report_job_cancellable,
     is_report_job_transition_allowed,
@@ -276,6 +280,10 @@ class ReportJobLedger:
                     from_status TEXT,
                     to_status TEXT NOT NULL,
                     event_type TEXT NOT NULL,
+                    event_schema_version TEXT NOT NULL DEFAULT 'report-status-event.v1',
+                    event_family TEXT NOT NULL DEFAULT 'job_lifecycle',
+                    event_payload_json TEXT NOT NULL DEFAULT '{}',
+                    event_idempotency_key TEXT,
                     message TEXT,
                     actor TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -511,6 +519,8 @@ class ReportJobLedger:
                     to_status="accepted",
                     event_type="job_accepted",
                     message=accepted_message,
+                    event_payload={"report_type": report_type},
+                    event_idempotency_key=normalized_key,
                     actor=caller_context.triggered_by,
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,
@@ -547,6 +557,8 @@ class ReportJobLedger:
         job_id: str,
         event_type: str,
         message: str,
+        event_payload: dict[str, Any] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
@@ -567,6 +579,8 @@ class ReportJobLedger:
                     to_status=current_status,
                     event_type=event_type,
                     message=message,
+                    event_payload=event_payload,
+                    event_idempotency_key=event_idempotency_key,
                     actor=actor,
                     correlation_id=correlation_id,
                     trace_id=trace_id,
@@ -644,6 +658,12 @@ class ReportJobLedger:
                     to_status=job.status,
                     event_type="job_rerender_requested",
                     message=f"Report rerender requested from snapshot {snapshot_id}.",
+                    event_payload={
+                        "snapshot_id": snapshot_id,
+                        "snapshot_hash": snapshot_hash,
+                        "rerender_attempt_id": attempt_id,
+                    },
+                    event_idempotency_key=normalized_key,
                     actor=actor,
                     correlation_id=correlation_id,
                     trace_id=trace_id,
@@ -723,6 +743,11 @@ class ReportJobLedger:
                     message=(
                         f"Report rerender archived as correction document {archive_document_id}."
                     ),
+                    event_payload={
+                        "rerender_attempt_id": rerender_attempt_id,
+                        "render_job_id": archived.render_job_id,
+                        "archive_document_id": archive_document_id,
+                    },
                     actor=actor,
                     correlation_id=correlation_id,
                     trace_id=trace_id,
@@ -758,6 +783,10 @@ class ReportJobLedger:
                     to_status="archived",
                     event_type="job_rerender_failed",
                     message=failure_message,
+                    event_payload={
+                        "rerender_attempt_id": rerender_attempt_id,
+                        "failure_message": failure_message,
+                    },
                     actor=actor,
                     correlation_id=correlation_id,
                     trace_id=trace_id,
@@ -1165,6 +1194,10 @@ class ReportJobLedger:
                     to_status="cancelled",
                     event_type="job_cancelled",
                     message="Report job cancelled before render or archive processing.",
+                    event_payload={
+                        "current_step": "cancelled",
+                        "cancel_requested": True,
+                    },
                     actor=actor,
                     correlation_id=correlation_id,
                     trace_id=trace_id,
@@ -1185,18 +1218,28 @@ class ReportJobLedger:
         to_status: ReportJobStatus,
         event_type: str,
         message: str | None,
+        event_payload: dict[str, Any] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
         created_at: datetime,
     ) -> None:
+        contract = build_report_status_event_contract(
+            event_type=event_type,
+            from_status=from_status,
+            to_status=to_status,
+            event_payload=event_payload,
+            event_idempotency_key=event_idempotency_key,
+        )
         connection.execute(
             """
             INSERT INTO report_status_event (
                 status_event_id, report_job_id, from_status, to_status, event_type,
+                event_schema_version, event_family, event_payload_json, event_idempotency_key,
                 message, actor, created_at, correlation_id, trace_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 f"rse_{uuid4().hex}",
@@ -1204,6 +1247,10 @@ class ReportJobLedger:
                 from_status,
                 to_status,
                 event_type,
+                contract.schema_version,
+                contract.event_family,
+                canonical_json(contract.event_payload),
+                contract.event_idempotency_key,
                 message,
                 actor,
                 _dt_to_text(created_at),
@@ -1319,6 +1366,22 @@ class ReportJobLedger:
             to_status=to_status,
             event_type=event_type,
             message=event_message,
+            event_payload=_transition_event_payload(
+                current_step=current_step,
+                failure_category=failure_category,
+                failure_message=failure_message,
+                render_job_id=render_job_id,
+                render_output_format=render_output_format,
+                render_template_id=render_template_id,
+                render_template_version=render_template_version,
+                render_artifact_sha256=render_artifact_sha256,
+                render_bounded_determinism_fingerprint=render_bounded_determinism_fingerprint,
+                render_runtime_engine=render_runtime_engine,
+                render_runtime_engine_version=render_runtime_engine_version,
+                render_duration_ms=render_duration_ms,
+                archive_request_id=archive_request_id,
+                archive_document_id=archive_document_id,
+            ),
             actor=actor,
             correlation_id=correlation_id,
             trace_id=trace_id,
@@ -1569,18 +1632,73 @@ def _optional_row_value(row: sqlite3.Row, key: str) -> Any | None:
 
 
 def _event_from_row(row: sqlite3.Row) -> ReportStatusEvent:
+    event_type = row["event_type"]
+    contract = legacy_report_status_event_contract(
+        event_type=event_type,
+        from_status=row["from_status"],
+        to_status=row["to_status"],
+    )
+    event_schema_version = _optional_row_value(row, "event_schema_version")
+    event_family = _optional_row_value(row, "event_family")
+    event_payload_json = _optional_row_value(row, "event_payload_json")
+    event_payload = (
+        json.loads(event_payload_json)
+        if isinstance(event_payload_json, str) and event_payload_json.strip()
+        else contract.event_payload
+    )
     return ReportStatusEvent(
         status_event_id=row["status_event_id"],
         report_job_id=row["report_job_id"],
         from_status=row["from_status"],
         to_status=row["to_status"],
-        event_type=row["event_type"],
+        event_type=event_type,
+        event_schema_version=event_schema_version or contract.schema_version,
+        event_family=event_family or contract.event_family,
+        event_payload=event_payload,
+        event_idempotency_key=_optional_row_value(row, "event_idempotency_key"),
         message=row["message"],
         actor=row["actor"],
         created_at=_dt_from_text(row["created_at"]) or utc_now(),
         correlation_id=row["correlation_id"],
         trace_id=row["trace_id"],
     )
+
+
+def _transition_event_payload(
+    *,
+    current_step: str,
+    failure_category: str | None,
+    failure_message: str | None,
+    render_job_id: str | None,
+    render_output_format: str | None,
+    render_template_id: str | None,
+    render_template_version: str | None,
+    render_artifact_sha256: str | None,
+    render_bounded_determinism_fingerprint: str | None,
+    render_runtime_engine: str | None,
+    render_runtime_engine_version: str | None,
+    render_duration_ms: int | None,
+    archive_request_id: str | None,
+    archive_document_id: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"current_step": current_step}
+    optional_fields: dict[str, Any | None] = {
+        "failure_category": failure_category,
+        "failure_message": failure_message,
+        "render_job_id": render_job_id,
+        "render_output_format": render_output_format,
+        "render_template_id": render_template_id,
+        "render_template_version": render_template_version,
+        "render_artifact_sha256": render_artifact_sha256,
+        "render_bounded_determinism_fingerprint": render_bounded_determinism_fingerprint,
+        "render_runtime_engine": render_runtime_engine,
+        "render_runtime_engine_version": render_runtime_engine_version,
+        "render_duration_ms": render_duration_ms,
+        "archive_request_id": archive_request_id,
+        "archive_document_id": archive_document_id,
+    }
+    payload.update({key: value for key, value in optional_fields.items() if value is not None})
+    return payload
 
 
 def _record_matches_filters(record: ReportJobLedgerRecord, filters: ReportJobListFilters) -> bool:

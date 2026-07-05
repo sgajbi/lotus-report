@@ -238,6 +238,10 @@ def test_report_job_ledger_creates_request_job_and_append_only_event(tmp_path):
     assert events[0].from_status is None
     assert events[0].to_status == "accepted"
     assert events[0].event_type == "job_accepted"
+    assert events[0].event_schema_version == "report-status-event.v1"
+    assert events[0].event_family == "job_lifecycle"
+    assert events[0].event_payload["report_type"] == "portfolio_review"
+    assert events[0].event_idempotency_key == "idem-1"
 
 
 def test_report_job_ledger_creates_outcome_review_request_job(tmp_path):
@@ -519,6 +523,7 @@ def test_report_job_ledger_cancels_pre_render_job_and_records_transition(tmp_pat
     assert [event.to_status for event in events] == ["accepted", "cancelled"]
     assert events[-1].from_status == "accepted"
     assert events[-1].event_type == "job_cancelled"
+    assert events[-1].event_payload["current_step"] == "cancelled"
 
 
 def test_report_job_ledger_rejects_duplicate_cancel(tmp_path):
@@ -662,6 +667,11 @@ def test_report_job_ledger_marks_collecting_data_data_ready_and_failed(tmp_path)
         "accepted",
         "failed",
     ]
+    failed_event = ledger.list_status_events(failed.job_id)[-1]
+    assert failed_event.event_payload["failure_category"] == "validation_failed"
+    assert failed_event.event_payload["failure_message"] == (
+        "Requested report inputs were not fully supported."
+    )
 
 
 def test_report_job_ledger_marks_rendering_and_completed(tmp_path):
@@ -739,6 +749,14 @@ def test_report_job_ledger_marks_rendering_and_completed(tmp_path):
         "archiving",
         "archived",
     ]
+    events = ledger.list_status_events(ready.job_id)
+    render_event = next(event for event in events if event.event_type == "job_rendering")
+    assert render_event.event_family == "render_lifecycle"
+    assert render_event.event_payload["render_job_id"] == f"rdr_{ready.job_id}_pdf"
+    assert render_event.event_payload["render_template_id"] == "portfolio-review"
+    archived_event = events[-1]
+    assert archived_event.event_family == "archive_lifecycle"
+    assert archived_event.event_payload["archive_document_id"] == "doc_123"
 
 
 def test_report_job_ledger_transition_helper_handles_not_found_same_status_and_invalid_path(
@@ -912,3 +930,35 @@ def test_report_job_ledger_helpers_round_trip_rows() -> None:
     )
     assert event.created_at == now
     assert event.to_status == "accepted"
+    assert event.event_schema_version == "report-status-event.legacy.v0"
+    assert event.event_payload["payload_posture"] == "legacy_message_only"
+
+
+def test_report_job_ledger_rejects_invalid_event_payload(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    record = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-invalid-event-payload",
+    )
+
+    with pytest.raises(ValueError, match="report_status_event_payload_missing:snapshot_id"):
+        ledger.append_job_event(
+            job_id=record.job_id,
+            event_type="job_rerender_requested",
+            message="Report rerender requested.",
+            actor="advisor-123",
+            correlation_id="corr-invalid-event",
+            trace_id="trace-invalid-event",
+        )
+
+    with pytest.raises(ValueError, match="report_status_event_payload_sensitive_keys:portfolio_id"):
+        ledger.append_job_event(
+            job_id=record.job_id,
+            event_type="job_rerender_requested",
+            message="Report rerender requested.",
+            event_payload={"snapshot_id": "rsnap_123", "portfolio_id": "PB_SG_GLOBAL_BAL_001"},
+            actor="advisor-123",
+            correlation_id="corr-sensitive-event",
+            trace_id="trace-sensitive-event",
+        )

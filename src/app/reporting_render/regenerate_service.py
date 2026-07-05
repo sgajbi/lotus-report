@@ -53,6 +53,8 @@ class RegenerateLedger(Protocol):
         job_id: str,
         event_type: str,
         message: str,
+        event_payload: dict[str, object] | None = None,
+        event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
@@ -129,6 +131,8 @@ class PortfolioReviewRegenerateService:
                     "Report regeneration requested from upstream data as "
                     f"{regenerated.job_id}: {command.reason}"
                 ),
+                event_payload={"regenerated_job_id": regenerated.job_id},
+                event_idempotency_key=regenerate_key,
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
                 trace_id=caller_context.trace_id,
@@ -142,6 +146,10 @@ class PortfolioReviewRegenerateService:
                 archive_consequence="replacement",
             )
         if regenerated.status == "archived":
+            if not regenerated.archive_document_id:
+                raise InvalidReportJobTransitionError(
+                    "report_job_regenerate_archive_document_missing"
+                )
             _append_source_event_once(
                 self._ledger,
                 job_id=source_job.job_id,
@@ -151,6 +159,7 @@ class PortfolioReviewRegenerateService:
                     "Report regeneration archived replacement document "
                     f"{regenerated.archive_document_id} from job {regenerated.job_id}."
                 ),
+                archive_document_id=regenerated.archive_document_id,
                 caller_context=caller_context,
             )
         new_snapshot = _optional_snapshot(self._snapshot_store, regenerated.job_id)
@@ -210,10 +219,12 @@ def _append_source_event_once(
     event_type: str,
     regenerated_job_id: str,
     message: str,
+    archive_document_id: str,
     caller_context: ReportCallerContext,
 ) -> None:
     if any(
-        event.event_type == event_type and regenerated_job_id in (event.message or "")
+        event.event_type == event_type
+        and event.event_payload.get("regenerated_job_id") == regenerated_job_id
         for event in ledger.list_status_events(job_id)
     ):
         return
@@ -221,6 +232,11 @@ def _append_source_event_once(
         job_id=job_id,
         event_type=event_type,
         message=message,
+        event_payload={
+            "regenerated_job_id": regenerated_job_id,
+            "archive_document_id": archive_document_id,
+        },
+        event_idempotency_key=f"{event_type}:{job_id}:{regenerated_job_id}",
         actor=caller_context.triggered_by,
         correlation_id=caller_context.correlation_id,
         trace_id=caller_context.trace_id,
