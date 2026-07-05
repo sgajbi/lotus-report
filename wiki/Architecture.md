@@ -29,3 +29,5 @@
 3. capability publication uses snake_case query parameters today
 4. public API surfaces publish canonical snake_case request, query, and response fields only
 5. stale placeholder routes should be removed rather than documented as product capabilities
+6. report-job and batch lifecycle policy lives in shared domain/application modules; PostgreSQL and
+   SQLite adapters own persistence and locking only
