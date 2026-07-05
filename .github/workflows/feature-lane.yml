@@ -61,4 +61,4 @@ jobs:
       - name: Install
         run: make install
       - name: Run unit tests
-        run: python -m pytest tests/unit
+        run: make test-unit
