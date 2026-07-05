@@ -58,6 +58,7 @@ class _TransactionRowsResult:
     source_total: int | None
     fetched_pages: int
     supportability: dict[str, object]
+    source_product: dict[str, object]
 
 
 class ReportingReadService:
@@ -268,6 +269,7 @@ class ReportingReadService:
                 "activitySummary": self._map_activity_summary_from_rows(transaction_rows),
                 "realizedPnlSummary": self._summarize_realized_pnl_rows(transaction_rows),
                 "supportability": self._transaction_rows_supportability(transaction_result),
+                "sourceProduct": self._transaction_source_product(transaction_result),
             }
         if "HOLDINGS" in requested_sections:
             (
@@ -1051,6 +1053,9 @@ class ReportingReadService:
             source_service="lotus-core",
             source_endpoint=f"/portfolios/{portfolio_id}/transactions",
             source_entity_id=portfolio_id,
+            source_product=self._as_dict(
+                self._as_dict(response.get("incomeAndActivity")).get("sourceProduct")
+            ),
         )
         self._append_source_ref(
             refs,
@@ -1069,6 +1074,9 @@ class ReportingReadService:
             source_service="lotus-core",
             source_endpoint=f"/portfolios/{portfolio_id}/transactions",
             source_entity_id=portfolio_id,
+            source_product=self._as_dict(
+                self._as_dict(response.get("transactions")).get("sourceProduct")
+            ),
         )
         return refs
 
@@ -1083,6 +1091,7 @@ class ReportingReadService:
         source_endpoint: str,
         source_entity_id: str,
         input_services: list[str] | None = None,
+        source_product: dict[str, object] | None = None,
     ) -> None:
         if response_key not in response:
             return
@@ -1095,6 +1104,8 @@ class ReportingReadService:
         }
         if input_services:
             source_ref["input_services"] = input_services
+        if source_product:
+            source_ref["source_product"] = source_product
         refs.append(source_ref)
 
     def _extract_daily_returns_from_workspace_summary(
@@ -1431,7 +1442,16 @@ class ReportingReadService:
             if transaction_result is not None
             else 0,
             "supportability": self._transaction_rows_supportability(transaction_result),
+            "sourceProduct": self._transaction_source_product(transaction_result),
         }
+
+    @staticmethod
+    def _transaction_source_product(
+        transaction_result: _TransactionRowsResult | None,
+    ) -> dict[str, object]:
+        if transaction_result is None:
+            return {}
+        return transaction_result.source_product
 
     def _build_allocation_request(self, request_payload: dict[str, object]) -> dict[str, object]:
         dimensions = self._allocation_dimensions(request_payload)
@@ -1599,6 +1619,7 @@ class ReportingReadService:
         source_total: int | None = None
         fetched_pages = 0
         stop_reason: str | None = None
+        source_product: dict[str, object] = {}
 
         while True:
             if len(rows) >= max_rows:
@@ -1629,11 +1650,18 @@ class ReportingReadService:
                 remaining_budget = max_rows - len(rows)
                 rows.extend(page_rows[:remaining_budget])
                 source_total = self._to_int(payload.get("total"))
+                source_product = self._merge_transaction_source_product(
+                    current=source_product,
+                    payload=payload,
+                    returned_count=len(rows),
+                    source_total=source_total,
+                    fetched_pages=fetched_pages,
+                )
                 skip += len(page_rows)
                 if len(page_rows) > remaining_budget or len(rows) >= max_rows:
                     stop_reason = "max_rows_reached"
                     break
-                if not page_rows or skip >= source_total:
+                if not page_rows or source_total is None or skip >= source_total:
                     break
                 continue
             if status_code == HTTP_NOT_FOUND:
@@ -1651,7 +1679,9 @@ class ReportingReadService:
                 source_total=source_total,
                 fetched_pages=fetched_pages,
                 stop_reason=stop_reason,
+                source_product=source_product,
             ),
+            source_product=source_product,
         )
 
     def _transaction_rows_supportability(
@@ -1668,9 +1698,19 @@ class ReportingReadService:
         source_total: int | None,
         fetched_pages: int,
         stop_reason: str | None,
+        source_product: dict[str, object],
     ) -> dict[str, object]:
+        notes: list[dict[str, object]] = []
+        notes.extend(
+            self._transaction_source_product_supportability_notes(
+                source_product=source_product,
+                returned_count=returned_count,
+                source_total=source_total,
+                fetched_pages=fetched_pages,
+            )
+        )
         if stop_reason is None:
-            return {"status": "ready", "notes": []}
+            return {"status": "partial" if notes else "ready", "notes": notes}
         max_rows = settings.report_transaction_max_rows
         max_pages = settings.report_transaction_max_pages
         if stop_reason == "max_rows_reached":
@@ -1683,22 +1723,159 @@ class ReportingReadService:
                 "Transaction paging stopped at the report-owned page budget "
                 f"of {max_pages}; request a narrower window for complete transaction detail."
             )
-        return {
-            "status": "partial",
-            "notes": [
+        notes.insert(
+            0,
+            {
+                "code": "transaction_window_truncated",
+                "severity": "warning",
+                "reason": stop_reason,
+                "message": message,
+                "returned_count": returned_count,
+                "source_total": source_total,
+                "fetched_pages": fetched_pages,
+                "max_rows": max_rows,
+                "max_pages": max_pages,
+            },
+        )
+        return {"status": "partial", "notes": notes}
+
+    def _merge_transaction_source_product(
+        self,
+        *,
+        current: dict[str, object],
+        payload: dict[str, object],
+        returned_count: int,
+        source_total: int | None,
+        fetched_pages: int,
+    ) -> dict[str, object]:
+        source_product = dict(current)
+        for source_key, target_key in (
+            ("product_name", "product_name"),
+            ("product_version", "product_version"),
+            ("tenant_id", "tenant_id"),
+            ("generated_at", "generated_at"),
+            ("as_of_date", "as_of_date"),
+            ("data_quality_status", "data_quality_status"),
+            ("reconciliation_status", "reconciliation_status"),
+            ("latest_evidence_timestamp", "latest_evidence_timestamp"),
+            ("restatement_version", "restatement_version"),
+            ("source_batch_fingerprint", "source_batch_fingerprint"),
+            ("snapshot_id", "snapshot_id"),
+            ("content_hash", "content_hash"),
+            ("policy_version", "policy_version"),
+            ("correlation_id", "correlation_id"),
+            ("portfolio_id", "portfolio_id"),
+            ("reporting_currency", "reporting_currency"),
+            ("missing_instrument_reference_count", "missing_instrument_reference_count"),
+        ):
+            if payload.get(source_key) is not None:
+                source_product[target_key] = payload.get(source_key)
+        source_product.setdefault("product_name", "TransactionLedgerWindow")
+        source_product.setdefault("product_version", "v1")
+        source_product["source_service"] = "lotus-core"
+        source_product["source_endpoint"] = "/portfolios/{portfolio_id}/transactions"
+        source_product["source_total"] = source_total
+        source_product["returned_count"] = returned_count
+        source_product["fetched_page_count"] = fetched_pages
+        source_product["skip"] = payload.get("skip")
+        source_product["limit"] = payload.get("limit")
+        reason_codes = self._as_list(payload.get("reason_codes"))
+        if reason_codes:
+            source_product["reason_codes"] = [
+                self._safe_str(reason_code) for reason_code in reason_codes
+            ]
+        missing_security_ids = self._as_list(payload.get("missing_instrument_security_ids"))
+        if missing_security_ids:
+            source_product["missing_instrument_security_ids"] = [
+                self._safe_str(security_id) for security_id in missing_security_ids
+            ]
+        return source_product
+
+    def _transaction_source_product_supportability_notes(
+        self,
+        *,
+        source_product: dict[str, object],
+        returned_count: int,
+        source_total: int | None,
+        fetched_pages: int,
+    ) -> list[dict[str, object]]:
+        notes: list[dict[str, object]] = []
+        required_fields = (
+            "product_name",
+            "product_version",
+            "tenant_id",
+            "generated_at",
+            "as_of_date",
+            "data_quality_status",
+            "reconciliation_status",
+            "latest_evidence_timestamp",
+            "restatement_version",
+            "source_batch_fingerprint",
+            "snapshot_id",
+            "policy_version",
+            "correlation_id",
+        )
+        missing_fields = [
+            field for field in required_fields if source_product.get(field) in (None, "", [], {})
+        ]
+        if missing_fields:
+            notes.append(
                 {
-                    "code": "transaction_window_truncated",
+                    "code": "transaction_window_trust_metadata_incomplete",
                     "severity": "warning",
-                    "reason": stop_reason,
-                    "message": message,
+                    "missing_fields": missing_fields,
+                    "message": (
+                        "TransactionLedgerWindow source-product metadata is incomplete; "
+                        "transaction supportability is partial until core trust metadata is "
+                        "available."
+                    ),
                     "returned_count": returned_count,
                     "source_total": source_total,
                     "fetched_pages": fetched_pages,
-                    "max_rows": max_rows,
-                    "max_pages": max_pages,
                 }
-            ],
-        }
+            )
+        data_quality_status = self._safe_str(source_product.get("data_quality_status")).upper()
+        if data_quality_status and data_quality_status != "COMPLETE":
+            notes.append(
+                {
+                    "code": "transaction_window_source_quality_not_complete",
+                    "severity": "warning",
+                    "data_quality_status": data_quality_status,
+                    "reason_codes": source_product.get("reason_codes", []),
+                    "message": (
+                        "lotus-core marked the transaction ledger window as not complete; "
+                        "report transaction coverage must remain partial."
+                    ),
+                }
+            )
+        reconciliation_status = self._safe_str(source_product.get("reconciliation_status")).upper()
+        if reconciliation_status and reconciliation_status not in {"RECONCILED", "COMPLETE"}:
+            notes.append(
+                {
+                    "code": "transaction_window_reconciliation_not_complete",
+                    "severity": "warning",
+                    "reconciliation_status": reconciliation_status,
+                    "message": (
+                        "lotus-core transaction ledger reconciliation is not complete for this "
+                        "window."
+                    ),
+                }
+            )
+        if source_total is not None and returned_count < source_total:
+            notes.append(
+                {
+                    "code": "transaction_window_page_partial",
+                    "severity": "warning",
+                    "returned_count": returned_count,
+                    "source_total": source_total,
+                    "fetched_pages": fetched_pages,
+                    "message": (
+                        "The report payload contains fewer transaction rows than the source "
+                        "ledger window."
+                    ),
+                }
+            )
+        return notes
 
     def _summarize_income_rows(
         self,
@@ -2721,6 +2898,7 @@ class ReportingReadService:
     def _transaction_key_figures(self, transactions: dict[str, object]) -> dict[str, object]:
         by_category = self._as_dict(transactions.get("transactionsByCategory"))
         supportability = self._as_dict(transactions.get("supportability"))
+        source_product = self._as_dict(transactions.get("sourceProduct"))
         rows = [
             self._as_dict(row)
             for category_rows in by_category.values()
@@ -2741,6 +2919,10 @@ class ReportingReadService:
             "transaction_count": self._to_int(transactions.get("transactionCount")),
             "source_transaction_count": transactions.get("sourceTransactionCount"),
             "fetched_page_count": transactions.get("fetchedPageCount"),
+            "source_product": source_product,
+            "source_data_quality_status": source_product.get("data_quality_status"),
+            "source_reconciliation_status": source_product.get("reconciliation_status"),
+            "latest_evidence_timestamp": source_product.get("latest_evidence_timestamp"),
             "transaction_count_by_category": counts,
             "realized_pnl_status": "present" if realized_rows else "not_applicable",
             "realized_pnl_transaction_count": len(realized_rows),
@@ -3717,6 +3899,7 @@ class ReportingReadService:
         return {
             "transaction_id": transaction_id,
             "transaction_date": self._safe_str(row.get("transaction_date")),
+            "settlement_date": self._safe_str(row.get("settlement_date")) or None,
             "transaction_type": transaction_type,
             "instrument_id": self._safe_str(row.get("instrument_id")) or None,
             "security_id": self._safe_str(row.get("security_id")) or None,
@@ -3735,7 +3918,30 @@ class ReportingReadService:
             "net_interest_amount_reporting_currency": interest_amount,
             "withholding_tax_amount_reporting_currency": tax_amount,
             "income_or_tax_reporting_currency": interest_amount - tax_amount,
+            "linked_costs": self._transaction_linked_costs(row),
+            "linked_cashflow": self._transaction_linked_cashflow(row),
+            "source_system": self._safe_str(row.get("source_system")) or None,
+            "source_record_id": self._safe_str(row.get("source_record_id")) or None,
+            "source_event_id": self._safe_str(row.get("source_event_id")) or None,
+            "linked_transaction_group_id": self._safe_str(row.get("linked_transaction_group_id"))
+            or None,
+            "correction_of_transaction_id": self._safe_str(row.get("correction_of_transaction_id"))
+            or None,
+            "reversal_of_transaction_id": self._safe_str(row.get("reversal_of_transaction_id"))
+            or None,
         }
+
+    def _transaction_linked_costs(self, row: dict[str, object]) -> list[dict[str, object]]:
+        costs: list[dict[str, object]] = []
+        for cost_payload in self._as_list(row.get("costs")):
+            cost = self._as_dict(cost_payload)
+            if cost:
+                costs.append(dict(cost))
+        return costs
+
+    def _transaction_linked_cashflow(self, row: dict[str, object]) -> dict[str, object] | None:
+        cashflow = self._as_dict(row.get("cashflow"))
+        return dict(cashflow) if cashflow else None
 
     def _transaction_review_category(
         self, *, transaction_type: str, cash_leg: bool, asset_class: str
@@ -4093,6 +4299,8 @@ class ReportingReadService:
             {
                 "item_type": "transactions_summary",
                 "transaction_count": self._to_int(transactions.get("transactionCount")),
+                "source_product": self._as_dict(transactions.get("sourceProduct")),
+                "supportability": self._as_dict(transactions.get("supportability")),
             }
         ]
         transactions_by_category = self._as_dict(transactions.get("transactionsByCategory"))
@@ -4111,6 +4319,7 @@ class ReportingReadService:
                         "cash_leg": row.get("cash_leg"),
                         "transaction_id": row.get("transaction_id"),
                         "transaction_date": row.get("transaction_date"),
+                        "settlement_date": row.get("settlement_date"),
                         "transaction_type": row.get("transaction_type"),
                         "instrument_id": row.get("instrument_id"),
                         "security_id": row.get("security_id"),
@@ -4128,6 +4337,14 @@ class ReportingReadService:
                         "withholding_tax_amount_reporting_currency": row.get(
                             "withholding_tax_amount_reporting_currency"
                         ),
+                        "linked_costs": row.get("linked_costs"),
+                        "linked_cashflow": row.get("linked_cashflow"),
+                        "source_system": row.get("source_system"),
+                        "source_record_id": row.get("source_record_id"),
+                        "source_event_id": row.get("source_event_id"),
+                        "linked_transaction_group_id": row.get("linked_transaction_group_id"),
+                        "correction_of_transaction_id": row.get("correction_of_transaction_id"),
+                        "reversal_of_transaction_id": row.get("reversal_of_transaction_id"),
                     }
                 )
         return items
