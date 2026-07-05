@@ -677,6 +677,26 @@ class ReportJobLedger:
             ).fetchall()
         return [_relationship_from_row(row) for row in rows]
 
+    def list_rerender_attempts(
+        self,
+        job_id: str,
+        *,
+        limit: int = 25,
+    ) -> list[ReportRerenderAttemptRecord]:
+        bounded_limit = max(1, min(limit, 100))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_rerender_attempt
+                WHERE report_job_id = ?
+                ORDER BY updated_at DESC, created_at DESC, rerender_attempt_id DESC
+                LIMIT ?
+                """,
+                (job_id, bounded_limit),
+            ).fetchall()
+        return [_rerender_attempt_from_row(row) for row in rows]
+
     def append_job_event(
         self,
         *,

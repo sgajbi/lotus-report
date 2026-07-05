@@ -752,6 +752,41 @@ REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
             "updated_at": "2026-04-22T09:02:10Z",
         }
     ],
+    "rerender_attempts": [
+        {
+            "rerender_attempt_id": "rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c",
+            "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+            "status": "archived",
+            "snapshot_id": "rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf",
+            "snapshot_hash": (
+                "sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"
+            ),
+            "previous_render_job_id": "rdr_original_pdf",
+            "previous_archive_document_id": "doc_previous",
+            "archive_consequence": "correction",
+            "failure_category": None,
+            "failure_message": None,
+            "retry_eligible": False,
+            "render": {
+                "render_job_id": "rdr_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+                "output_format": "pdf",
+                "template_id": "portfolio-review",
+                "template_version": "v1",
+                "artifact_sha256": "sha256:correction-artifact",
+                "bounded_determinism_fingerprint": "typst-0.14.2:7b2d31f1",
+                "runtime_engine": "typst",
+                "runtime_engine_version": "0.14.2",
+                "render_duration_ms": 731,
+            },
+            "archive": {
+                "archive_request_id": "arch_rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c_pdf",
+                "document_id": "doc_correction",
+                "completed_at": "2026-04-22T09:04:04Z",
+            },
+            "created_at": "2026-04-22T09:04:00Z",
+            "updated_at": "2026-04-22T09:04:04Z",
+        }
+    ],
     "render": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["render"],
     "archive": REPORT_JOB_STATUS_RESPONSE_EXAMPLE["archive"],
     "diagnostic_flags": [],
@@ -1850,6 +1885,75 @@ class ReportJobOperationLinks(BaseModel):
     )
 
 
+class ReportRerenderAttemptDiagnostics(BaseModel):
+    rerender_attempt_id: str = Field(
+        ...,
+        description="Opaque rerender attempt identifier for support-safe correction audit.",
+        examples=["rrnd_4f7c85b39f7d4e7b8d0bb420d34a1d2c"],
+    )
+    report_job_id: str = Field(
+        ...,
+        description="Source archived report job rerendered from its immutable snapshot.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    status: ReportRerenderAttemptStatus = Field(
+        ...,
+        description="Current rerender attempt status.",
+        examples=["archived"],
+    )
+    snapshot_id: str = Field(
+        ...,
+        description="Immutable snapshot reused by the rerender attempt.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    snapshot_hash: str = Field(
+        ...,
+        description="Snapshot hash reused by the rerender attempt.",
+        examples=["sha256:7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    previous_render_job_id: str | None = Field(
+        default=None,
+        description="Original render job identifier superseded by the rerender attempt.",
+    )
+    previous_archive_document_id: str | None = Field(
+        default=None,
+        description="Original archive document identifier superseded by the rerender attempt.",
+    )
+    archive_consequence: Literal["correction"] = Field(
+        "correction",
+        description="Archive consequence of a successful rerender.",
+        examples=["correction"],
+    )
+    failure_category: ReportFailureCategory | None = Field(
+        default=None,
+        description="Machine-readable rerender failure category when the attempt failed.",
+    )
+    failure_message: str | None = Field(
+        default=None,
+        description="Support-safe rerender failure message when the attempt failed.",
+    )
+    retry_eligible: bool = Field(
+        ...,
+        description="Whether retry is currently permitted for this rerender attempt.",
+    )
+    render: ReportJobRenderInfo = Field(
+        ...,
+        description="New render identity and render metadata for this rerender attempt.",
+    )
+    archive: ReportJobArchiveInfo | None = Field(
+        default=None,
+        description="New archive handoff and document identifiers for this rerender attempt.",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was created.",
+    )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the rerender attempt was last updated.",
+    )
+
+
 class ReportJobDiagnosticsResponse(BaseModel):
     report_job_id: str = Field(
         ...,
@@ -1885,6 +1989,15 @@ class ReportJobDiagnosticsResponse(BaseModel):
             "batch-item replay navigation."
         ),
         examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["relationships"]],
+    )
+    rerender_attempts: list[ReportRerenderAttemptDiagnostics] = Field(
+        default_factory=list,
+        description=(
+            "Most recent support-safe rerender attempts for correction-document audit. "
+            "Idempotency keys, correlation/trace values, storage keys, and raw payloads are not "
+            "exposed in this diagnostics read model."
+        ),
+        examples=[REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE["rerender_attempts"]],
     )
     render: ReportJobRenderInfo | None = Field(
         default=None,

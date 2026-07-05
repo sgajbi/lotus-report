@@ -49,6 +49,7 @@ from app.reporting_jobs.models import (
     ReportJobStatusEventsResponse,
     ReportJobStatusResponse,
     ReportPortfolioMemoryEventsResponse,
+    ReportRerenderAttemptDiagnostics,
     ReportRerenderAttemptRecord,
     WaveReportJobRequest,
 )
@@ -227,6 +228,47 @@ def _attempt_to_rerender_response(
         report_job_id=attempt.report_job_id,
         rerender_attempt_id=attempt.rerender_attempt_id,
         idempotency_key=attempt.idempotency_key,
+        status=attempt.status,
+        snapshot_id=attempt.snapshot_id,
+        snapshot_hash=attempt.snapshot_hash,
+        previous_render_job_id=attempt.previous_render_job_id,
+        previous_archive_document_id=attempt.previous_archive_document_id,
+        failure_category=attempt.failure_category,
+        failure_message=attempt.failure_message,
+        retry_eligible=attempt.retry_eligible,
+        render=ReportJobRenderInfo(
+            render_job_id=attempt.render_job_id,
+            output_format=attempt.render_output_format,
+            template_id=attempt.render_template_id,
+            template_version=attempt.render_template_version,
+            artifact_sha256=attempt.render_artifact_sha256,
+            bounded_determinism_fingerprint=attempt.render_bounded_determinism_fingerprint,
+            runtime_engine=attempt.render_runtime_engine,
+            runtime_engine_version=attempt.render_runtime_engine_version,
+            render_duration_ms=attempt.render_duration_ms,
+        ),
+        archive=(
+            ReportJobArchiveInfo(
+                archive_request_id=attempt.archive_request_id,
+                document_id=attempt.archive_document_id,
+                completed_at=attempt.archive_completed_at,
+            )
+            if attempt.archive_request_id
+            or attempt.archive_document_id
+            or attempt.archive_completed_at
+            else None
+        ),
+        created_at=attempt.created_at,
+        updated_at=attempt.updated_at,
+    )
+
+
+def _attempt_to_diagnostics(
+    attempt: ReportRerenderAttemptRecord,
+) -> ReportRerenderAttemptDiagnostics:
+    return ReportRerenderAttemptDiagnostics(
+        rerender_attempt_id=attempt.rerender_attempt_id,
+        report_job_id=attempt.report_job_id,
         status=attempt.status,
         snapshot_id=attempt.snapshot_id,
         snapshot_hash=attempt.snapshot_hash,
@@ -1312,6 +1354,7 @@ async def get_report_job_diagnostics(
     status_response = _record_to_status(record)
     events = ledger.list_status_events(job_id)
     relationships = ledger.list_job_relationships(job_id)
+    rerender_attempts = ledger.list_rerender_attempts(job_id)
     snapshot: ReportInputSnapshotRecord | None = None
     upstream_calls: list[ReportUpstreamCallRecord] = []
     diagnostic_flags: list[str] = []
@@ -1341,6 +1384,7 @@ async def get_report_job_diagnostics(
         snapshot=_snapshot_to_diagnostics(snapshot) if snapshot else None,
         lineage=_lineage_to_diagnostics(snapshot, upstream_calls) if snapshot else None,
         relationships=relationships,
+        rerender_attempts=[_attempt_to_diagnostics(attempt) for attempt in rerender_attempts],
         render=status_response.render,
         archive=status_response.archive,
         diagnostic_flags=diagnostic_flags,

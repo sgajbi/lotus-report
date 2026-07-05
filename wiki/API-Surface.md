@@ -57,8 +57,9 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal product-safe report job status and diagnostics
 - `GET /reports/jobs/{job_id}/diagnostics`
   internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
-  lineage, durable regenerate/replay source-derived relationships, render, and archive handoff
-  state; omits raw payloads, storage references, correlation ids, trace ids, and database internals
+  lineage, durable regenerate/replay source-derived relationships, recent rerender attempt
+  history, render, and archive handoff state; omits raw payloads, storage references, command
+  idempotency keys, correlation ids, trace ids, and database internals
 - `GET /reports/jobs/{job_id}/portfolio-memory-events`
   internal report-owned source-event family for downstream portfolio memory; maps report
   lifecycle, snapshot, render, and archive evidence into stable event identities, source refs,
@@ -71,7 +72,8 @@ boundaries, and copy-paste request examples for direct service and support workf
 - `POST /reports/jobs/{job_id}/rerender`
   internal RFC-0105 rerender command for already archived PDF jobs; reuses the immutable snapshot,
   preserves snapshot id/hash, creates a new render/archive correction identity, and does not
-  recollect upstream data
+  recollect upstream data; successful and failed rerender attempts are rediscoverable from
+  diagnostics after the initial command response is unavailable
 - `POST /reports/jobs/{job_id}/regenerate`
   internal RFC-0105 regenerate command for already archived PDF jobs; recollects upstream data into
   a fresh snapshot and lineage bundle, creates a replacement archive document, persists a
