@@ -227,7 +227,8 @@ make install
 
 Run the service locally:
 
-```bash
+```powershell
+$env:ENTERPRISE_RUNTIME_PROFILE="local"
 $env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
 $env:PYTHONPATH="src"
 uvicorn app.main:app --reload --port 8300
@@ -353,14 +354,20 @@ Current orchestration model:
 ## Operations And Runtime Posture
 
 - use `report.dev.lotus` for canonical cross-app validation and ingress-aware checks
-- use `127.0.0.1:8300` only for direct local debugging
+- use `127.0.0.1:8300` only for direct local debugging with
+  `ENTERPRISE_RUNTIME_PROFILE=local`
+- production-like runtime profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail
+  closed for direct service access: write and read authorization are enforced even when authz
+  toggles are omitted, and startup validation fails unless `ENTERPRISE_ENFORCE_AUTHZ=true`,
+  `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and `ENTERPRISE_PRIMARY_KEY_ID` are configured
 - treat reporting errors as orchestration issues first: verify upstream responses and request-shape
   compatibility before changing response formatting
 - preserve observability, correlation, request, and trace behavior on reporting endpoints,
   especially when debugging summary, review, batch, render, or archive flows
-- use `ENTERPRISE_ENFORCE_READ_AUTHZ=true` to require service identity or authorization on
-  `GET`/`HEAD` surfaces, and `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit
-  events through the enterprise readiness middleware
+- use `ENTERPRISE_ENFORCE_AUTHZ=true` and `ENTERPRISE_ENFORCE_READ_AUTHZ=true` outside local
+  debug to require service identity or authorization on write and `GET`/`HEAD` surfaces; use
+  `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit events through the enterprise
+  readiness middleware
 - treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
   dashboard, alert, and label-governance contract; dedicated broader replay dashboards remain
   reserved until those command paths are implementation-backed

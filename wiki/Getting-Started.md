@@ -9,6 +9,7 @@ make install
 ## Run locally
 
 ```powershell
+$env:ENTERPRISE_RUNTIME_PROFILE="local"
 $env:PYTHONPATH="src"
 uvicorn app.main:app --reload --port 8300
 ```
@@ -16,7 +17,7 @@ uvicorn app.main:app --reload --port 8300
 Canonical identities:
 
 - cross-app validation: `http://report.dev.lotus`
-- direct process debugging: `http://127.0.0.1:8300`
+- direct process debugging: `http://127.0.0.1:8300` with `ENTERPRISE_RUNTIME_PROFILE=local`
 
 ## First checks
 

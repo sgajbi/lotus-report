@@ -7,6 +7,7 @@ from app.enterprise_readiness import (
     authorize_read_request,
     authorize_write_request,
     build_enterprise_audit_middleware,
+    enterprise_runtime_profile,
     is_feature_enabled,
     redact_sensitive,
     validate_enterprise_runtime_config,
@@ -116,6 +117,64 @@ def test_validate_runtime_config_requires_primary_key_for_read_auth(monkeypatch)
     assert "missing_primary_key_id" in issues
 
 
+def test_validate_runtime_config_keeps_explicit_local_debug_profile_permissive(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "local")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    monkeypatch.delenv("ENTERPRISE_PRIMARY_KEY_ID", raising=False)
+
+    issues = validate_enterprise_runtime_config()
+
+    assert enterprise_runtime_profile() == "local"
+    assert "production_write_authz_not_enabled" not in issues
+    assert "production_read_authz_not_enabled" not in issues
+    assert "missing_primary_key_id" not in issues
+
+
+def test_validate_runtime_config_fails_closed_for_production_profile(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+    monkeypatch.delenv("ENTERPRISE_PRIMARY_KEY_ID", raising=False)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        validate_enterprise_runtime_config()
+
+    message = str(exc_info.value)
+    assert "production_write_authz_not_enabled" in message
+    assert "production_read_authz_not_enabled" in message
+    assert "missing_primary_key_id" in message
+
+
+def test_validate_runtime_config_accepts_production_profile_with_authz_and_key(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "true")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "true")
+    monkeypatch.setenv("ENTERPRISE_PRIMARY_KEY_ID", "primary-2026-07")
+
+    assert validate_enterprise_runtime_config() == []
+
+
+def test_authorize_write_request_fails_closed_in_production_profile(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+
+    allowed, reason = authorize_write_request("POST", "/reports/portfolios/P1/review", {})
+
+    assert allowed is False
+    assert reason.startswith("missing_headers:")
+
+
+def test_authorize_read_request_fails_closed_in_production_profile(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_READ_AUTHZ", "false")
+
+    allowed, reason = authorize_read_request("GET", "/reports/jobs", {})
+
+    assert allowed is False
+    assert reason.startswith("missing_headers:")
+
+
 @pytest.mark.asyncio
 async def test_middleware_blocks_oversized_payload(monkeypatch):
     monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
@@ -151,6 +210,30 @@ async def test_middleware_denies_missing_service_identity(monkeypatch):
     request = _request(scope)
     response = await middleware(request, lambda req: None)  # pragma: no cover
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_middleware_production_profile_denies_direct_write_without_identity(monkeypatch):
+    monkeypatch.setenv("ENTERPRISE_RUNTIME_PROFILE", "production")
+    monkeypatch.setenv("ENTERPRISE_ENFORCE_AUTHZ", "false")
+    monkeypatch.setenv("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", "64")
+    middleware = build_enterprise_audit_middleware()
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/reports/portfolios/P1/review",
+        "headers": [
+            (b"x-actor-id", b"a1"),
+            (b"x-tenant-id", b"t1"),
+            (b"x-role", b"ops"),
+            (b"x-correlation-id", b"c1"),
+            (b"content-length", b"0"),
+        ],
+    }
+    request = _request(scope)
+    response = await middleware(request, lambda req: None)  # pragma: no cover
+    assert response.status_code == 403
+    assert json.loads(response.body)["reason"] == "missing_service_identity"
 
 
 @pytest.mark.asyncio
