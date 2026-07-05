@@ -155,9 +155,12 @@ Current implementation-backed figures include:
   `lotus-core`
 - summary `pnlSummary` fields for sourced position unrealized P&L, sourced transaction realized
   gain/loss, component status, total status, source methodology, and supportability notes
-- bounded transaction-window supportability; oversized windows are truncated by
-  `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES` and marked partial instead of
-  paging `lotus-core` without a report-owned budget
+- bounded `TransactionLedgerWindow:v1` supportability; oversized windows are truncated by
+  `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES`, and partial, unknown, paged, or
+  trust-metadata-incomplete core windows are marked partial instead of appearing complete
+- transaction rows preserve sourced settlement date, linked transaction-cost evidence, linked
+  cashflow evidence, source-product metadata, data-quality posture, reconciliation posture, latest
+  evidence timestamp, and restatement/source-lineage fields where `lotus-core` provides them
 - negative cash and concentration observations
 - client profile and mandate context where sourced from `lotus-core`
 

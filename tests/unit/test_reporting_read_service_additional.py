@@ -9,6 +9,31 @@ from app.config import settings
 from app.services.reporting_read_service import ReportingReadService
 
 
+def _transaction_ledger_metadata(
+    *,
+    as_of_date: object = "2026-02-24",
+    data_quality_status: str = "COMPLETE",
+    reason_codes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "product_name": "TransactionLedgerWindow",
+        "product_version": "v1",
+        "tenant_id": "default",
+        "generated_at": "2026-02-24T09:30:00Z",
+        "as_of_date": as_of_date,
+        "data_quality_status": data_quality_status,
+        "reconciliation_status": "RECONCILED",
+        "latest_evidence_timestamp": "2026-02-24T09:20:00Z",
+        "restatement_version": "fx-restatement:2026-02-24:USD",
+        "source_batch_fingerprint": "core-txn-batch:2026-02-24",
+        "snapshot_id": "txn-window:P1:2026-02-24",
+        "content_hash": "sha256:transaction-window",
+        "policy_version": "transaction-ledger-window:v1",
+        "correlation_id": "CID-CORE-TXN",
+        "reason_codes": reason_codes or ["TRANSACTION_LEDGER_READY"],
+    }
+
+
 class _CoreQuerySnapshotMissing:
     async def get_portfolio_summary(
         self,
@@ -99,6 +124,7 @@ class _CoreQuerySuccessMinimal:
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
             "portfolio_id": portfolio_id,
             "reporting_currency": params.get("reporting_currency", "USD"),
             "total": 2,
@@ -152,6 +178,11 @@ class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_transaction_ledger_metadata(
+                as_of_date=params.get("as_of_date"),
+                data_quality_status="UNKNOWN",
+                reason_codes=["TRANSACTION_LEDGER_EMPTY"],
+            ),
             "portfolio_id": portfolio_id,
             "reporting_currency": params.get("reporting_currency", "USD"),
             "total": 0,
@@ -326,7 +357,10 @@ class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
         self.seen_skips.append(skip)
         if skip == 0:
             return 200, {
+                **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
                 "total": 2,
+                "skip": skip,
+                "limit": params.get("limit", 500),
                 "transactions": [
                     {
                         "transaction_id": "TXN-1",
@@ -337,7 +371,10 @@ class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
                 ],
             }
         return 200, {
+            **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
             "total": 2,
+            "skip": skip,
+            "limit": params.get("limit", 500),
             "transactions": [
                 {
                     "transaction_id": "TXN-2",
@@ -367,6 +404,15 @@ class _CoreQueryLargeTransactionWindow(_CoreQuerySuccessMinimal):
         remaining = max(self.source_total - skip, 0)
         count = min(limit, remaining)
         return 200, {
+            **_transaction_ledger_metadata(
+                as_of_date=params.get("as_of_date"),
+                data_quality_status="PARTIAL" if count < self.source_total else "COMPLETE",
+                reason_codes=(
+                    ["TRANSACTION_LEDGER_PAGE_PARTIAL"]
+                    if count < self.source_total
+                    else ["TRANSACTION_LEDGER_READY"]
+                ),
+            ),
             "total": self.source_total,
             "skip": skip,
             "limit": limit,
@@ -1038,6 +1084,85 @@ async def test_review_transactions_are_bounded_by_row_budget(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_review_transactions_preserve_source_product_and_degrade_missing_trust_metadata():
+    class _CoreQueryPartialTransactionLedger(_CoreQuerySuccessMinimal):
+        async def get_portfolio_transactions(
+            self,
+            portfolio_id: str,
+            params: dict[str, object],
+            correlation_id: str | None = None,
+        ):
+            _ = portfolio_id, params, correlation_id
+            return 200, {
+                "product_name": "TransactionLedgerWindow",
+                "product_version": "v1",
+                "as_of_date": "2026-02-24",
+                "data_quality_status": "PARTIAL",
+                "reconciliation_status": "PENDING",
+                "reason_codes": ["TRANSACTION_LEDGER_PAGE_PARTIAL"],
+                "portfolio_id": "P1",
+                "total": 1,
+                "skip": 0,
+                "limit": 500,
+                "transactions": [
+                    {
+                        "transaction_id": "TXN-SELL-1",
+                        "transaction_date": "2026-02-03",
+                        "settlement_date": "2026-02-05",
+                        "transaction_type": "SELL",
+                        "asset_class": "Equity",
+                        "security_id": "EQ-1",
+                        "gross_transaction_amount_reporting_currency": 25000.0,
+                        "realized_gain_loss_reporting_currency": 1250.0,
+                        "linked_transaction_group_id": "LTG-SELL-1",
+                        "costs": [{"fee_type": "BROKERAGE", "amount": 12.5}],
+                        "cashflow": {"cashflow_id": "CF-SELL-1"},
+                    }
+                ],
+            }
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryPartialTransactionLedger(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["TRANSACTIONS"]},
+        None,
+    )
+
+    transactions = response["transactions"]
+    assert transactions["sourceProduct"]["product_name"] == "TransactionLedgerWindow"
+    assert transactions["sourceProduct"]["data_quality_status"] == "PARTIAL"
+    assert transactions["supportability"]["status"] == "partial"
+    assert {note["code"] for note in transactions["supportability"]["notes"]} >= {
+        "transaction_window_trust_metadata_incomplete",
+        "transaction_window_source_quality_not_complete",
+        "transaction_window_reconciliation_not_complete",
+    }
+    sell_row = transactions["transactionsByCategory"]["Trading"][0]
+    assert sell_row["transaction_date"] == "2026-02-03"
+    assert sell_row["settlement_date"] == "2026-02-05"
+    assert sell_row["linked_costs"] == [{"fee_type": "BROKERAGE", "amount": 12.5}]
+    assert sell_row["linked_cashflow"] == {"cashflow_id": "CF-SELL-1"}
+    assert sell_row["linked_transaction_group_id"] == "LTG-SELL-1"
+    sections = {section["section_id"]: section for section in response["client_sections"]}
+    assert sections["transactions_appendix"]["status"] == "partial"
+    coverage_by_group = {
+        group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
+    }
+    assert coverage_by_group["transactions"] == "partial"
+    source_ref = next(
+        source_ref
+        for source_ref in response["evidence"]["source_refs"]
+        if source_ref["section_id"] == "transactions_appendix"
+    )
+    assert source_ref["source_product"]["reason_codes"] == ["TRANSACTION_LEDGER_PAGE_PARTIAL"]
+
+
+@pytest.mark.asyncio
 async def test_summary_transaction_window_surfaces_row_budget_supportability(monkeypatch):
     monkeypatch.setattr(settings, "report_transaction_max_rows", 1)
     monkeypatch.setattr(settings, "report_transaction_max_pages", 10)
@@ -1383,11 +1508,21 @@ async def test_review_marks_empty_supporting_sections_not_applicable():
     )
 
     sections = {section["section_id"]: section for section in response["client_sections"]}
-    for section_id in ("income_cash_activity", "holdings_appendix", "transactions_appendix"):
-        assert sections[section_id]["status"] == "not_applicable"
-        assert sections[section_id]["reason_code"] == "no_applicable_activity"
+    assert sections["holdings_appendix"]["status"] == "not_applicable"
+    assert sections["holdings_appendix"]["reason_code"] == "no_applicable_activity"
+    for section_id in ("income_cash_activity", "transactions_appendix"):
+        assert sections[section_id]["status"] == "partial"
+        assert sections[section_id]["reason_code"] == (
+            "transaction_window_source_quality_not_complete"
+        )
         assert sections[section_id]["items"]
-    assert response["readiness"] == {"status": "ready"}
+    assert response["readiness"] == {
+        "status": "partial",
+        "reason": (
+            "Partial sections for the selected request: Income, Cash, And Activity, "
+            "Transactions Appendix"
+        ),
+    }
     source_ref_ids = {
         source_ref["section_id"] for source_ref in response["evidence"]["source_refs"]
     }
@@ -1396,6 +1531,12 @@ async def test_review_marks_empty_supporting_sections_not_applicable():
         "holdings_appendix",
         "transactions_appendix",
     } <= source_ref_ids
+    transaction_source_ref = next(
+        source_ref
+        for source_ref in response["evidence"]["source_refs"]
+        if source_ref["section_id"] == "transactions_appendix"
+    )
+    assert transaction_source_ref["source_product"]["data_quality_status"] == "UNKNOWN"
 
 
 @pytest.mark.asyncio
@@ -1435,6 +1576,7 @@ async def test_summary_pnl_preserves_sourced_zero_realized_pnl():
         ):
             _ = portfolio_id, params, correlation_id
             return 200, {
+                **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
                 "portfolio_id": "P1",
                 "total": 1,
                 "transactions": [

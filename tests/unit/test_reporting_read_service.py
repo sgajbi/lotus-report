@@ -18,6 +18,31 @@ def _advisor_prompt_items(response: dict[str, object]) -> list[dict[str, object]
     return items
 
 
+def _transaction_ledger_metadata(
+    *,
+    as_of_date: object = "2026-02-24",
+    data_quality_status: str = "COMPLETE",
+    reason_codes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "product_name": "TransactionLedgerWindow",
+        "product_version": "v1",
+        "tenant_id": "default",
+        "generated_at": "2026-02-24T09:30:00Z",
+        "as_of_date": as_of_date,
+        "data_quality_status": data_quality_status,
+        "reconciliation_status": "RECONCILED",
+        "latest_evidence_timestamp": "2026-02-24T09:20:00Z",
+        "restatement_version": "fx-restatement:2026-02-24:USD",
+        "source_batch_fingerprint": "core-txn-batch:2026-02-24",
+        "snapshot_id": "txn-window:P1:2026-02-24",
+        "content_hash": "sha256:transaction-window",
+        "policy_version": "transaction-ledger-window:v1",
+        "correlation_id": "CID-CORE-TXN",
+        "reason_codes": reason_codes or ["TRANSACTION_LEDGER_READY"],
+    }
+
+
 class _CoreQueryClientSuccess:
     async def get_portfolio_summary(
         self,
@@ -86,6 +111,7 @@ class _CoreQueryClientSuccess:
         correlation_id: str | None = None,
     ):
         return 200, {
+            **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
             "portfolio_id": portfolio_id,
             "reporting_currency": params.get("reporting_currency", "USD"),
             "total": 4,
@@ -112,9 +138,24 @@ class _CoreQueryClientSuccess:
                     "transaction_type": "SELL",
                     "instrument_id": "I-EQ-1",
                     "security_id": "EQ-1",
+                    "settlement_date": "2026-02-05",
                     "gross_transaction_amount_reporting_currency": 25000.0,
                     "realized_gain_loss_reporting_currency": 1250.0,
                     "realized_gain_loss_local": 1250.0,
+                    "linked_transaction_group_id": "LTG-SELL-1",
+                    "source_system": "core-booking",
+                    "source_record_id": "SRC-TXN-SELL-1",
+                    "costs": [
+                        {
+                            "fee_type": "BROKERAGE",
+                            "amount": 12.5,
+                            "currency": "USD",
+                        }
+                    ],
+                    "cashflow": {
+                        "cashflow_id": "CF-SELL-1",
+                        "cashflow_type": "SALE_PROCEEDS",
+                    },
                 },
                 {
                     "transaction_id": "TXN-TAX-1",
@@ -836,6 +877,14 @@ async def test_review_composes_core_query_performance_and_risk():
     )
     assert response["keyFigures"]["transactions"]["realized_pnl_status"] == "present"
     assert response["keyFigures"]["transactions"]["total_realized_pnl_reporting_currency"] == 1250.0
+    assert response["keyFigures"]["transactions"]["source_data_quality_status"] == "COMPLETE"
+    assert response["keyFigures"]["transactions"]["source_product"]["product_name"] == (
+        "TransactionLedgerWindow"
+    )
+    assert response["transactions"]["sourceProduct"]["latest_evidence_timestamp"] == (
+        "2026-02-24T09:20:00Z"
+    )
+    assert response["transactions"]["supportability"] == {"status": "ready", "notes": []}
     coverage = {
         group["group_id"]: group["status"] for group in response["reportCoverage"]["figure_groups"]
     }
@@ -959,6 +1008,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert source_refs["client_profile"]["source_endpoint"] == "/portfolios/P1"
     assert source_refs["performance_review"]["source_service"] == "lotus-performance"
     assert source_refs["risk_review"]["source_service"] == "lotus-risk"
+    assert source_refs["transactions_appendix"]["source_product"]["product_version"] == "v1"
     assert response["evidence"]["trust_metadata"]["completeness_status"] == "complete"
     assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_passed"
     assert [section["section_id"] for section in response["client_sections"]] == [
@@ -1047,6 +1097,16 @@ async def test_review_composes_core_query_performance_and_risk():
         if item["transaction_id"] == "TXN-SELL-1"
     )
     assert sell_transaction["realized_pnl_reporting_currency"] == 1250.0
+    assert sell_transaction["transaction_date"] == "2026-02-03"
+    assert sell_transaction["settlement_date"] == "2026-02-05"
+    assert sell_transaction["linked_transaction_group_id"] == "LTG-SELL-1"
+    assert sell_transaction["linked_costs"] == [
+        {"fee_type": "BROKERAGE", "amount": 12.5, "currency": "USD"}
+    ]
+    assert sell_transaction["linked_cashflow"] == {
+        "cashflow_id": "CF-SELL-1",
+        "cashflow_type": "SALE_PROCEEDS",
+    }
     client_sections = {section["section_id"]: section for section in response["client_sections"]}
     assert client_sections["client_profile"]["items"][0] == {
         "item_type": "client_identity",
