@@ -40,7 +40,12 @@
 ## Concurrency and Conflict Policy
 
 - Request processing is stateless and deterministic for equivalent inputs.
-- Upstream call retries are bounded and explicit.
+- Upstream call retries are bounded and explicit. The shared HTTP helper retries transport
+  failures and transient HTTP statuses `429`, `502`, `503`, and `504` within
+  `UPSTREAM_MAX_RETRIES`; validation, authorization, not-found, conflict, and business-rule
+  statuses pass through immediately.
+- `Retry-After` response headers are honored for transient status retries with a bounded maximum
+  delay so downstream overload does not create unbounded sleeps or retry storms.
 - Evidence:
   - `src/app/clients/http_resilience.py`
   - `tests/unit/test_http_resilience.py`
@@ -62,6 +67,3 @@
 ## Deviations
 
 - Any future durable write path introduced in lotus-report without explicit idempotency and atomicity controls requires ADR with expiry review date.
-
-
-
