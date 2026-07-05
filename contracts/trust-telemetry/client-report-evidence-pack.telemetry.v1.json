@@ -24,9 +24,9 @@
     "age_seconds": 0,
     "max_allowed_age_seconds": 86400
   },
-  "completeness_status": "complete",
+  "completeness_status": "partial",
   "reconciliation_status": "reconciled",
-  "data_quality_status": "quality_passed",
+  "data_quality_status": "quality_warning",
   "lineage": {
     "lineage_materialized": true,
     "lineage_bundle_id": "lineage:lotus-report:client-report-evidence-pack:2026-04-20",
@@ -36,7 +36,27 @@
     ]
   },
   "blocking": {
-    "blocked": false
+    "blocked": true,
+    "blocking_scope": "analytics_enriched_evidence_certification",
+    "reason_codes": [
+      "PERFORMANCE_RISK_CONSUMER_APPROVAL_PENDING"
+    ],
+    "blocked_dependencies": [
+      "lotus-performance",
+      "lotus-risk"
+    ],
+    "consumer_safe_summary": "Core lotus-core-backed evidence remains usable under current declarations; analytics-enriched performance/risk evidence is not mesh-certified until upstream producer declarations approve lotus-report as a governed consumer."
+  },
+  "dependency_certification_boundary": {
+    "governed_consumer_dependencies": [
+      "lotus-core:HoldingsAsOf:v1",
+      "lotus-core:TransactionLedgerWindow:v1"
+    ],
+    "watchlisted_analytics_dependencies": [
+      "lotus-performance",
+      "lotus-risk"
+    ],
+    "analytics_enriched_evidence_certification": "partial_until_upstream_consumer_approval"
   },
   "observed_trust_metadata": {
     "product_name": "ClientReportEvidencePack",
@@ -45,7 +65,7 @@
     "generated_at": "2026-04-20T00:00:00Z",
     "as_of_date": "2026-04-20",
     "reconciliation_status": "reconciled",
-    "data_quality_status": "quality_passed",
+    "data_quality_status": "quality_warning",
     "source_batch_fingerprint": "sha256:client-report-evidence-pack-demo",
     "lineage_bundle_id": "lineage:lotus-report:client-report-evidence-pack:2026-04-20",
     "correlation_id": "rfc-0091-lotus-report-client-report-evidence-pack"

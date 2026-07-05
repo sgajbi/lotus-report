@@ -18,6 +18,9 @@ CONSUMER_DECLARATION_PATH = (
 PRODUCT_DECLARATION_PATH = (
     ROOT / "contracts" / "domain-data-products" / "lotus-report-products.v1.json"
 )
+TRUST_TELEMETRY_PATH = (
+    ROOT / "contracts" / "trust-telemetry" / "client-report-evidence-pack.telemetry.v1.json"
+)
 REPORTING_READ_SERVICE_PATH = ROOT / "src" / "app" / "services" / "reporting_read_service.py"
 DECLARATION_README_PATH = ROOT / "contracts" / "domain-data-products" / "README.md"
 
@@ -28,6 +31,10 @@ def _load_consumer_declaration() -> dict:
 
 def _load_product_declaration() -> dict:
     return json.loads(PRODUCT_DECLARATION_PATH.read_text(encoding="utf-8"))
+
+
+def _load_trust_telemetry() -> dict:
+    return json.loads(TRUST_TELEMETRY_PATH.read_text(encoding="utf-8"))
 
 
 def test_repo_native_domain_data_product_validation_passes_when_platform_is_available() -> None:
@@ -80,6 +87,7 @@ def test_report_declaration_keeps_unapproved_analytics_dependencies_on_the_watch
     assert "lotus-performance" not in producer_repositories
     assert "lotus-risk" not in producer_repositories
     assert "approve `lotus-report` as a governed consumer" in readme
+    assert "partially certified" in readme
 
 
 def test_report_declaration_directory_contains_consumer_and_owned_product_contracts() -> None:
@@ -104,8 +112,83 @@ def test_report_product_declaration_publishes_client_report_evidence_pack() -> N
     assert product["approved_consumers"] == ["lotus-gateway", "lotus-idea"]
     assert "/reports/portfolios/{portfolio_id}/review" in product["current_routes"]
     assert product["completeness_policy"] == {
-        "default_status": "complete",
+        "default_status": "partial",
         "partial_allowed": True,
+        "completion_boundary": (
+            "Core portfolio and transaction evidence can be complete under current governed "
+            "consumer declarations. Analytics-enriched performance and risk evidence remains "
+            "partially certified while lotus-performance and lotus-risk dependencies are "
+            "watchlisted."
+        ),
+    }
+    assert (
+        "latest certified upstream portfolio, performance, and risk"
+        not in product["freshness_policy"]["max_allowed_age_description"]
+    )
+    assert product["dependency_certification_boundary"] == {
+        "governed_consumer_dependencies": [
+            "lotus-core:HoldingsAsOf:v1",
+            "lotus-core:TransactionLedgerWindow:v1",
+        ],
+        "watchlisted_analytics_dependencies": [
+            "lotus-performance",
+            "lotus-risk",
+        ],
+        "analytics_enriched_evidence_certification": ("partial_until_upstream_consumer_approval"),
+        "consumer_safe_summary": (
+            "Do not treat performance/risk-enriched ClientReportEvidencePack evidence as "
+            "mesh-certified until lotus-performance and lotus-risk producer declarations approve "
+            "lotus-report and the consumer declaration is updated."
+        ),
     }
     assert product["lineage_policy"]["lineage_required"] is True
     assert product["lineage_policy"]["lineage_bundle_class_ref"] == "customer_lineage_summary"
+
+
+def test_client_report_evidence_pack_telemetry_surfaces_watchlisted_analytics_boundary() -> None:
+    telemetry = _load_trust_telemetry()
+
+    assert telemetry["product_id"] == "lotus-report:ClientReportEvidencePack:v1"
+    assert telemetry["completeness_status"] == "partial"
+    assert telemetry["data_quality_status"] == "quality_warning"
+    assert telemetry["observed_trust_metadata"]["data_quality_status"] == "quality_warning"
+    assert telemetry["blocking"] == {
+        "blocked": True,
+        "blocking_scope": "analytics_enriched_evidence_certification",
+        "reason_codes": ["PERFORMANCE_RISK_CONSUMER_APPROVAL_PENDING"],
+        "blocked_dependencies": ["lotus-performance", "lotus-risk"],
+        "consumer_safe_summary": (
+            "Core lotus-core-backed evidence remains usable under current declarations; "
+            "analytics-enriched performance/risk evidence is not mesh-certified until upstream "
+            "producer declarations approve lotus-report as a governed consumer."
+        ),
+    }
+    assert telemetry["dependency_certification_boundary"] == {
+        "governed_consumer_dependencies": [
+            "lotus-core:HoldingsAsOf:v1",
+            "lotus-core:TransactionLedgerWindow:v1",
+        ],
+        "watchlisted_analytics_dependencies": ["lotus-performance", "lotus-risk"],
+        "analytics_enriched_evidence_certification": ("partial_until_upstream_consumer_approval"),
+    }
+
+
+def test_watchlisted_analytics_dependencies_cannot_publish_complete_unblocked_telemetry() -> None:
+    consumer_producers = {
+        dependency["producer_repository"]
+        for dependency in _load_consumer_declaration()["dependencies"]
+    }
+    watchlisted = {"lotus-performance", "lotus-risk"} - consumer_producers
+    telemetry = _load_trust_telemetry()
+    product = _load_product_declaration()["products"][0]
+
+    assert watchlisted == {"lotus-performance", "lotus-risk"}
+    assert product["dependency_certification_boundary"][
+        "watchlisted_analytics_dependencies"
+    ] == sorted(watchlisted)
+    assert telemetry["dependency_certification_boundary"][
+        "watchlisted_analytics_dependencies"
+    ] == sorted(watchlisted)
+    assert telemetry["completeness_status"] != "complete"
+    assert telemetry["data_quality_status"] != "quality_passed"
+    assert telemetry["blocking"]["blocked"] is True
