@@ -86,7 +86,9 @@ Current repository posture:
    source-owned DPM schemas that require source hashes, evidence refs, redaction, retention, and
    supportability posture before durable capture. They may also carry a manage-owned bounded
    `portfolio_memory_context`, and `lotus-report` persists that context in immutable snapshot
-   lineage and render-package lineage without reconstructing manage-owned portfolio-memory events.
+   lineage and render-package lineage, including context hash, support boundary, event-ref
+   limit/selection/returned/omitted/truncated posture, and per-ref event time/rank where supplied,
+   without reconstructing manage-owned portfolio-memory events.
    `lotus-report` also owns a report source-event family at
    `GET /reports/jobs/{job_id}/portfolio-memory-events` that maps report lifecycle, snapshot,
    render, and archive evidence into support-safe event identities, source refs, artifact refs,

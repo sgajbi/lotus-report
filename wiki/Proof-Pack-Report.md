@@ -13,9 +13,10 @@ records lineage, builds the render package, and orchestrates render/archive stat
 Missing source hashes, source evidence refs, redaction policy, retention policy, or supportability
 posture are rejected before durable capture; `lotus-report` does not create complete snapshots or
 render packages with placeholder lineage. When `lotus-manage` supplies bounded
-`portfolio_memory_context`, `lotus-report` carries the event identity, content hash,
-supportability, retention, redaction, access, and audit posture into snapshot lineage and
-render-package lineage without reconstructing portfolio-memory events.
+`portfolio_memory_context`, `lotus-report` carries the event identity, memory and context content
+hashes, support boundary, event-ref limit/selection/returned/omitted/truncated posture, per-ref
+event time/rank, supportability, retention, redaction, access, and audit posture into snapshot
+lineage and render-package lineage without reconstructing portfolio-memory events.
 
 ## Business Flow
 
@@ -46,9 +47,9 @@ sequenceDiagram
 | --- | --- |
 | Job initiation | `POST /reports/proof-packs` with required `Idempotency-Key` and governed caller context headers |
 | Source input | Typed manage-owned `DpmProofPackReportInput` supplied as `proof_pack_report_input`; source hashes, evidence ref, redaction, retention, and supportability posture are required |
-| Portfolio memory context | Optional Manage-owned `portfolio_memory_context` carried as bounded lineage only |
+| Portfolio memory context | Optional Manage-owned `portfolio_memory_context` carried as bounded lineage only, including context hash and event-ref selection/truncation posture when supplied |
 | Snapshot | Immutable `report_input_snapshot` row with contract `dpm_proof_pack_report_input.v1` |
-| Lineage | Append-only upstream-call evidence to `lotus-manage` proof-pack report-input source plus portfolio-memory content hash when supplied |
+| Lineage | Append-only upstream-call evidence to `lotus-manage` proof-pack report-input source plus portfolio-memory content hash, bounded context hash, and truncation posture when supplied |
 | Render package | `report_type=proof_pack`, `template_id=proof-pack`, `template_version=v1` |
 | Archive handoff | Reuses the existing report-to-archive lifecycle after successful PDF render |
 | Status and support | Existing job status, event, snapshot, lineage, and diagnostics endpoints |

@@ -1116,8 +1116,21 @@ def _portfolio_memory_lineage_summary(report_input: dict[str, Any]) -> dict[str,
     return {
         "portfolio_memory_status": "supplied",
         "portfolio_memory_content_hash": context.get("content_hash"),
+        "portfolio_memory_context_content_hash": context.get("context_content_hash"),
         "portfolio_memory_event_count": context.get("event_count", len(event_refs)),
         "portfolio_memory_supportability_state": context.get("supportability_state"),
+        "portfolio_memory_support_boundary": context.get("support_boundary"),
+        "portfolio_memory_event_ref_limit": _optional_int(context.get("event_ref_limit")),
+        "portfolio_memory_event_ref_selection_policy": context.get("event_ref_selection_policy"),
+        "portfolio_memory_event_refs_returned": _optional_int(
+            context.get("event_refs_returned"),
+        ),
+        "portfolio_memory_event_refs_omitted": _optional_int(
+            context.get("event_refs_omitted"),
+        ),
+        "portfolio_memory_event_refs_truncated": _optional_bool(
+            context.get("event_refs_truncated"),
+        ),
         "portfolio_memory_event_ref_count": len(event_refs),
     }
 
@@ -1131,6 +1144,31 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    return None
 
 
 def _required_sha256(report_input: dict[str, Any], field_name: str, owner: str) -> str:

@@ -233,6 +233,13 @@ def _portfolio_memory_context() -> dict:
         "supportability_state": "READY",
         "event_count": 2,
         "content_hash": "sha256:portfolio-memory",
+        "context_content_hash": "sha256:portfolio-memory-context",
+        "support_boundary": "BOUNDED_EVENT_REFS_ONLY",
+        "event_ref_limit": 12,
+        "event_ref_selection_policy": "MOST_RECENT_RELEVANT_FIRST",
+        "event_refs_returned": 1,
+        "event_refs_omitted": 1,
+        "event_refs_truncated": True,
         "event_refs": [
             {
                 "event_identity": "lotus-manage:DPM_PROOF_PACK:dpp_001:sha256:proof-pack",
@@ -241,6 +248,9 @@ def _portfolio_memory_context() -> dict:
                 "source_type": "DPM_PROOF_PACK",
                 "source_id": "dpp_001",
                 "content_hash": "sha256:proof-pack",
+                "event_time": "2026-05-03T08:59:00Z",
+                "event_ref_selection_rank": 1,
+                "manage_lookup_id": "pmem_lookup_dpp_001",
             }
         ],
     }
@@ -762,7 +772,20 @@ async def test_capture_service_records_portfolio_memory_lineage_without_recomput
     )
     assert snapshot.lineage_summary["portfolio_memory_status"] == "supplied"
     assert snapshot.lineage_summary["portfolio_memory_content_hash"] == "sha256:portfolio-memory"
+    assert snapshot.lineage_summary["portfolio_memory_context_content_hash"] == (
+        "sha256:portfolio-memory-context"
+    )
     assert snapshot.lineage_summary["portfolio_memory_event_count"] == 2
+    assert snapshot.lineage_summary["portfolio_memory_support_boundary"] == (
+        "BOUNDED_EVENT_REFS_ONLY"
+    )
+    assert snapshot.lineage_summary["portfolio_memory_event_ref_limit"] == 12
+    assert snapshot.lineage_summary["portfolio_memory_event_ref_selection_policy"] == (
+        "MOST_RECENT_RELEVANT_FIRST"
+    )
+    assert snapshot.lineage_summary["portfolio_memory_event_refs_returned"] == 1
+    assert snapshot.lineage_summary["portfolio_memory_event_refs_omitted"] == 1
+    assert snapshot.lineage_summary["portfolio_memory_event_refs_truncated"] is True
     assert snapshot.lineage_summary["portfolio_memory_event_ref_count"] == 1
 
 

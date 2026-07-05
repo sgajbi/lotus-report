@@ -543,6 +543,13 @@ def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
             "status": "not_supplied",
             "event_count": 0,
             "content_hash": "not_available",
+            "context_content_hash": "not_available",
+            "support_boundary": "not_available",
+            "event_ref_limit": 0,
+            "event_ref_selection_policy": "not_available",
+            "event_refs_returned": 0,
+            "event_refs_omitted": 0,
+            "event_refs_truncated": False,
             "event_refs": [],
             "governance_policy": {},
         }
@@ -563,10 +570,23 @@ def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
             "audit_policy": _optional_str(item.get("audit_policy")) or "not_available",
             "access_classification": _optional_str(item.get("access_classification"))
             or "not_available",
+            "event_time": _optional_str(item.get("event_time")) or "not_available",
+            "event_ref_selection_rank": _optional_int(item.get("event_ref_selection_rank")),
+            "manage_lookup_id": _optional_str(
+                item.get("manage_lookup_id")
+                or item.get("lookup_id")
+                or item.get("event_lookup_id")
+                or item.get("portfolio_memory_event_lookup_id")
+            )
+            or "not_available",
         }
         for item in raw_event_refs[:12]
         if isinstance(item, dict)
     ]
+    event_ref_limit = _optional_int(context.get("event_ref_limit"))
+    event_refs_returned = _optional_int(context.get("event_refs_returned"))
+    event_refs_omitted = _optional_int(context.get("event_refs_omitted"))
+    event_refs_truncated = _optional_bool(context.get("event_refs_truncated"))
     return {
         "status": "supplied",
         "portfolio_id": _optional_str(context.get("portfolio_id")) or "not_available",
@@ -576,6 +596,19 @@ def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
         "source_systems": _string_list(context.get("source_systems")),
         "reason_codes": _string_list(context.get("reason_codes")),
         "content_hash": _optional_str(context.get("content_hash")) or "not_available",
+        "context_content_hash": _optional_str(context.get("context_content_hash"))
+        or "not_available",
+        "support_boundary": _optional_str(context.get("support_boundary")) or "not_available",
+        "event_ref_limit": event_ref_limit if event_ref_limit is not None else 0,
+        "event_ref_selection_policy": _optional_str(context.get("event_ref_selection_policy"))
+        or "not_available",
+        "event_refs_returned": (
+            event_refs_returned if event_refs_returned is not None else len(event_refs)
+        ),
+        "event_refs_omitted": event_refs_omitted if event_refs_omitted is not None else 0,
+        "event_refs_truncated": (
+            event_refs_truncated if event_refs_truncated is not None else False
+        ),
         "governance_policy": _as_dict(context.get("governance_policy")),
         "event_refs": event_refs,
     }
@@ -1218,4 +1251,16 @@ def _optional_int(value: object) -> int | None:
             return int(value)
         except ValueError:
             return None
+    return None
+
+
+def _optional_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
     return None
