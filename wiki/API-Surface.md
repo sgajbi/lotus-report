@@ -1,5 +1,16 @@
 # API Surface
 
+Current scope: implementation-backed `lotus-report` API families, product-facing gateway
+boundaries, and copy-paste request examples for direct service and support workflows.
+
+## Route Families
+
+| Family | Use | Caller posture |
+| --- | --- | --- |
+| Integration and aggregations | capability publication and portfolio aggregation probes | direct local debugging or gateway discovery |
+| Report jobs | durable portfolio-review report initiation, status, evidence, and correction commands | governed caller context; idempotency on duplicate-safe mutations |
+| Batch reporting | internal batch materialization, status, control, item replay, and bounded run-once operations | governed caller context; idempotency on creation and item replay |
+
 ## Integration
 
 - `GET /integration/capabilities`
@@ -161,6 +172,26 @@ front-office consumers.
 
 ## Request examples
 
+Create this reusable caller-context config before running operator or gateway examples that require
+governed caller context:
+
+```text
+file: report-operator-headers.curl
+header = "X-Actor-Id: support-operator-1"
+header = "X-Caller-Application: lotus-report-ops"
+header = "X-Tenant-Id: tenant-sg"
+header = "X-Region: APAC"
+header = "X-Booking-Center-Code: SG"
+header = "X-Role: support_operator"
+header = "X-Correlation-ID: report-operator-local-proof"
+header = "X-Trace-ID: trace-report-operator-local-proof"
+```
+
+Use a stable operation-specific `Idempotency-Key` only on mutations that require duplicate-safe
+replay or conflict detection: report-job creation, rerender, regenerate, failed-work replay, batch
+materialization, and batch-item replay. Reuse the same idempotency key only for an intentional retry
+of the same canonical request.
+
 Integration capabilities:
 
 ```bash
@@ -204,61 +235,45 @@ Portfolio review report job:
 
 ```bash
 curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" \
+  --config report-operator-headers.curl \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22" \
-  -H "X-Actor-Id: advisor-123" \
-  -H "X-Caller-Application: lotus-workbench" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC" \
-  -H "X-Booking-Center-Code: SG" \
-  -H "X-Role: advisor" \
-  -H "X-Correlation-ID: portfolio-review-job-local-proof" \
   -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"},\"proposal_narrative_package\":{\"package_status\":\"INCLUDED_REVIEWED_NARRATIVE\",\"usage\":\"REPORT_REQUEST_APPROVED_ADVISOR_NARRATIVE\",\"proposal_id\":\"prop_001\",\"proposal_version_no\":3,\"narrative_id\":\"pnar_001\",\"review\":{\"review_id\":\"pnrev_001\",\"review_state\":\"APPROVED_FOR_ADVISOR_USE\"},\"source_lineage\":{\"source_narrative_hash\":\"sha256:narrative\"},\"sections\":[{\"section_id\":\"portfolio_context\",\"title\":\"Portfolio Context\",\"body\":\"The portfolio remains aligned to the balanced mandate.\"}],\"disclosures\":[{\"disclosure_id\":\"proposal_narrative.advisor_use_only.v1\",\"text\":\"For advisor use only until client-ready approval is complete.\"}]}}"
 ```
 
 Report job status:
 
 ```bash
-curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example"
+curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example" \
+  --config report-operator-headers.curl
 ```
 
 Internal report snapshot lookup:
 
 ```bash
 curl "http://127.0.0.1:8300/reports/jobs/rjob_example/snapshot" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-gateway" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 Internal report lineage lookup:
 
 ```bash
 curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-gateway" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 Internal report-owned portfolio-memory source events:
 
 ```bash
 curl "http://127.0.0.1:8300/reports/jobs/rjob_example/portfolio-memory-events" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-gateway" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 Report job operational search:
 
 ```bash
 curl "http://gateway.dev.lotus:8111/api/v1/report-jobs?tenantId=tenant-sg&region=APAC&portfolioId=PB_SG_GLOBAL_BAL_001&status=archived&limit=25" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 For direct `lotus-report` proof after RFC-0101, the equivalent support-safe evidence paths are:
@@ -272,20 +287,38 @@ Report job cancellation:
 
 ```bash
 curl -X POST "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/cancel" \
-  -H "X-Actor-Id: advisor-123" \
-  -H "X-Correlation-ID: portfolio-review-job-cancel"
+  --config report-operator-headers.curl
+```
+
+Report job rerender, regenerate, and failed-work replay:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_example/rerender" \
+  --config report-operator-headers.curl \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: rerender-rjob_example-v1" \
+  -d "{\"reason\":\"correct_template_or_presentation\"}"
+
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_example/regenerate" \
+  --config report-operator-headers.curl \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: regenerate-rjob_example-v1" \
+  -d "{\"reason\":\"refresh_corrected_upstream_data\"}"
+
+curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_failed_example/replay" \
+  --config report-operator-headers.curl \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: replay-rjob_failed_example-v1" \
+  -d "{\"reason\":\"retry_failed_work\"}"
 ```
 
 Internal batch materialization:
 
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/batches" \
+  --config report-operator-headers.curl \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: batch-PB_SG_GLOBAL_BAL_001-2026-04-22" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC" \
   -d "{\"selector_mode\":\"explicit_portfolio_list\",\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"],\"source_candidates\":[{\"portfolio_id\":\"PB_SG_GLOBAL_BAL_001\",\"tenant_id\":\"tenant-sg\",\"region\":\"APAC\",\"active\":true,\"selected\":true,\"source_system\":\"lotus-core\",\"source_object\":\"PortfolioScope\"}],\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\"}"
 ```
 
@@ -293,60 +326,48 @@ Internal batch status:
 
 ```bash
 curl "http://127.0.0.1:8300/reports/batches/rbatch_example" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 Internal batch control:
 
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:pause" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 ```
 
 The other certified controls use the same governed caller-context headers:
 
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:resume" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:cancel" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:retry-failed" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
 
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expired-leases" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC"
+  --config report-operator-headers.curl
+```
+
+Internal batch item replay:
+
+```bash
+curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example/items/rbci_failed_example/replay" \
+  --config report-operator-headers.curl \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: batch-item-replay-rbci_failed_example-v1" \
+  -d "{\"reason\":\"retry_failed_batch_item\"}"
 ```
 
 Internal bounded batch run:
 
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:run-once" \
+  --config report-operator-headers.curl \
   -H "Content-Type: application/json" \
-  -H "X-Actor-Id: support-operator-1" \
-  -H "X-Caller-Application: lotus-report-ops" \
-  -H "X-Tenant-Id: tenant-sg" \
-  -H "X-Region: APAC" \
-  -H "X-Correlation-ID: batch-run-once-local-proof" \
   -d "{\"worker_id\":\"lotus-report-batch-worker-1\",\"recover_expired_leases\":true,\"dispatch_policy\":{\"max_active_batches\":1,\"max_active_items\":5,\"max_active_upstream_jobs\":3,\"max_active_render_jobs\":2,\"max_active_archive_jobs\":2,\"lease_seconds\":300},\"runtime_load\":{\"active_batches\":0,\"active_items\":0,\"active_upstream_jobs\":0,\"active_render_jobs\":0,\"active_archive_jobs\":0}}"
 ```
 
