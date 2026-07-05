@@ -107,7 +107,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
           REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
-        run: python -m pytest ${{ matrix.path }} --cov=src/app --cov-report=
+        run: make test-suite-coverage TEST_SUITE=${{ matrix.suite }} TEST_PATH=${{ matrix.path }}
       - name: Upload coverage data
         uses: actions/upload-artifact@v4
         with:
@@ -135,9 +135,7 @@ jobs:
           merge-multiple: true
           path: coverage-data
       - name: Enforce 99% coverage
-        run: |
-          python -m coverage combine coverage-data
-          python -m coverage report --fail-under=99
+        run: make coverage-gate COVERAGE_INPUTS=coverage-data
       - name: Upload coverage summary
         uses: actions/upload-artifact@v4
         with:

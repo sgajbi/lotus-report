@@ -1,4 +1,9 @@
-.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
+
+TEST_SUITE ?= unit
+TEST_PATH ?= tests/$(TEST_SUITE)
+COVERAGE_INPUTS ?= .coverage.unit .coverage.integration .coverage.e2e
+COVERAGE_FAIL_UNDER ?= 99
 
 install:
 	python -m pip install --upgrade pip
@@ -49,12 +54,18 @@ test-integration:
 test-e2e:
 	python -m pytest tests/e2e
 
+test-suite-coverage:
+	COVERAGE_FILE=.coverage.$(TEST_SUITE) python -m pytest $(TEST_PATH) --cov=src/app --cov-report=
+
+coverage-gate:
+	python -m coverage combine $(COVERAGE_INPUTS)
+	python -m coverage report --fail-under=$(COVERAGE_FAIL_UNDER)
+
 test-coverage:
-	COVERAGE_FILE=.coverage.unit python -m pytest tests/unit --cov=src/app --cov-report=
-	COVERAGE_FILE=.coverage.integration python -m pytest tests/integration --cov=src/app --cov-report=
-	COVERAGE_FILE=.coverage.e2e python -m pytest tests/e2e --cov=src/app --cov-report=
-	python -m coverage combine .coverage.unit .coverage.integration .coverage.e2e
-	python -m coverage report --fail-under=99
+	$(MAKE) test-suite-coverage TEST_SUITE=unit TEST_PATH=tests/unit
+	$(MAKE) test-suite-coverage TEST_SUITE=integration TEST_PATH=tests/integration
+	$(MAKE) test-suite-coverage TEST_SUITE=e2e TEST_PATH=tests/e2e
+	$(MAKE) coverage-gate
 
 security-audit:
 	python scripts/run_security_audit.py
