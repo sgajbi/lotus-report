@@ -155,6 +155,10 @@ def test_client_report_evidence_pack_telemetry_surfaces_watchlisted_analytics_bo
     assert telemetry["blocking"] == {
         "blocked": True,
         "blocking_scope": "analytics_enriched_evidence_certification",
+        "blocked_reason": (
+            "upstream performance and risk producer declarations do not yet approve "
+            "lotus-report as a governed consumer"
+        ),
         "reason_codes": ["PERFORMANCE_RISK_CONSUMER_APPROVAL_PENDING"],
         "blocked_dependencies": ["lotus-performance", "lotus-risk"],
         "consumer_safe_summary": (
