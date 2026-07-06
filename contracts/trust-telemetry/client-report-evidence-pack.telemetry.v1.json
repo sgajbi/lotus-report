@@ -38,6 +38,7 @@
   "blocking": {
     "blocked": true,
     "blocking_scope": "analytics_enriched_evidence_certification",
+    "blocked_reason": "upstream performance and risk producer declarations do not yet approve lotus-report as a governed consumer",
     "reason_codes": [
       "PERFORMANCE_RISK_CONSUMER_APPROVAL_PENDING"
     ],
