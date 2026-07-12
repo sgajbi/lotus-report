@@ -160,6 +160,44 @@ def test_idea_evidence_intake_route_requires_idempotency_key() -> None:
     assert response.json()["detail"]["code"] == "missing_idempotency_key"
 
 
+def test_idea_evidence_intake_rejects_unknown_policy_before_persistence() -> None:
+    ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: ledger
+    payload = {**_payload(), "retention_policy_ref": "unknown-policy"}
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs",
+            json=payload,
+            headers=_headers("idea-report-intake-unknown-policy"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unknown_retention_policy"
+    assert ledger.snapshot() == {}
+
+
+def test_idea_evidence_intake_rejects_policy_for_wrong_tenant() -> None:
+    ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: ledger
+    headers = {**_headers("idea-report-intake-wrong-tenant"), "X-Tenant-Id": "tenant-uk"}
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs",
+            json=_payload(),
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "retention_policy_tenant_mismatch"
+    assert ledger.snapshot() == {}
+
+
 def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
@@ -210,6 +248,42 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     assert upstream_calls[0].contract_version == "LotusIdeaEvidencePackReportInput.1.0"
 
 
+def test_idea_evidence_materialization_records_retryable_archive_failure(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_SuccessfulRenderClient(),
+        archive_client=_UnavailableArchiveClient(),
+        snapshot_store=lineage_store,
+        job_ledger=ledger,
+    )
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        render_service
+    )
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=_headers("idea-report-materialization-archive-failure"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    record = ledger.get_job(response.json()["report_job_id"])
+    assert record.status == "failed"
+    assert record.failure_category == "archive_storage_failed"
+    assert record.retry_eligible is True
+    assert record.archive_document_id is None
+
+
 def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
@@ -248,6 +322,42 @@ def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_pat
     assert record.archive_document_id is None
     snapshot = lineage_store.get_snapshot_by_job(body["report_job_id"])
     assert snapshot.lineage_summary["source_type"] == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT"
+
+
+def test_idea_evidence_materialization_propagates_active_legal_hold(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    payload = _materialization_payload()
+    payload["requested_output_formats"] = ["json"]
+    payload["idea_evidence_pack"] = {
+        **_payload(),
+        "retention_policy_ref": "generated-report-legal-hold",
+    }
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-legal-hold"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    record = ledger.get_job(response.json()["report_job_id"])
+    policy = record.options["retention_policy"]
+    assert policy["legal_hold_active"] is True
+    assert policy["retention_start_event"] == "REPORT_ARCHIVED"
+    assert policy["archive_handoff_policy"] == "lotus-archive:idea-evidence-retention:v1"
 
 
 def test_idea_evidence_materialization_route_requires_idempotency_key(tmp_path) -> None:
@@ -563,6 +673,16 @@ class _SuccessfulRenderClient:
 class _SuccessfulArchiveClient:
     async def archive_document(self, payload, **kwargs):
         return 201, {"document_id": "doc_idea_evidence_pack_001"}
+
+
+class _UnavailableArchiveClient:
+    async def archive_document(self, payload, **kwargs):
+        return 503, {
+            "detail": {
+                "code": "archive_unavailable",
+                "message": "Archive is temporarily unavailable.",
+            }
+        }
 
 
 class _UnexpectedRenderClient:
