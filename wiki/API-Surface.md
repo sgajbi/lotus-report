@@ -36,8 +36,9 @@ boundaries, and copy-paste request examples for direct service and support workf
   implemented, not-certified source-safe intake route for reviewed `lotus-idea` evidence packs.
   The route requires `Idempotency-Key`, persists support-safe intake fingerprints and caller
   context in the `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger, replays same-payload retries
-  across process restarts, and rejects changed-payload replays. It does not create report jobs,
-  render output, archive records, or client-publication authority.
+    across process restarts, and rejects changed-payload replays. It does not create report jobs,
+    render output, archive records, or client-publication authority. Report validates the retention
+    policy reference and tenant scope before writing the intake ledger.
 - `POST /reports/outcome-reviews`
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to

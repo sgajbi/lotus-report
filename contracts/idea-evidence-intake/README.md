@@ -13,6 +13,11 @@ Current contract:
 1. `lotus-report-idea-evidence-pack-intake.v1.json`
    Implemented, not-certified intake-route contract for reviewed `lotus-idea`
    evidence packs.
+2. `lotus-report-idea-evidence-retention-policy.v1.json`
+   Report-owned policy authority for Idea evidence intake and materialization.
+   Unknown, inactive, producer-unauthorized, and tenant-mismatched references
+   are rejected before persistence. Active legal holds are propagated to the
+   report job and Archive handoff rather than treated as publication authority.
 
 Idempotency posture:
 

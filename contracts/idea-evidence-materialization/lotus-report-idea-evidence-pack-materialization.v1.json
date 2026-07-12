@@ -34,6 +34,7 @@
       "report_evidence_pack_id",
       "conversion_intent_id",
       "candidate_id",
+      "retention_policy_ref",
       "evidence_packet_id",
       "evidence_content_fingerprint",
       "source_summaries",
@@ -49,11 +50,13 @@
   "evidence_refs": [
     "contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json",
     "src/app/idea_evidence_intake/models.py",
+    "src/app/idea_evidence_intake/retention_policy.py",
     "src/app/idea_evidence_intake/service.py",
     "src/app/routers/idea_evidence_intake.py",
     "src/app/reporting_lineage/capture_service.py",
     "src/app/reporting_render/package_builder.py",
     "tests/unit/test_idea_evidence_materialization_contract.py",
+    "tests/unit/test_idea_evidence_retention_policy.py",
     "tests/unit/test_idea_evidence_intake_service.py",
     "tests/integration/test_idea_evidence_intake_api.py"
   ],

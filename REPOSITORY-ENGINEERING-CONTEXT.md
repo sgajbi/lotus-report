@@ -131,7 +131,9 @@ Current repository posture:
    client-publication authority, or supported-feature promotion. Intake idempotency is durable in
    a SQLite ledger configured by `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`; records store support-safe
    payload fingerprints, source identifiers, caller context, correlation id, and trace id without
-   raw evidence payloads,
+   raw evidence payloads. The companion Report-owned retention policy contract is enforced before
+   intake or materialization; legal-hold posture is propagated through report-job options for the
+   Archive handoff,
 20. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
    records the implemented, not-certified `lotus-idea` evidence-pack materialization route
    boundary for `ClientReportEvidencePack`: `POST /reports/idea-evidence-packs/materializations`
