@@ -77,10 +77,12 @@
     "contracts/domain-data-products/lotus-report-products.v1.json",
     "contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json",
     "src/app/idea_evidence_intake/models.py",
+    "src/app/idea_evidence_intake/retention_policy.py",
     "src/app/idea_evidence_intake/service.py",
     "src/app/routers/idea_evidence_intake.py",
     "scripts/validate_idea_evidence_intake_contract.py",
     "tests/unit/test_idea_evidence_intake_contract.py",
+    "tests/unit/test_idea_evidence_retention_policy.py",
     "tests/unit/test_idea_evidence_intake_service.py",
     "tests/integration/test_idea_evidence_intake_api.py"
   ],

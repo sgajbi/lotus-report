@@ -18,6 +18,8 @@
 ## Idea evidence intake route foundation
 
 - Contract: `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json`
+- Retention authority:
+  `contracts/idea-evidence-intake/lotus-report-idea-evidence-retention-policy.v1.json`
 - Producer boundary: `lotus-idea` may provide reviewed opportunity evidence packets through the
   implemented source-safe intake route.
 - Report boundary: `lotus-report` remains the owner of report materialization and
@@ -27,6 +29,9 @@
   `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger; materialization, rendered output, archive
   record, client-publication authority, and supported feature promotion remain separate
   certification work.
+- Policy enforcement: Report rejects unknown, inactive, producer-unauthorized, or tenant-mismatched
+  retention references before durable intake or report-job creation. Active legal holds are
+  propagated for Archive enforcement and do not grant publication authority.
 
 ## Platform relationship
 

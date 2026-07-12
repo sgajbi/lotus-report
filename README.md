@@ -88,7 +88,10 @@ Boundary rules that matter:
    client-publication authority, or supported-feature proof. Intake idempotency is persisted in a
    SQLite ledger configured by `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`; records store support-safe
    fingerprints, source identifiers, caller context, correlation id, and trace id, not raw evidence
-   payloads.
+   payloads. Report resolves `retention_policy_ref` against the versioned policy contract before
+   intake or materialization; unknown, inactive, unauthorized, and tenant-mismatched references
+   fail before persistence, while active legal holds propagate to the report job and Archive
+   handoff metadata.
 
 ## First-Class Portfolio Review
 
