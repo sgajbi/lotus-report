@@ -1,0 +1,52 @@
+{
+  "contract_id": "lotus-report-idea-evidence-retention-policy",
+  "contract_version": "1.0.0",
+  "owner_repository": "lotus-report",
+  "approved_producer_repository": "lotus-idea",
+  "archive_authority_repository": "lotus-archive",
+  "supportability_status": "not_certified",
+  "policies": [
+    {
+      "policy_ref": "generated-report-standard",
+      "policy_version": "1.0.0",
+      "purpose": "GOVERNED_CLIENT_REPORT_EVIDENCE",
+      "retention_start_event": "REPORT_ARCHIVED",
+      "retention_duration_days": 2557,
+      "approval_authority": "lotus-report-information-governance",
+      "residency_region": "APAC",
+      "authorized_tenants": ["tenant-sg"],
+      "authorized_producers": ["lotus-idea"],
+      "legal_hold_active": false,
+      "erasure_action": "REDACT_EVIDENCE_REFERENCES_AFTER_APPROVAL",
+      "archive_handoff_policy": "lotus-archive:idea-evidence-retention:v1",
+      "effective_from_utc": "2026-01-01T00:00:00Z"
+    },
+    {
+      "policy_ref": "generated-report-legal-hold",
+      "policy_version": "1.0.0",
+      "purpose": "GOVERNED_CLIENT_REPORT_EVIDENCE",
+      "retention_start_event": "REPORT_ARCHIVED",
+      "retention_duration_days": 2557,
+      "approval_authority": "lotus-report-information-governance",
+      "residency_region": "APAC",
+      "authorized_tenants": ["tenant-sg"],
+      "authorized_producers": ["lotus-idea"],
+      "legal_hold_active": true,
+      "erasure_action": "REDACT_EVIDENCE_REFERENCES_AFTER_APPROVAL",
+      "archive_handoff_policy": "lotus-archive:idea-evidence-retention:v1",
+      "effective_from_utc": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "failure_posture": {
+    "unknown_policy": "reject_before_intake_or_materialization",
+    "inactive_policy": "reject_before_intake_or_materialization",
+    "unauthorized_producer": "reject_before_intake_or_materialization",
+    "tenant_mismatch": "reject_before_intake_or_materialization",
+    "active_legal_hold": "permit_governed_materialization_and_propagate_hold_to_archive_handoff"
+  },
+  "non_proof_boundaries": [
+    "This contract does not claim statutory or regulatory approval for the example durations.",
+    "lotus-report owns report retention selection; lotus-archive owns archive enforcement and deletion evidence.",
+    "A legal hold blocks expiry or erasure but does not independently grant client-publication authority."
+  ]
+}

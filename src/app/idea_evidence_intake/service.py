@@ -15,6 +15,7 @@ from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
 )
+from app.idea_evidence_intake.retention_policy import IdeaEvidenceRetentionPolicy
 from app.reporting_jobs.models import ProofPackReportJobRequest, ReportCallerContext
 
 REPORT_IDEA_EVIDENCE_INTAKE_ROUTE = "POST /reports/idea-evidence-packs"
@@ -299,6 +300,8 @@ def _intake_id(idempotency_key: str, payload_fingerprint: str) -> str:
 
 def build_proof_pack_report_job_request_from_idea_evidence(
     request: IdeaEvidencePackMaterializationRequest,
+    *,
+    retention_policy: IdeaEvidenceRetentionPolicy | None = None,
 ) -> ProofPackReportJobRequest:
     evidence_pack = request.idea_evidence_pack
     proof_pack_input = {
@@ -347,11 +350,24 @@ def build_proof_pack_report_job_request_from_idea_evidence(
         ],
         "client_publication_authority_granted": False,
     }
+    options = dict(request.options)
+    if retention_policy is not None:
+        options["retention_policy"] = {
+            "policy_ref": retention_policy.policy_ref,
+            "policy_version": retention_policy.policy_version,
+            "retention_start_event": retention_policy.retention_start_event,
+            "retention_duration_days": retention_policy.retention_duration_days,
+            "approval_authority": retention_policy.approval_authority,
+            "residency_region": retention_policy.residency_region,
+            "legal_hold_active": retention_policy.legal_hold_active,
+            "erasure_action": retention_policy.erasure_action,
+            "archive_handoff_policy": retention_policy.archive_handoff_policy,
+        }
     return ProofPackReportJobRequest(
         proof_pack_report_input=proof_pack_input,
         requested_output_formats=request.requested_output_formats,
         reporting_currency=request.reporting_currency,
-        options=request.options,
+        options=options,
     )
 
 

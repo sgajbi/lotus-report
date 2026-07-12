@@ -13,6 +13,12 @@ from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
 )
+from app.idea_evidence_intake.retention_policy import (
+    IdeaEvidenceRetentionPolicy,
+    IdeaEvidenceRetentionPolicyResolver,
+    InMemoryIdeaEvidenceRetentionPolicyRegistry,
+    RetentionPolicyError,
+)
 from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
@@ -38,6 +44,31 @@ def get_idea_evidence_intake_ledger() -> IdeaEvidenceIntakeLedger:
     return IdeaEvidenceIntakeLedger(Path(settings.idea_evidence_intake_ledger_path))
 
 
+@lru_cache(maxsize=1)
+def get_idea_evidence_retention_policy_resolver() -> IdeaEvidenceRetentionPolicyResolver:
+    return InMemoryIdeaEvidenceRetentionPolicyRegistry()
+
+
+def _resolve_retention_policy(
+    *,
+    resolver: IdeaEvidenceRetentionPolicyResolver,
+    policy_ref: str,
+    tenant_id: str,
+    producer: str,
+) -> IdeaEvidenceRetentionPolicy:
+    try:
+        return resolver.resolve(
+            policy_ref=policy_ref,
+            tenant_id=tenant_id,
+            producer=producer,
+        )
+    except RetentionPolicyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
 @router.post(
     "",
     response_model=IdeaEvidencePackIntakeResponse,
@@ -61,6 +92,9 @@ def get_idea_evidence_intake_ledger() -> IdeaEvidenceIntakeLedger:
 async def accept_idea_evidence_pack(
     request: IdeaEvidencePackIntakeRequest,
     ledger: IdeaEvidenceIntakeLedger = Depends(get_idea_evidence_intake_ledger),
+    retention_policy_resolver: IdeaEvidenceRetentionPolicyResolver = Depends(
+        get_idea_evidence_retention_policy_resolver
+    ),
     idempotency_key: Annotated[
         str | None,
         Header(alias="Idempotency-Key", description="Idempotency key for the intake handoff."),
@@ -92,6 +126,12 @@ async def accept_idea_evidence_pack(
                 "message": "Idempotency-Key header is required.",
             },
         )
+    _resolve_retention_policy(
+        resolver=retention_policy_resolver,
+        policy_ref=request.retention_policy_ref,
+        tenant_id=caller_context.tenant_id,
+        producer=request.producer,
+    )
     try:
         return ledger.accept(
             request,
@@ -135,6 +175,9 @@ async def materialize_idea_evidence_pack(
     request: IdeaEvidencePackMaterializationRequest,
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
     intake_ledger: IdeaEvidenceIntakeLedger = Depends(get_idea_evidence_intake_ledger),
+    retention_policy_resolver: IdeaEvidenceRetentionPolicyResolver = Depends(
+        get_idea_evidence_retention_policy_resolver
+    ),
     capture_service: object = Depends(get_portfolio_review_snapshot_capture_service),
     render_service: object = Depends(get_portfolio_review_render_orchestration_service),
     idempotency_key: Annotated[
@@ -176,6 +219,12 @@ async def materialize_idea_evidence_pack(
             },
         )
     materialization_key = idempotency_key.strip()
+    retention_policy = _resolve_retention_policy(
+        resolver=retention_policy_resolver,
+        policy_ref=request.idea_evidence_pack.retention_policy_ref,
+        tenant_id=caller_context.tenant_id,
+        producer=request.idea_evidence_pack.producer,
+    )
     try:
         intake_ledger.accept(
             request.idea_evidence_pack,
@@ -184,7 +233,10 @@ async def materialize_idea_evidence_pack(
             trace_id=trace_id,
             caller_context=caller_context,
         )
-        report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
+        report_job_request = build_proof_pack_report_job_request_from_idea_evidence(
+            request,
+            retention_policy=retention_policy,
+        )
         record = ledger.create_proof_pack_report_job(
             request=report_job_request,
             caller_context=caller_context,
