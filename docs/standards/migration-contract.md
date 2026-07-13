@@ -25,6 +25,11 @@
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
 - Local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to a file
   database. SQLite is retained only as an isolated unit-test adapter for fast ledger behavior tests.
+- `000_report_status_event_legacy_contract_preflight.sql` is an additive compatibility preflight
+  for existing PostgreSQL volumes that already contain the pre-contract `report_status_event`
+  table. It must sort before `001_report_job_ledger.sql` and add the status-event contract columns
+  before any dependent status-event indexes are created. Fresh databases continue to get the full
+  current table shape from `001_report_job_ledger.sql`.
 
 ## Rollback and Forward-Fix
 
