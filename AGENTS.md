@@ -116,10 +116,14 @@ When documentation, RFC, context, runbook, or operator-facing truth changes:
 
 1. update the repo-local `wiki/` source in the same PR when wiki truth changed,
 2. record an explicit no-wiki-change decision when no wiki update is needed,
-3. run `lotus-platform/automation/Sync-RepoWikis.ps1 -CheckOnly -Repository <repo-name>` before merge,
+3. before merge, run
+   `lotus-platform/automation/Sync-RepoWikis.ps1 -CheckOnly -Repository <repo-name> -AllowUnpublishedSourceChanges`
+   when the branch intentionally changes repo-local `wiki/` source,
 4. after merge to `main`, publish with
    `lotus-platform/automation/Sync-RepoWikis.ps1 -Publish -Repository <repo-name>`,
-5. use `-AllRepositories` only for platform-wide audits or coordinated publication sweeps.
+5. after publishing, run strict parity verification with
+   `lotus-platform/automation/Sync-RepoWikis.ps1 -CheckOnly -Repository <repo-name>`,
+6. use `-AllRepositories` only for platform-wide audits or coordinated publication sweeps.
 
 Repo-local `wiki/` is the authored source of truth. The separate GitHub `*.wiki.git` repository is
 only the publication target and must not receive hand-edited truth that is absent from repo source.
