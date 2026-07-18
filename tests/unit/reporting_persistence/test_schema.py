@@ -7,6 +7,7 @@ from app.reporting_persistence.schema import (
     CURRENT_SCHEMA_VERSION,
     LEGACY_STATUS_EVENT_BASELINE,
     LEGACY_STATUS_EVENT_COLUMNS,
+    STATUS_EVENT_CONTRACT_NULLABILITY,
     ReportSchemaCompatibilityError,
     ReportSchemaMigrationError,
     apply_report_schema_migrations,
@@ -32,11 +33,13 @@ class _RecordingConnection:
         *,
         table_exists: bool = False,
         columns: dict[str, str] | None = None,
+        nullability: dict[str, str] | None = None,
         failure_fragment: str | None = None,
     ) -> None:
         self.statements: list[str] = []
         self._table_exists = table_exists
         self._columns = columns or {}
+        self._nullability = nullability or {}
         self._failure_fragment = failure_fragment
 
     def execute(self, query: str, params: object | None = None) -> _Result:
@@ -46,7 +49,14 @@ class _RecordingConnection:
         if "information_schema.columns" in query:
             return _Result(
                 many=[
-                    {"column_name": name, "data_type": data_type}
+                    {
+                        "column_name": name,
+                        "data_type": data_type,
+                        "is_nullable": self._nullability.get(
+                            name,
+                            STATUS_EVENT_CONTRACT_NULLABILITY.get(name, "YES"),
+                        ),
+                    }
                     for name, data_type in self._columns.items()
                 ]
             )
@@ -54,6 +64,28 @@ class _RecordingConnection:
             raise UndefinedColumn("migration statement failed")
         self.statements.append(query.strip())
         return _Result()
+
+
+def _current_contract_columns() -> dict[str, str]:
+    columns = {column: "text" for column in LEGACY_STATUS_EVENT_COLUMNS}
+    columns.update(
+        {
+            "event_schema_version": "text",
+            "event_family": "text",
+            "event_payload_json": "jsonb",
+            "event_idempotency_key": "text",
+        }
+    )
+    return columns
+
+
+def _current_contract_nullability() -> dict[str, str]:
+    return {
+        "event_schema_version": "NO",
+        "event_family": "NO",
+        "event_payload_json": "NO",
+        "event_idempotency_key": "YES",
+    }
 
 
 def test_apply_report_schema_migrations_uses_filename_order(tmp_path: Path) -> None:
@@ -95,16 +127,11 @@ def test_validate_supported_report_schema_accepts_legacy_baseline() -> None:
 
 
 def test_validate_supported_report_schema_accepts_current_contract() -> None:
-    columns = {column: "text" for column in LEGACY_STATUS_EVENT_COLUMNS}
-    columns.update(
-        {
-            "event_schema_version": "text",
-            "event_family": "text",
-            "event_payload_json": "jsonb",
-            "event_idempotency_key": "text",
-        }
+    connection = _RecordingConnection(
+        table_exists=True,
+        columns=_current_contract_columns(),
+        nullability=_current_contract_nullability(),
     )
-    connection = _RecordingConnection(table_exists=True, columns=columns)
 
     detected = validate_supported_report_schema(connection)
 
@@ -132,9 +159,65 @@ def test_validate_supported_report_schema_rejects_incompatible_contract_type() -
 
     with pytest.raises(
         ReportSchemaCompatibilityError,
-        match="incompatible=event_family:integer",
+        match="incompatible=event_family:type=integer:expected_type=text",
     ):
         validate_supported_report_schema(connection)
+
+
+@pytest.mark.parametrize(
+    ("column", "actual_nullable", "expected_nullable"),
+    [
+        ("event_schema_version", "YES", "NO"),
+        ("event_family", "YES", "NO"),
+        ("event_payload_json", "YES", "NO"),
+        ("event_idempotency_key", "NO", "YES"),
+    ],
+)
+def test_validate_supported_report_schema_rejects_incompatible_contract_nullability(
+    column: str,
+    actual_nullable: str,
+    expected_nullable: str,
+) -> None:
+    nullability = _current_contract_nullability()
+    nullability[column] = actual_nullable
+    connection = _RecordingConnection(
+        table_exists=True,
+        columns=_current_contract_columns(),
+        nullability=nullability,
+    )
+
+    with pytest.raises(
+        ReportSchemaCompatibilityError,
+        match=(
+            f"incompatible={column}:nullable={actual_nullable}:"
+            f"expected_nullable={expected_nullable}"
+        ),
+    ):
+        validate_supported_report_schema(connection)
+
+
+def test_apply_report_schema_migrations_rejects_nullability_before_mutation(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "001_should_not_run.sql").write_text(
+        "CREATE TABLE mutation_marker(id TEXT);",
+        encoding="utf-8",
+    )
+    nullability = _current_contract_nullability()
+    nullability["event_payload_json"] = "YES"
+    connection = _RecordingConnection(
+        table_exists=True,
+        columns=_current_contract_columns(),
+        nullability=nullability,
+    )
+
+    with pytest.raises(
+        ReportSchemaCompatibilityError,
+        match="event_payload_json:nullable=YES:expected_nullable=NO",
+    ):
+        apply_report_schema_migrations(connection, migrations_dir=tmp_path)
+
+    assert connection.statements == []
 
 
 def test_apply_report_schema_migrations_classifies_postgres_failure(tmp_path: Path) -> None:
