@@ -273,6 +273,7 @@ def test_integration_capabilities():
         "lotus-report.reporting.portfolio_review.upstream_capability_audit.v1",
         "lotus-report.reporting.portfolio_review.advisor_sections.v1",
         "lotus-report.reporting.portfolio_review.workbench_ready.v1",
+        "lotus-report.reporting.report_ordering_catalogue.v1",
         "lotus-report.reporting.portfolio_review.job_ledger.v1",
         "lotus-report.reporting.portfolio_review.idempotent_job_create.v1",
         "lotus-report.reporting.portfolio_review.job_status.v1",
@@ -296,6 +297,7 @@ def test_integration_capabilities():
     } <= feature_keys
     workflow_keys = {workflow["workflow_key"] for workflow in body["workflows"]}
     assert "portfolio_review_report_job" in workflow_keys
+    assert "report_ordering" in workflow_keys
     assert body["supportability"] == {
         "state": "ready",
         "reason": "evidence_surface_ready",
@@ -303,8 +305,8 @@ def test_integration_capabilities():
         "evidence_feature_count": 14,
         "ready_evidence_feature_count": 14,
         "degraded_evidence_feature_count": 0,
-        "workflow_count": 3,
-        "ready_workflow_count": 3,
+        "workflow_count": 4,
+        "ready_workflow_count": 4,
     }
 
 
