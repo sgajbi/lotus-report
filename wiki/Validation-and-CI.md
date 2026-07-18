@@ -13,12 +13,14 @@
 - `make check`
   lint, typecheck, OpenAPI gate, unit tests
 - `make ci`
-  migration smoke, integration tests, e2e tests, coverage, security audit
+  automation-oriented migration, integration, e2e, coverage, and security proof against a
+  caller-owned isolated PostgreSQL database
 - `make migration-upgrade-smoke`
   isolated real-PostgreSQL upgrade proof from `report-status-event-pre-contract-v0` to
   `report-ledger-v1`, including legacy-row preservation and deterministic rerun
 - `make ci-local`
-  local alias for the full repo CI gate
+  preferred workstation gate; creates one temporary PostgreSQL database, runs `make ci`, and drops
+  only the helper-owned database on success or failure
 - `make docker-build`
   container build validation
 - `scripts/rfc_0104_slice4_live_evidence.py`
@@ -43,7 +45,23 @@
   PR-grade proof that integration, e2e, coverage, fresh/current schema, supported prior-schema
   upgrade, and security posture still hold
 - combined coverage gate
-  enforces the repo's 99% coverage floor across unit, integration, and e2e packs
+  enforces the repo's 97% coverage floor across unit, integration, and e2e packs
+
+## Safe local database lifecycle
+
+Keep the canonical Report API, worker, and scheduler on their normal `lotus_report` database and
+run local PR-grade proof through the isolation helper:
+
+```powershell
+$env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
+make ci-local
+```
+
+The configured role must be allowed to create and drop databases. The helper derives a bounded,
+unique database name, never runs stateful test suites against the source database, suppresses DSN
+output, terminates only connections to the database it owns, and drops that exact database in a
+guaranteed cleanup path. `make ci` remains the automation primitive for GitHub Actions and other
+callers that already own an isolated database.
 
 ## Contract emphasis
 

@@ -23,8 +23,12 @@
   `last_error_category`, `last_error_summary`, lifecycle timestamps, expanded batch/item status
   constraints, and retry lookup indexing.
 - CI executes `make migration-smoke` on each PR against a dedicated PostgreSQL service container.
-- Local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to a file
-  database. SQLite is retained only as an isolated unit-test adapter for fast ledger behavior tests.
+- Direct local migration smoke requires `REPORT_JOB_LEDGER_DATABASE_URL` and must not fall back to
+  a file database. Full workstation proof uses `make ci-local`, which creates one uniquely named
+  database on the configured PostgreSQL server, runs the repository CI contract there, and drops
+  only that helper-owned database on success or failure. `make ci` callers must already own an
+  isolated database. SQLite is retained only as an isolated unit-test adapter for fast ledger
+  behavior tests.
 - `000_report_status_event_legacy_contract_preflight.sql` is an additive compatibility preflight
   for existing PostgreSQL volumes that already contain the pre-contract `report_status_event`
   table. It must sort before `001_report_job_ledger.sql` and add the status-event contract columns
