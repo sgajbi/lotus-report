@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
@@ -419,29 +421,28 @@ def test_stale_lease_token_cannot_heartbeat_item(tmp_path) -> None:
 def test_sqlite_schema_upgrade_adds_dispatch_columns_to_existing_batch_item_table(
     tmp_path,
 ) -> None:
-    import sqlite3
-
     db_path = tmp_path / "legacy-batch.sqlite3"
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            """
-            CREATE TABLE report_batch_item (
-                batch_item_id TEXT PRIMARY KEY,
-                batch_id TEXT NOT NULL,
-                item_position INTEGER NOT NULL,
-                portfolio_id TEXT NOT NULL,
-                item_idempotency_key TEXT NOT NULL UNIQUE,
-                status TEXT NOT NULL,
-                source_system TEXT NOT NULL,
-                source_object TEXT NOT NULL,
-                created_at TEXT NOT NULL
+    with closing(sqlite3.connect(db_path)) as connection:
+        with connection:
+            connection.execute(
+                """
+                CREATE TABLE report_batch_item (
+                    batch_item_id TEXT PRIMARY KEY,
+                    batch_id TEXT NOT NULL,
+                    item_position INTEGER NOT NULL,
+                    portfolio_id TEXT NOT NULL,
+                    item_idempotency_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    source_object TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
 
     ReportBatchLedger(db_path)
 
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(report_batch_item)")}
     assert {
         "report_job_id",
