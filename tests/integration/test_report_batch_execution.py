@@ -19,6 +19,7 @@ from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
 def _database_url() -> str:
@@ -177,9 +178,9 @@ class _ArchiveClientSuccess:
 async def test_postgres_batch_item_execution_archives_pdf_report_and_reconciles_batch() -> None:
     database_url = _database_url()
     suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(database_url)
-    report_job_ledger = PostgresReportJobLedger(database_url)
-    snapshot_store = PostgresReportInputSnapshotStore(database_url)
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(database_url))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(database_url))
+    snapshot_store = own_postgres_adapter(PostgresReportInputSnapshotStore(database_url))
     archive_client = _ArchiveClientSuccess()
     caller = _caller(suffix)
     batch = batch_ledger.create_batch(

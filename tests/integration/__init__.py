@@ -1,0 +1,1 @@
+"""Lotus Report integration tests."""

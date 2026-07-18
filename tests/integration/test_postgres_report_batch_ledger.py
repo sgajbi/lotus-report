@@ -24,6 +24,7 @@ from app.report_batch_orchestrator.models import (
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
+from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
 class _FakeRows:
@@ -168,7 +169,7 @@ def test_postgres_unique_violation_without_existing_batch_is_conflict() -> None:
 
 def test_postgres_batch_ledger_persists_idempotent_materialized_batch() -> None:
     unique_suffix = uuid4().hex
-    ledger = PostgresReportBatchLedger(_database_url())
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
     ledger.check_ready()
     request = _request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}")
     caller = _caller(unique_suffix)
@@ -198,7 +199,7 @@ def test_postgres_batch_ledger_persists_idempotent_materialized_batch() -> None:
 
 def test_postgres_batch_rejects_missing_idempotency_key() -> None:
     unique_suffix = uuid4().hex
-    ledger = PostgresReportBatchLedger(_database_url())
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
 
     with pytest.raises(MissingBatchIdempotencyKeyError, match="missing_batch_idempotency_key"):
         ledger.create_batch(
@@ -209,7 +210,7 @@ def test_postgres_batch_rejects_missing_idempotency_key() -> None:
 
 
 def test_postgres_batch_get_missing_batch_raises_not_found() -> None:
-    ledger = PostgresReportBatchLedger(_database_url())
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
 
     with pytest.raises(ValueError, match="report_batch_not_found"):
         ledger.get_batch(f"rbch_missing_{uuid4().hex}")
@@ -217,7 +218,7 @@ def test_postgres_batch_get_missing_batch_raises_not_found() -> None:
 
 def test_postgres_batch_get_item_returns_single_item_and_404s() -> None:
     unique_suffix = uuid4().hex
-    ledger = PostgresReportBatchLedger(_database_url())
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
     batch = ledger.create_batch(
         request=_multi_request(
             unique_suffix,
@@ -241,8 +242,8 @@ def test_postgres_batch_get_item_returns_single_item_and_404s() -> None:
 
 def test_postgres_batch_dispatch_persists_report_jobs_and_item_state() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
-    report_job_ledger = PostgresReportJobLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     caller = _caller(unique_suffix)
     portfolio_ids = [
         f"PB_SG_GLOBAL_BAL_001_{unique_suffix}",
@@ -281,8 +282,8 @@ def test_postgres_batch_dispatch_persists_report_jobs_and_item_state() -> None:
 
 def test_postgres_batch_dispatch_honors_external_back_pressure_without_mutation() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
-    report_job_ledger = PostgresReportJobLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     caller = _caller(unique_suffix)
     batch = batch_ledger.create_batch(
         request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
@@ -312,8 +313,8 @@ def test_postgres_batch_dispatch_honors_external_back_pressure_without_mutation(
 
 def test_postgres_batch_runtime_scan_returns_only_runnable_batches() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
-    report_job_ledger = PostgresReportJobLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     caller = _caller(unique_suffix)
     runnable = batch_ledger.create_batch(
         request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
@@ -350,7 +351,7 @@ def test_postgres_batch_runtime_scan_returns_only_runnable_batches() -> None:
 
 def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
     caller = _caller(unique_suffix)
     batch = batch_ledger.create_batch(
         request=_request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"),
@@ -423,8 +424,8 @@ def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
 
 def test_postgres_batch_pause_resume_cancel_retry_and_recovery_primitives() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
-    report_job_ledger = PostgresReportJobLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     caller = _caller(unique_suffix)
     portfolio_ids = [
         f"PB_SG_GLOBAL_BAL_001_{unique_suffix}",
@@ -491,7 +492,7 @@ def test_postgres_batch_pause_resume_cancel_retry_and_recovery_primitives() -> N
 
 def test_postgres_failed_single_item_batch_reconciles_terminal_and_retryable_status() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
     terminal_batch = batch_ledger.create_batch(
         request=_multi_request(unique_suffix, [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]),
         caller_context=_caller(unique_suffix),
@@ -530,8 +531,8 @@ def test_postgres_failed_single_item_batch_reconciles_terminal_and_retryable_sta
 
 def test_postgres_successful_single_item_batch_reconciles_completed_status() -> None:
     unique_suffix = uuid4().hex
-    batch_ledger = PostgresReportBatchLedger(_database_url())
-    report_job_ledger = PostgresReportJobLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     caller = _caller(unique_suffix)
     batch = batch_ledger.create_batch(
         request=_multi_request(unique_suffix, [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]),
@@ -565,7 +566,7 @@ def test_postgres_successful_single_item_batch_reconciles_completed_status() -> 
 
 
 def test_postgres_mark_item_failed_rejects_unknown_item() -> None:
-    batch_ledger = PostgresReportBatchLedger(_database_url())
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
 
     with pytest.raises(ValueError, match="report_batch_item_not_found"):
         batch_ledger.mark_item_failed(
