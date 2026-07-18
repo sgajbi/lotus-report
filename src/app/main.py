@@ -9,6 +9,7 @@ from app.enterprise_readiness import (
 )
 from app.observability import setup_observability
 from app.postgres import close_postgres_connection_provider
+from app.report_ordering_catalogue.router import router as report_ordering_catalogue_router
 from app.routers.aggregations import router as aggregations_router
 from app.routers.health import router as health_router
 from app.routers.idea_evidence_intake import router as idea_evidence_intake_router
@@ -77,6 +78,7 @@ app.middleware("http")(build_enterprise_audit_middleware())
 
 app.include_router(health_router)
 app.include_router(integration_router)
+app.include_router(report_ordering_catalogue_router)
 app.include_router(aggregations_router)
 app.include_router(report_job_submission_router)
 app.include_router(reports_router)

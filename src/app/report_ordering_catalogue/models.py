@@ -4,6 +4,83 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+REPORT_ORDERING_CATALOGUE_EXAMPLE = {
+    "source_service": "lotus-report",
+    "contract_version": "report-ordering-catalogue.v1",
+    "report_families": [
+        {
+            "report_family_id": "portfolio_review",
+            "business_label": "Portfolio review report",
+            "description": "Advisor review pack for a client portfolio and selected business date.",
+            "intended_use": "advisor_client_portfolio_review",
+            "audience_roles": ["client_advisor", "portfolio_manager"],
+            "client_release_posture": ("advisor_review_required_distribution_not_supported"),
+            "ordering_modes": [
+                {
+                    "mode_id": "single_portfolio",
+                    "business_label": "Single portfolio",
+                    "description": "Create one report for the selected portfolio.",
+                    "default_output_format": "json",
+                    "interactive": True,
+                }
+            ],
+            "output_formats": [
+                {
+                    "format_id": "json",
+                    "business_label": "Structured data package",
+                    "use_posture": "system_integration",
+                    "state": "ready",
+                    "reason_code": "report_data_ready",
+                },
+                {
+                    "format_id": "pdf",
+                    "business_label": "Governed PDF document",
+                    "use_posture": "governed_document",
+                    "state": "ready",
+                    "reason_code": "render_supportability_ready",
+                },
+            ],
+            "configuration_fields": [
+                {
+                    "field_id": "as_of_date",
+                    "business_label": "Report date",
+                    "description": (
+                        "Business date used for holdings, activity, performance, and risk evidence."
+                    ),
+                    "input_type": "business_date",
+                    "requirement": "required",
+                    "defaulting_policy": "caller_required",
+                    "value_source": "caller",
+                    "options": [],
+                }
+            ],
+            "sections": [
+                {
+                    "section_id": "CLIENT_PROFILE",
+                    "business_label": "Client and mandate profile",
+                    "description": (
+                        "Client, relationship, booking centre, portfolio, and mandate context."
+                    ),
+                    "display_order": 10,
+                    "selection_posture": "required",
+                    "default_selected": True,
+                    "dependency_field_ids": [],
+                }
+            ],
+            "supportability": {
+                "state": "ready",
+                "reason_code": "report_family_ready",
+                "message": "Available within its supported reporting workflow.",
+            },
+        }
+    ],
+    "supportability": {
+        "state": "ready",
+        "reason_code": "report_catalogue_ready",
+        "message": "All published report families are available in their supported workflows.",
+    },
+}
+
 
 class CatalogueModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
