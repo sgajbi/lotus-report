@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
-from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
@@ -43,8 +42,7 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
     WaveReportJobRequest,
 )
-
-MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+from app.reporting_persistence import apply_report_schema_migrations
 
 
 class PostgresReportJobLedger:
@@ -77,11 +75,7 @@ class PostgresReportJobLedger:
 
     def ensure_schema(self) -> None:
         with self._connect() as connection:
-            for migration_path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-                schema = migration_path.read_text(encoding="utf-8")
-                for statement in schema.split(";"):
-                    if statement.strip():
-                        connection.execute(statement)
+            apply_report_schema_migrations(connection)
 
     def check_ready(self) -> None:
         with self._connect() as connection:
