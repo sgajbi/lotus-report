@@ -33,23 +33,28 @@
 - `make migration-upgrade-smoke` creates an isolated PostgreSQL schema, seeds the supported
   `report-status-event-pre-contract-v0` baseline and a representative legacy event, runs the same
   migration function used by the API, batch worker, and scheduler twice, and verifies the
-  `report-ledger-v1` columns, backfill values, indexes, row preservation, and deterministic replay.
-  The isolated schema is removed transactionally; the target database's `public` schema and local
-  Report volume are not reset by this check.
+  `report-ledger-v1` columns, exact type/nullability contract, backfill values, indexes, row
+  preservation, and deterministic replay. It also creates four isolated wrong-nullability current
+  shapes and proves each is rejected before mutation. The isolated schemas are removed
+  transactionally; the target database's `public` schema and local Report volume are not reset by
+  this check.
 
 ## Supported Upgrade And Failure Posture
 
 - Supported source baseline: `report-status-event-pre-contract-v0` with the complete legacy
   status-event identity, lifecycle, actor, timestamp, correlation, and trace columns.
-- Current target: `report-ledger-v1` with typed `event_schema_version`, `event_family`,
-  `event_payload_json`, and optional `event_idempotency_key` fields.
+- Current target: `report-ledger-v1` with required typed `event_schema_version`, `event_family`, and
+  `event_payload_json` fields plus optional typed `event_idempotency_key`. Existing columns with
+  different required/optional nullability are unsupported because additive `IF NOT EXISTS`
+  migrations cannot repair them safely.
 - The API, batch worker, and scheduler all run `python -m app.runtime_schema` before their process
   entrypoint. The guard serializes migration through the Report advisory lock and uses the shared
   `app.reporting_persistence` migration owner.
 - An unrecognized legacy shape fails before migration with exit code `78` and a stable diagnostic
   beginning `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported`. The diagnostic
-  names the target schema, affected table, and missing or incompatible columns without including a
-  database URL, credential, SQL statement, or row payload.
+  names the target schema, affected table, and missing, type-incompatible, or
+  nullability-incompatible columns without including a database URL, credential, SQL statement, or
+  row payload.
 - Do not remove the PostgreSQL volume as the default recovery action. Preserve the volume, capture
   the stable diagnostic, compare the existing shape with the supported baseline, and forward-fix
   or restore through the approved database recovery process.
