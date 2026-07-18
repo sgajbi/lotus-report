@@ -33,6 +33,12 @@ STATUS_EVENT_CONTRACT_TYPES = {
     "event_payload_json": "jsonb",
     "event_idempotency_key": "text",
 }
+STATUS_EVENT_CONTRACT_NULLABILITY = {
+    "event_schema_version": "NO",
+    "event_family": "NO",
+    "event_payload_json": "NO",
+    "event_idempotency_key": "YES",
+}
 
 
 class ReportSchemaError(RuntimeError):
@@ -65,17 +71,21 @@ def validate_supported_report_schema(connection: MigrationConnection) -> str:
 
     column_rows = connection.execute(
         """
-        SELECT column_name, data_type
+        SELECT column_name, data_type, is_nullable
         FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = 'report_status_event'
         """
     ).fetchall()
-    observed = {
+    observed_types = {
         str(_row_value(row, "column_name", 0)): str(_row_value(row, "data_type", 1))
         for row in column_rows
     }
-    missing_legacy_columns = sorted(LEGACY_STATUS_EVENT_COLUMNS - observed.keys())
+    observed_nullability = {
+        str(_row_value(row, "column_name", 0)): str(_row_value(row, "is_nullable", 2))
+        for row in column_rows
+    }
+    missing_legacy_columns = sorted(LEGACY_STATUS_EVENT_COLUMNS - observed_types.keys())
     if missing_legacy_columns:
         missing = ",".join(missing_legacy_columns)
         raise ReportSchemaCompatibilityError(
@@ -85,9 +95,17 @@ def validate_supported_report_schema(connection: MigrationConnection) -> str:
         )
 
     incompatible_contract_columns = sorted(
-        f"{column}:{observed[column]}"
+        f"{column}:type={observed_types[column]}:expected_type={expected_type}"
         for column, expected_type in STATUS_EVENT_CONTRACT_TYPES.items()
-        if column in observed and observed[column] != expected_type
+        if column in observed_types and observed_types[column] != expected_type
+    )
+    incompatible_contract_columns.extend(
+        sorted(
+            f"{column}:nullable={observed_nullability[column]}:"
+            f"expected_nullable={expected_nullable}"
+            for column, expected_nullable in STATUS_EVENT_CONTRACT_NULLABILITY.items()
+            if column in observed_nullability and observed_nullability[column] != expected_nullable
+        )
     )
     if incompatible_contract_columns:
         incompatible = ",".join(incompatible_contract_columns)
@@ -97,7 +115,7 @@ def validate_supported_report_schema(connection: MigrationConnection) -> str:
             f"table=report_status_event:incompatible={incompatible}"
         )
 
-    if STATUS_EVENT_CONTRACT_TYPES.keys() <= observed.keys():
+    if STATUS_EVENT_CONTRACT_TYPES.keys() <= observed_types.keys():
         return CURRENT_SCHEMA_VERSION
     return LEGACY_STATUS_EVENT_BASELINE
 
