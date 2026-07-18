@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from app import runtime_schema
+from app.reporting_persistence import ReportSchemaCompatibilityError
 
 
 class _RecordingConnection:
@@ -139,3 +140,25 @@ def test_ensure_runtime_schema_checks_batch_and_snapshot_stores_under_lock(monke
         ("lock_exit", "_Provider"),
         ("provider_close", None),
     ]
+
+
+def test_main_returns_product_safe_exit_for_unsupported_schema(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        runtime_schema,
+        "ensure_runtime_schema",
+        lambda: (_ for _ in ()).throw(
+            ReportSchemaCompatibilityError(
+                "report_schema_upgrade_unsupported:detected=unrecognized:"
+                "target=report-ledger-v1:table=report_status_event:missing=actor"
+            )
+        ),
+    )
+
+    exit_code = runtime_schema.main()
+
+    assert exit_code == 78
+    assert capsys.readouterr().err == (
+        "lotus_report_schema_startup_failed:"
+        "report_schema_upgrade_unsupported:detected=unrecognized:"
+        "target=report-ledger-v1:table=report_status_event:missing=actor\n"
+    )
