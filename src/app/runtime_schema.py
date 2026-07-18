@@ -1,3 +1,4 @@
+import sys
 import zlib
 from contextlib import contextmanager
 from typing import Iterator
@@ -6,6 +7,7 @@ from app.config import settings
 from app.postgres import PostgresConnectionProvider
 from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
+from app.reporting_persistence import ReportSchemaError
 
 _SCHEMA_LOCK_KEY = zlib.crc32(b"lotus-report-runtime-schema")
 
@@ -32,5 +34,14 @@ def ensure_runtime_schema() -> None:
         connection_provider.close()
 
 
+def main() -> int:
+    try:
+        ensure_runtime_schema()
+    except ReportSchemaError as exc:
+        print(f"lotus_report_schema_startup_failed:{exc}", file=sys.stderr)
+        return 78
+    return 0
+
+
 if __name__ == "__main__":
-    ensure_runtime_schema()
+    raise SystemExit(main())
