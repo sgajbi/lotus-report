@@ -11,6 +11,11 @@ from app.report_ordering_catalogue.definitions import (
 
 _OPERATIONAL_OPTION_KEYS = frozenset({"retention_policy_id", "retain_until_date"})
 _TOP_LEVEL_CONFIGURATION_FIELDS = frozenset({"as_of_date", "reporting_currency"})
+_MODE_OPTION_KEYS = {
+    "explicit_portfolio_batch": frozenset(
+        {"batch_manifest_source", "batch_manifest_version", "batch_manifest_hash"}
+    )
+}
 
 
 class ReportOrderingSubmissionError(ValueError):
@@ -35,7 +40,7 @@ def validate_report_ordering_submission(
             "The selected ordering mode is not available for this report family.",
         )
     _validate_output_formats(definition, requested_output_formats)
-    _validate_options(definition, options)
+    _validate_options(definition, ordering_mode_id, options)
 
 
 def _definition(
@@ -74,12 +79,15 @@ def _validate_output_formats(
 
 def _validate_options(
     definition: ReportFamilyDefinition,
+    ordering_mode_id: str,
     options: Mapping[str, Any],
 ) -> None:
     configuration_fields = {field.field_id: field for field in definition.configuration_fields}
     allowed_keys = (
-        set(configuration_fields) - _TOP_LEVEL_CONFIGURATION_FIELDS
-    ) | _OPERATIONAL_OPTION_KEYS
+        (set(configuration_fields) - _TOP_LEVEL_CONFIGURATION_FIELDS)
+        | _OPERATIONAL_OPTION_KEYS
+        | _MODE_OPTION_KEYS.get(ordering_mode_id, frozenset())
+    )
     if definition.sections:
         allowed_keys.add("sections")
     unknown_keys = sorted(set(options) - allowed_keys)
@@ -114,6 +122,9 @@ def _validate_options(
         _validate_nonempty_string(options["retention_policy_id"], "retention policy")
     if "retain_until_date" in options:
         _validate_business_date(options["retain_until_date"])
+    for field_id in ("batch_manifest_source", "batch_manifest_version", "batch_manifest_hash"):
+        if field_id in options:
+            _validate_nonempty_string(options[field_id], "batch manifest provenance")
 
 
 def _validate_string_selection(

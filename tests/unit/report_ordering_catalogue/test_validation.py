@@ -110,3 +110,23 @@ def test_accepts_bounded_operational_retention_controls_without_publishing_templ
             "retain_until_date": "2033-04-22",
         },
     )
+
+
+def test_accepts_bounded_manifest_provenance_for_explicit_batch_only() -> None:
+    _validate(
+        mode="explicit_portfolio_batch",
+        formats=["pdf"],
+        options={
+            "batch_manifest_source": "ops-manifest-apac-monthly",
+            "batch_manifest_version": "2026-07",
+            "batch_manifest_hash": "sha256:manifest-001",
+        },
+    )
+
+    with pytest.raises(ReportOrderingSubmissionError) as exc_info:
+        _validate(
+            mode="single_portfolio",
+            options={"batch_manifest_hash": "sha256:manifest-001"},
+        )
+
+    assert exc_info.value.code == "unsupported_report_configuration"
