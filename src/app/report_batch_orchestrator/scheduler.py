@@ -20,6 +20,10 @@ from app.report_batch_orchestrator.schedule import (
     materialize_cycle,
     scheduled_batch_idempotency_key,
 )
+from app.report_ordering_catalogue.validation import (
+    ReportOrderingSubmissionError,
+    validate_report_ordering_submission,
+)
 from app.reporting_jobs.ledger import canonical_json
 from app.reporting_jobs.models import ReportCallerContext
 
@@ -69,6 +73,15 @@ class BatchScheduleDefinition(BaseModel):
             raise ValueError("batch_manifest schedule contains duplicate manifest portfolio ids.")
         if self.selector_mode == "selected_subset":
             raise ValueError("selected_subset schedules require a governed subset source.")
+        try:
+            validate_report_ordering_submission(
+                report_family_id="portfolio_review",
+                ordering_mode_id="governed_schedule",
+                requested_output_formats=self.requested_output_formats,
+                options=self.options,
+            )
+        except ReportOrderingSubmissionError as exc:
+            raise ValueError(f"{exc.code}: {exc.message}") from exc
         return self
 
 
