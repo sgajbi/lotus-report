@@ -119,9 +119,11 @@ Current repository posture:
    scheduler containers all use the same schema guard and shared `src/app/reporting_persistence/`
    migration owner. Supported `report-status-event-pre-contract-v0` volumes upgrade to
    `report-ledger-v1` in place; unrecognized shapes fail before mutation with a stable
-   `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` diagnostic. The
+   `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` diagnostic, including
+   existing contract columns with incompatible PostgreSQL types or required/optional nullability. The
    real-PostgreSQL `make migration-upgrade-smoke` fixture proves legacy-row preservation,
-   contract backfill, index creation, and deterministic rerun without resetting `public`,
+   contract backfill, index creation, exact contract nullability, invalid-nullability rejection,
+   and deterministic rerun without resetting `public`,
 17. PostgreSQL-backed report-job, report-batch, and report-input snapshot/upstream-call adapters
    share the bounded process-local provider in `src/app/postgres.py`; adapters own transaction
    units while the provider owns connection reuse, max concurrency, acquisition timeout, connect
