@@ -32,10 +32,10 @@ from app.report_batch_orchestrator.models import (
 )
 from app.report_batch_orchestrator.selector import materialize_portfolios
 from app.reporting_jobs.models import ReportCallerContext
-from app.reporting_persistence import apply_report_schema_migrations
+from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
-class PostgresReportBatchLedger:
+class PostgresReportBatchLedger(ManagedPostgresAdapter):
     """PostgreSQL-backed durable ledger for batch and batch-item materialization."""
 
     def __init__(
