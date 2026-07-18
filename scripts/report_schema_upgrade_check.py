@@ -17,6 +17,7 @@ from psycopg.rows import dict_row  # noqa: E402
 from app.reporting_persistence.schema import (  # noqa: E402
     CURRENT_SCHEMA_VERSION,
     LEGACY_STATUS_EVENT_BASELINE,
+    ReportSchemaCompatibilityError,
     apply_report_schema_migrations,
     validate_supported_report_schema,
 )
@@ -32,6 +33,12 @@ EXPECTED_CONTRACT_COLUMNS = {
 EXPECTED_INDEXES = {
     "idx_report_status_event_family_created",
     "idx_report_status_event_idempotency_key",
+}
+NULLABILITY_MISMATCHES = {
+    "event_schema_version": ("YES", "NO"),
+    "event_family": ("YES", "NO"),
+    "event_payload_json": ("YES", "NO"),
+    "event_idempotency_key": ("NO", "YES"),
 }
 
 
@@ -67,6 +74,8 @@ def run_upgrade_check(database_url: str) -> None:
 
         connection.execute("RESET search_path")
         connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema_name)))
+
+        _verify_unsupported_nullability(connection)
 
 
 def _execute_fixture(connection: psycopg.Connection[dict[str, object]]) -> None:
@@ -143,6 +152,70 @@ def _verify_indexes(connection: psycopg.Connection[dict[str, object]]) -> None:
         raise RuntimeError(
             f"legacy_upgrade_indexes_mismatch:expected={EXPECTED_INDEXES}:actual={observed}"
         )
+
+
+def _verify_unsupported_nullability(
+    connection: psycopg.Connection[dict[str, object]],
+) -> None:
+    for column, (actual_nullable, expected_nullable) in NULLABILITY_MISMATCHES.items():
+        schema_name = f"report_nullability_{uuid4().hex[:12]}"
+        connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_name)))
+        connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema_name)))
+        _execute_fixture(connection)
+        apply_report_schema_migrations(connection)
+
+        if actual_nullable == "YES":
+            connection.execute(
+                sql.SQL("ALTER TABLE report_status_event ALTER COLUMN {} DROP NOT NULL").format(
+                    sql.Identifier(column)
+                )
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE report_status_event
+                SET event_idempotency_key = 'legacy-event-idempotency-key'
+                WHERE event_idempotency_key IS NULL
+                """
+            )
+            connection.execute(
+                sql.SQL("ALTER TABLE report_status_event ALTER COLUMN {} SET NOT NULL").format(
+                    sql.Identifier(column)
+                )
+            )
+
+        expected_fragment = (
+            f"{column}:nullable={actual_nullable}:expected_nullable={expected_nullable}"
+        )
+        try:
+            apply_report_schema_migrations(connection)
+        except ReportSchemaCompatibilityError as exc:
+            if expected_fragment not in str(exc):
+                raise RuntimeError(
+                    "nullability_preflight_diagnostic_mismatch:"
+                    f"expected={expected_fragment}:actual={exc}"
+                ) from exc
+        else:
+            raise RuntimeError(f"nullability_preflight_accepted_unsupported:{column}")
+
+        observed = connection.execute(
+            """
+            SELECT is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'report_status_event'
+              AND column_name = %s
+            """,
+            (column,),
+        ).fetchone()
+        if observed is None or observed["is_nullable"] != actual_nullable:
+            raise RuntimeError(
+                "nullability_preflight_mutated_unsupported_schema:"
+                f"column={column}:expected={actual_nullable}:actual={observed}"
+            )
+
+        connection.execute("RESET search_path")
+        connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema_name)))
 
 
 def main() -> int:
