@@ -129,6 +129,21 @@ def test_batch_scheduler_config_parses_manifest_schedule_json() -> None:
     assert config.schedules[0].manifest_entries[0].portfolio_id == "P1"
 
 
+@pytest.mark.parametrize(
+    "overrides,expected_code",
+    [
+        ({"requested_output_formats": ["xlsx"]}, "unsupported_report_output_format"),
+        ({"options": {"sections": ["CLIENT_STATEMENT"]}}, "unsupported_report_section"),
+        ({"options": {"template_id": "unapproved-template"}}, "unsupported_report_configuration"),
+    ],
+)
+def test_batch_schedule_rejects_configuration_outside_the_published_catalogue(
+    overrides: dict[str, object], expected_code: str
+) -> None:
+    with pytest.raises(ValueError, match=expected_code):
+        _schedule(**overrides)
+
+
 @pytest.mark.parametrize("raw", ["{}", "{"])
 def test_batch_scheduler_config_rejects_invalid_json(raw: str) -> None:
     source = Settings(_env_file=None, REPORT_BATCH_SCHEDULES_JSON=raw)
