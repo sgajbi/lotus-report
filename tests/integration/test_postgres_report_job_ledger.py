@@ -26,6 +26,7 @@ from app.reporting_jobs.postgres_ledger import (
     _dt_from_value,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
 def _database_url() -> str:
@@ -59,7 +60,7 @@ def _request_and_context(
 
 
 def _ledger() -> PostgresReportJobLedger:
-    return PostgresReportJobLedger(_database_url())
+    return own_postgres_adapter(PostgresReportJobLedger(_database_url()))
 
 
 def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() -> None:

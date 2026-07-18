@@ -22,6 +22,7 @@ from app.reporting_lineage.store import (
     ReportInputSnapshotNotFoundError,
     compute_snapshot_hash,
 )
+from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
 def _database_url() -> str:
@@ -32,11 +33,11 @@ def _database_url() -> str:
 
 
 def _store() -> PostgresReportInputSnapshotStore:
-    return PostgresReportInputSnapshotStore(_database_url())
+    return own_postgres_adapter(PostgresReportInputSnapshotStore(_database_url()))
 
 
 def _seed_job(unique_suffix: str) -> str:
-    ledger = PostgresReportJobLedger(_database_url())
+    ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
     job = ledger.create_portfolio_review_job(
         request=PortfolioReviewJobRequest(
             portfolio_scope={"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
