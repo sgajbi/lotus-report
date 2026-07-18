@@ -77,6 +77,7 @@ from app.reporting_render.replay_service import (
 from app.reporting_render.rerender_service import get_portfolio_review_rerender_service
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
+from app.routers.report_ordering_validation import enforce_report_ordering_submission
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 jobs_router = APIRouter(prefix="/reports/jobs", tags=["Report Jobs"])
@@ -547,6 +548,12 @@ async def submit_portfolio_review_job(
     ] = None,
 ) -> ReportJobHandleResponse:
     started_at = perf_counter()
+    enforce_report_ordering_submission(
+        report_family_id="portfolio_review",
+        ordering_mode_id="single_portfolio",
+        requested_output_formats=request.requested_output_formats,
+        options=request.options,
+    )
     if not idempotency_key or not idempotency_key.strip():
         record_report_operation(
             operation="report_job_submission",
@@ -613,6 +620,7 @@ async def submit_portfolio_review_job(
 
 async def _submit_bounded_input_report_job(
     *,
+    report_family_id: str,
     request: OutcomeReviewReportJobRequest | ProofPackReportJobRequest | WaveReportJobRequest,
     create_job: Any,
     capture_service: Any,
@@ -628,6 +636,12 @@ async def _submit_bounded_input_report_job(
     trace_id: str | None,
 ) -> ReportJobHandleResponse:
     started_at = perf_counter()
+    enforce_report_ordering_submission(
+        report_family_id=report_family_id,
+        ordering_mode_id="source_workflow",
+        requested_output_formats=request.requested_output_formats,
+        options=request.options,
+    )
     if not idempotency_key or not idempotency_key.strip():
         record_report_operation(
             operation="report_job_submission",
@@ -805,6 +819,7 @@ async def submit_outcome_review_report_job(
     ] = None,
 ) -> ReportJobHandleResponse:
     return await _submit_bounded_input_report_job(
+        report_family_id="outcome_review",
         request=request,
         create_job=ledger.create_outcome_review_report_job,
         capture_service=capture_service,
@@ -912,6 +927,7 @@ async def submit_proof_pack_report_job(
     ] = None,
 ) -> ReportJobHandleResponse:
     return await _submit_bounded_input_report_job(
+        report_family_id="proof_pack",
         request=request,
         create_job=ledger.create_proof_pack_report_job,
         capture_service=capture_service,
@@ -1020,6 +1036,7 @@ async def submit_wave_report_job(
     ] = None,
 ) -> ReportJobHandleResponse:
     return await _submit_bounded_input_report_job(
+        report_family_id="rebalance_wave",
         request=request,
         create_job=ledger.create_wave_report_job,
         capture_service=capture_service,

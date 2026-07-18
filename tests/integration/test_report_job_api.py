@@ -10,6 +10,7 @@ from app.reporting_jobs.ledger import (
     ReportJobLedger,
     ReportJobNotFoundError,
 )
+from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
@@ -304,6 +305,46 @@ def _headers(idempotency_key="portfolio-review-PB_SG_GLOBAL_BAL_001-2026-04-22")
         "X-Correlation-ID": "corr-report-job-1",
         "X-Trace-ID": "trace-report-job-1",
     }
+
+
+def test_portfolio_review_job_rejects_unpublished_ordering_configuration(tmp_path):
+    client, _, _ = _client(tmp_path)
+    payload = _payload()
+    payload["options"] = {"sections": ["CLIENT_STATEMENT"]}
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=payload,
+            headers=_headers("invalid-report-configuration"),
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {
+            "code": "unsupported_report_section",
+            "message": "One or more selected report section values are not available.",
+        }
+    }
+
+
+def test_source_workflow_rejects_unknown_output_format_before_job_creation(tmp_path):
+    client, ledger, _ = _client(tmp_path)
+    payload = _proof_pack_payload()
+    payload["requested_output_formats"] = ["docx"]
+    try:
+        response = client.post(
+            "/reports/proof-packs",
+            json=payload,
+            headers=_headers("invalid-proof-pack-format"),
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unsupported_report_output_format"
+    assert ledger.list_jobs(filters=ReportJobListFilters(limit=10)) == []
 
 
 class _FakeCaptureService:
