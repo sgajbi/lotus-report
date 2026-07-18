@@ -125,7 +125,11 @@ Current repository posture:
 17. PostgreSQL-backed report-job, report-batch, and report-input snapshot/upstream-call adapters
    share the bounded process-local provider in `src/app/postgres.py`; adapters own transaction
    units while the provider owns connection reuse, max concurrency, acquisition timeout, connect
-   timeout, statement timeout, application name, and deterministic shutdown,
+   timeout, statement timeout, application name, and deterministic shutdown. Database-URL-backed
+   scripts own their adapters with context managers. Integration tests register directly created
+   adapters through `tests/integration/postgres_adapter_ownership.py`, whose per-test scope closes
+   them in reverse creation order. Adapters returned by the shared runtime provider must not be
+   registered as test-owned or closed by request-scoped code,
 18. companion gateway PR `sgajbi/lotus-gateway#145` validates that the Workbench-facing gateway
    boundary preserves partial/unavailable section states and advisor-only separation,
 19. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
@@ -317,18 +321,21 @@ Important validation expectations:
 3. migration smoke must prove both the current schema and the supported immediately preceding
    status-event schema through the shared production migration owner; fresh-database proof alone
    cannot clear an upgrade claim,
-4. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
+4. PostgreSQL migration and integration proof should promote `ResourceWarning` and
+   `pytest.PytestUnraisableExceptionWarning` to errors so directly owned adapters cannot regress to
+   garbage-collection cleanup,
+5. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
    migration smoke with `report_input_snapshot` and `report_upstream_call` table, index, and
    check-constraint proof,
-5. split unit, integration, e2e, and coverage validation are part of the merge gate,
-6. reporting orchestration changes should be evaluated for cross-app impact,
-7. README and wiki changes should preserve truthful explanation of API request conventions,
+6. split unit, integration, e2e, and coverage validation are part of the merge gate,
+7. reporting orchestration changes should be evaluated for cross-app impact,
+8. README and wiki changes should preserve truthful explanation of API request conventions,
    especially that the first-class portfolio review endpoint publishes snake_case request, query,
    and response fields only,
-8. when a remaining public surface exposes mixed query or request-body conventions, wiki or
+9. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
    agents do not normalize the wrong parameter shape by accident,
-9. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
+10. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
    policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
 
 ## Codebase Review And Issue Discovery
