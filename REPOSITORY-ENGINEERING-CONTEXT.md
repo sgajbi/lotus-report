@@ -116,8 +116,12 @@ Current repository posture:
    dashboards, or operator APIs,
 16. Docker-local `lotus-report` startup now initializes and verifies the PostgreSQL report-job
    ledger and report-input snapshot schema before serving readiness. The API, batch worker, and
-   scheduler containers all use the same schema guard so canonical `report.dev.lotus` evidence
-   fails fast on migration or volume drift instead of returning a misleading healthy container,
+   scheduler containers all use the same schema guard and shared `src/app/reporting_persistence/`
+   migration owner. Supported `report-status-event-pre-contract-v0` volumes upgrade to
+   `report-ledger-v1` in place; unrecognized shapes fail before mutation with a stable
+   `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` diagnostic. The
+   real-PostgreSQL `make migration-upgrade-smoke` fixture proves legacy-row preservation,
+   contract backfill, index creation, and deterministic rerun without resetting `public`,
 17. PostgreSQL-backed report-job, report-batch, and report-input snapshot/upstream-call adapters
    share the bounded process-local provider in `src/app/postgres.py`; adapters own transaction
    units while the provider owns connection reuse, max concurrency, acquisition timeout, connect
@@ -250,6 +254,11 @@ Primary areas:
     materialization/status/control/single-batch-run/config-backed-scheduler subset while keeping
     full product runtime support disabled until later scheduler-management and certification slices
     are implemented and proven.
+16. `src/app/reporting_persistence/`
+    shared forward-only PostgreSQL migration execution, supported legacy-schema classification,
+    stable migration failure vocabulary, and the single internal schema-lifecycle owner consumed
+    by the report-job, batch, and lineage stores. This is design modularity inside `lotus-report`,
+    not a separately deployed migration service.
 
 ## Runtime And Integration Boundaries
 
@@ -289,6 +298,8 @@ Use these commands as the primary local contract:
    `make domain-product-validate`
 7. idea evidence intake contract validation
    `make idea-evidence-intake-contract-gate`
+8. supported prior-schema upgrade proof
+   `make migration-upgrade-smoke`
 
 ## Validation And CI Expectations
 
@@ -303,18 +314,21 @@ Important validation expectations:
 1. OpenAPI, typecheck, migration smoke, and security audit are active,
 2. migration smoke and CI integration proof use PostgreSQL through
    `REPORT_JOB_LEDGER_DATABASE_URL`; file databases are not runtime evidence for RFC-0100,
-3. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
+3. migration smoke must prove both the current schema and the supported immediately preceding
+   status-event schema through the shared production migration owner; fresh-database proof alone
+   cannot clear an upgrade claim,
+4. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
    migration smoke with `report_input_snapshot` and `report_upstream_call` table, index, and
    check-constraint proof,
-4. split unit, integration, e2e, and coverage validation are part of the merge gate,
-5. reporting orchestration changes should be evaluated for cross-app impact,
-6. README and wiki changes should preserve truthful explanation of API request conventions,
+5. split unit, integration, e2e, and coverage validation are part of the merge gate,
+6. reporting orchestration changes should be evaluated for cross-app impact,
+7. README and wiki changes should preserve truthful explanation of API request conventions,
    especially that the first-class portfolio review endpoint publishes snake_case request, query,
    and response fields only,
-7. when a remaining public surface exposes mixed query or request-body conventions, wiki or
+8. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
    agents do not normalize the wrong parameter shape by accident,
-8. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
+9. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
    policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
 
 ## Codebase Review And Issue Discovery

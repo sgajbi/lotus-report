@@ -245,6 +245,13 @@ Docker Compose file provides `lotus-report-postgres` on host port `5439`;
 `REPORT_JOB_LEDGER_DATABASE_URL` must point to PostgreSQL for runtime, integration, migration, and
 live-evidence proof.
 
+Existing supported Report volumes are upgraded in place before the API, batch worker, or scheduler
+starts. Validate both current-schema and prior-schema compatibility with `make migration-smoke`.
+Use `make migration-upgrade-smoke` when you need only the isolated prior-schema proof. Do not delete
+the volume as the default response to a startup failure: preserve it and capture the stable
+`lotus_report_schema_startup_failed` diagnostic described in
+`docs/standards/migration-contract.md`.
+
 Canonical local service identity:
 
 - cross-app validation: `http://report.dev.lotus`
@@ -265,6 +272,9 @@ curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gatew
   fast local gate: lint, typecheck, OpenAPI gate, and unit tests
 - `make ci`
   PR-grade local proof: migration smoke, integration, e2e, coverage, and security audit
+- `make migration-upgrade-smoke`
+  real PostgreSQL proof that the supported pre-contract status-event schema upgrades in place,
+  preserves the legacy row, and can safely rerun without touching the public schema
 - `make ci-local`
   local alias for the repo CI contract
 - `make docker-build`
@@ -385,6 +395,9 @@ Current orchestration model:
   reserved until those command paths are implementation-backed
 - treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
   PostgreSQL ledger or mandatory schema is not reachable
+- treat `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` as an operator
+  migration/version diagnostic: preserve the database volume and use the governed upgrade or
+  recovery path rather than resetting durable report history
 - PostgreSQL-backed report-job, batch, and snapshot/upstream-call stores share one bounded
   process-local connection provider; tune `REPORT_POSTGRES_POOL_MAX_SIZE`,
   `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`, `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`,

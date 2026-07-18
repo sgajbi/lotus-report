@@ -14,6 +14,9 @@
   lint, typecheck, OpenAPI gate, unit tests
 - `make ci`
   migration smoke, integration tests, e2e tests, coverage, security audit
+- `make migration-upgrade-smoke`
+  isolated real-PostgreSQL upgrade proof from `report-status-event-pre-contract-v0` to
+  `report-ledger-v1`, including legacy-row preservation and deterministic rerun
 - `make ci-local`
   local alias for the full repo CI gate
 - `make docker-build`
@@ -27,16 +30,18 @@
   when a change must be proven against the production-shaped local stack.
 - Docker runtime readiness proof
   `docker compose up -d --build lotus-report lotus-report-batch-worker lotus-report-batch-scheduler`
-  against a fresh `lotus-report-postgres-data` volume, then verify
+  against both a fresh volume and a preserved supported prior-schema volume, then verify
   `http://report.dev.lotus/health/ready` returns 200 and the PostgreSQL schema includes
-  `report_job`, `report_batch`, `report_input_snapshot`, and `report_upstream_call`.
+  `report_job`, `report_batch`, `report_input_snapshot`, `report_upstream_call`, and the typed
+  status-event contract. A destructive volume reset is not upgrade evidence.
 
 ## What the gates protect
 
 - `make check`
   fast proof that lint, typing, OpenAPI quality, and unit behavior still match repo truth
 - `make ci`
-  PR-grade proof that integration, e2e, coverage, migration, and security posture still hold
+  PR-grade proof that integration, e2e, coverage, fresh/current schema, supported prior-schema
+  upgrade, and security posture still hold
 - combined coverage gate
   enforces the repo's 99% coverage floor across unit, integration, and e2e packs
 
