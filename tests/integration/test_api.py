@@ -517,6 +517,9 @@ def test_openapi_uses_typed_portfolio_review_contract():
         == (response_content["example"]["holdings"])
     )
     assert examples[0]["client_profile"]["status"] == "present"
+    assert response_content["example"]["audience"]["client_distribution_allowed"] is False
+    assert examples[0]["audience"]["client_distribution_allowed"] is False
+    assert '"client_distribution_allowed": true' not in serialized_schema.lower()
     assert examples[0]["holdings"]["holdings_by_asset_class"]["EQUITY"][0]["unrealized_pnl"]
     assert examples[0]["performance"]["contribution"]["by_position"][0]["contribution_pct"]
     assert (

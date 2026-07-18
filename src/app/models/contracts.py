@@ -66,7 +66,7 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
     "audience": {
         "client_ready": True,
         "advisor_only_sections": ["advisor_discussion"],
-        "client_distribution_allowed": True,
+        "client_distribution_allowed": False,
     },
     "readiness": {"status": "partial", "reason": "Some upstream suitability data is not sourced."},
     "methodology": {
