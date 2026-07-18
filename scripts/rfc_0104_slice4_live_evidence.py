@@ -84,37 +84,39 @@ def main() -> int:
         },
     )
 
-    batch_ledger = PostgresReportBatchLedger(args.database_url)
-    report_job_ledger = PostgresReportJobLedger(args.database_url)
-    batch_ledger.check_ready()
-    report_job_ledger.check_ready()
+    with (
+        PostgresReportBatchLedger(args.database_url) as batch_ledger,
+        PostgresReportJobLedger(args.database_url) as report_job_ledger,
+    ):
+        batch_ledger.check_ready()
+        report_job_ledger.check_ready()
 
-    batch = batch_ledger.create_batch(
-        request=batch_request,
-        caller_context=caller_context,
-        idempotency_key=f"rfc-0104-slice4-batch-{suffix}",
-    )
-    dispatcher = ReportBatchDispatcher(
-        batch_ledger=batch_ledger,
-        report_job_ledger=report_job_ledger,
-        policy=BatchDispatchPolicy(
-            max_active_batches=1000,
-            max_active_items=1000,
-            max_active_upstream_jobs=10,
-            max_active_render_jobs=10,
-            max_active_archive_jobs=10,
-        ),
-    )
-    dispatch_result = dispatcher.dispatch_batch(
-        batch_id=batch.batch_id,
-        caller_context=caller_context,
-        worker_id=f"rfc-0104-slice4-worker-{suffix}",
-    )
-    refreshed_batch = batch_ledger.get_batch(batch.batch_id)
-    report_jobs = [
-        report_job_ledger.get_job(job_id).model_dump(mode="json")
-        for job_id in dispatch_result.report_job_ids
-    ]
+        batch = batch_ledger.create_batch(
+            request=batch_request,
+            caller_context=caller_context,
+            idempotency_key=f"rfc-0104-slice4-batch-{suffix}",
+        )
+        dispatcher = ReportBatchDispatcher(
+            batch_ledger=batch_ledger,
+            report_job_ledger=report_job_ledger,
+            policy=BatchDispatchPolicy(
+                max_active_batches=1000,
+                max_active_items=1000,
+                max_active_upstream_jobs=10,
+                max_active_render_jobs=10,
+                max_active_archive_jobs=10,
+            ),
+        )
+        dispatch_result = dispatcher.dispatch_batch(
+            batch_id=batch.batch_id,
+            caller_context=caller_context,
+            worker_id=f"rfc-0104-slice4-worker-{suffix}",
+        )
+        refreshed_batch = batch_ledger.get_batch(batch.batch_id)
+        report_jobs = [
+            report_job_ledger.get_job(job_id).model_dump(mode="json")
+            for job_id in dispatch_result.report_job_ids
+        ]
 
     evidence = {
         "rfc": "RFC-0104",

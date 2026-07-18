@@ -52,12 +52,14 @@ def run_ledger_schema_checks() -> int:
         print("REPORT_JOB_LEDGER_DATABASE_URL is required for PostgreSQL migration smoke.")
         return 1
 
-    ledger = PostgresReportJobLedger(database_url)
-    ledger.check_ready()
-    snapshot_store = PostgresReportInputSnapshotStore(database_url)
-    snapshot_store.check_ready()
-    batch_ledger = PostgresReportBatchLedger(database_url)
-    batch_ledger.check_ready()
+    with (
+        PostgresReportJobLedger(database_url) as ledger,
+        PostgresReportInputSnapshotStore(database_url) as snapshot_store,
+        PostgresReportBatchLedger(database_url) as batch_ledger,
+    ):
+        ledger.check_ready()
+        snapshot_store.check_ready()
+        batch_ledger.check_ready()
 
     with psycopg.connect(database_url) as connection:
         table_rows = connection.execute(
