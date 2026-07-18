@@ -6,6 +6,12 @@ from typing import get_args
 from app.reporting_jobs.models import ReportFailureCategory
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+LEGACY_UPGRADE_FIXTURE = (
+    Path(__file__).resolve().parents[3]
+    / "scripts"
+    / "fixtures"
+    / "report_status_event_pre_contract_v0.sql"
+)
 REPORT_STATUS_EVENT_CONTRACT_COLUMNS = {
     "event_schema_version",
     "event_family",
@@ -78,3 +84,12 @@ def test_report_status_event_legacy_contract_preflight_runs_before_dependent_ind
                     f"{path.name} references {required_column} before the "
                     "legacy report_status_event contract preflight adds it."
                 )
+
+
+def test_report_status_event_upgrade_fixture_represents_pre_contract_schema() -> None:
+    sql = LEGACY_UPGRADE_FIXTURE.read_text(encoding="utf-8").lower()
+
+    assert "create table report_status_event" in sql
+    assert "event-pre-contract-v0" in sql
+    for column in REPORT_STATUS_EVENT_CONTRACT_COLUMNS:
+        assert column not in sql
