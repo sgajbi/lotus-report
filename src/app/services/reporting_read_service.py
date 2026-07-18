@@ -10,6 +10,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
 from app.services.portfolio_review_advisor import build_advisor_sections
 
 HTTP_BAD_REQUEST = 400
@@ -34,21 +35,6 @@ PERFORMANCE_REVIEW_PERIODS: tuple[dict[str, object], ...] = (
     {"period": "1Y", "frequencies": ["daily", "monthly"]},
     {"period": "5Y", "frequencies": ["daily", "yearly"]},
     {"period": "SI", "frequencies": ["daily", "yearly"]},
-)
-REVIEW_SECTION_DEFINITIONS = (
-    ("CLIENT_PROFILE", "client_profile", "Client And Mandate Profile", "clientProfile"),
-    ("OVERVIEW", "executive_summary", "Executive Review Summary", "overview"),
-    ("ALLOCATION", "asset_allocation", "Asset Allocation And Portfolio Construction", "allocation"),
-    ("PERFORMANCE", "performance_review", "Performance Review", "performance"),
-    ("RISK_ANALYTICS", "risk_review", "Risk Review", "riskAnalytics"),
-    (
-        "INCOME_AND_ACTIVITY",
-        "income_cash_activity",
-        "Income, Cash, And Activity",
-        "incomeAndActivity",
-    ),
-    ("HOLDINGS", "holdings_appendix", "Holdings Appendix", "holdings"),
-    ("TRANSACTIONS", "transactions_appendix", "Transactions Appendix", "transactions"),
 )
 
 
@@ -545,14 +531,14 @@ class ReportingReadService:
     ) -> list[dict[str, object]]:
         return [
             self._build_review_section(
-                requested_key=requested_key,
-                section_id=section_id,
-                title=title,
-                response_key=response_key,
+                requested_key=definition.section_id,
+                section_id=definition.response_section_id,
+                title=definition.response_title,
+                response_key=definition.response_key,
                 response=response,
                 requested_sections=requested_sections,
             )
-            for requested_key, section_id, title, response_key in REVIEW_SECTION_DEFINITIONS
+            for definition in PORTFOLIO_REVIEW_SECTION_DEFINITIONS
         ]
 
     def _build_review_section(
