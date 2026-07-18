@@ -177,6 +177,14 @@ Current repository posture:
     realized P&L is sourced from transaction realized gain/loss rows, and unavailable components
     carry explicit supportability instead of synthetic market-value delta figures,
 27. cross-app orchestration accuracy matters because reporting payloads summarize authoritative upstream state.
+28. `GET /integration/report-ordering-catalogue` publishes the versioned Report-owned business
+    catalogue for implementation-backed report families, ordering modes, formats, configuration
+    fields, selectable sections, client-release posture, and live `lotus-render` supportability.
+    Product-facing portfolio-review, bounded DPM, explicit-batch, and governed-schedule entry
+    points reuse the same definition and validation owners so unknown families, formats, sections,
+    allocation views, or configuration fields fail before durable mutation. `lotus-gateway` owns
+    caller entitlement and selected-portfolio eligibility; `lotus-workbench` consumes Gateway and
+    must not hard-code Report catalogue values. Report does not grant client-distribution authority.
 
 ## Architecture And Module Map
 
@@ -265,6 +273,11 @@ Primary areas:
     stable migration failure vocabulary, and the single internal schema-lifecycle owner consumed
     by the report-job, batch, and lineage stores. This is design modularity inside `lotus-report`,
     not a separately deployed migration service.
+17. `src/app/report_ordering_catalogue/`
+    immutable business report-family definitions, typed product catalogue models, live Render
+    supportability composition, and shared fail-closed ordering-selection policy. Add new report
+    choices here only when their submission, data package, render/archive posture, and tests are
+    implementation-backed; do not create consumer-local catalogue constants.
 
 ## Runtime And Integration Boundaries
 
