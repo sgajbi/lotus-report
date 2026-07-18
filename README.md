@@ -144,6 +144,8 @@ Main runtime surfaces come from [src/app/main.py](src/app/main.py):
 
 - integration capabilities
   `GET /integration/capabilities`
+- report ordering catalogue
+  `GET /integration/report-ordering-catalogue`
 - aggregations
   `GET /aggregations/portfolios/{portfolio_id}`
 - reporting read endpoints
@@ -197,6 +199,12 @@ Key code areas:
   and `POST /reports/batch-schedules:run-due` expose config-backed scheduler inspection and a
   bounded scheduler materialization pass; schedule CRUD and entitlement-certified public scheduler
   runtime remain future scope
+- `src/app/report_ordering_catalogue/`
+  Report-owned, versioned business catalogue for supported report families, ordering modes,
+  formats, configuration fields, sections, and live Render supportability. The same definitions
+  validate product-facing single-portfolio, batch, source-workflow, and governed-schedule choices
+  before durable mutation. Gateway owns entitlement and selected-scope eligibility; Workbench must
+  consume the Gateway projection rather than hard-code report choices.
 - `src/app/clients/`
   lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
 - `docs/standards/`
