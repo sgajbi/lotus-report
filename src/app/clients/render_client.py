@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.clients.http_resilience import post_with_retry
+from app.clients.http_resilience import get_with_retry, post_with_retry
 
 
 class RenderClient:
@@ -23,22 +23,53 @@ class RenderClient:
         correlation_id: str | None = None,
         trace_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        headers = {"Content-Type": "application/json"}
-        if correlation_id:
-            headers["X-Correlation-ID"] = correlation_id
-        if trace_id:
-            headers["X-Trace-ID"] = trace_id
-            traceparent = _traceparent_header(trace_id)
-            if traceparent:
-                headers["traceparent"] = traceparent
-        return await post_with_retry(
+        result: tuple[int, dict[str, Any]] = await post_with_retry(
             url=f"{self._base_url}/renders",
             timeout_seconds=self._timeout_seconds,
             json_body=payload,
-            headers=headers,
+            headers=_request_headers(
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                content_type="application/json",
+            ),
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
         )
+        return result
+
+    async def get_metadata(
+        self,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        result: tuple[int, dict[str, Any]] = await get_with_retry(
+            url=f"{self._base_url}/metadata",
+            timeout_seconds=self._timeout_seconds,
+            params={},
+            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+        return result
+
+
+def _request_headers(
+    *,
+    correlation_id: str | None,
+    trace_id: str | None,
+    content_type: str | None = None,
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if content_type:
+        headers["Content-Type"] = content_type
+    if correlation_id:
+        headers["X-Correlation-ID"] = correlation_id
+    if trace_id:
+        headers["X-Trace-ID"] = trace_id
+        traceparent = _traceparent_header(trace_id)
+        if traceparent:
+            headers["traceparent"] = traceparent
+    return headers
 
 
 def _traceparent_header(trace_id: str) -> str | None:
