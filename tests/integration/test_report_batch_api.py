@@ -130,6 +130,31 @@ def _payload() -> dict[str, object]:
     }
 
 
+def test_report_batch_rejects_configuration_outside_the_published_catalogue(tmp_path):
+    client, ledger = _client(tmp_path)
+    payload = _payload()
+    payload["options"] = {"template_id": "unapproved-client-template"}
+    try:
+        response = client.post(
+            "/reports/batches",
+            json=payload,
+            headers=_headers("invalid-batch-configuration"),
+        )
+    finally:
+        _clear_overrides()
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {
+            "code": "unsupported_report_configuration",
+            "message": (
+                "One or more report configuration fields are not available for this report family."
+            ),
+        }
+    }
+    assert ledger.batch_pressure_snapshot().dispatch_ready_items == 0
+
+
 def _failed_batch_item_with_report_job(client, batch_ledger, report_ledger):
     batch = client.post(
         "/reports/batches",

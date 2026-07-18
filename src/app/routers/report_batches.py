@@ -71,6 +71,7 @@ from app.reporting_metrics import (
     record_report_operation,
 )
 from app.routers.caller_context import caller_context_dependency
+from app.routers.report_ordering_validation import enforce_report_ordering_submission
 
 router = APIRouter(prefix="/reports/batches", tags=["Report Batches"])
 schedules_router = APIRouter(prefix="/reports/batch-schedules", tags=["Report Batch Schedules"])
@@ -574,6 +575,12 @@ async def create_report_batch(
         ),
     ] = None,
 ) -> BatchHandleResponse:
+    enforce_report_ordering_submission(
+        report_family_id="portfolio_review",
+        ordering_mode_id="explicit_portfolio_batch",
+        requested_output_formats=request.requested_output_formats,
+        options=request.options,
+    )
     if not idempotency_key or not idempotency_key.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
