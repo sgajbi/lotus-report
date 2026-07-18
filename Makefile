@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-apply test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-upgrade-smoke migration-apply test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
 
 TEST_SUITE ?= unit
 TEST_PATH ?= tests/$(TEST_SUITE)
@@ -38,6 +38,10 @@ openapi-gate:
 
 migration-smoke:
 	python scripts/migration_contract_check.py --mode ledger-schema
+	$(MAKE) migration-upgrade-smoke
+
+migration-upgrade-smoke:
+	python scripts/report_schema_upgrade_check.py
 
 migration-apply:
 	python scripts/migration_contract_check.py --mode ledger-schema
