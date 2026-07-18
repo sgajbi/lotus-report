@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 from psycopg.conninfo import conninfo_to_dict
@@ -8,6 +9,14 @@ from psycopg.conninfo import conninfo_to_dict
 from scripts import run_isolated_ci
 
 SOURCE_DSN = "postgresql://report_user:secret@127.0.0.1:5439/lotus-report-prod"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_make_ci_local_routes_through_the_isolation_helper() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+
+    assert "ci-local: ci" not in makefile
+    assert "ci-local:\n\tpython scripts/run_isolated_ci.py" in makefile
 
 
 def test_build_isolated_ci_database_separates_and_bounds_database_identity() -> None:

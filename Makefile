@@ -78,7 +78,8 @@ check: lint typecheck openapi-gate test
 
 ci: lint typecheck openapi-gate migration-smoke test-integration test-e2e test-coverage security-audit
 
-ci-local: ci
+ci-local:
+	python scripts/run_isolated_ci.py
 
 docker-build:
 	docker build -t lotus-report:ci-test .
