@@ -42,10 +42,10 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
     WaveReportJobRequest,
 )
-from app.reporting_persistence import apply_report_schema_migrations
+from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
-class PostgresReportJobLedger:
+class PostgresReportJobLedger(ManagedPostgresAdapter):
     """PostgreSQL-backed runtime ledger for report request/job/status lifecycle state."""
 
     def __init__(

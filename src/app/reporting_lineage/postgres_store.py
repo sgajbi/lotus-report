@@ -23,10 +23,10 @@ from app.reporting_lineage.store import (
     compute_snapshot_hash,
     utc_now,
 )
-from app.reporting_persistence import apply_report_schema_migrations
+from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
-class PostgresReportInputSnapshotStore:
+class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
     """PostgreSQL-backed runtime store for durable report input snapshots."""
 
     def __init__(
