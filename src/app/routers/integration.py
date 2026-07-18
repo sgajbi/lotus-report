@@ -113,6 +113,7 @@ def get_capabilities(
             "enabled": True,
         },
         {"key": "lotus-report.reporting.portfolio_review.workbench_ready.v1", "enabled": True},
+        {"key": "lotus-report.reporting.report_ordering_catalogue.v1", "enabled": True},
         {
             "key": "lotus-report.reporting.portfolio_review.job_ledger.v1",
             "enabled": True,
@@ -190,6 +191,7 @@ def get_capabilities(
         {"workflow_key": "portfolio_reporting", "enabled": True},
         {"workflow_key": "portfolio_review_reporting", "enabled": True},
         {"workflow_key": "portfolio_review_report_job", "enabled": True},
+        {"workflow_key": "report_ordering", "enabled": True},
     ]
     return IntegrationCapabilitiesResponse(
         contract_version=settings.contract_version,
