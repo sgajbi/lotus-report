@@ -7,7 +7,7 @@ boundaries, and copy-paste request examples for direct service and support workf
 
 | Family | Use | Caller posture |
 | --- | --- | --- |
-| Integration and aggregations | capability publication and portfolio aggregation probes | direct local debugging or gateway discovery |
+| Integration and aggregations | capability publication, report-ordering catalogue, and portfolio aggregation probes | direct local debugging or gateway discovery |
 | Report jobs | durable portfolio-review report initiation, status, evidence, and correction commands | governed caller context; idempotency on duplicate-safe mutations |
 | Batch reporting | internal batch materialization, status, control, item replay, and bounded run-once operations | governed caller context; idempotency on creation and item replay |
 
@@ -15,6 +15,10 @@ boundaries, and copy-paste request examples for direct service and support workf
 
 - `GET /integration/capabilities`
   reporting capability publication for downstream consumers
+- `GET /integration/report-ordering-catalogue`
+  versioned Report-owned business catalogue for supported report families, ordering modes,
+  formats, configuration fields, sections, release posture, and live Render supportability. See
+  [Report Ordering](Report-Ordering).
 
 ## Aggregations
 
@@ -148,6 +152,11 @@ Front-office callers must use `lotus-gateway` for report job initiation and stat
 product-facing ingress, caller context enforcement, and response posture for Workbench and other
 front-office consumers.
 
+The report-ordering catalogue is currently a Report integration contract. Gateway issue
+[`#499`](https://github.com/sgajbi/lotus-gateway/issues/499) owns entitlement and selected-scope
+projection before Workbench consumption. Workbench must not call Report directly or hard-code
+report choices while that Gateway contract remains unmerged.
+
 ## Platform surfaces
 
 - `/health`
@@ -215,6 +224,13 @@ Integration capabilities:
 
 ```bash
 curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+```
+
+Report ordering catalogue:
+
+```bash
+curl "http://127.0.0.1:8300/integration/report-ordering-catalogue" \
+  --config report-operator-headers.curl
 ```
 
 Aggregations:

@@ -10,6 +10,8 @@
 
 [Portfolio Review Report](Portfolio-Review-Report)
 
+[Report Ordering](Report-Ordering)
+
 [Proof-Pack Report](Proof-Pack-Report)
 
 [Rebalance Wave Report](Rebalance-Wave-Report)
