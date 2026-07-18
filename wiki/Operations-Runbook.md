@@ -93,7 +93,38 @@ for the implementation-backed `lotus-report` runtime.
   parity; do not use a file database for runtime or integration evidence
 - Docker Compose containers initialize the PostgreSQL report-job ledger and report-input snapshot
   migrations before serving the API, worker, or scheduler process. `/health/ready` must remain 503
-  when those tables are absent, and a fresh volume should become ready without manual SQL.
+  when those tables are absent. Both a fresh volume and the supported
+  `report-status-event-pre-contract-v0` schema should become ready without manual SQL or volume
+  deletion.
+
+## Schema Upgrade And Startup Recovery
+
+Run the governed PostgreSQL proof before diagnosing a service-specific failure:
+
+```powershell
+$env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
+make migration-smoke
+```
+
+`make migration-smoke` validates the current schema and runs an isolated, repeatable upgrade from
+`report-status-event-pre-contract-v0` to `report-ledger-v1`. The isolated check preserves the
+configured database's `public` schema and verifies legacy event identity, message, correlation,
+trace, contract defaults, and required indexes after migration.
+
+If any Report container exits with
+`lotus_report_schema_startup_failed:report_schema_upgrade_unsupported`:
+
+1. preserve the PostgreSQL volume and capture the complete stable diagnostic;
+2. stop the API, worker, and scheduler from repeatedly attempting startup;
+3. compare the named missing or incompatible columns with
+   `docs/standards/migration-contract.md`;
+4. use an approved forward-fix or restore path for unsupported shapes;
+5. rerun `make migration-smoke`, then start the API, worker, and scheduler against the same volume;
+6. confirm `/health/ready` returns `200` before resuming Gateway or Workbench validation.
+
+Do not repair this condition with manual column changes, destructive volume removal, or a
+Workbench fallback. Those paths can lose report history or make the browser advertise readiness
+that the reporting service has not proved.
 
 ## RFC-0104 batch reporting posture
 

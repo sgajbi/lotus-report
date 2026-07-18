@@ -30,6 +30,35 @@
   table. It must sort before `001_report_job_ledger.sql` and add the status-event contract columns
   before any dependent status-event indexes are created. Fresh databases continue to get the full
   current table shape from `001_report_job_ledger.sql`.
+- `make migration-upgrade-smoke` creates an isolated PostgreSQL schema, seeds the supported
+  `report-status-event-pre-contract-v0` baseline and a representative legacy event, runs the same
+  migration function used by the API, batch worker, and scheduler twice, and verifies the
+  `report-ledger-v1` columns, backfill values, indexes, row preservation, and deterministic replay.
+  The isolated schema is removed transactionally; the target database's `public` schema and local
+  Report volume are not reset by this check.
+
+## Supported Upgrade And Failure Posture
+
+- Supported source baseline: `report-status-event-pre-contract-v0` with the complete legacy
+  status-event identity, lifecycle, actor, timestamp, correlation, and trace columns.
+- Current target: `report-ledger-v1` with typed `event_schema_version`, `event_family`,
+  `event_payload_json`, and optional `event_idempotency_key` fields.
+- The API, batch worker, and scheduler all run `python -m app.runtime_schema` before their process
+  entrypoint. The guard serializes migration through the Report advisory lock and uses the shared
+  `app.reporting_persistence` migration owner.
+- An unrecognized legacy shape fails before migration with exit code `78` and a stable diagnostic
+  beginning `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported`. The diagnostic
+  names the target schema, affected table, and missing or incompatible columns without including a
+  database URL, credential, SQL statement, or row payload.
+- Do not remove the PostgreSQL volume as the default recovery action. Preserve the volume, capture
+  the stable diagnostic, compare the existing shape with the supported baseline, and forward-fix
+  or restore through the approved database recovery process.
+
+This design adopts PostgreSQL's additive column behavior for constant defaults and the existing
+Report advisory-lock boundary. See the PostgreSQL 16 guidance for
+[adding columns](https://www.postgresql.org/docs/16/ddl-alter.html) and
+[advisory locks](https://www.postgresql.org/docs/16/functions-admin.html). It deliberately rejects
+destructive reset, a UI fallback, and a separate migration service.
 
 ## Rollback and Forward-Fix
 
