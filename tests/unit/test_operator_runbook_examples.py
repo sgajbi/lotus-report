@@ -109,3 +109,12 @@ def test_operations_runbook_covers_support_safe_job_and_batch_commands() -> None
     for endpoint in support_commands:
         block = _block_for(runbook, endpoint)
         assert "--config report-operator-headers.curl" in block
+
+
+def test_validation_wiki_matches_the_enforced_coverage_floor() -> None:
+    makefile = _read("Makefile")
+    validation_wiki = _read("wiki/Validation-and-CI.md")
+    match = re.search(r"^COVERAGE_FAIL_UNDER \?= (?P<floor>\d+)$", makefile, re.MULTILINE)
+
+    assert match is not None
+    assert f"{match.group('floor')}% coverage floor" in validation_wiki

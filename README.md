@@ -279,12 +279,14 @@ curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gatew
 - `make check`
   fast local gate: lint, typecheck, OpenAPI gate, and unit tests
 - `make ci`
-  PR-grade local proof: migration smoke, integration, e2e, coverage, and security audit
+  PR-grade automation proof against a caller-owned isolated PostgreSQL database: migration smoke,
+  integration, e2e, coverage, and security audit
 - `make migration-upgrade-smoke`
   real PostgreSQL proof that the supported pre-contract status-event schema upgrades in place,
   preserves the legacy row, and can safely rerun without touching the public schema
 - `make ci-local`
-  local alias for the repo CI contract
+  safe workstation proof that creates one temporary database, runs the repo CI contract, and drops
+  only that database on success or failure
 - `make docker-build`
   container build validation
 
@@ -301,13 +303,26 @@ Repo-native gate mapping:
 - `make check`
   lint, typecheck, OpenAPI gate, and unit tests
 - `make ci`
-  merge-gate local proof with migration smoke, integration tests, e2e tests, coverage, and
-  security audit. `REPORT_JOB_LEDGER_DATABASE_URL` must be set to a reachable PostgreSQL database
-  for migration smoke and Postgres ledger integration proof.
+  merge-gate automation proof with migration smoke, integration tests, e2e tests, coverage, and
+  security audit. The caller must provide an isolated PostgreSQL database through
+  `REPORT_JOB_LEDGER_DATABASE_URL`; never point this target at a database used by running services.
 - `make ci-local`
-  local alias for the repo’s PR-grade gate
+  preferred workstation command. It uses the configured PostgreSQL server and credentials to
+  create a uniquely named database, runs `make ci` against that database, and drops only the
+  helper-owned database in a guaranteed cleanup path.
 - `make docker-build`
   container build validation
+
+For safe PR-grade proof while the canonical Report stack remains running:
+
+```powershell
+$env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
+make ci-local
+```
+
+The configured PostgreSQL role must be allowed to create and drop databases. The source database
+name is used only to derive a bounded temporary name; `ci-local` does not run migrations or tests
+against the source database, does not delete the canonical volume, and does not print the DSN.
 
 ## API Contract Notes
 

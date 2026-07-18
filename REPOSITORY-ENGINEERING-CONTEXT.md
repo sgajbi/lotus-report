@@ -307,9 +307,9 @@ Use these commands as the primary local contract:
    `make install`
 2. fast local gate
    `make check`
-3. PR-grade local gate
+3. PR-grade automation gate against a caller-owned isolated PostgreSQL database
    `make ci`
-4. feature-lane parity
+4. PR-grade workstation gate with helper-owned temporary database lifecycle
    `make ci-local`
 5. Docker build
    `make docker-build`
@@ -333,24 +333,28 @@ Important validation expectations:
 1. OpenAPI, typecheck, migration smoke, and security audit are active,
 2. migration smoke and CI integration proof use PostgreSQL through
    `REPORT_JOB_LEDGER_DATABASE_URL`; file databases are not runtime evidence for RFC-0100,
-3. migration smoke must prove both the current schema and the supported immediately preceding
+3. workstation PR-grade proof must use `make ci-local`; it creates one uniquely named database on
+   the configured server, runs `make ci` against that database, and drops only the helper-owned
+   database in guaranteed cleanup. Direct `make ci` callers must already own an isolated database
+   and must never target a database used by running Report services,
+4. migration smoke must prove both the current schema and the supported immediately preceding
    status-event schema through the shared production migration owner; fresh-database proof alone
    cannot clear an upgrade claim,
-4. PostgreSQL migration and integration proof should promote `ResourceWarning` and
+5. PostgreSQL migration and integration proof should promote `ResourceWarning` and
    `pytest.PytestUnraisableExceptionWarning` to errors so directly owned adapters cannot regress to
    garbage-collection cleanup,
-5. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
+6. RFC-0101 snapshot storage uses the same governed PostgreSQL runtime database and extends
    migration smoke with `report_input_snapshot` and `report_upstream_call` table, index, and
    check-constraint proof,
-6. split unit, integration, e2e, and coverage validation are part of the merge gate,
-7. reporting orchestration changes should be evaluated for cross-app impact,
-8. README and wiki changes should preserve truthful explanation of API request conventions,
+7. split unit, integration, e2e, and coverage validation are part of the merge gate,
+8. reporting orchestration changes should be evaluated for cross-app impact,
+9. README and wiki changes should preserve truthful explanation of API request conventions,
    especially that the first-class portfolio review endpoint publishes snake_case request, query,
    and response fields only,
-9. when a remaining public surface exposes mixed query or request-body conventions, wiki or
+10. when a remaining public surface exposes mixed query or request-body conventions, wiki or
    onboarding docs should include at least one executable request example so operators and future
    agents do not normalize the wrong parameter shape by accident,
-10. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
+11. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
    policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
 
 ## Codebase Review And Issue Discovery
