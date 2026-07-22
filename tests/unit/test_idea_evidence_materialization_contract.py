@@ -54,6 +54,33 @@ def test_idea_evidence_materialization_contract_blocks_authority_drift(
     assert "source_authority.rendering must be lotus-render" in errors
 
 
+def test_idea_evidence_materialization_contract_requires_response_receipt_fields(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract_path = (
+        ROOT
+        / "contracts"
+        / "idea-evidence-materialization"
+        / "lotus-report-idea-evidence-pack-materialization.v1.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["response_fields"].remove("report_package_identity")
+    contract["required_nested_response_fields"]["report_package_identity"].remove(
+        "evidence_content_fingerprint"
+    )
+    drifted = tmp_path / "contract.json"
+    drifted.write_text(json.dumps(contract), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_materialization_contract(drifted)
+
+    assert "response_fields missing: report_package_identity" in errors
+    assert (
+        "required_nested_response_fields.report_package_identity missing: "
+        "evidence_content_fingerprint"
+    ) in errors
+
+
 def _load_validator() -> ModuleType:
     script_path = ROOT / "scripts" / "validate_idea_evidence_materialization_contract.py"
     spec = importlib.util.spec_from_file_location(

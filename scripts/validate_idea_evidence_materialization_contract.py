@@ -46,6 +46,39 @@ REQUIRED_NESTED_IDEA_FIELDS = {
     "reason_codes",
 }
 
+REQUIRED_RESPONSE_FIELDS = {
+    "report_request_id",
+    "report_job_id",
+    "status",
+    "materialization_status",
+    "status_url",
+    "idempotency_key",
+    "report_package_identity",
+    "producer",
+    "source_authority",
+    "materialization_proven",
+    "creates_report_job",
+    "creates_rendered_output",
+    "creates_archive_record",
+    "grants_client_publication_authority",
+    "supported_feature_promoted",
+    "supportability_status",
+    "remaining_blockers",
+    "evidence_refs",
+    "render_job_id",
+    "archive_document_id",
+}
+
+REQUIRED_REPORT_PACKAGE_IDENTITY_FIELDS = {
+    "report_evidence_pack_id",
+    "conversion_intent_id",
+    "candidate_id",
+    "evidence_packet_id",
+    "evidence_content_fingerprint",
+    "source_contract_version",
+    "owned_product",
+}
+
 REMAINING_BLOCKERS = {
     "client_publication_authority_blocked",
     "supported_feature_promotion_missing",
@@ -88,6 +121,24 @@ def validate_idea_evidence_materialization_contract(
         errors.append(
             "required_nested_fields.idea_evidence_pack missing: "
             + ", ".join(sorted(missing_nested))
+        )
+
+    response_fields = set(contract.get("response_fields", ()))
+    missing_response_fields = REQUIRED_RESPONSE_FIELDS - response_fields
+    if missing_response_fields:
+        errors.append("response_fields missing: " + ", ".join(sorted(missing_response_fields)))
+
+    nested_response = contract.get("required_nested_response_fields")
+    package_identity_fields = (
+        set(nested_response.get("report_package_identity", ()))
+        if isinstance(nested_response, dict)
+        else set()
+    )
+    missing_package_identity = REQUIRED_REPORT_PACKAGE_IDENTITY_FIELDS - package_identity_fields
+    if missing_package_identity:
+        errors.append(
+            "required_nested_response_fields.report_package_identity missing: "
+            + ", ".join(sorted(missing_package_identity))
         )
 
     blockers = set(contract.get("certification_blockers", ()))

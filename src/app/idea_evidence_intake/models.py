@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.reporting_jobs.models import ReportJobHandleResponse
+
 
 class IdeaEvidenceIntakePurpose(StrEnum):
     CLIENT_REPORT_EVIDENCE = "CLIENT_REPORT_EVIDENCE"
@@ -18,6 +20,32 @@ class IdeaEvidenceIntakeBoundary(StrEnum):
 
 class IdeaEvidenceMaterializationBoundary(StrEnum):
     REPORT_JOB_MATERIALIZATION = "REPORT_JOB_MATERIALIZATION"
+
+
+class IdeaEvidenceMaterializationSourceAuthority(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idea_evidence: Literal["lotus-idea"] = "lotus-idea"
+    report_materialization: Literal["lotus-report"] = "lotus-report"
+    rendering: Literal["lotus-render"] = "lotus-render"
+    archive_record: Literal["lotus-archive"] = "lotus-archive"
+    client_publication: Literal["blocked"] = "blocked"
+
+
+class IdeaEvidenceReportPackageIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_evidence_pack_id: str = Field(min_length=3)
+    conversion_intent_id: str = Field(min_length=3)
+    candidate_id: str = Field(min_length=3)
+    evidence_packet_id: str = Field(min_length=3)
+    evidence_content_fingerprint: str = Field(pattern=r"^sha256:[a-zA-Z0-9_.:-]+$")
+    source_contract_version: Literal["lotus_idea_evidence_pack_report_input.v1"] = (
+        "lotus_idea_evidence_pack_report_input.v1"
+    )
+    owned_product: Literal["lotus-report:ClientReportEvidencePack:v1"] = (
+        "lotus-report:ClientReportEvidencePack:v1"
+    )
 
 
 class IdeaEvidenceSourceSummary(BaseModel):
@@ -166,3 +194,27 @@ class IdeaEvidencePackMaterializationRequest(BaseModel):
         except ValueError as exc:
             raise ValueError("as_of_date must be an ISO calendar date") from exc
         return value
+
+
+class IdeaEvidencePackMaterializationResponse(ReportJobHandleResponse):
+    model_config = ConfigDict(extra="forbid")
+
+    materialization_status: str = Field(
+        description="Current report-owned materialization lifecycle status."
+    )
+    report_package_identity: IdeaEvidenceReportPackageIdentity
+    producer: Literal["lotus-idea"] = "lotus-idea"
+    source_authority: IdeaEvidenceMaterializationSourceAuthority = Field(
+        default_factory=IdeaEvidenceMaterializationSourceAuthority
+    )
+    materialization_proven: Literal[True] = True
+    creates_report_job: Literal[True] = True
+    creates_rendered_output: bool
+    creates_archive_record: bool
+    grants_client_publication_authority: Literal[False] = False
+    supported_feature_promoted: Literal[False] = False
+    supportability_status: Literal["not_certified"] = "not_certified"
+    remaining_blockers: tuple[str, ...]
+    evidence_refs: tuple[str, ...]
+    render_job_id: str | None = None
+    archive_document_id: str | None = None
