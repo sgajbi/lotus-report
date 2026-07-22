@@ -92,6 +92,13 @@ Boundary rules that matter:
    intake or materialization; unknown, inactive, unauthorized, and tenant-mismatched references
    fail before persistence, while active legal holds propagate to the report job and Archive
    handoff metadata.
+8. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
+   records the implemented, not-certified report materialization boundary for reviewed
+   `lotus-idea` evidence packs. `POST /reports/idea-evidence-packs/materializations` now returns a
+   typed source-safe materialization receipt with report-package identity, source-authority
+   lineage, report-job creation posture, render/archive outcome flags and identifiers, and
+   explicit remaining blockers. It does not grant client-publication authority, suitability,
+   mandate approval, execution, distribution, or supported-feature promotion.
 
 ## First-Class Portfolio Review
 

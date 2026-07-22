@@ -26,9 +26,12 @@
   `ClientReportEvidencePack` product truth.
 - Current status: implemented route foundation and not certified. `POST /reports/idea-evidence-packs`
   proves only source-safe route intake with durable idempotency records in the
-  `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger; materialization, rendered output, archive
-  record, client-publication authority, and supported feature promotion remain separate
-  certification work.
+  `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger.
+- Materialization status: `POST /reports/idea-evidence-packs/materializations` creates the
+  report-owned proof-pack job, preserves immutable lineage to `lotus-idea`, and returns a typed
+  source-safe receipt with `report_package_identity`, source authority, render/archive outcome
+  posture, optional render/archive identifiers, evidence refs, and remaining blockers. It is still
+  not certified for client publication or supported-feature promotion.
 - Policy enforcement: Report rejects unknown, inactive, producer-unauthorized, or tenant-mismatched
   retention references before durable intake or report-job creation. Active legal holds are
   propagated for Archive enforcement and do not grant publication authority.
