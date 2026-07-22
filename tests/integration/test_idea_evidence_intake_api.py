@@ -237,6 +237,41 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     body = response.json()
     assert replay.json() == body
     assert body["status"] == "archived"
+    assert body["materialization_status"] == "archived"
+    assert body["producer"] == "lotus-idea"
+    assert body["source_authority"] == {
+        "idea_evidence": "lotus-idea",
+        "report_materialization": "lotus-report",
+        "rendering": "lotus-render",
+        "archive_record": "lotus-archive",
+        "client_publication": "blocked",
+    }
+    assert body["report_package_identity"] == {
+        "report_evidence_pack_id": "irep_001",
+        "conversion_intent_id": "icnv_001",
+        "candidate_id": "icand_001",
+        "evidence_packet_id": "ievp_001",
+        "evidence_content_fingerprint": "sha256:idea-evidence-content",
+        "source_contract_version": "lotus_idea_evidence_pack_report_input.v1",
+        "owned_product": "lotus-report:ClientReportEvidencePack:v1",
+    }
+    assert body["materialization_proven"] is True
+    assert body["creates_report_job"] is True
+    assert body["creates_rendered_output"] is True
+    assert body["creates_archive_record"] is True
+    assert body["grants_client_publication_authority"] is False
+    assert body["supported_feature_promoted"] is False
+    assert body["supportability_status"] == "not_certified"
+    assert body["render_job_id"] == f"rdr_{body['report_job_id']}_pdf"
+    assert body["archive_document_id"] == "doc_idea_evidence_pack_001"
+    assert body["remaining_blockers"] == [
+        "client_publication_authority_blocked",
+        "supported_feature_promotion_missing",
+    ]
+    assert (
+        "contracts/idea-evidence-materialization/"
+        "lotus-report-idea-evidence-pack-materialization.v1.json"
+    ) in body["evidence_refs"]
     record = ledger.get_job(body["report_job_id"])
     assert record.report_type == "proof_pack"
     assert record.archive_document_id == "doc_idea_evidence_pack_001"
@@ -317,6 +352,13 @@ def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_pat
     assert response.status_code == 202
     body = response.json()
     assert body["status"] == "data_ready"
+    assert body["materialization_status"] == "data_ready"
+    assert body["creates_report_job"] is True
+    assert body["creates_rendered_output"] is False
+    assert body["creates_archive_record"] is False
+    assert body["render_job_id"] is None
+    assert body["archive_document_id"] is None
+    assert body["report_package_identity"]["report_evidence_pack_id"] == "irep_001"
     record = ledger.get_job(body["report_job_id"])
     assert record.requested_output_formats == ["json"]
     assert record.archive_document_id is None

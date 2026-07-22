@@ -47,6 +47,10 @@ IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS = (
     "tests/unit/test_idea_evidence_intake_service.py",
     "tests/integration/test_idea_evidence_intake_api.py",
 )
+IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS = (
+    "client_publication_authority_blocked",
+    "supported_feature_promotion_missing",
+)
 
 
 class IdeaEvidenceIntakeConflictError(ValueError):

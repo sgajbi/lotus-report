@@ -41,6 +41,39 @@
       "reason_codes"
     ]
   },
+  "response_fields": [
+    "report_request_id",
+    "report_job_id",
+    "status",
+    "materialization_status",
+    "status_url",
+    "idempotency_key",
+    "report_package_identity",
+    "producer",
+    "source_authority",
+    "materialization_proven",
+    "creates_report_job",
+    "creates_rendered_output",
+    "creates_archive_record",
+    "grants_client_publication_authority",
+    "supported_feature_promoted",
+    "supportability_status",
+    "remaining_blockers",
+    "evidence_refs",
+    "render_job_id",
+    "archive_document_id"
+  ],
+  "required_nested_response_fields": {
+    "report_package_identity": [
+      "report_evidence_pack_id",
+      "conversion_intent_id",
+      "candidate_id",
+      "evidence_packet_id",
+      "evidence_content_fingerprint",
+      "source_contract_version",
+      "owned_product"
+    ]
+  },
   "non_proof_boundaries": [
     "Proves report-owned materialization, rendered output creation, and archive record creation through the governed report job pipeline.",
     "Does not grant suitability, advisory proposal approval, mandate approval, order, execution, settlement, distribution, or client-publication authority.",

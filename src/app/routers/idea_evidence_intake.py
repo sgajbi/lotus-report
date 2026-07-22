@@ -12,6 +12,8 @@ from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
+    IdeaEvidencePackMaterializationResponse,
+    IdeaEvidenceReportPackageIdentity,
 )
 from app.idea_evidence_intake.retention_policy import (
     IdeaEvidenceRetentionPolicy,
@@ -20,6 +22,8 @@ from app.idea_evidence_intake.retention_policy import (
     RetentionPolicyError,
 )
 from app.idea_evidence_intake.service import (
+    IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS,
+    IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS,
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
     build_proof_pack_report_job_request_from_idea_evidence,
@@ -29,7 +33,7 @@ from app.reporting_jobs.ledger import (
     MissingIdempotencyKeyError,
     ReportJobLedger,
 )
-from app.reporting_jobs.models import ReportJobHandleResponse
+from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
 from app.reporting_metrics import record_report_operation
@@ -152,7 +156,7 @@ async def accept_idea_evidence_pack(
 
 @router.post(
     "/materializations",
-    response_model=ReportJobHandleResponse,
+    response_model=IdeaEvidencePackMaterializationResponse,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Materialize reviewed lotus-idea evidence into a governed report job",
     description=(
@@ -192,7 +196,7 @@ async def materialize_idea_evidence_pack(
     role: Annotated[str | None, Header(alias="X-Role")] = None,
     correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
     trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
-) -> ReportJobHandleResponse:
+) -> IdeaEvidencePackMaterializationResponse:
     started_at = perf_counter()
     caller_context = caller_context_from_headers(
         triggered_by=actor_id,
@@ -280,10 +284,38 @@ async def materialize_idea_evidence_pack(
         failure_category=record.failure_category,
         duration_seconds=perf_counter() - started_at,
     )
-    return ReportJobHandleResponse(
+    return _materialization_response(
+        record=record,
+        request=request,
+        idempotency_key=record.idempotency_key,
+    )
+
+
+def _materialization_response(
+    *,
+    record: ReportJobLedgerRecord,
+    request: IdeaEvidencePackMaterializationRequest,
+    idempotency_key: str,
+) -> IdeaEvidencePackMaterializationResponse:
+    evidence_pack = request.idea_evidence_pack
+    return IdeaEvidencePackMaterializationResponse(
         report_request_id=record.request_id,
         report_job_id=record.job_id,
         status=record.status,
+        materialization_status=record.status,
         status_url=f"/reports/jobs/{record.job_id}",
-        idempotency_key=record.idempotency_key,
+        idempotency_key=idempotency_key,
+        report_package_identity=IdeaEvidenceReportPackageIdentity(
+            report_evidence_pack_id=evidence_pack.report_evidence_pack_id,
+            conversion_intent_id=evidence_pack.conversion_intent_id,
+            candidate_id=evidence_pack.candidate_id,
+            evidence_packet_id=evidence_pack.evidence_packet_id,
+            evidence_content_fingerprint=evidence_pack.evidence_content_fingerprint,
+        ),
+        creates_rendered_output=record.render_job_id is not None,
+        creates_archive_record=record.archive_document_id is not None,
+        remaining_blockers=IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS,
+        evidence_refs=IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS,
+        render_job_id=record.render_job_id,
+        archive_document_id=record.archive_document_id,
     )
