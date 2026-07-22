@@ -14,6 +14,13 @@ The materialization route is separate from the intake-only route:
 truth. `lotus-idea` remains the evidence producer, `lotus-render` owns rendered
 output creation, and `lotus-archive` owns archive record creation.
 
+The response is a source-safe materialization receipt. It extends the report job
+handle with `report_package_identity`, `source_authority`,
+`materialization_status`, report-job/render/archive creation posture, optional
+`render_job_id` and `archive_document_id`, evidence refs, and explicit
+remaining blockers. It never returns raw idea evidence payloads and never
+promotes client-publication authority or supported-feature status.
+
 Validate locally:
 
 ```powershell

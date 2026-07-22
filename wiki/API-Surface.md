@@ -40,9 +40,18 @@ boundaries, and copy-paste request examples for direct service and support workf
   implemented, not-certified source-safe intake route for reviewed `lotus-idea` evidence packs.
   The route requires `Idempotency-Key`, persists support-safe intake fingerprints and caller
   context in the `IDEA_EVIDENCE_INTAKE_LEDGER_PATH` SQLite ledger, replays same-payload retries
-    across process restarts, and rejects changed-payload replays. It does not create report jobs,
-    render output, archive records, or client-publication authority. Report validates the retention
-    policy reference and tenant scope before writing the intake ledger.
+  across process restarts, and rejects changed-payload replays. It does not create report jobs,
+  render output, archive records, or client-publication authority. Report validates the retention
+  policy reference and tenant scope before writing the intake ledger.
+- `POST /reports/idea-evidence-packs/materializations`
+  implemented, not-certified report-owned materialization route for reviewed `lotus-idea`
+  evidence packs. The route requires governed caller context and `Idempotency-Key`, validates
+  Report-owned retention authority and tenant scope, creates or replays the governed proof-pack
+  report job, captures immutable lineage to `lotus-idea`, drives existing render/archive lifecycle
+  wiring for PDF output, and returns a typed source-safe receipt with report-package identity,
+  source authority, render/archive outcome flags and identifiers, evidence refs, and remaining
+  blockers. It does not grant client-publication authority, suitability, mandate approval,
+  execution, distribution, or supported-feature promotion.
 - `POST /reports/outcome-reviews`
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to
@@ -183,6 +192,9 @@ report choices while that Gateway contract remains unmerged.
   support-safe event identities only; they do not expose raw report inputs, raw upstream payloads,
   rendered bytes, storage keys, or client communication content
 - report job search requires at least one supported filter and is bounded by `limit`
+- idea-evidence materialization requires `Idempotency-Key` and governed caller context headers;
+  same-key/same-payload retries replay the report-package receipt, while changed-payload replay is
+  rejected before any publication or execution authority can be inferred
 - batch materialization requires `Idempotency-Key` and governed caller context headers
 - batch materialization, control, run-once, and config-backed scheduler list/run-due APIs are
   internal `lotus-report` APIs; the bounded runtime pass and `lotus-report-batch-worker` process

@@ -149,8 +149,10 @@ Current repository posture:
    boundary for `ClientReportEvidencePack`: `POST /reports/idea-evidence-packs/materializations`
    accepts reviewed idea evidence plus report-owned portfolio scope, creates a governed proof-pack
    report job, preserves immutable lineage to `lotus-idea`, invokes the existing render/archive
-   lifecycle for PDF output, and keeps suitability, mandate approval, execution, distribution,
-   client-publication authority, and supported-feature promotion blocked,
+   lifecycle for PDF output, returns a typed source-safe materialization receipt with
+   report-package identity, source authority, render/archive outcome posture and identifiers, and
+   keeps suitability, mandate approval, execution, distribution, client-publication authority, and
+   supported-feature promotion blocked,
 21. CI is standardized but still lighter than some core domain services,
 22. direct local debugging is explicitly scoped to `ENTERPRISE_RUNTIME_PROFILE=local`; production-like
    profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail closed by enforcing read
@@ -224,9 +226,9 @@ Primary areas:
    restart-safe idempotency conflict semantics.
 11. `contracts/idea-evidence-materialization/`
    implemented, not-certified report-owned materialization posture for `lotus-idea` evidence
-   packets; this directory proves report-job, render, and archive lifecycle wiring only and must
-   keep client publication, advisory suitability, mandate approval, execution, distribution, and
-   supported-feature promotion blocked.
+   packets; this directory proves report-job, render, archive lifecycle wiring, and the typed
+   source-safe materialization receipt only, and must keep client publication, advisory
+   suitability, mandate approval, execution, distribution, and supported-feature promotion blocked.
 12. `src/app/reporting_jobs/`
    shared report-job lifecycle policy, PostgreSQL runtime ledger, and an isolated SQLite unit-test
    adapter for report request/job/status lifecycle, idempotency, request hashing, status retrieval,
