@@ -39,6 +39,7 @@ from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_
 from app.reporting_metrics import record_report_operation
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
+from app.routers.report_ordering_validation import enforce_report_ordering_submission
 
 router = APIRouter(prefix="/reports/idea-evidence-packs", tags=["Report Evidence"])
 
@@ -173,6 +174,11 @@ async def accept_idea_evidence_pack(
         409: {
             "description": "Returned when the same idempotency key is replayed with new content.",
         },
+        422: {
+            "description": (
+                "Returned when the report output selection or retention policy is not available."
+            ),
+        },
     },
 )
 async def materialize_idea_evidence_pack(
@@ -222,6 +228,12 @@ async def materialize_idea_evidence_pack(
                 "message": "Idempotency-Key header is required.",
             },
         )
+    enforce_report_ordering_submission(
+        report_family_id="proof_pack",
+        ordering_mode_id="source_workflow",
+        requested_output_formats=request.requested_output_formats,
+        options=request.options,
+    )
     materialization_key = idempotency_key.strip()
     retention_policy = _resolve_retention_policy(
         resolver=retention_policy_resolver,

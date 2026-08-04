@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.idea_evidence_intake.service import IdeaEvidenceIntakeLedger
 from app.main import app
 from app.reporting_jobs.ledger import MissingIdempotencyKeyError, ReportJobLedger
+from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
@@ -18,7 +20,10 @@ from app.reporting_render.service import (
     PortfolioReviewRenderOrchestrationService,
     get_portfolio_review_render_orchestration_service,
 )
-from app.routers.idea_evidence_intake import get_idea_evidence_intake_ledger
+from app.routers.idea_evidence_intake import (
+    get_idea_evidence_intake_ledger,
+    get_idea_evidence_retention_policy_resolver,
+)
 
 
 def test_idea_evidence_intake_route_accepts_handoff_without_materialization() -> None:
@@ -366,6 +371,51 @@ def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_pat
     assert snapshot.lineage_summary["source_type"] == "LOTUS_IDEA_EVIDENCE_PACK_REPORT_INPUT"
 
 
+@pytest.mark.parametrize(
+    ("requested_output_formats", "expected_code"),
+    [
+        (["docx"], "unsupported_report_output_format"),
+        (["pdf", "pdf"], "duplicate_report_output_format"),
+    ],
+)
+def test_idea_evidence_materialization_rejects_invalid_formats_before_side_effects(
+    tmp_path,
+    requested_output_formats: list[str],
+    expected_code: str,
+) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    intake_ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    app.dependency_overrides[get_idea_evidence_retention_policy_resolver] = lambda: (
+        _UnexpectedRetentionPolicyResolver()
+    )
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    payload = {
+        **_materialization_payload(),
+        "requested_output_formats": requested_output_formats,
+    }
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers(f"idea-report-materialization-{expected_code}"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == expected_code
+    assert intake_ledger.snapshot() == {}
+    assert ledger.list_jobs(filters=ReportJobListFilters(limit=10)) == []
+
+
 def test_idea_evidence_materialization_propagates_active_legal_hold(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
@@ -691,6 +741,13 @@ class _IdeaEvidenceCaptureService:
 class _UnexpectedCaptureService:
     async def capture_for_job(self, job):
         raise AssertionError("Invalid materialization requests must not capture snapshots")
+
+
+class _UnexpectedRetentionPolicyResolver:
+    def resolve(self, **kwargs):
+        raise AssertionError(
+            f"Invalid materialization requests must not resolve retention: {kwargs}"
+        )
 
 
 class _UnexpectedRenderService:
