@@ -350,6 +350,7 @@ def test_postgres_report_job_ledger_check_ready_requires_rerender_table() -> Non
                 {"table_name": "report_request"},
                 {"table_name": "report_job"},
                 {"table_name": "report_status_event"},
+                {"table_name": "report_job_work_item"},
             ],
             [{"table_name": "report_job_relationship"}],
             [
@@ -380,6 +381,7 @@ def test_postgres_report_job_ledger_check_ready_accepts_complete_schema() -> Non
                 {"table_name": "report_request"},
                 {"table_name": "report_job"},
                 {"table_name": "report_status_event"},
+                {"table_name": "report_job_work_item"},
             ],
             [{"table_name": "report_job_relationship"}],
             [
