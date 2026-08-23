@@ -32,10 +32,11 @@ boundaries, and copy-paste request examples for direct service and support workf
 - `POST /reports/portfolios/{portfolio_id}/review`
   machine-readable portfolio review report payload for client/advisor meetings
 - `POST /reports/portfolio-reviews`
-  internal durable portfolio review report job initiation; returns a job handle and, for PDF jobs,
-  may advance through render completion before the response returns. It can carry an optional
-  `proposal_narrative_package` from `lotus-advise` when that package is already approved for
-  advisor use.
+  internal durable portfolio review report acceptance; atomically persists the request, accepted
+  job, lifecycle event, and work item before returning a job handle. Source capture, render, and
+  archive continue in the dedicated report job worker. It can carry an optional
+  `proposal_narrative_package` from `lotus-advise` when that package is already approved for advisor
+  use. `202 Accepted` does not mean the report is complete; poll the status URL.
 - `POST /reports/idea-evidence-packs`
   implemented, not-certified source-safe intake route for reviewed `lotus-idea` evidence packs.
   The route requires `Idempotency-Key`, persists support-safe intake fingerprints and caller
