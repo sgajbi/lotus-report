@@ -213,6 +213,7 @@ def test_metrics_endpoint_exposes_reporting_metric_contract():
     assert response.status_code == 200
     assert "lotus_report_operations_total" in response.text
     assert "lotus_report_operation_duration_seconds" in response.text
+    assert "lotus_report_job_work_lease_events_total" in response.text
     assert "lotus_report_replay_operations_total" not in response.text
 
 

@@ -14,6 +14,7 @@ from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
 )
+from app.reporting_jobs.lease_telemetry import record_report_job_work_lease_event
 from app.reporting_jobs.lifecycle_policy import (
     is_report_job_cancellable,
     is_report_job_transition_allowed,
@@ -670,7 +671,7 @@ class ReportJobLedger:
         lease_expires_at_text = _dt_to_text(claimed_at + timedelta(seconds=lease_seconds))
         with self._lock:
             with self._connect() as connection:
-                self._recover_expired_work_items(
+                recovered_count, exhausted_count = self._recover_expired_work_items(
                     connection=connection,
                     recovered_at=claimed_at,
                     retry_policy=retry_policy or ReportJobWorkRetryPolicy(),
@@ -712,7 +713,9 @@ class ReportJobLedger:
                     ).fetchone()
                     if claimed_row and claimed_row["lease_token"] == lease_token:
                         claimed.append(_work_item_from_row(claimed_row))
-                return claimed
+        record_report_job_work_lease_event(outcome="recovered", count=recovered_count)
+        record_report_job_work_lease_event(outcome="exhausted", count=exhausted_count)
+        return claimed
 
     def complete_work_item(
         self,
@@ -734,6 +737,7 @@ class ReportJobLedger:
                 (completed_at_text, completed_at_text, work_item_id, lease_token),
             )
             if cursor.rowcount != 1:
+                record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             row = connection.execute(
                 "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
@@ -764,6 +768,7 @@ class ReportJobLedger:
                 (work_item_id, lease_token),
             ).fetchone()
             if not current:
+                record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             attempt_count = int(current["attempt_count"])
             decision = decide_report_job_work_failure(
@@ -811,8 +816,10 @@ class ReportJobLedger:
         connection: sqlite3.Connection,
         recovered_at: datetime,
         retry_policy: ReportJobWorkRetryPolicy,
-    ) -> None:
+    ) -> tuple[int, int]:
         recovered_at_text = _dt_to_text(recovered_at)
+        recovered_count = 0
+        exhausted_count = 0
         expired_rows = connection.execute(
             """
             SELECT work_item_id, attempt_count, lease_owner, lease_expires_at
@@ -847,6 +854,7 @@ class ReportJobLedger:
                 ),
             )
             if decision.status == "failed":
+                exhausted_count += 1
                 self._terminalize_report_job_from_work(
                     connection=connection,
                     work_item_id=str(expired["work_item_id"]),
@@ -856,6 +864,9 @@ class ReportJobLedger:
                         "Report job work lease expired after the final permitted attempt."
                     ),
                 )
+            else:
+                recovered_count += 1
+        return recovered_count, exhausted_count
 
     def _terminalize_report_job_from_work(
         self,
