@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import app.reporting_jobs.process as process_module
 from app.config import Settings
 from app.reporting_jobs.process import (
     ReportJobWorkerProcess,
@@ -139,3 +140,56 @@ async def test_run_process_uses_injected_worker():
     )
 
     assert len(worker.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_stop_prevents_another_worker_pass():
+    worker = _Worker()
+    process = ReportJobWorkerProcess(worker=worker, config=_config())
+
+    process.stop()
+    await process.run(max_iterations=3)
+
+    assert worker.calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_process_builds_worker_with_governed_retry_policy(monkeypatch):
+    worker = _Worker()
+    policies = []
+    monkeypatch.setattr(
+        process_module,
+        "get_report_job_worker",
+        lambda *, retry_policy: policies.append(retry_policy) or worker,
+    )
+
+    await run_report_job_worker_process(
+        source_settings=Settings(REPORT_JOB_WORKER_MAX_ATTEMPTS=9),
+        max_iterations=1,
+    )
+
+    assert policies == [ReportJobWorkRetryPolicy(max_attempts=9)]
+    assert len(worker.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected_iterations"),
+    [(["report-job-worker", "--once"], 1), (["report-job-worker", "--max-iterations", "3"], 3)],
+)
+def test_worker_cli_maps_bounded_runtime_arguments(
+    monkeypatch,
+    arguments,
+    expected_iterations,
+):
+    invocations = []
+    monkeypatch.setattr("sys.argv", arguments)
+    monkeypatch.setattr(process_module, "setup_logging", lambda: invocations.append("logging"))
+
+    async def _run(*, max_iterations):
+        invocations.append(max_iterations)
+
+    monkeypatch.setattr(process_module, "run_report_job_worker_process", _run)
+
+    process_module.main()
+
+    assert invocations == ["logging", expected_iterations]
