@@ -19,6 +19,7 @@ from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStor
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
+    ReportInputSnapshotLineageConflictError,
     ReportInputSnapshotNotFoundError,
     compute_snapshot_hash,
 )
@@ -86,6 +87,31 @@ def _request(
     return ReportInputSnapshotCreateRequest(**payload)
 
 
+def _upstream_call_request(
+    *,
+    service_name: str = "lotus-core",
+    endpoint: str = "/reporting/portfolio-summary/query",
+) -> ReportUpstreamCallCreateRequest:
+    return ReportUpstreamCallCreateRequest(
+        service_name=service_name,
+        endpoint=endpoint,
+        method="POST",
+        contract_version="v1",
+        request_hash="sha256:req",
+        response_hash="sha256:resp",
+        response_ref=None,
+        status_code=200,
+        latency_ms=184,
+        supportability_status="complete",
+        completeness_status="complete",
+        failure_category="none",
+        failure_message=None,
+        captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+        correlation_id="corr-lineage",
+        trace_id="trace-lineage",
+    )
+
+
 def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> None:
     store = _store()
     store.check_ready()
@@ -133,6 +159,75 @@ def test_postgres_report_input_snapshot_store_persists_and_lists_upstream_calls(
     assert len(created) == 1
     assert store.list_upstream_calls(snapshot.snapshot_id)[0].service_name == "lotus-core"
     assert store.list_upstream_calls_by_job(snapshot.report_job_id)[0].status_code == 200
+
+
+def test_postgres_report_input_snapshot_store_creates_capture_atomically() -> None:
+    store = _store()
+    unique_suffix = uuid4().hex
+    report_job_id = _seed_job(unique_suffix)
+
+    snapshot, calls = store.create_capture(
+        snapshot=_request(
+            unique_suffix,
+            report_job_id=report_job_id,
+            lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
+        ),
+        upstream_calls=[_upstream_call_request()],
+    )
+
+    assert store.get_snapshot_by_job(report_job_id) == snapshot
+    assert calls == store.list_upstream_calls(snapshot.snapshot_id)
+
+
+def test_postgres_report_input_snapshot_store_rolls_back_capture_before_restart(
+    monkeypatch,
+) -> None:
+    store = _store()
+    unique_suffix = uuid4().hex
+    report_job_id = _seed_job(unique_suffix)
+
+    def _fail_lineage_write(*_args, **_kwargs) -> None:
+        raise RuntimeError("injected_lineage_write_failure")
+
+    monkeypatch.setattr(store, "_insert_upstream_calls", _fail_lineage_write)
+    with pytest.raises(RuntimeError, match="injected_lineage_write_failure"):
+        store.create_capture(
+            snapshot=_request(unique_suffix, report_job_id=report_job_id),
+            upstream_calls=[_upstream_call_request()],
+        )
+
+    restarted_store = _store()
+    with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
+        restarted_store.get_snapshot_by_job(report_job_id)
+
+    snapshot, calls = restarted_store.create_capture(
+        snapshot=_request(unique_suffix, report_job_id=report_job_id),
+        upstream_calls=[_upstream_call_request()],
+    )
+    assert snapshot.report_job_id == report_job_id
+    assert len(calls) == 1
+
+
+def test_postgres_report_input_snapshot_store_rejects_conflicting_lineage() -> None:
+    store = _store()
+    unique_suffix = uuid4().hex
+    report_job_id = _seed_job(unique_suffix)
+    request = _request(unique_suffix, report_job_id=report_job_id)
+    store.create_capture(snapshot=request, upstream_calls=[_upstream_call_request()])
+
+    with pytest.raises(
+        ReportInputSnapshotLineageConflictError,
+        match="report_input_snapshot_lineage_conflict",
+    ):
+        store.create_capture(
+            snapshot=request,
+            upstream_calls=[
+                _upstream_call_request(
+                    service_name="lotus-risk",
+                    endpoint="/analytics/risk/calculate",
+                )
+            ],
+        )
 
 
 def test_postgres_report_input_snapshot_store_rejects_conflicting_rewrite() -> None:

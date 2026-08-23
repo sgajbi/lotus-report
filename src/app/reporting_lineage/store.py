@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from hashlib import sha256
@@ -29,6 +30,10 @@ class ReportInputSnapshotAlreadyCapturedError(RuntimeError):
 
 class ReportInputSnapshotLineageNotFoundError(RuntimeError):
     """Raised when requested upstream lineage evidence does not exist."""
+
+
+class ReportInputSnapshotLineageConflictError(RuntimeError):
+    """Raised when immutable upstream lineage differs from the captured evidence."""
 
 
 def utc_now() -> datetime:
@@ -142,6 +147,42 @@ def _upstream_call_from_row(row: Mapping[str, Any]) -> ReportUpstreamCallRecord:
         created_at=_dt_from_text(row["created_at"]),
         correlation_id=str(row["correlation_id"]),
         trace_id=str(row["trace_id"]),
+    )
+
+
+def _upstream_call_signature(
+    call: ReportUpstreamCallCreateRequest | ReportUpstreamCallRecord,
+) -> tuple[Any, ...]:
+    """Return the immutable business identity of an upstream call.
+
+    Runtime latency and timestamps are deliberately excluded: they describe the
+    capture attempt, while the remaining fields identify the source evidence.
+    """
+
+    return (
+        call.service_name,
+        call.endpoint,
+        call.method,
+        call.contract_version,
+        call.request_hash,
+        call.response_hash,
+        call.response_ref,
+        call.status_code,
+        call.supportability_status,
+        call.completeness_status,
+        call.failure_category,
+        call.failure_message,
+        call.correlation_id,
+        call.trace_id,
+    )
+
+
+def _upstream_calls_match(
+    existing: list[ReportUpstreamCallRecord],
+    requested: list[ReportUpstreamCallCreateRequest],
+) -> bool:
+    return Counter(map(_upstream_call_signature, existing)) == Counter(
+        map(_upstream_call_signature, requested)
     )
 
 
@@ -263,28 +304,50 @@ class ReportInputSnapshotStore:
     def create_snapshot(
         self, request: ReportInputSnapshotCreateRequest
     ) -> ReportInputSnapshotRecord:
-        snapshot_hash = compute_snapshot_hash(request.snapshot_payload)
         with self._connect() as connection:
-            existing_row = connection.execute(
-                """
+            return self._get_or_create_snapshot(connection, request)
+
+    def create_capture(
+        self,
+        *,
+        snapshot: ReportInputSnapshotCreateRequest,
+        upstream_calls: list[ReportUpstreamCallCreateRequest],
+    ) -> tuple[ReportInputSnapshotRecord, list[ReportUpstreamCallRecord]]:
+        """Persist a snapshot and its complete source-call ledger atomically."""
+
+        with self._connect() as connection:
+            snapshot_record = self._get_or_create_snapshot(connection, snapshot)
+            call_records = self._get_or_create_upstream_calls(
+                connection,
+                snapshot_id=snapshot_record.snapshot_id,
+                calls=upstream_calls,
+            )
+            return snapshot_record, call_records
+
+    def _get_or_create_snapshot(
+        self,
+        connection: sqlite3.Connection,
+        request: ReportInputSnapshotCreateRequest,
+    ) -> ReportInputSnapshotRecord:
+        snapshot_hash = compute_snapshot_hash(request.snapshot_payload)
+        existing_row = connection.execute(
+            """
                 SELECT *
                 FROM report_input_snapshot
                 WHERE report_job_id = ?
                 """,
-                (request.report_job_id,),
-            ).fetchone()
-            if existing_row:
-                existing = _record_from_row(existing_row)
-                if existing.snapshot_hash == snapshot_hash:
-                    return existing
-                raise ReportInputSnapshotAlreadyCapturedError(
-                    "report_input_snapshot_already_captured"
-                )
+            (request.report_job_id,),
+        ).fetchone()
+        if existing_row:
+            existing = _record_from_row(existing_row)
+            if existing.snapshot_hash == snapshot_hash:
+                return existing
+            raise ReportInputSnapshotAlreadyCapturedError("report_input_snapshot_already_captured")
 
-            now = utc_now()
-            snapshot_id = f"rsnap_{uuid4().hex}"
-            connection.execute(
-                """
+        now = utc_now()
+        snapshot_id = f"rsnap_{uuid4().hex}"
+        connection.execute(
+            """
                 INSERT INTO report_input_snapshot (
                     snapshot_id, report_job_id, report_type, report_data_contract_version,
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
@@ -293,29 +356,29 @@ class ReportInputSnapshotStore:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    snapshot_id,
-                    request.report_job_id,
-                    request.report_type,
-                    request.report_data_contract_version,
-                    canonical_json_dumps(request.portfolio_scope),
-                    _date_to_text(request.as_of_date),
-                    canonical_json_dumps(request.snapshot_payload),
-                    snapshot_hash,
-                    request.snapshot_storage_ref,
-                    request.supportability_status,
-                    request.completeness_status,
-                    canonical_json_dumps(request.lineage_summary),
-                    _dt_to_text(request.captured_at),
-                    _dt_to_text(now),
-                    request.correlation_id,
-                    request.trace_id,
-                ),
-            )
-            row = connection.execute(
-                "SELECT * FROM report_input_snapshot WHERE snapshot_id = ?",
-                (snapshot_id,),
-            ).fetchone()
+            (
+                snapshot_id,
+                request.report_job_id,
+                request.report_type,
+                request.report_data_contract_version,
+                canonical_json_dumps(request.portfolio_scope),
+                _date_to_text(request.as_of_date),
+                canonical_json_dumps(request.snapshot_payload),
+                snapshot_hash,
+                request.snapshot_storage_ref,
+                request.supportability_status,
+                request.completeness_status,
+                canonical_json_dumps(request.lineage_summary),
+                _dt_to_text(request.captured_at),
+                _dt_to_text(now),
+                request.correlation_id,
+                request.trace_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_input_snapshot WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchone()
         assert row is not None
         return _record_from_row(row)
 
@@ -354,22 +417,60 @@ class ReportInputSnapshotStore:
             ).fetchone()
             if not snapshot_exists:
                 raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
-            existing = connection.execute(
-                """
+            return self._get_or_create_upstream_calls(
+                connection,
+                snapshot_id=snapshot_id,
+                calls=calls,
+            )
+
+    def _get_or_create_upstream_calls(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> list[ReportUpstreamCallRecord]:
+        existing_rows = connection.execute(
+            """
                 SELECT *
                 FROM report_upstream_call
                 WHERE snapshot_id = ?
                 ORDER BY created_at ASC, upstream_call_id ASC
                 """,
-                (snapshot_id,),
-            ).fetchall()
-            if existing:
-                return [_upstream_call_from_row(row) for row in existing]
-            now = utc_now()
-            created_at = _dt_to_text(now)
-            for call in calls:
-                connection.execute(
-                    """
+            (snapshot_id,),
+        ).fetchall()
+        existing = [_upstream_call_from_row(row) for row in existing_rows]
+        if existing:
+            if not _upstream_calls_match(existing, calls):
+                raise ReportInputSnapshotLineageConflictError(
+                    "report_input_snapshot_lineage_conflict"
+                )
+            return existing
+        if not calls:
+            return []
+        self._insert_upstream_calls(connection, snapshot_id=snapshot_id, calls=calls)
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM report_upstream_call
+            WHERE snapshot_id = ?
+            ORDER BY created_at ASC, upstream_call_id ASC
+            """,
+            (snapshot_id,),
+        ).fetchall()
+        return [_upstream_call_from_row(row) for row in rows]
+
+    def _insert_upstream_calls(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> None:
+        created_at = _dt_to_text(utc_now())
+        for call in calls:
+            connection.execute(
+                """
                     INSERT INTO report_upstream_call (
                         upstream_call_id, snapshot_id, service_name, endpoint, method,
                         contract_version, request_hash, response_hash, response_ref,
@@ -379,38 +480,28 @@ class ReportInputSnapshotStore:
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        f"ruc_{uuid4().hex}",
-                        snapshot_id,
-                        call.service_name,
-                        call.endpoint,
-                        call.method,
-                        call.contract_version,
-                        call.request_hash,
-                        call.response_hash,
-                        call.response_ref,
-                        call.status_code,
-                        call.latency_ms,
-                        call.supportability_status,
-                        call.completeness_status,
-                        call.failure_category,
-                        call.failure_message,
-                        call.correlation_id,
-                        call.trace_id,
-                        _dt_to_text(call.captured_at),
-                        created_at,
-                    ),
-                )
-            rows = connection.execute(
-                """
-                SELECT *
-                FROM report_upstream_call
-                WHERE snapshot_id = ?
-                ORDER BY created_at ASC, upstream_call_id ASC
-                """,
-                (snapshot_id,),
-            ).fetchall()
-        return [_upstream_call_from_row(row) for row in rows]
+                (
+                    f"ruc_{uuid4().hex}",
+                    snapshot_id,
+                    call.service_name,
+                    call.endpoint,
+                    call.method,
+                    call.contract_version,
+                    call.request_hash,
+                    call.response_hash,
+                    call.response_ref,
+                    call.status_code,
+                    call.latency_ms,
+                    call.supportability_status,
+                    call.completeness_status,
+                    call.failure_category,
+                    call.failure_message,
+                    call.correlation_id,
+                    call.trace_id,
+                    _dt_to_text(call.captured_at),
+                    created_at,
+                ),
+            )
 
     def list_upstream_calls(self, snapshot_id: str) -> list[ReportUpstreamCallRecord]:
         with self._connect() as connection:

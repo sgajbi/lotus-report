@@ -8,6 +8,7 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
+    ReportInputSnapshotLineageConflictError,
     ReportInputSnapshotNotFoundError,
     ReportInputSnapshotStore,
     _date_from_value,
@@ -41,6 +42,31 @@ def _request(**overrides: object) -> ReportInputSnapshotCreateRequest:
     }
     payload.update(overrides)
     return ReportInputSnapshotCreateRequest.model_validate(payload)
+
+
+def _upstream_call_request(
+    *,
+    service_name: str = "lotus-core",
+    endpoint: str = "/reporting/portfolio-summary/query",
+) -> ReportUpstreamCallCreateRequest:
+    return ReportUpstreamCallCreateRequest(
+        service_name=service_name,
+        endpoint=endpoint,
+        method="POST",
+        contract_version="v1",
+        request_hash="sha256:req",
+        response_hash="sha256:resp",
+        response_ref=None,
+        status_code=200,
+        latency_ms=184,
+        supportability_status="complete",
+        completeness_status="complete",
+        failure_category="none",
+        failure_message=None,
+        captured_at=datetime(2026, 4, 22, 9, 0, 4, tzinfo=UTC),
+        correlation_id="corr-portfolio-review-1",
+        trace_id="trace-portfolio-review-1",
+    )
 
 
 def test_canonical_json_dumps_is_stable_for_key_order_and_timestamps() -> None:
@@ -77,6 +103,86 @@ def test_report_input_snapshot_store_is_idempotent_for_same_job_and_payload(tmp_
     second = store.create_snapshot(_request())
 
     assert second == first
+
+
+def test_report_input_snapshot_store_creates_capture_atomically(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+
+    snapshot, calls = store.create_capture(
+        snapshot=_request(lineage_summary={"source_services": ["lotus-core"], "call_count": 1}),
+        upstream_calls=[_upstream_call_request()],
+    )
+
+    assert store.get_snapshot_by_job("rjob_123") == snapshot
+    assert calls == store.list_upstream_calls(snapshot.snapshot_id)
+    assert [call.service_name for call in calls] == ["lotus-core"]
+
+
+def test_report_input_snapshot_store_rolls_back_capture_when_lineage_write_fails(
+    tmp_path, monkeypatch
+) -> None:
+    database_path = tmp_path / "snapshots.sqlite3"
+    store = ReportInputSnapshotStore(database_path)
+    original_insert = store._insert_upstream_calls
+
+    def _fail_lineage_write(*_args, **_kwargs) -> None:
+        raise RuntimeError("injected_lineage_write_failure")
+
+    monkeypatch.setattr(store, "_insert_upstream_calls", _fail_lineage_write)
+    with pytest.raises(RuntimeError, match="injected_lineage_write_failure"):
+        store.create_capture(
+            snapshot=_request(),
+            upstream_calls=[_upstream_call_request()],
+        )
+
+    restarted_store = ReportInputSnapshotStore(database_path)
+    with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
+        restarted_store.get_snapshot_by_job("rjob_123")
+
+    monkeypatch.setattr(store, "_insert_upstream_calls", original_insert)
+    snapshot, calls = restarted_store.create_capture(
+        snapshot=_request(),
+        upstream_calls=[_upstream_call_request()],
+    )
+    assert snapshot.report_job_id == "rjob_123"
+    assert len(calls) == 1
+
+
+def test_report_input_snapshot_store_restores_missing_lineage_for_matching_snapshot(
+    tmp_path,
+) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+    existing = store.create_snapshot(_request())
+
+    snapshot, calls = store.create_capture(
+        snapshot=_request(),
+        upstream_calls=[_upstream_call_request()],
+    )
+
+    assert snapshot == existing
+    assert len(calls) == 1
+
+
+def test_report_input_snapshot_store_rejects_conflicting_immutable_lineage(tmp_path) -> None:
+    store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+    store.create_capture(
+        snapshot=_request(),
+        upstream_calls=[_upstream_call_request()],
+    )
+
+    with pytest.raises(
+        ReportInputSnapshotLineageConflictError,
+        match="report_input_snapshot_lineage_conflict",
+    ):
+        store.create_capture(
+            snapshot=_request(),
+            upstream_calls=[
+                _upstream_call_request(
+                    service_name="lotus-risk",
+                    endpoint="/analytics/risk/calculate",
+                )
+            ],
+        )
 
 
 def test_report_input_snapshot_store_rejects_conflicting_rewrite(tmp_path) -> None:
