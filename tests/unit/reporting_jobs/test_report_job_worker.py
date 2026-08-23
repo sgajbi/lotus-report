@@ -1,3 +1,5 @@
+import asyncio
+from dataclasses import replace
 from datetime import UTC, date, datetime
 
 import pytest
@@ -7,16 +9,23 @@ from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryP
 from app.reporting_jobs.worker import ReportJobWorker
 
 
-def _work_item(*, status="leased", attempt_count=1):
+def _work_item(
+    *,
+    status="leased",
+    attempt_count=1,
+    work_item_id="rwork_1",
+    report_job_id="rjob_1",
+    lease_token="lease-1",
+):
     now = datetime(2026, 8, 23, tzinfo=UTC)
     return ReportJobWorkItem(
-        work_item_id="rwork_1",
-        report_job_id="rjob_1",
+        work_item_id=work_item_id,
+        report_job_id=report_job_id,
         status=status,
         attempt_count=attempt_count,
         available_at=now,
         lease_owner="worker-1" if status == "leased" else None,
-        lease_token="lease-1" if status == "leased" else None,
+        lease_token=lease_token if status == "leased" else None,
         lease_acquired_at=now if status == "leased" else None,
         lease_expires_at=now if status == "leased" else None,
         created_at=now,
@@ -58,12 +67,17 @@ class _Ledger:
         self.items = [_work_item()] if items is None else items
         self.failed = []
         self.completed = []
+        self.claimed = []
 
-    def claim_work_items(self, *, worker_id, limit, lease_seconds):
+    def claim_work_items(self, *, worker_id, limit, lease_seconds, retry_policy=None):
         assert worker_id == "worker-1"
-        assert limit == 5
+        assert limit == 1
         assert lease_seconds == 60
-        return self.items
+        assert isinstance(retry_policy, ReportJobWorkRetryPolicy)
+        claimed = self.items[:limit]
+        del self.items[:limit]
+        self.claimed.extend(item.work_item_id for item in claimed)
+        return claimed
 
     def complete_work_item(self, *, work_item_id, lease_token):
         self.completed.append((work_item_id, lease_token))
@@ -153,6 +167,108 @@ async def test_worker_handles_empty_queue_without_side_effects():
 
     assert result.claimed_count == 0
     assert result.outcomes == []
+
+
+@pytest.mark.asyncio
+async def test_worker_claims_each_item_only_after_prior_execution_finishes():
+    first = _work_item()
+    second = _work_item(
+        work_item_id="rwork_2",
+        report_job_id="rjob_2",
+        lease_token="lease-2",
+    )
+    execution_order = []
+
+    class _SequencedLedger(_Ledger):
+        def claim_work_items(self, **kwargs):
+            if self.claimed:
+                assert execution_order == [self.claimed[-1]]
+            return super().claim_work_items(**kwargs)
+
+    class _SequencedExecutor:
+        async def execute_job(self, *, job_id):
+            execution_order.append(f"rwork_{job_id.removeprefix('rjob_')}")
+            return _job()
+
+    ledger = _SequencedLedger(items=[first, second])
+    result = await ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=_SequencedExecutor(),
+    ).run_once(worker_id="worker-1", max_items=2, lease_seconds=60)
+
+    assert result.claimed_count == 2
+    assert result.completed_count == 2
+    assert ledger.claimed == ["rwork_1", "rwork_2"]
+    assert ledger.completed == [("rwork_1", "lease-1"), ("rwork_2", "lease-2")]
+
+
+@pytest.mark.asyncio
+async def test_parallel_workers_never_share_a_preclaimed_later_item():
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    execution_counts = {"rjob_1": 0, "rjob_2": 0}
+
+    class _ConcurrentLedger:
+        def __init__(self):
+            self.pending = [
+                _work_item(work_item_id="rwork_1", report_job_id="rjob_1"),
+                _work_item(work_item_id="rwork_2", report_job_id="rjob_2"),
+            ]
+            self.owned_tokens = {}
+
+        def claim_work_items(self, *, worker_id, limit, lease_seconds, retry_policy=None):
+            assert limit == 1
+            assert lease_seconds == 1
+            assert isinstance(retry_policy, ReportJobWorkRetryPolicy)
+            if not self.pending:
+                return []
+            item = self.pending.pop(0)
+            token = f"lease-{worker_id}-{item.work_item_id}"
+            self.owned_tokens[item.work_item_id] = token
+            return [replace(item, lease_owner=worker_id, lease_token=token)]
+
+        def complete_work_item(self, *, work_item_id, lease_token):
+            assert self.owned_tokens.pop(work_item_id) == lease_token
+            return _work_item(
+                status="completed",
+                work_item_id=work_item_id,
+                report_job_id=work_item_id.replace("rwork_", "rjob_"),
+            )
+
+        def fail_work_item(self, **kwargs):
+            raise AssertionError(f"unexpected failure: {kwargs}")
+
+    class _ConcurrentExecutor:
+        async def execute_job(self, *, job_id):
+            execution_counts[job_id] += 1
+            if job_id == "rjob_1":
+                first_started.set()
+                await release_first.wait()
+            return _job()
+
+    ledger = _ConcurrentLedger()
+    first_worker = ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=_ConcurrentExecutor(),
+    )
+    second_worker = ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=_ConcurrentExecutor(),
+    )
+
+    first_run = asyncio.create_task(
+        first_worker.run_once(worker_id="worker-1", max_items=2, lease_seconds=1)
+    )
+    await first_started.wait()
+    second_result = await second_worker.run_once(worker_id="worker-2", max_items=2, lease_seconds=1)
+    release_first.set()
+    first_result = await first_run
+
+    assert second_result.claimed_count == 1
+    assert first_result.claimed_count == 1
+    assert execution_counts == {"rjob_1": 1, "rjob_2": 1}
+    assert ledger.pending == []
+    assert ledger.owned_tokens == {}
 
 
 @pytest.mark.asyncio

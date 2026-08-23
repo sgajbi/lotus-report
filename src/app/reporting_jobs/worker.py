@@ -16,6 +16,7 @@ class ReportJobWorkLedger(Protocol):
         worker_id: str,
         limit: int,
         lease_seconds: int,
+        retry_policy: ReportJobWorkRetryPolicy | None = None,
     ) -> list[ReportJobWorkItem]: ...
 
     def complete_work_item(
@@ -80,17 +81,20 @@ class ReportJobWorker:
         max_items: int,
         lease_seconds: int,
     ) -> ReportJobWorkerRunResult:
-        work_items = self._work_ledger.claim_work_items(
-            worker_id=worker_id,
-            limit=max_items,
-            lease_seconds=lease_seconds,
-        )
         outcomes: list[ReportJobWorkOutcome] = []
-        for work_item in work_items:
-            outcomes.append(await self._execute_work_item(work_item))
+        for _ in range(max(0, max_items)):
+            work_items = self._work_ledger.claim_work_items(
+                worker_id=worker_id,
+                limit=1,
+                lease_seconds=lease_seconds,
+                retry_policy=self._retry_policy,
+            )
+            if not work_items:
+                break
+            outcomes.append(await self._execute_work_item(work_items[0]))
         return ReportJobWorkerRunResult(
             worker_id=worker_id,
-            claimed_count=len(work_items),
+            claimed_count=len(outcomes),
             completed_count=sum(outcome.work_status == "completed" for outcome in outcomes),
             retry_pending_count=sum(outcome.work_status == "retry_pending" for outcome in outcomes),
             failed_count=sum(outcome.work_status == "failed" for outcome in outcomes),
