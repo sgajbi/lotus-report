@@ -469,7 +469,7 @@ async def test_batch_item_execution_returns_waiting_item_for_non_terminal_job(
 ) -> None:
     batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
     job = report_job_ledger.get_job(item.report_job_id or "").model_copy(
-        update={"status": "rendering", "current_step": "rendering"}
+        update={"status": "queued", "current_step": "queued"}
     )
     service = ReportBatchExecutionService(
         batch_ledger=batch_ledger,
@@ -487,7 +487,7 @@ async def test_batch_item_execution_returns_waiting_item_for_non_terminal_job(
     )
 
     assert result.item_status == "waiting_on_report_job"
-    assert result.report_job_status == "rendering"
+    assert result.report_job_status == "queued"
 
 
 @pytest.mark.asyncio
