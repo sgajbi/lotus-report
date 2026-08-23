@@ -16,8 +16,9 @@ Local ownership guidance:
 - reporting read-model aggregation
 - portfolio summary payload shaping
 - portfolio review report payload shaping for client/advisor meetings
-- PostgreSQL-backed durable portfolio review report job ledger for gateway-first initiation and
-  operational search, status tracking, event history, and bounded cancellation
+- PostgreSQL-backed durable portfolio review report job and work-queue ledgers for gateway-first
+  acceptance, asynchronous execution, operational search, status tracking, event history, and
+  bounded cancellation
 - reporting capability publication for downstream consumers
 
 It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
@@ -69,10 +70,12 @@ Boundary rules that matter:
    `POST /reports/proof-packs`, `POST /reports/rebalance-waves`, `GET /reports/jobs`,
    `GET /reports/jobs/{job_id}`, `GET /reports/jobs/{job_id}/events`, and
    `POST /reports/jobs/{job_id}/cancel` provide the
-   durable job-ledger foundation for gateway-first report initiation, operator-safe job search,
-   product-safe status, append-only event history, database-backed idempotency, immutable snapshot
-   and lineage capture, lotus-render submission for PDF output, `lotus-archive` handoff after
-   successful render completion, and bounded cancellation before the job reaches `rendering`.
+   durable job-ledger foundation for gateway-first report acceptance, operator-safe job search,
+   product-safe status, append-only event history, database-backed idempotency, and bounded
+   cancellation before the job reaches `rendering`. Job creation atomically enqueues durable work
+   and returns `202 Accepted`; the separate `lotus-report-job-worker` performs immutable snapshot
+   and lineage capture, lotus-render submission for PDF output, and `lotus-archive` handoff after
+   successful render completion.
    Outcome-review, proof-pack, and rebalance-wave job routes consume manage-owned bounded report
    inputs and do not recompute DPM evidence. Archive retrieval, retention execution, legal hold,
    purge, and document distribution remain owned by `lotus-archive`.
@@ -178,11 +181,15 @@ Key code areas:
 - `src/app/services/aggregation_service.py`
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
-  durable report request/job/status-event ledger, idempotency, render metadata, archive metadata,
-  rerender attempt state, and bounded cancellation
+  durable report request/job/status-event and work-item ledgers, idempotency, leased asynchronous
+  execution with bounded retry, render metadata, archive metadata, rerender attempt state, and
+  bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, post-render archive handoff, and
   archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
+- `src/app/reporting_jobs/process.py`
+  daemonized `lotus-report-job-worker` process that claims bounded work-item leases and resumes the
+  source-capture, render, and archive pipeline after process interruption
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
   archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
@@ -260,8 +267,9 @@ Docker Compose file provides `lotus-report-postgres` on host port `5439`;
 `REPORT_JOB_LEDGER_DATABASE_URL` must point to PostgreSQL for runtime, integration, migration, and
 live-evidence proof.
 
-Existing supported Report volumes are upgraded in place before the API, batch worker, or scheduler
-starts. Validate both current-schema and prior-schema compatibility with `make migration-smoke`.
+Existing supported Report volumes are upgraded in place before the API, report job worker, batch
+worker, or scheduler starts. Validate both current-schema and prior-schema compatibility with
+`make migration-smoke`.
 Use `make migration-upgrade-smoke` when you need only the isolated prior-schema proof. Do not delete
 the volume as the default response to a startup failure: preserve it and capture the stable
 `lotus_report_schema_startup_failed` diagnostic described in
@@ -428,11 +436,11 @@ Current orchestration model:
 - treat `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` as an operator
   migration/version diagnostic: preserve the database volume and use the governed upgrade or
   recovery path rather than resetting durable report history
-- PostgreSQL-backed report-job, batch, and snapshot/upstream-call stores share one bounded
+- PostgreSQL-backed report-job, report-work, batch, and snapshot/upstream-call stores share one bounded
   process-local connection provider; tune `REPORT_POSTGRES_POOL_MAX_SIZE`,
   `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`, `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`,
   `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS`, and `REPORT_POSTGRES_APPLICATION_NAME` before raising
-  worker or scheduler concurrency
+  report-job worker, batch-worker, or scheduler concurrency
 - use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
   job; it composes source-backed status, lifecycle-event, snapshot, lineage, render, and archive
   handoff posture while omitting raw payloads, storage references, and database internals
