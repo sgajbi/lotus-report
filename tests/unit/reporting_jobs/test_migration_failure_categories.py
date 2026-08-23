@@ -47,6 +47,17 @@ def test_report_status_event_fresh_schema_declares_contract_columns() -> None:
     assert "idx_report_status_event_idempotency_key" in sql
 
 
+def test_report_job_work_queue_migration_enforces_lease_and_completion_shape() -> None:
+    sql = (MIGRATIONS_DIR / "011_report_job_work_queue.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS report_job_work_item" in sql
+    assert "UNIQUE REFERENCES report_job(report_job_id)" in sql
+    assert "idx_report_job_work_runnable" in sql
+    assert "idx_report_job_work_lease_expiry" in sql
+    assert "status = 'leased'" in sql
+    assert "status = 'completed' AND completed_at IS NOT NULL" in sql
+
+
 def test_report_status_event_legacy_contract_preflight_runs_before_dependent_indexes() -> None:
     migration_paths = sorted(MIGRATIONS_DIR.glob("*.sql"))
     migration_names = [path.name for path in migration_paths]
