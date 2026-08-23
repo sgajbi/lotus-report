@@ -449,11 +449,11 @@ def _diagnostic_links(
     description=(
         "Creates a durable portfolio-review report job and returns its job handle. Use this "
         "endpoint when a caller wants asynchronous report orchestration with idempotent request "
-        "identity. The endpoint persists the request/job/event ledger, captures the immutable "
-        "report snapshot and upstream lineage, and when `pdf` is requested submits a governed "
-        "render package to lotus-render before handing successful render artifacts to "
-        "lotus-archive. Retrieval, retention execution, legal hold, purge, and distribution remain "
-        "owned by lotus-archive."
+        "identity. The acceptance boundary atomically persists the request, job, lifecycle event, "
+        "and recoverable work item before returning `202`. A dedicated durable worker captures "
+        "the immutable report snapshot and upstream lineage, then submits requested PDF output to "
+        "lotus-render and hands successful artifacts to lotus-archive. Retrieval, retention "
+        "execution, legal hold, purge, and distribution remain owned by lotus-archive."
     ),
     openapi_extra={
         "requestBody": {
@@ -505,8 +505,6 @@ def _diagnostic_links(
 async def submit_portfolio_review_job(
     request: PortfolioReviewJobRequest,
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
-    capture_service: Any = Depends(get_portfolio_review_snapshot_capture_service),
-    render_service: Any = Depends(get_portfolio_review_render_orchestration_service),
     idempotency_key: Annotated[
         str | None,
         Header(
@@ -566,7 +564,7 @@ async def submit_portfolio_review_job(
             detail={"code": "missing_idempotency_key", "message": "Idempotency-Key is required."},
         )
     try:
-        record = ledger.create_portfolio_review_job(
+        record = ledger.submit_portfolio_review_job(
             request=request,
             caller_context=caller_context_from_headers(
                 triggered_by=actor_id,
@@ -605,10 +603,6 @@ async def submit_portfolio_review_job(
                 "message": "Idempotency-Key was reused with a different report request.",
             },
         ) from exc
-    if record.status == "accepted":
-        record = await capture_service.capture_for_job(record)
-    if record.status == "data_ready" and "pdf" in request.requested_output_formats:
-        record = await render_service.render_for_job(record)
     record_report_operation(
         operation="report_job_submission",
         status=record.status,

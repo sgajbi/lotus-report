@@ -1,9 +1,11 @@
+import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -12,6 +14,7 @@ from app.reporting_jobs.ledger import (
 )
 from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.worker import ReportJobWorker
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportUpstreamCallCreateRequest,
@@ -53,6 +56,26 @@ def _client(tmp_path):
 
 def _clear_overrides():
     app.dependency_overrides.clear()
+
+
+def _run_pending_jobs(ledger: ReportJobLedger) -> None:
+    capture_factory = app.dependency_overrides[get_portfolio_review_snapshot_capture_service]
+    render_factory = app.dependency_overrides[get_portfolio_review_render_orchestration_service]
+    worker = ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=ReportJobExecutionService(
+            report_job_ledger=ledger,
+            capture_service=capture_factory(),
+            render_service=render_factory(),
+        ),
+    )
+    asyncio.run(
+        worker.run_once(
+            worker_id="integration-report-job-worker",
+            max_items=100,
+            lease_seconds=60,
+        )
+    )
 
 
 def _payload():
@@ -726,7 +749,9 @@ def _create_archived_pdf_job(client, ledger):
     response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
     assert response.status_code == 202
     job_id = response.json()["report_job_id"]
+    _run_pending_jobs(ledger)
     ready = ledger.get_job(job_id)
+    assert ready.status == "data_ready"
     rendered = ledger.mark_completed(
         job_id=ready.job_id,
         actor=ready.triggered_by,
@@ -759,6 +784,46 @@ def _create_archived_pdf_job(client, ledger):
     )
 
 
+def test_portfolio_review_submission_returns_after_durable_acceptance_only(tmp_path):
+    client, ledger, _lineage_store = _client(tmp_path)
+
+    class _ForbiddenCapture:
+        calls = 0
+
+        async def capture_for_job(self, _job):
+            self.calls += 1
+            raise AssertionError("capture must not run on the HTTP acceptance path")
+
+    class _ForbiddenRender:
+        calls = 0
+
+        async def render_for_job(self, _job):
+            self.calls += 1
+            raise AssertionError("render must not run on the HTTP acceptance path")
+
+    capture = _ForbiddenCapture()
+    render = _ForbiddenRender()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: capture
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: render
+    try:
+        response = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("portfolio-review-durable-acceptance"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "accepted"
+        work_item = ledger.get_work_item_for_job(body["report_job_id"])
+        assert work_item is not None
+        assert work_item.status == "pending"
+        assert capture.calls == 0
+        assert render.calls == 0
+    finally:
+        _clear_overrides()
+
+
 def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
     client, ledger, _lineage_store = _client(tmp_path)
     try:
@@ -772,10 +837,11 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         handle = submit_response.json()
         assert handle["report_request_id"].startswith("rrq_")
         assert handle["report_job_id"].startswith("rjob_")
-        assert handle["status"] == "data_ready"
+        assert handle["status"] == "accepted"
         assert handle["status_url"] == f"/reports/jobs/{handle['report_job_id']}"
         assert handle["idempotency_key"] == _headers()["Idempotency-Key"]
 
+        _run_pending_jobs(ledger)
         status_response = client.get(
             f"/reports/jobs/{handle['report_job_id']}",
             headers=_headers(),
@@ -880,6 +946,7 @@ def test_portfolio_review_job_persists_reviewed_proposal_narrative_package(tmp_p
 
         assert submit_response.status_code == 202
         handle = submit_response.json()
+        _run_pending_jobs(_ledger)
         snapshot = lineage_store.get_snapshot_by_job(handle["report_job_id"])
         package = snapshot.snapshot_payload["proposal_narrative_package"]
         assert package["package_status"] == "INCLUDED_REVIEWED_NARRATIVE"
@@ -1399,7 +1466,8 @@ def test_portfolio_review_job_submit_can_complete_pdf_render_flow(tmp_path):
 
         assert response.status_code == 202
         handle = response.json()
-        assert handle["status"] == "archived"
+        assert handle["status"] == "accepted"
+        _run_pending_jobs(ledger)
 
         status_response = client.get(f"/reports/jobs/{handle['report_job_id']}", headers=_headers())
         assert status_response.status_code == 200
@@ -1420,22 +1488,9 @@ def test_portfolio_review_job_does_not_recapture_collecting_data_replay(tmp_path
         capture_service
     )
 
-    original_create = ledger.create_portfolio_review_job
-
-    def _return_collecting_data_on_replay(**kwargs):
-        record = original_create(**kwargs)
-        if capture_service.calls == 0:
-            return record
-        return record.model_copy(
-            update={
-                "status": "collecting_data",
-                "current_step": "collecting_data",
-            }
-        )
-
-    ledger.create_portfolio_review_job = _return_collecting_data_on_replay
     try:
         first = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+        _run_pending_jobs(ledger)
         second = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
 
         assert first.status_code == 202
@@ -1463,7 +1518,7 @@ def test_portfolio_review_job_translates_ledger_missing_idempotency_error(tmp_pa
     def _raise_missing_key(**_kwargs):
         raise MissingIdempotencyKeyError("missing_idempotency_key")
 
-    ledger.create_portfolio_review_job = _raise_missing_key
+    ledger.submit_portfolio_review_job = _raise_missing_key
     try:
         response = client.post(
             "/reports/portfolio-reviews",
@@ -1604,6 +1659,7 @@ def test_report_job_diagnostics_reports_failed_retryable_job_flags(tmp_path):
             headers=_headers("portfolio-review-diagnostics-failed"),
         ).json()
         job_id = handle["report_job_id"]
+        _run_pending_jobs(ledger)
         failed = ledger.mark_failed(
             job_id=job_id,
             actor="advisor-123",
@@ -1636,6 +1692,7 @@ def test_report_job_diagnostics_reports_unarchived_render_flag(tmp_path):
             headers=_headers("portfolio-review-diagnostics-unarchived"),
         ).json()
         job_id = handle["report_job_id"]
+        _run_pending_jobs(ledger)
         rendered = ledger.mark_completed(
             job_id=job_id,
             actor="advisor-123",
@@ -1935,6 +1992,7 @@ def test_report_job_snapshot_and_lineage_endpoints_are_support_safe(tmp_path):
             json=_payload(),
             headers=_headers(),
         ).json()
+        _run_pending_jobs(_ledger)
 
         snapshot_response = client.get(
             f"/reports/jobs/{handle['report_job_id']}/snapshot",
