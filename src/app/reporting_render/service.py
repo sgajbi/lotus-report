@@ -131,11 +131,9 @@ class PortfolioReviewRenderOrchestrationService:
         started_at = perf_counter()
         if "pdf" not in job.requested_output_formats:
             return job
-        if job.status in {"completed", "completed_with_warnings", "failed", "cancelled"}:
+        if job.status in {"archived", "completed_with_warnings", "failed", "cancelled"}:
             return job
-        if job.status == "rendering":
-            return job
-        if job.status != "data_ready":
+        if job.status not in {"data_ready", "rendering", "completed", "archiving"}:
             return job
 
         snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
@@ -163,16 +161,17 @@ class PortfolioReviewRenderOrchestrationService:
                 duration_seconds=perf_counter() - started_at,
             )
             return failed_job
-        self._job_ledger.mark_rendering(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-            render_job_id=render_job_id,
-            output_format="pdf",
-            template_id=str(payload.get("template_id") or "portfolio-review"),
-            template_version=str(payload.get("template_version") or "v1"),
-        )
+        if job.status == "data_ready":
+            self._job_ledger.mark_rendering(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                render_job_id=render_job_id,
+                output_format="pdf",
+                template_id=str(payload.get("template_id") or "portfolio-review"),
+                template_version=str(payload.get("template_version") or "v1"),
+            )
 
         status_code, response_payload = await self._render_client.submit_render_package(
             payload,
@@ -180,27 +179,31 @@ class PortfolioReviewRenderOrchestrationService:
             trace_id=job.trace_id,
         )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
-            rendered = self._job_ledger.mark_completed(
-                job_id=job.job_id,
-                actor=job.triggered_by,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-                render_job_id=str(response_payload.get("render_job_id") or render_job_id),
-                output_format="pdf",
-                template_id=str(response_payload.get("template_id") or payload.get("template_id")),
-                template_version=str(
-                    response_payload.get("template_version") or payload.get("template_version")
-                ),
-                artifact_sha256=_optional_str(response_payload.get("artifact_sha256")),
-                bounded_determinism_fingerprint=_optional_str(
-                    response_payload.get("bounded_determinism_fingerprint")
-                ),
-                runtime_engine=_optional_str(response_payload.get("runtime_engine")),
-                runtime_engine_version=_optional_str(
-                    response_payload.get("runtime_engine_version")
-                ),
-                render_duration_ms=_optional_int(response_payload.get("render_duration_ms")),
-            )
+            rendered = job
+            if job.status in {"data_ready", "rendering"}:
+                rendered = self._job_ledger.mark_completed(
+                    job_id=job.job_id,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                    render_job_id=str(response_payload.get("render_job_id") or render_job_id),
+                    output_format="pdf",
+                    template_id=str(
+                        response_payload.get("template_id") or payload.get("template_id")
+                    ),
+                    template_version=str(
+                        response_payload.get("template_version") or payload.get("template_version")
+                    ),
+                    artifact_sha256=_optional_str(response_payload.get("artifact_sha256")),
+                    bounded_determinism_fingerprint=_optional_str(
+                        response_payload.get("bounded_determinism_fingerprint")
+                    ),
+                    runtime_engine=_optional_str(response_payload.get("runtime_engine")),
+                    runtime_engine_version=_optional_str(
+                        response_payload.get("runtime_engine_version")
+                    ),
+                    render_duration_ms=_optional_int(response_payload.get("render_duration_ms")),
+                )
             archived = await self._archive_rendered_job(
                 job=rendered,
                 snapshot=snapshot,
@@ -278,14 +281,15 @@ class PortfolioReviewRenderOrchestrationService:
             )
             return failed_job
 
-        archive_request_id = f"arch_{job.render_job_id or job.job_id}"
-        self._job_ledger.mark_archiving(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-            archive_request_id=archive_request_id,
-        )
+        archive_request_id = job.archive_request_id or f"arch_{job.render_job_id or job.job_id}"
+        if job.status == "completed":
+            self._job_ledger.mark_archiving(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                archive_request_id=archive_request_id,
+            )
         status_code, response_payload = await self._archive_client.archive_document(
             _build_archive_payload(
                 job=job,
@@ -471,10 +475,10 @@ def _advisor_proposal_memo_archive_summary(
 
 def _date_text(value: object) -> str:
     if isinstance(value, date):
-        return value.isoformat()
+        return str(value.isoformat())
     text = _optional_str(value)
     if text:
-        return text
+        return str(text)
     raise ValueError("date value is required")
 
 

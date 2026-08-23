@@ -595,12 +595,13 @@ class PortfolioReviewSnapshotCaptureService:
         except Exception:
             pass
 
-        self._job_ledger.mark_collecting_data(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
+        if job.status == "accepted":
+            self._job_ledger.mark_collecting_data(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
         upstream_calls: list[_RecordedUpstreamCall] = []
         failure_message = None
         failure_category = "upstream_data_failed"

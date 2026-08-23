@@ -812,29 +812,13 @@ async def test_render_orchestration_skips_non_pdf_requests(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "rendering", "accepted"])
+@pytest.mark.parametrize("status", ["failed", "cancelled", "accepted"])
 async def test_render_orchestration_skips_jobs_that_are_not_data_ready_for_pdf(
     tmp_path,
     status,
 ):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
-    if status == "completed":
-        job = ledger.mark_completed(
-            job_id=ready.job_id,
-            actor=ready.triggered_by,
-            correlation_id=ready.correlation_id,
-            trace_id=ready.trace_id,
-            render_job_id=f"rdr_{ready.job_id}_pdf",
-            output_format="pdf",
-            template_id="portfolio-review",
-            template_version="v1",
-            artifact_sha256="sha256:artifact",
-            bounded_determinism_fingerprint="fingerprint",
-            runtime_engine="typst",
-            runtime_engine_version="0.14.2",
-            render_duration_ms=812,
-        )
-    elif status == "failed":
+    if status == "failed":
         job = ledger.mark_failed(
             job_id=ready.job_id,
             actor=ready.triggered_by,
@@ -856,17 +840,6 @@ async def test_render_orchestration_skips_jobs_that_are_not_data_ready_for_pdf(
             correlation_id=fresh.correlation_id,
             trace_id=fresh.trace_id,
         )
-    elif status == "rendering":
-        job = ledger.mark_rendering(
-            job_id=ready.job_id,
-            actor=ready.triggered_by,
-            correlation_id=ready.correlation_id,
-            trace_id=ready.trace_id,
-            render_job_id=f"rdr_{ready.job_id}_pdf",
-            output_format="pdf",
-            template_id="portfolio-review",
-            template_version="v1",
-        )
     else:
         job = ledger.create_portfolio_review_job(
             request=_job_request(),
@@ -884,6 +857,60 @@ async def test_render_orchestration_skips_jobs_that_are_not_data_ready_for_pdf(
     returned = await service.render_for_job(job)
 
     assert returned == job
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restart_status", ["rendering", "completed", "archiving"])
+async def test_render_orchestration_resumes_after_worker_restart(tmp_path, restart_status):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = ledger.mark_rendering(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+    restart_job = rendering
+    if restart_status in {"completed", "archiving"}:
+        restart_job = ledger.mark_completed(
+            job_id=ready.job_id,
+            actor=ready.triggered_by,
+            correlation_id=ready.correlation_id,
+            trace_id=ready.trace_id,
+            render_job_id=f"rdr_{ready.job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+            artifact_sha256="sha256:artifact",
+            bounded_determinism_fingerprint="fingerprint",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+    if restart_status == "archiving":
+        restart_job = ledger.mark_archiving(
+            job_id=ready.job_id,
+            actor=ready.triggered_by,
+            correlation_id=ready.correlation_id,
+            trace_id=ready.trace_id,
+            archive_request_id=f"arch_rdr_{ready.job_id}_pdf",
+        )
+    archive_client = _ArchiveClientSuccess()
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientSuccess(),
+        archive_client=archive_client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    resumed = await service.render_for_job(restart_job)
+
+    assert resumed.status == "archived"
+    assert resumed.archive_document_id == "doc_archived"
+    assert len(archive_client.payloads) == 1
 
 
 @pytest.mark.asyncio

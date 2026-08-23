@@ -62,32 +62,34 @@ class _Render:
 
 
 @pytest.mark.asyncio
-async def test_executor_advances_capture_then_render():
+@pytest.mark.parametrize("status", ["accepted", "collecting_data"])
+async def test_executor_advances_capture_then_render(status):
     capture = _Capture()
     render = _Render()
     result = await ReportJobExecutionService(
-        report_job_ledger=_Ledger(_job(status="accepted")),
+        report_job_ledger=_Ledger(_job(status=status)),
         capture_service=capture,
         render_service=render,
     ).execute_job(job_id="rjob_1")
 
-    assert capture.calls == ["accepted"]
+    assert capture.calls == [status]
     assert render.calls == ["data_ready"]
     assert result.status == "archived"
 
 
 @pytest.mark.asyncio
-async def test_executor_advances_data_ready_pdf_job():
+@pytest.mark.parametrize("status", ["data_ready", "rendering", "completed", "archiving"])
+async def test_executor_advances_data_ready_pdf_job(status):
     capture = _Capture()
     render = _Render()
     result = await ReportJobExecutionService(
-        report_job_ledger=_Ledger(_job(status="data_ready")),
+        report_job_ledger=_Ledger(_job(status=status)),
         capture_service=capture,
         render_service=render,
     ).execute_job(job_id="rjob_1")
 
     assert capture.calls == []
-    assert render.calls == ["data_ready"]
+    assert render.calls == [status]
     assert result.status == "archived"
 
 

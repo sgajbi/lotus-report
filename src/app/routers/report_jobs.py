@@ -1,5 +1,5 @@
 from time import perf_counter
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Protocol, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
 
@@ -93,7 +93,7 @@ class ReportLineageStore(Protocol):
 
 
 def get_report_lineage_store() -> ReportLineageStore:
-    return get_report_input_snapshot_store()
+    return cast(ReportLineageStore, get_report_input_snapshot_store())
 
 
 REPORT_JOB_SNAPSHOT_RESPONSE_EXAMPLE: dict[str, Any] = {

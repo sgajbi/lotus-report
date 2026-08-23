@@ -33,8 +33,10 @@ class ReportJobExecutionService:
 
     async def execute_job(self, *, job_id: str) -> ReportJobLedgerRecord:
         job = self._report_job_ledger.get_job(job_id)
-        if job.status == "accepted":
+        if job.status in {"accepted", "collecting_data"}:
             job = await self._capture_service.capture_for_job(job)
-        if job.status == "data_ready" and "pdf" in job.requested_output_formats:
+        if job.status in {"data_ready", "rendering", "completed", "archiving"} and (
+            "pdf" in job.requested_output_formats
+        ):
             job = await self._render_service.render_for_job(job)
         return job
