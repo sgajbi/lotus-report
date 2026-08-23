@@ -118,3 +118,18 @@ def test_validation_wiki_matches_the_enforced_coverage_floor() -> None:
 
     assert match is not None
     assert f"{match.group('floor')}% coverage floor" in validation_wiki
+
+
+def test_report_job_docs_keep_acceptance_separate_from_completion() -> None:
+    api_surface = _read("wiki/API-Surface.md")
+    operations = _read("wiki/Operations-Runbook.md")
+    validation = _read("wiki/Validation-and-CI.md")
+    supported_features = _read("docs/supported-features.md")
+
+    assert "`202 Accepted` does not mean the report is complete" in api_surface
+    assert "A `202` response proves durable acceptance" in operations
+    assert "lotus-report-job-worker" in operations
+    assert "lotus_report_job_runtime_last_items" in operations
+    assert "lotus-report-job-worker" in validation
+    assert "`report_job_work_item`" in validation
+    assert "portfolio_review.durable_async_execution.v1" in supported_features
