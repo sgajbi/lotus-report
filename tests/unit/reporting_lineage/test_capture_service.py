@@ -1065,6 +1065,31 @@ async def test_capture_service_returns_existing_terminal_or_captured_jobs(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_capture_service_resumes_collecting_job_after_worker_restart(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="collecting-restart")
+    collecting = ledger.mark_collecting_data(
+        job_id=job.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(upstream_calls=[]),
+    )
+
+    resumed = await service.capture_for_job(collecting)
+
+    assert resumed.status == "data_ready"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_recording_clients_capture_success_and_failure_paths():
     recorder = _UpstreamRecorder(correlation_id="corr", trace_id="trace")
 
