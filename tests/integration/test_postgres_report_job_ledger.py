@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from app.config import settings
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
+    InvalidReportJobWorkTransitionError,
     MissingIdempotencyKeyError,
     ReportJobNotFoundError,
 )
@@ -26,6 +27,7 @@ from app.reporting_jobs.postgres_ledger import (
     _dt_from_value,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
@@ -97,6 +99,71 @@ def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() 
         "accepted",
         "cancelled",
     ]
+
+
+def test_postgres_report_submission_persists_and_recovers_durable_work() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    idempotency_key = f"portfolio-review-pg-work-{unique_suffix}"
+
+    first = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=idempotency_key,
+    )
+    second = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=idempotency_key,
+    )
+    assert second.job_id == first.job_id
+    work_item = ledger.get_work_item_for_job(first.job_id)
+    assert work_item is not None
+    assert work_item.status == "pending"
+
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    claimed = ledger.claim_work_items(
+        worker_id="report-worker-1",
+        limit=1,
+        lease_seconds=30,
+        now=now,
+    )
+    matching = [item for item in claimed if item.report_job_id == first.job_id]
+    assert len(matching) == 1
+    leased = matching[0]
+    assert leased.lease_token is not None
+
+    with pytest.raises(InvalidReportJobWorkTransitionError):
+        ledger.complete_work_item(
+            work_item_id=leased.work_item_id,
+            lease_token="wrong-token",
+            now=now,
+        )
+
+    retry = ledger.fail_work_item(
+        work_item_id=leased.work_item_id,
+        lease_token=leased.lease_token or "",
+        error_category="worker_failure",
+        error_summary="temporary worker failure",
+        retry_policy=ReportJobWorkRetryPolicy(max_attempts=2, base_delay_seconds=1),
+        now=now,
+    )
+    assert retry.status == "retry_pending"
+
+    reclaimed = ledger.claim_work_items(
+        worker_id="report-worker-2",
+        limit=25,
+        lease_seconds=30,
+        now=now + timedelta(seconds=1),
+    )
+    recovered = next(item for item in reclaimed if item.work_item_id == leased.work_item_id)
+    completed = ledger.complete_work_item(
+        work_item_id=recovered.work_item_id,
+        lease_token=recovered.lease_token or "",
+        now=now + timedelta(seconds=1),
+    )
+    assert completed.status == "completed"
 
 
 def test_postgres_report_job_ledger_marks_collecting_data_data_ready_and_failed() -> None:
