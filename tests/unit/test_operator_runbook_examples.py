@@ -127,7 +127,8 @@ def test_report_job_docs_keep_acceptance_separate_from_completion() -> None:
     supported_features = _read("docs/supported-features.md")
 
     assert "`202 Accepted` does not mean the report is complete" in api_surface
-    assert "A `202` response proves durable acceptance" in operations
+    assert "Acceptance means the request, job" in operations
+    assert "it does not mean source capture" in operations
     assert "lotus-report-job-worker" in operations
     assert "lotus_report_job_runtime_last_items" in operations
     assert "lotus-report-job-worker" in validation
