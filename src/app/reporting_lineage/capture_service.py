@@ -25,6 +25,7 @@ from app.reporting_lineage.models import (
     ReportUpstreamCallRecord,
 )
 from app.reporting_lineage.store import (
+    ReportInputSnapshotAlreadyCapturedError,
     ReportInputSnapshotLineageConflictError,
     ReportInputSnapshotNotFoundError,
     canonical_json_dumps,
@@ -1018,17 +1019,15 @@ class PortfolioReviewSnapshotCaptureService:
             return None
 
         if snapshot.snapshot_payload.get("capture_status") == "failed":
+            failure_category, failure_message, retry_eligible = _stored_capture_failure(
+                snapshot.snapshot_payload
+            )
             return self._mark_failed(
                 job=job,
                 started_at=started_at,
-                failure_category=str(
-                    snapshot.snapshot_payload.get("failure_category") or "upstream_data_failed"
-                ),
-                failure_message=str(
-                    snapshot.snapshot_payload.get("failure_message")
-                    or "Upstream report-data capture failed."
-                ),
-                retry_eligible=False,
+                failure_category=failure_category,
+                failure_message=failure_message,
+                retry_eligible=retry_eligible,
             )
 
         calls = self._snapshot_store.list_upstream_calls(snapshot.snapshot_id)
@@ -1055,7 +1054,10 @@ class PortfolioReviewSnapshotCaptureService:
                 snapshot=snapshot_request,
                 upstream_calls=upstream_calls,
             )
-        except ReportInputSnapshotLineageConflictError:
+        except (
+            ReportInputSnapshotAlreadyCapturedError,
+            ReportInputSnapshotLineageConflictError,
+        ):
             return self._mark_lineage_integrity_failed(job=job, started_at=started_at)
 
         if failure_message:
@@ -1352,3 +1354,13 @@ def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:
     if isinstance(exc, (ReportingValidationError, ReportingNotFoundError)):
         return "validation_failed", "Requested report inputs were not fully supported.", False
     return "upstream_data_failed", "Upstream report-data capture failed.", True
+
+
+def _stored_capture_failure(snapshot_payload: dict[str, Any]) -> tuple[str, str, bool]:
+    category = snapshot_payload.get("failure_category")
+    if category not in {"validation_failed", "upstream_data_failed", "timeout"}:
+        category = "upstream_data_failed"
+    message = snapshot_payload.get("failure_message")
+    if not isinstance(message, str) or not message.strip():
+        message = "Upstream report-data capture failed."
+    return category, message, category in {"upstream_data_failed", "timeout"}

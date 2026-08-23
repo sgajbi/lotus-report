@@ -1120,6 +1120,42 @@ async def test_capture_service_repairs_missing_lineage_after_worker_restart(tmp_
 
 
 @pytest.mark.asyncio
+async def test_capture_service_fails_closed_when_recollected_payload_changed(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="changed-payload-restart")
+    existing = store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload={"report_id": "stale-capture"},
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    provider = _FakePortfolioReviewInputProvider()
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=provider,
+    )
+
+    resumed = await service.capture_for_job(job)
+
+    assert resumed.status == "failed"
+    assert resumed.failure_category == "data_incomplete"
+    assert provider.jobs == [job.job_id]
+    assert store.get_snapshot_by_job(job.job_id) == existing
+    assert store.list_upstream_calls(existing.snapshot_id) == []
+
+
+@pytest.mark.asyncio
 async def test_capture_service_fails_closed_for_partial_existing_lineage(tmp_path):
     ledger, store, job = _create_job(tmp_path, suffix="partial-lineage")
     snapshot = store.create_snapshot(
@@ -1187,10 +1223,46 @@ async def test_capture_service_replays_stored_capture_failure_without_marking_re
 
     assert resumed.status == "failed"
     assert resumed.failure_category == "validation_failed"
+    assert resumed.retry_eligible is False
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "failed",
     ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_preserves_retry_for_stored_timeout_failure(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="stored-timeout")
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload={
+                "capture_status": "failed",
+                "failure_category": "timeout",
+                "failure_message": "Upstream report-data capture timed out.",
+            },
+            snapshot_storage_ref=None,
+            supportability_status="error",
+            completeness_status="error",
+            lineage_summary={"source_services": [], "call_count": 0},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+
+    resumed = await PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+    ).capture_for_job(job)
+
+    assert resumed.status == "failed"
+    assert resumed.failure_category == "timeout"
+    assert resumed.retry_eligible is True
 
 
 @pytest.mark.asyncio
