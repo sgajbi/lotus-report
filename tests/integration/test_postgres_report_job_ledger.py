@@ -449,7 +449,9 @@ def test_postgres_report_job_ledger_check_ready_reports_missing_schema() -> None
 
     with pytest.raises(
         RuntimeError,
-        match="report_job_ledger_schema_missing:report_job,report_status_event",
+        match=(
+            "report_job_ledger_schema_missing:report_job,report_job_work_item,report_status_event"
+        ),
     ):
         ledger.check_ready()
 
@@ -474,6 +476,7 @@ def test_postgres_report_job_ledger_check_ready_reports_missing_archive_schema()
                         {"table_name": "report_request"},
                         {"table_name": "report_job"},
                         {"table_name": "report_status_event"},
+                        {"table_name": "report_job_work_item"},
                     ]
                 )
             if "table_name = 'report_status_event'" in query:
