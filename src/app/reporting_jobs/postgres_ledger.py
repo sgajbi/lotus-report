@@ -43,7 +43,11 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
     WaveReportJobRequest,
 )
-from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
+from app.reporting_jobs.work_queue import (
+    ReportJobWorkItem,
+    ReportJobWorkRetryPolicy,
+    decide_report_job_work_failure,
+)
 from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
@@ -454,6 +458,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         worker_id: str,
         limit: int,
         lease_seconds: int,
+        retry_policy: ReportJobWorkRetryPolicy | None = None,
         now: datetime | None = None,
     ) -> list[ReportJobWorkItem]:
         if limit < 1:
@@ -461,17 +466,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         claimed_at = now or utc_now()
         lease_expires_at = claimed_at + timedelta(seconds=lease_seconds)
         with self._connect() as connection:
-            connection.execute(
-                """
-                UPDATE report_job_work_item
-                SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
-                    lease_acquired_at = NULL, lease_expires_at = NULL,
-                    available_at = %s, last_error_category = 'expired_work_lease',
-                    last_error_summary = 'Report job work lease expired before completion.',
-                    updated_at = %s
-                WHERE status = 'leased' AND lease_expires_at < %s
-                """,
-                (claimed_at, claimed_at, claimed_at),
+            self._recover_expired_work_items(
+                connection=connection,
+                recovered_at=claimed_at,
+                retry_policy=retry_policy or ReportJobWorkRetryPolicy(),
             )
             rows = connection.execute(
                 """
@@ -549,7 +547,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         with self._connect() as connection:
             current = connection.execute(
                 """
-                SELECT attempt_count FROM report_job_work_item
+                SELECT attempt_count, lease_owner FROM report_job_work_item
                 WHERE work_item_id = %s AND status = 'leased' AND lease_token = %s
                 FOR UPDATE
                 """,
@@ -558,9 +556,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             if not current:
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             attempt_count = int(current["attempt_count"])
-            next_status = "failed" if attempt_count >= policy.max_attempts else "retry_pending"
-            available_at = failed_at + timedelta(
-                seconds=policy.retry_delay_seconds(attempt_count=attempt_count)
+            decision = decide_report_job_work_failure(
+                attempt_count=attempt_count,
+                failed_at=failed_at,
+                retry_policy=policy,
             )
             row = connection.execute(
                 """
@@ -573,8 +572,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 RETURNING *
                 """,
                 (
-                    next_status,
-                    available_at,
+                    decision.status,
+                    decision.available_at,
                     error_category[:80],
                     " ".join(error_summary.split())[:240],
                     failed_at,
@@ -583,7 +582,125 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             ).fetchone()
             if not row:
                 raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+            if decision.status == "failed":
+                self._terminalize_report_job_from_work(
+                    connection=connection,
+                    work_item_id=work_item_id,
+                    actor=str(current["lease_owner"] or "report-job-worker"),
+                    failure_category="operator_intervention_required",
+                    failure_summary=error_summary,
+                )
             return _work_item_from_row(row)
+
+    def _recover_expired_work_items(
+        self,
+        *,
+        connection: Connection[Mapping[str, Any]],
+        recovered_at: datetime,
+        retry_policy: ReportJobWorkRetryPolicy,
+    ) -> None:
+        expired_rows = connection.execute(
+            """
+            SELECT work_item_id, attempt_count, lease_owner, lease_expires_at
+            FROM report_job_work_item
+            WHERE status = 'leased' AND lease_expires_at < %s
+            ORDER BY lease_expires_at ASC, work_item_id ASC
+            FOR UPDATE SKIP LOCKED
+            """,
+            (recovered_at,),
+        ).fetchall()
+        for expired in expired_rows:
+            decision = decide_report_job_work_failure(
+                attempt_count=int(expired["attempt_count"]),
+                failed_at=expired["lease_expires_at"],
+                retry_policy=retry_policy,
+            )
+            connection.execute(
+                """
+                UPDATE report_job_work_item
+                SET status = %s, lease_owner = NULL, lease_token = NULL,
+                    lease_acquired_at = NULL, lease_expires_at = NULL,
+                    available_at = %s, last_error_category = 'expired_work_lease',
+                    last_error_summary = 'Report job work lease expired before completion.',
+                    updated_at = %s
+                WHERE work_item_id = %s AND status = 'leased'
+                """,
+                (
+                    decision.status,
+                    decision.available_at,
+                    recovered_at,
+                    expired["work_item_id"],
+                ),
+            )
+            if decision.status == "failed":
+                self._terminalize_report_job_from_work(
+                    connection=connection,
+                    work_item_id=str(expired["work_item_id"]),
+                    actor=str(expired["lease_owner"] or "report-job-worker"),
+                    failure_category="timeout",
+                    failure_summary=(
+                        "Report job work lease expired after the final permitted attempt."
+                    ),
+                )
+
+    def _terminalize_report_job_from_work(
+        self,
+        *,
+        connection: Connection[Mapping[str, Any]],
+        work_item_id: str,
+        actor: str,
+        failure_category: str,
+        failure_summary: str,
+    ) -> None:
+        job_context = connection.execute(
+            """
+            SELECT work.report_job_id, job.status, request.correlation_id, request.trace_id
+            FROM report_job_work_item AS work
+            JOIN report_job AS job ON job.report_job_id = work.report_job_id
+            JOIN report_request AS request
+              ON request.report_request_id = job.report_request_id
+            WHERE work.work_item_id = %s
+            """,
+            (work_item_id,),
+        ).fetchone()
+        if not job_context or str(job_context["status"]) in {
+            "archived",
+            "completed_with_warnings",
+            "failed",
+            "cancelled",
+        }:
+            return
+        bounded_summary = " ".join(failure_summary.split())[:240]
+        self._transition_job(
+            connection=connection,
+            job_id=str(job_context["report_job_id"]),
+            to_status="failed",
+            failure_category=failure_category,
+            failure_message=(
+                f"Durable report processing exhausted its permitted attempts. {bounded_summary}"
+            )[:500],
+            current_step="failed",
+            retry_eligible=True,
+            actor=actor,
+            correlation_id=str(job_context["correlation_id"]),
+            trace_id=str(job_context["trace_id"]),
+            event_type="job_failed",
+            event_message=bounded_summary,
+            set_started_at=True,
+            set_completed_at=True,
+            render_job_id=None,
+            render_output_format=None,
+            render_template_id=None,
+            render_template_version=None,
+            render_artifact_sha256=None,
+            render_bounded_determinism_fingerprint=None,
+            render_runtime_engine=None,
+            render_runtime_engine_version=None,
+            render_duration_ms=None,
+            archive_request_id=None,
+            archive_document_id=None,
+            archive_completed_at=None,
+        )
 
     def get_job(self, job_id: str) -> ReportJobLedgerRecord:
         with self._connect() as connection:

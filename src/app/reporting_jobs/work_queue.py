@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 ReportJobWorkStatus = Literal[
@@ -40,3 +40,27 @@ class ReportJobWorkRetryPolicy:
     def retry_delay_seconds(self, *, attempt_count: int) -> int:
         exponent = max(attempt_count - 1, 0)
         return int(min(self.base_delay_seconds * (2**exponent), self.max_delay_seconds))
+
+
+@dataclass(frozen=True)
+class ReportJobWorkFailureDecision:
+    status: Literal["retry_pending", "failed"]
+    available_at: datetime
+
+
+def decide_report_job_work_failure(
+    *,
+    attempt_count: int,
+    failed_at: datetime,
+    retry_policy: ReportJobWorkRetryPolicy,
+) -> ReportJobWorkFailureDecision:
+    terminal = attempt_count >= retry_policy.max_attempts
+    return ReportJobWorkFailureDecision(
+        status="failed" if terminal else "retry_pending",
+        available_at=failed_at
+        + timedelta(
+            seconds=retry_policy.retry_delay_seconds(
+                attempt_count=attempt_count,
+            ),
+        ),
+    )

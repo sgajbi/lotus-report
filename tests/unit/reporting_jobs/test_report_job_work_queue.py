@@ -8,6 +8,7 @@ from app.reporting_jobs.ledger import (
 )
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
+from app.reporting_render.replay_service import assert_replay_eligible
 
 
 def _submit(ledger: ReportJobLedger):
@@ -108,6 +109,16 @@ def test_failure_retries_with_backoff_then_becomes_terminal(tmp_path):
     )
     assert failed.status == "failed"
     assert failed.attempt_count == 2
+    source_job = ledger.get_job(failed.report_job_id)
+    assert source_job.status == "failed"
+    assert source_job.failure_category == "operator_intervention_required"
+    assert source_job.retry_eligible is True
+    assert source_job.current_step == "failed"
+    assert_replay_eligible(source_job)
+    assert [event.to_status for event in ledger.list_status_events(source_job.job_id)] == [
+        "accepted",
+        "failed",
+    ]
 
 
 def test_expired_lease_is_recovered_and_reclaimed(tmp_path):
@@ -120,9 +131,94 @@ def test_expired_lease_is_recovered_and_reclaimed(tmp_path):
         worker_id="worker-2",
         limit=1,
         lease_seconds=30,
-        now=now + timedelta(seconds=31),
+        retry_policy=ReportJobWorkRetryPolicy(base_delay_seconds=10),
+        now=now + timedelta(seconds=41),
     )[0]
     assert reclaimed.work_item_id == first.work_item_id
     assert reclaimed.lease_owner == "worker-2"
     assert reclaimed.attempt_count == 2
     assert reclaimed.last_error_category == "expired_work_lease"
+
+
+def test_expired_lease_exhaustion_terminalizes_work_and_source_job(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "report.sqlite3")
+    job = _submit(ledger)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    policy = ReportJobWorkRetryPolicy(max_attempts=1, base_delay_seconds=10)
+    leased = ledger.claim_work_items(
+        worker_id="worker-1",
+        limit=1,
+        lease_seconds=30,
+        retry_policy=policy,
+        now=now,
+    )[0]
+
+    assert (
+        ledger.claim_work_items(
+            worker_id="worker-2",
+            limit=1,
+            lease_seconds=30,
+            retry_policy=policy,
+            now=now + timedelta(seconds=31),
+        )
+        == []
+    )
+
+    exhausted = ledger.get_work_item_for_job(job.job_id)
+    assert exhausted is not None
+    assert exhausted.work_item_id == leased.work_item_id
+    assert exhausted.status == "failed"
+    assert exhausted.attempt_count == 1
+    assert exhausted.last_error_category == "expired_work_lease"
+    source_job = ledger.get_job(job.job_id)
+    assert source_job.status == "failed"
+    assert source_job.failure_category == "timeout"
+    assert source_job.retry_eligible is True
+    events = ledger.list_status_events(job.job_id)
+    assert [event.to_status for event in events] == ["accepted", "failed"]
+    assert events[-1].correlation_id == "corr-1"
+    assert events[-1].trace_id == "trace-1"
+
+
+def test_repeated_expiry_never_claims_beyond_attempt_policy(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "report.sqlite3")
+    job = _submit(ledger)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    policy = ReportJobWorkRetryPolicy(max_attempts=2, base_delay_seconds=10)
+    first = ledger.claim_work_items(
+        worker_id="worker-1",
+        limit=1,
+        lease_seconds=30,
+        retry_policy=policy,
+        now=now,
+    )[0]
+
+    second = ledger.claim_work_items(
+        worker_id="worker-2",
+        limit=1,
+        lease_seconds=30,
+        retry_policy=policy,
+        now=now + timedelta(seconds=41),
+    )[0]
+    assert second.work_item_id == first.work_item_id
+    assert second.attempt_count == 2
+
+    assert (
+        ledger.claim_work_items(
+            worker_id="worker-3",
+            limit=1,
+            lease_seconds=30,
+            retry_policy=policy,
+            now=now + timedelta(seconds=72),
+        )
+        == []
+    )
+    exhausted = ledger.get_work_item_for_job(job.job_id)
+    assert exhausted is not None
+    assert exhausted.status == "failed"
+    assert exhausted.attempt_count == 2
+    assert ledger.get_job(job.job_id).status == "failed"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "failed",
+    ]
