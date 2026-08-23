@@ -23,6 +23,10 @@
   only the helper-owned database on success or failure
 - `make docker-build`
   container build validation
+- report-work lifecycle proof
+  `python -m pytest tests/unit/reporting_jobs/test_report_job_work_queue.py tests/unit/reporting_jobs/test_report_job_worker.py tests/integration/test_report_job_api.py::test_report_job_replay_creates_new_job_and_is_idempotent -q`
+  proves bounded explicit and expired-lease retry, one-at-a-time claim-before-execute under parallel
+  workers, coherent source-job failure, and replay eligibility without requiring PostgreSQL.
 - `scripts/rfc_0104_slice4_live_evidence.py`
   PostgreSQL-backed live evidence for internal RFC-0104 batch dispatch primitives; requires
   `REPORT_JOB_LEDGER_DATABASE_URL`

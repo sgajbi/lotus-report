@@ -42,9 +42,11 @@ Current repository posture:
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` are the RFC-0100
    durable report job and work-queue foundation for gateway-first acceptance, PostgreSQL-backed
    idempotency, atomic work enqueue, operator-safe job search, product-safe status, leased
-   asynchronous execution with bounded retry, database-aware readiness, and bounded cancellation
-   before `rendering`; the API returns `202 Accepted` after the durable transaction and the
-   separate `lotus-report-job-worker` resumes source capture, render, and archive work. New lifecycle
+   asynchronous execution with one-item claim-before-execute, bounded explicit-failure and
+   expired-lease retry, source-job/work-item terminal-state coherence, database-aware readiness,
+   and bounded cancellation before `rendering`; the API returns `202 Accepted` after the durable
+   transaction and the separate `lotus-report-job-worker` resumes source capture, render, and
+   archive work. New lifecycle
    event rows carry `event_schema_version`, `event_family`, support-safe `event_payload`, and
    optional `event_idempotency_key`, while legacy rows remain readable as
    `report-status-event.legacy.v0`,
@@ -202,8 +204,8 @@ Primary areas:
    operator lookup field vocabulary.
 3. `src/app/reporting_metrics.py`
    RFC-0105 bounded Prometheus metric vocabulary, report operation metrics, batch worker/scheduler
-   gauges, source-backed attention scan gauges, reserved replay/rerender/regenerate metric
-   posture, and metric label governance.
+   gauges, report-work lease recovery/exhaustion/stale-conflict counters, source-backed attention
+   scan gauges, reserved replay/rerender/regenerate metric posture, and metric label governance.
 4. `scripts/`
    migration, OpenAPI, and monetary-float governance.
 5. `tests/`

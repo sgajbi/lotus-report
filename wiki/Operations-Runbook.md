@@ -41,11 +41,13 @@ for the implementation-backed `lotus-report` runtime.
   contract, dashboard contract, alert basis, and label restrictions.
 - implemented metrics cover report job submission, report-job worker passes, snapshot capture,
   render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work
-  replay commands, batch worker passes, scheduler passes, and operations attention scans.
+  replay commands, report-work lease recovery/exhaustion/stale-conflict outcomes, batch worker
+  passes, scheduler passes, and operations attention scans.
 - dedicated broader replay dashboards remain reserved until those command paths are
   implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
-  document, report job, batch, trace, correlation, storage, or raw payload fields.
+  document, report job, batch, worker, lease token, trace, correlation, storage, or raw payload
+  fields.
 
 ## Observability vocabulary owner
 
@@ -138,27 +140,34 @@ Governed controls are:
 
 - `REPORT_JOB_WORKER_ID`: stable lease-owner identity for one worker instance;
 - `REPORT_JOB_WORKER_INTERVAL_SECONDS`: delay between bounded passes;
-- `REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS`: maximum work items claimed in one pass;
+- `REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS`: maximum sequential claim-and-execute cycles in one pass;
 - `REPORT_JOB_WORKER_LEASE_SECONDS`: lease duration before another worker may recover abandoned work;
 - `REPORT_JOB_WORKER_MAX_ATTEMPTS`: total bounded execution attempts;
 - `REPORT_JOB_WORKER_RETRY_BASE_SECONDS` and `REPORT_JOB_WORKER_RETRY_MAX_SECONDS`: bounded
   exponential retry window.
 
 Scale workers only after confirming PostgreSQL pool capacity and downstream Core, Performance,
-Risk, Render, and Archive limits. Workers claim rows with PostgreSQL `SKIP LOCKED`; a lease token,
-not worker identity alone, proves completion or failure ownership. An interrupted worker leaves the
-work item recoverable after lease expiry. The execution pipeline resumes from the persisted job
-stage and must not append a duplicate transition for an already completed stage.
+Risk, Render, and Archive limits. A worker claims one row with PostgreSQL `SKIP LOCKED` immediately
+before executing it; `MAX_ITEMS_PER_PASS` bounds sequential throughput rather than pre-leasing a
+batch. A lease token, not worker identity alone, proves completion or failure ownership. An
+interrupted worker leaves the work item recoverable after lease expiry. Expiry consumes the same
+bounded attempt policy as explicit execution failure: a retryable item observes exponential delay
+from the lease deadline, while final exhaustion atomically fails the work item and source report
+job with a replay-eligible lifecycle event. The execution pipeline resumes from persisted job state
+and must not append a duplicate transition for an already completed stage.
 
 For an accepted job that is not progressing:
 
 1. read the product-safe job status and lifecycle events;
-2. inspect worker logs and `lotus_report_job_runtime_last_items` without adding portfolio, tenant,
-   job, correlation, or trace identifiers as metric labels;
+2. inspect worker logs, `lotus_report_job_runtime_last_items`, and
+   `lotus_report_job_work_lease_events_total{outcome=~"recovered|exhausted|stale_conflict"}` without
+   adding worker, portfolio, tenant, job, lease-token, correlation, or trace identifiers as labels;
 3. verify the work item is `pending`, `retry_pending`, or has an expired `leased` state;
 4. verify downstream source health before increasing retry or concurrency settings;
-5. restart only the report-job worker when the lease is abandoned; do not recreate the request,
-   delete the work row, or reset the Report volume.
+5. restart only the report-job worker when the lease is abandoned; when the bounded policy has
+   exhausted, inspect the source-owned failed status and use governed replay only after the
+   downstream cause is corrected;
+6. do not recreate the request, delete the work row, or reset the Report volume.
 
 ## RFC-0104 batch reporting posture
 
