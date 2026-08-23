@@ -8,6 +8,12 @@ from app.report_batch_orchestrator.models import (
     ReportBatchItemRecord,
     ReportBatchRecord,
 )
+from app.reporting_jobs.execution import (
+    ReportJobExecutionLedger,
+    ReportJobExecutionService,
+    ReportRenderOrchestrationService,
+    ReportSnapshotCaptureService,
+)
 from app.reporting_jobs.models import ReportJobLedgerRecord
 
 
@@ -30,18 +36,6 @@ class BatchExecutionLedger(Protocol):
         retryable: bool,
         retry_policy: BatchRetryPolicy | None = None,
     ) -> ReportBatchItemRecord: ...
-
-
-class ReportJobExecutionLedger(Protocol):
-    def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
-
-
-class ReportSnapshotCaptureService(Protocol):
-    async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
-
-
-class ReportRenderOrchestrationService(Protocol):
-    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
 
 
 @dataclass(frozen=True)
@@ -69,8 +63,11 @@ class ReportBatchExecutionService:
     ) -> None:
         self._batch_ledger = batch_ledger
         self._report_job_ledger = report_job_ledger
-        self._capture_service = capture_service
-        self._render_service = render_service
+        self._job_execution_service = ReportJobExecutionService(
+            report_job_ledger=report_job_ledger,
+            capture_service=capture_service,
+            render_service=render_service,
+        )
         self._retry_policy = retry_policy or BatchRetryPolicy()
 
     async def execute_item(
@@ -84,11 +81,7 @@ class ReportBatchExecutionService:
             raise ValueError("batch_item_report_job_missing")
 
         try:
-            job = self._report_job_ledger.get_job(item.report_job_id)
-            if job.status == "accepted":
-                job = await self._capture_service.capture_for_job(job)
-            if job.status == "data_ready" and "pdf" in job.requested_output_formats:
-                job = await self._render_service.render_for_job(job)
+            job = await self._job_execution_service.execute_job(job_id=item.report_job_id)
         except Exception as exc:
             failed_item = self._batch_ledger.mark_item_failed(
                 batch_item_id=item.batch_item_id,
