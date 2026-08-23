@@ -16,6 +16,10 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "condition: service_healthy" in compose
     assert '"host.docker.internal:host-gateway"' in compose
     assert "lotus-report-batch-worker:" in compose
+    assert "lotus-report-job-worker:" in compose
+    assert "exec python -m app.reporting_jobs.process" in compose
+    assert "REPORT_JOB_WORKER_ID: lotus-report-job-worker-local" in compose
+    assert "REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS" in compose
     assert "python -m app.runtime_schema" in compose
     assert "exec python -m app.report_batch_orchestrator.process" in compose
     assert "REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local" in compose
@@ -26,8 +30,9 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "REPORT_BATCH_SCHEDULER_ID: lotus-report-batch-scheduler-local" in compose
     assert "REPORT_BATCH_SCHEDULES_JSON:" in compose
     assert 'REPORT_BATCH_SCHEDULES_JSON: "[]"' in compose
-    assert len(re.findall(r"^\s+image:\s+lotus-report", compose, flags=re.MULTILINE)) == 3
+    assert len(re.findall(r"^\s+image:\s+lotus-report", compose, flags=re.MULTILINE)) == 4
     assert "image: lotus-report:local" in compose
+    assert "image: lotus-report-job-worker:local" in compose
     assert "image: lotus-report-batch-worker:local" in compose
     assert "image: lotus-report-batch-scheduler:local" in compose
 

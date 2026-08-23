@@ -65,6 +65,40 @@ class Settings(BaseSettings):
         min_length=1,
         alias="IDEA_EVIDENCE_INTAKE_LEDGER_PATH",
     )
+    report_job_worker_id: str = Field(
+        "lotus-report-job-worker-1",
+        alias="REPORT_JOB_WORKER_ID",
+    )
+    report_job_worker_interval_seconds: float = Field(
+        1.0,
+        ge=0.1,
+        alias="REPORT_JOB_WORKER_INTERVAL_SECONDS",
+    )
+    report_job_worker_max_items_per_pass: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS",
+    )
+    report_job_worker_lease_seconds: int = Field(
+        300,
+        ge=1,
+        alias="REPORT_JOB_WORKER_LEASE_SECONDS",
+    )
+    report_job_worker_max_attempts: int = Field(
+        3,
+        ge=1,
+        alias="REPORT_JOB_WORKER_MAX_ATTEMPTS",
+    )
+    report_job_worker_retry_base_seconds: int = Field(
+        5,
+        ge=1,
+        alias="REPORT_JOB_WORKER_RETRY_BASE_SECONDS",
+    )
+    report_job_worker_retry_max_seconds: int = Field(
+        300,
+        ge=1,
+        alias="REPORT_JOB_WORKER_RETRY_MAX_SECONDS",
+    )
     batch_worker_id: str = Field(
         "lotus-report-batch-worker-1",
         alias="REPORT_BATCH_WORKER_ID",
