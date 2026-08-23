@@ -379,7 +379,7 @@ sequenceDiagram
     WORKER->>CORE: summary/detail/allocation/positions/transactions calls
     WORKER->>PERF: workspace summary and contribution calls
     WORKER->>RISK: risk calculation calls
-    WORKER->>PG: insert report_input_snapshot and upstream calls
+    WORKER->>PG: atomically insert report_input_snapshot and upstream calls
     WORKER->>PG: mark job data_ready or failed
     WORKER->>PG: mark job rendering
     WORKER->>RENDER: POST /renders
@@ -397,7 +397,13 @@ Operational truths for this wave:
 2. one snapshot can have many upstream-call rows,
 3. snapshot rows are immutable from the application contract perspective,
 4. upstream-call rows are append-only from the application contract perspective,
-5. support-safe APIs return hashes, posture, and lineage metadata instead of raw upstream payloads.
+5. snapshot and upstream-call rows commit as one capture transaction,
+6. `data_ready` requires a positive declared call count equal to stored rows, stored services covered
+   by the declared source-service set, and matching correlation/trace identity,
+7. a restart can recollect and restore a same-payload snapshot with zero call rows, but partial or
+   conflicting lineage fails closed as `data_incomplete`,
+8. a stored failed capture resumes as failed and is never promoted to `data_ready`,
+9. support-safe APIs return hashes, posture, and lineage metadata instead of raw upstream payloads.
 
 ## PostgreSQL ledger operations
 
@@ -474,7 +480,24 @@ SELECT upstream_call_id, snapshot_id, service_name, endpoint, method, contract_v
 FROM report_upstream_call
 WHERE snapshot_id = '<snapshot-id>'
 ORDER BY captured_at, upstream_call_id;
+
+-- snapshot/call completeness check for one job
+SELECT snapshot.report_job_id,
+       snapshot.snapshot_id,
+       snapshot.lineage_summary_json ->> 'call_count' AS declared_call_count,
+       COUNT(call.upstream_call_id) AS stored_call_count,
+       ARRAY_AGG(DISTINCT call.service_name) FILTER (WHERE call.service_name IS NOT NULL)
+           AS stored_source_services
+FROM report_input_snapshot snapshot
+LEFT JOIN report_upstream_call call ON call.snapshot_id = snapshot.snapshot_id
+WHERE snapshot.report_job_id = '<report-job-id>'
+GROUP BY snapshot.report_job_id, snapshot.snapshot_id, snapshot.lineage_summary_json;
 ```
+
+If declared and stored counts differ, do not manually insert or delete lineage rows and do not move
+the job to `data_ready`. Retry through the worker only when the stored call count is zero and the
+immutable source payload can be recollected. A non-zero mismatch is a `data_incomplete` integrity
+failure that requires source/job evidence review through the existing diagnostics and lineage APIs.
 
 Do not manually delete ledger rows to clean a failed test. Use isolated idempotency keys and keep
 ledger rows as audit evidence. Native partitioning, purge, legal hold, document retention,

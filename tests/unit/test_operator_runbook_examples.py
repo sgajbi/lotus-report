@@ -134,3 +134,21 @@ def test_report_job_docs_keep_acceptance_separate_from_completion() -> None:
     assert "lotus-report-job-worker" in validation
     assert "`report_job_work_item`" in validation
     assert "portfolio_review.durable_async_execution.v1" in supported_features
+
+
+def test_snapshot_lineage_docs_require_atomic_complete_resume() -> None:
+    durability = _read("docs/standards/durability-consistency.md")
+    operations = _read("wiki/Operations-Runbook.md")
+    context = _read("REPOSITORY-ENGINEERING-CONTEXT.md")
+    supported_features = _read("docs/supported-features.md")
+
+    for text in (durability, operations, context, supported_features):
+        assert "data_ready" in text
+        assert "data_incomplete" in text
+        assert "upstream-call" in text
+
+    assert "one transaction" in durability
+    assert "declared call count is positive" in durability
+    assert "snapshot and upstream-call rows commit as one capture transaction" in operations
+    assert "snapshot presence alone" in durability
+    assert "same-payload zero-call historical gap" in supported_features

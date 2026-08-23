@@ -14,19 +14,36 @@
 
 ## Idempotency and Write Semantics
 
-- lotus-report currently exposes read-only reporting endpoints (no core write paths).
-- If write endpoints are introduced, `Idempotency-Key` will be mandatory.
+- Report-job, batch, replay, rerender, and materialization commands require governed idempotency
+  identities at their public or internal command boundaries.
+- Report input snapshots remain one-to-one with a report job and immutable by payload hash.
+- Upstream-call evidence is append-only. A same-job retry may restore a completely missing call
+  ledger only when the snapshot payload hash is unchanged; partial or conflicting lineage fails
+  closed.
 - Evidence:
-  - `src/app/routers/reports.py`
-  - `src/app/routers/aggregations.py`
+  - `src/app/reporting_jobs/ledger.py`
+  - `src/app/reporting_jobs/postgres_ledger.py`
+  - `src/app/reporting_lineage/store.py`
+  - `src/app/reporting_lineage/postgres_store.py`
 
 ## Atomicity Boundaries
 
-- Aggregation responses are built per-request using scoped upstream reads.
-- No partial persistent business writes are performed in current architecture.
+- Report request, accepted job, initial event, and work item are one durable acceptance unit.
+- A captured report input snapshot and all upstream-call evidence are one transaction. A call-row
+  insertion failure rolls back a newly inserted snapshot.
+- A job reaches `data_ready` only after the persisted lineage satisfies the capture invariant:
+  declared call count is positive and equals the stored row count, stored call services are
+  declared by the snapshot summary, and correlation/trace identity matches the snapshot.
+- A restart may re-collect and restore a legacy snapshot with zero stored calls. A partially
+  written or conflicting call ledger is not extended speculatively; the job fails with
+  `data_incomplete` for operator review.
 - Evidence:
-  - `src/app/services/reporting_read_service.py`
-  - `src/app/services/aggregation_service.py`
+  - `src/app/reporting_jobs/service.py`
+  - `src/app/reporting_lineage/capture_service.py`
+  - `src/app/reporting_lineage/store.py`
+  - `src/app/reporting_lineage/postgres_store.py`
+  - `tests/unit/reporting_lineage/test_capture_service.py`
+  - `tests/integration/test_postgres_report_input_snapshot_store.py`
 
 ## As-Of and Reproducibility Semantics
 
@@ -39,7 +56,8 @@
 
 ## Concurrency and Conflict Policy
 
-- Request processing is stateless and deterministic for equivalent inputs.
+- Read-model processing is deterministic for equivalent source inputs. Durable workflows use
+  immutable hashes, idempotency keys, leased work claims, and explicit conflict errors.
 - Upstream call retries are bounded and explicit. The shared HTTP helper retries transport
   failures and transient HTTP statuses `429`, `502`, `503`, and `504` within
   `UPSTREAM_MAX_RETRIES`; validation, authorization, not-found, conflict, and business-rule
@@ -54,6 +72,9 @@
 
 - Request schema validation enforces section/as-of contract integrity.
 - Invalid request shapes are rejected with explicit 4xx responses.
+- Successful capture cannot resume from snapshot presence alone. The worker verifies the complete
+  snapshot/lineage unit before `data_ready`; a stored failed capture is replayed as failure and is
+  never promoted to readiness.
 - Evidence:
   - `src/app/models/*`
   - `tests/integration/test_api.py`
@@ -63,7 +84,10 @@
 - Unit: `tests/unit/*`
 - Integration: `tests/integration/*`
 - E2E: `tests/e2e/*`
+- PostgreSQL transaction/restart proof:
+  `tests/integration/test_postgres_report_input_snapshot_store.py`
 
 ## Deviations
 
-- Any future durable write path introduced in lotus-report without explicit idempotency and atomicity controls requires ADR with expiry review date.
+- Any new multi-write workflow without an explicit transaction boundary, idempotency policy,
+  restart invariant, and failure-injection proof requires an ADR with an expiry review date.
