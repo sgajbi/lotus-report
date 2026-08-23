@@ -16,10 +16,12 @@ from app.reporting_lineage.models import (
 )
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
+    ReportInputSnapshotLineageConflictError,
     ReportInputSnapshotNotFoundError,
     _normalize_json_value,
     _record_from_row,
     _upstream_call_from_row,
+    _upstream_calls_match,
     compute_snapshot_hash,
     utc_now,
 )
@@ -76,28 +78,50 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
     def create_snapshot(
         self, request: ReportInputSnapshotCreateRequest
     ) -> ReportInputSnapshotRecord:
-        snapshot_hash = compute_snapshot_hash(request.snapshot_payload)
         with self._connect() as connection:
-            existing_row = connection.execute(
-                """
+            return self._get_or_create_snapshot(connection, request)
+
+    def create_capture(
+        self,
+        *,
+        snapshot: ReportInputSnapshotCreateRequest,
+        upstream_calls: list[ReportUpstreamCallCreateRequest],
+    ) -> tuple[ReportInputSnapshotRecord, list[ReportUpstreamCallRecord]]:
+        """Persist a snapshot and its complete source-call ledger atomically."""
+
+        with self._connect() as connection:
+            snapshot_record = self._get_or_create_snapshot(connection, snapshot)
+            call_records = self._get_or_create_upstream_calls(
+                connection,
+                snapshot_id=snapshot_record.snapshot_id,
+                calls=upstream_calls,
+            )
+            return snapshot_record, call_records
+
+    def _get_or_create_snapshot(
+        self,
+        connection: Connection[Mapping[str, Any]],
+        request: ReportInputSnapshotCreateRequest,
+    ) -> ReportInputSnapshotRecord:
+        snapshot_hash = compute_snapshot_hash(request.snapshot_payload)
+        existing_row = connection.execute(
+            """
                 SELECT *
                 FROM report_input_snapshot
                 WHERE report_job_id = %s
                 """,
-                (request.report_job_id,),
-            ).fetchone()
-            if existing_row:
-                existing = _record_from_row(existing_row)
-                if existing.snapshot_hash == snapshot_hash:
-                    return existing
-                raise ReportInputSnapshotAlreadyCapturedError(
-                    "report_input_snapshot_already_captured"
-                )
+            (request.report_job_id,),
+        ).fetchone()
+        if existing_row:
+            existing = _record_from_row(existing_row)
+            if existing.snapshot_hash == snapshot_hash:
+                return existing
+            raise ReportInputSnapshotAlreadyCapturedError("report_input_snapshot_already_captured")
 
-            now = utc_now()
-            snapshot_id = f"rsnap_{uuid4().hex}"
-            connection.execute(
-                """
+        now = utc_now()
+        snapshot_id = f"rsnap_{uuid4().hex}"
+        connection.execute(
+            """
                 INSERT INTO report_input_snapshot (
                     snapshot_id, report_job_id, report_type, report_data_contract_version,
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
@@ -106,29 +130,29 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (
-                    snapshot_id,
-                    request.report_job_id,
-                    request.report_type,
-                    request.report_data_contract_version,
-                    Jsonb(_normalize_json_value(request.portfolio_scope)),
-                    request.as_of_date,
-                    Jsonb(_normalize_json_value(request.snapshot_payload)),
-                    snapshot_hash,
-                    request.snapshot_storage_ref,
-                    request.supportability_status,
-                    request.completeness_status,
-                    Jsonb(_normalize_json_value(request.lineage_summary)),
-                    request.captured_at,
-                    now,
-                    request.correlation_id,
-                    request.trace_id,
-                ),
-            )
-            row = connection.execute(
-                "SELECT * FROM report_input_snapshot WHERE snapshot_id = %s",
-                (snapshot_id,),
-            ).fetchone()
+            (
+                snapshot_id,
+                request.report_job_id,
+                request.report_type,
+                request.report_data_contract_version,
+                Jsonb(_normalize_json_value(request.portfolio_scope)),
+                request.as_of_date,
+                Jsonb(_normalize_json_value(request.snapshot_payload)),
+                snapshot_hash,
+                request.snapshot_storage_ref,
+                request.supportability_status,
+                request.completeness_status,
+                Jsonb(_normalize_json_value(request.lineage_summary)),
+                request.captured_at,
+                now,
+                request.correlation_id,
+                request.trace_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM report_input_snapshot WHERE snapshot_id = %s",
+            (snapshot_id,),
+        ).fetchone()
         assert row is not None
         return _record_from_row(row)
 
@@ -167,22 +191,60 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
             ).fetchone()
             if not snapshot_exists:
                 raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
-            existing = connection.execute(
-                """
+            return self._get_or_create_upstream_calls(
+                connection,
+                snapshot_id=snapshot_id,
+                calls=calls,
+            )
+
+    def _get_or_create_upstream_calls(
+        self,
+        connection: Connection[Mapping[str, Any]],
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> list[ReportUpstreamCallRecord]:
+        existing_rows = connection.execute(
+            """
                 SELECT *
                 FROM report_upstream_call
                 WHERE snapshot_id = %s
                 ORDER BY created_at ASC, upstream_call_id ASC
                 """,
-                (snapshot_id,),
-            ).fetchall()
-            if existing:
-                return [_upstream_call_from_row(row) for row in existing]
+            (snapshot_id,),
+        ).fetchall()
+        existing = [_upstream_call_from_row(row) for row in existing_rows]
+        if existing:
+            if not _upstream_calls_match(existing, calls):
+                raise ReportInputSnapshotLineageConflictError(
+                    "report_input_snapshot_lineage_conflict"
+                )
+            return existing
+        if not calls:
+            return []
+        self._insert_upstream_calls(connection, snapshot_id=snapshot_id, calls=calls)
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM report_upstream_call
+            WHERE snapshot_id = %s
+            ORDER BY created_at ASC, upstream_call_id ASC
+            """,
+            (snapshot_id,),
+        ).fetchall()
+        return [_upstream_call_from_row(row) for row in rows]
 
-            now = utc_now()
-            for call in calls:
-                connection.execute(
-                    """
+    def _insert_upstream_calls(
+        self,
+        connection: Connection[Mapping[str, Any]],
+        *,
+        snapshot_id: str,
+        calls: list[ReportUpstreamCallCreateRequest],
+    ) -> None:
+        now = utc_now()
+        for call in calls:
+            connection.execute(
+                """
                     INSERT INTO report_upstream_call (
                         upstream_call_id, snapshot_id, service_name, endpoint, method,
                         contract_version, request_hash, response_hash, response_ref,
@@ -198,38 +260,28 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                         %s, %s
                     )
                     """,
-                    (
-                        f"ruc_{uuid4().hex}",
-                        snapshot_id,
-                        call.service_name,
-                        call.endpoint,
-                        call.method,
-                        call.contract_version,
-                        call.request_hash,
-                        call.response_hash,
-                        call.response_ref,
-                        call.status_code,
-                        call.latency_ms,
-                        call.supportability_status,
-                        call.completeness_status,
-                        call.failure_category,
-                        call.failure_message,
-                        call.correlation_id,
-                        call.trace_id,
-                        call.captured_at,
-                        now,
-                    ),
-                )
-            rows = connection.execute(
-                """
-                SELECT *
-                FROM report_upstream_call
-                WHERE snapshot_id = %s
-                ORDER BY created_at ASC, upstream_call_id ASC
-                """,
-                (snapshot_id,),
-            ).fetchall()
-        return [_upstream_call_from_row(row) for row in rows]
+                (
+                    f"ruc_{uuid4().hex}",
+                    snapshot_id,
+                    call.service_name,
+                    call.endpoint,
+                    call.method,
+                    call.contract_version,
+                    call.request_hash,
+                    call.response_hash,
+                    call.response_ref,
+                    call.status_code,
+                    call.latency_ms,
+                    call.supportability_status,
+                    call.completeness_status,
+                    call.failure_category,
+                    call.failure_message,
+                    call.correlation_id,
+                    call.trace_id,
+                    call.captured_at,
+                    now,
+                ),
+            )
 
     def list_upstream_calls(self, snapshot_id: str) -> list[ReportUpstreamCallRecord]:
         with self._connect() as connection:
