@@ -38,6 +38,28 @@ services:
     ports:
       - "8300:8300"
 
+  lotus-report-job-worker:
+    build: .
+    image: lotus-report-job-worker:local
+    container_name: lotus-report-job-worker
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m app.runtime_schema && exec python -m app.reporting_jobs.process",
+      ]
+    environment:
+      <<: *lotus-report-service-environment
+      REPORT_JOB_WORKER_ID: lotus-report-job-worker-local
+      REPORT_JOB_WORKER_INTERVAL_SECONDS: "1"
+      REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS: "10"
+      REPORT_JOB_WORKER_LEASE_SECONDS: "300"
+    depends_on:
+      lotus-report-postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   lotus-report-batch-worker:
     build: .
     image: lotus-report-batch-worker:local
