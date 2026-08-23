@@ -223,6 +223,61 @@ def test_postgres_report_work_queue_enforces_lease_ownership_and_terminal_retry(
     assert terminal.last_error_summary is not None
     assert len(terminal.last_error_summary) <= 240
     assert "  " not in terminal.last_error_summary
+    source_job = ledger.get_job(job.job_id)
+    assert source_job.status == "failed"
+    assert source_job.failure_category == "operator_intervention_required"
+    assert source_job.retry_eligible is True
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "failed",
+    ]
+
+
+def test_postgres_expired_work_lease_stops_at_retry_boundary() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-expired-work-{unique_suffix}",
+    )
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    policy = ReportJobWorkRetryPolicy(max_attempts=1, base_delay_seconds=1)
+    leased = next(
+        item
+        for item in ledger.claim_work_items(
+            worker_id="report-worker-expiring",
+            limit=25,
+            lease_seconds=30,
+            retry_policy=policy,
+            now=now,
+        )
+        if item.report_job_id == job.job_id
+    )
+
+    reclaimed = ledger.claim_work_items(
+        worker_id="report-worker-recovery",
+        limit=25,
+        lease_seconds=30,
+        retry_policy=policy,
+        now=now + timedelta(seconds=31),
+    )
+
+    assert leased.work_item_id not in {item.work_item_id for item in reclaimed}
+    exhausted = ledger.get_work_item_for_job(job.job_id)
+    assert exhausted is not None
+    assert exhausted.status == "failed"
+    assert exhausted.attempt_count == 1
+    assert exhausted.last_error_category == "expired_work_lease"
+    source_job = ledger.get_job(job.job_id)
+    assert source_job.status == "failed"
+    assert source_job.failure_category == "timeout"
+    assert source_job.retry_eligible is True
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "failed",
+    ]
 
 
 def test_postgres_report_job_relationship_is_idempotent_and_queryable_from_both_jobs() -> None:
