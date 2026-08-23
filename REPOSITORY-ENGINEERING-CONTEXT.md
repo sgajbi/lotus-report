@@ -40,9 +40,11 @@ Current repository posture:
    advisor-only discussion sections, evidence lineage, and implementation-backed capability keys,
 6. `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs/{job_id}`,
    `GET /reports/jobs/{job_id}/events`, and `POST /reports/jobs/{job_id}/cancel` are the RFC-0100
-   durable report job ledger foundation for gateway-first initiation, PostgreSQL-backed
-   idempotency, operator-safe job search, product-safe status, versioned typed append-only event
-   history, database-aware readiness, and bounded cancellation before `rendering`; new lifecycle
+   durable report job and work-queue foundation for gateway-first acceptance, PostgreSQL-backed
+   idempotency, atomic work enqueue, operator-safe job search, product-safe status, leased
+   asynchronous execution with bounded retry, database-aware readiness, and bounded cancellation
+   before `rendering`; the API returns `202 Accepted` after the durable transaction and the
+   separate `lotus-report-job-worker` resumes source capture, render, and archive work. New lifecycle
    event rows carry `event_schema_version`, `event_family`, support-safe `event_payload`, and
    optional `event_idempotency_key`, while legacy rows remain readable as
    `report-status-event.legacy.v0`,
@@ -115,8 +117,9 @@ Current repository posture:
    slices must extend those owners rather than adding one-off literal fields in routers, clients,
    dashboards, or operator APIs,
 16. Docker-local `lotus-report` startup now initializes and verifies the PostgreSQL report-job
-   ledger and report-input snapshot schema before serving readiness. The API, batch worker, and
-   scheduler containers all use the same schema guard and shared `src/app/reporting_persistence/`
+   ledger, report-work queue, and report-input snapshot schema before serving readiness. The API,
+   report job worker, batch worker, and scheduler containers all use the same schema guard and shared
+   `src/app/reporting_persistence/`
    migration owner. Supported `report-status-event-pre-contract-v0` volumes upgrade to
    `report-ledger-v1` in place; unrecognized shapes fail before mutation with a stable
    `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` diagnostic, including
