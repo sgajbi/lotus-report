@@ -1,6 +1,6 @@
 import asyncio
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -14,6 +14,7 @@ from app.reporting_jobs.ledger import (
 )
 from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 from app.reporting_jobs.worker import ReportJobWorker
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
@@ -2747,15 +2748,25 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
             json=payload,
             headers=_headers("portfolio-review-replay-source"),
         ).json()
-        source = ledger.mark_failed(
-            job_id=handle["report_job_id"],
-            actor="advisor-123",
-            correlation_id="corr-report-job-1",
-            trace_id="trace-report-job-1",
-            failure_category="upstream_data_failed",
-            failure_message="Upstream timeout.",
-            retry_eligible=True,
+        failed_at = datetime.now(UTC) + timedelta(seconds=1)
+        work = ledger.claim_work_items(
+            worker_id="report-worker-replay-proof",
+            limit=1,
+            lease_seconds=30,
+            retry_policy=ReportJobWorkRetryPolicy(max_attempts=1),
+            now=failed_at,
+        )[0]
+        ledger.fail_work_item(
+            work_item_id=work.work_item_id,
+            lease_token=work.lease_token or "",
+            error_category="report_job_worker_execution_failed",
+            error_summary="Upstream capture remained unavailable.",
+            retry_policy=ReportJobWorkRetryPolicy(max_attempts=1),
+            now=failed_at,
         )
+        source = ledger.get_job(handle["report_job_id"])
+        assert source.status == "failed"
+        assert source.retry_eligible is True
         headers = _headers(f"replay-{source.job_id}-same-key")
 
         first = client.post(
@@ -2776,7 +2787,7 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
         assert body["source_report_job_id"] == source.job_id
         assert body["replayed_report_job_id"] != source.job_id
         assert body["status"] == "archived"
-        assert body["source_failure_category"] == "upstream_data_failed"
+        assert body["source_failure_category"] == "operator_intervention_required"
         assert body["archive"]["document_id"] == "doc_report_job_pdf_replay"
         assert len(render_client.payloads) == 1
         assert len(archive_client.payloads) == 1
@@ -2811,7 +2822,7 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
         assert source_relationship["derived_report_job_id"] == body["replayed_report_job_id"]
         assert source_relationship["source_status"] == "failed"
         assert source_relationship["derived_status"] == "archived"
-        assert source_relationship["source_failure_category"] == "upstream_data_failed"
+        assert source_relationship["source_failure_category"] == "operator_intervention_required"
         assert source_relationship["new_archive_document_id"] == "doc_report_job_pdf_replay"
     finally:
         _clear_overrides()
