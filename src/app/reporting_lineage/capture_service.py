@@ -24,7 +24,11 @@ from app.reporting_lineage.models import (
     ReportUpstreamCallCreateRequest,
     ReportUpstreamCallRecord,
 )
-from app.reporting_lineage.store import canonical_json_dumps
+from app.reporting_lineage.store import (
+    ReportInputSnapshotLineageConflictError,
+    ReportInputSnapshotNotFoundError,
+    canonical_json_dumps,
+)
 from app.reporting_metrics import record_report_operation
 from app.services.reporting_read_service import ReportingReadService
 
@@ -594,16 +598,9 @@ class PortfolioReviewSnapshotCaptureService:
             "completed_with_warnings",
         }:
             return job
-        try:
-            self._snapshot_store.get_snapshot_by_job(job.job_id)
-            return self._job_ledger.mark_data_ready(
-                job_id=job.job_id,
-                actor=job.triggered_by,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
-        except Exception:
-            pass
+        resumed = self._resume_existing_capture(job=job, started_at=started_at)
+        if resumed is not None:
+            return resumed
 
         if job.status == "accepted":
             self._job_ledger.mark_collecting_data(
@@ -668,40 +665,15 @@ class PortfolioReviewSnapshotCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
-        self._snapshot_store.create_capture(
-            snapshot=snapshot_request,
+        return self._complete_capture(
+            job=job,
+            started_at=started_at,
+            snapshot_request=snapshot_request,
             upstream_calls=[call.to_create_request() for call in upstream_calls],
+            failure_category=failure_category if failure_message else None,
+            failure_message=failure_message,
+            retry_eligible=retry_eligible,
         )
-
-        if failure_message:
-            failed_job = self._job_ledger.mark_failed(
-                job_id=job.job_id,
-                actor=job.triggered_by,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-                failure_category=failure_category,
-                failure_message=failure_message,
-                retry_eligible=retry_eligible,
-            )
-            record_report_operation(
-                operation="snapshot_capture",
-                status=failed_job.status,
-                failure_category=failed_job.failure_category,
-                duration_seconds=perf_counter() - started_at,
-            )
-            return failed_job
-        data_ready_job = self._job_ledger.mark_data_ready(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
-        record_report_operation(
-            operation="snapshot_capture",
-            status=data_ready_job.status,
-            duration_seconds=perf_counter() - started_at,
-        )
-        return data_ready_job
 
     def _capture_proof_pack_snapshot(
         self,
@@ -720,23 +692,17 @@ class PortfolioReviewSnapshotCaptureService:
             "completed_with_warnings",
         }:
             return job
-        try:
-            self._snapshot_store.get_snapshot_by_job(job.job_id)
-            return self._job_ledger.mark_data_ready(
+        resumed = self._resume_existing_capture(job=job, started_at=started_at)
+        if resumed is not None:
+            return resumed
+
+        if job.status == "accepted":
+            self._job_ledger.mark_collecting_data(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
             )
-        except Exception:
-            pass
-
-        self._job_ledger.mark_collecting_data(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
         proof_pack_report_input = job.options.get("proof_pack_report_input")
         if not isinstance(proof_pack_report_input, dict):
             failed_job = self._job_ledger.mark_failed(
@@ -798,8 +764,10 @@ class PortfolioReviewSnapshotCaptureService:
             "content_hash",
             "proof_pack_report_input",
         )
-        self._snapshot_store.create_capture(
-            snapshot=snapshot_request,
+        return self._complete_capture(
+            job=job,
+            started_at=started_at,
+            snapshot_request=snapshot_request,
             upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name=source_system,
@@ -825,18 +793,6 @@ class PortfolioReviewSnapshotCaptureService:
                 )
             ],
         )
-        data_ready_job = self._job_ledger.mark_data_ready(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
-        record_report_operation(
-            operation="snapshot_capture",
-            status=data_ready_job.status,
-            duration_seconds=perf_counter() - started_at,
-        )
-        return data_ready_job
 
     def _capture_outcome_review_snapshot(
         self,
@@ -855,23 +811,17 @@ class PortfolioReviewSnapshotCaptureService:
             "completed_with_warnings",
         }:
             return job
-        try:
-            self._snapshot_store.get_snapshot_by_job(job.job_id)
-            return self._job_ledger.mark_data_ready(
+        resumed = self._resume_existing_capture(job=job, started_at=started_at)
+        if resumed is not None:
+            return resumed
+
+        if job.status == "accepted":
+            self._job_ledger.mark_collecting_data(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
             )
-        except Exception:
-            pass
-
-        self._job_ledger.mark_collecting_data(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
         outcome_report_input = job.options.get("outcome_report_input")
         if not isinstance(outcome_report_input, dict):
             failed_job = self._job_ledger.mark_failed(
@@ -919,8 +869,10 @@ class PortfolioReviewSnapshotCaptureService:
             "content_hash",
             "outcome_report_input",
         )
-        self._snapshot_store.create_capture(
-            snapshot=snapshot_request,
+        return self._complete_capture(
+            job=job,
+            started_at=started_at,
+            snapshot_request=snapshot_request,
             upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name="lotus-manage",
@@ -950,18 +902,6 @@ class PortfolioReviewSnapshotCaptureService:
                 )
             ],
         )
-        data_ready_job = self._job_ledger.mark_data_ready(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
-        record_report_operation(
-            operation="snapshot_capture",
-            status=data_ready_job.status,
-            duration_seconds=perf_counter() - started_at,
-        )
-        return data_ready_job
 
     def _capture_wave_snapshot(
         self,
@@ -980,23 +920,17 @@ class PortfolioReviewSnapshotCaptureService:
             "completed_with_warnings",
         }:
             return job
-        try:
-            self._snapshot_store.get_snapshot_by_job(job.job_id)
-            return self._job_ledger.mark_data_ready(
+        resumed = self._resume_existing_capture(job=job, started_at=started_at)
+        if resumed is not None:
+            return resumed
+
+        if job.status == "accepted":
+            self._job_ledger.mark_collecting_data(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
             )
-        except Exception:
-            pass
-
-        self._job_ledger.mark_collecting_data(
-            job_id=job.job_id,
-            actor=job.triggered_by,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
         wave_report_input = job.options.get("wave_report_input")
         if not isinstance(wave_report_input, dict):
             failed_job = self._job_ledger.mark_failed(
@@ -1040,8 +974,10 @@ class PortfolioReviewSnapshotCaptureService:
             trace_id=job.trace_id,
         )
         source_hash = _required_sha256(wave_report_input, "content_hash", "wave_report_input")
-        self._snapshot_store.create_capture(
-            snapshot=snapshot_request,
+        return self._complete_capture(
+            job=job,
+            started_at=started_at,
+            snapshot_request=snapshot_request,
             upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name="lotus-manage",
@@ -1069,7 +1005,78 @@ class PortfolioReviewSnapshotCaptureService:
                 )
             ],
         )
-        data_ready_job = self._job_ledger.mark_data_ready(
+
+    def _resume_existing_capture(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+    ) -> ReportJobLedgerRecord | None:
+        try:
+            snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
+        except ReportInputSnapshotNotFoundError:
+            return None
+
+        if snapshot.snapshot_payload.get("capture_status") == "failed":
+            return self._mark_failed(
+                job=job,
+                started_at=started_at,
+                failure_category=str(
+                    snapshot.snapshot_payload.get("failure_category") or "upstream_data_failed"
+                ),
+                failure_message=str(
+                    snapshot.snapshot_payload.get("failure_message")
+                    or "Upstream report-data capture failed."
+                ),
+                retry_eligible=False,
+            )
+
+        calls = self._snapshot_store.list_upstream_calls(snapshot.snapshot_id)
+        integrity_error = _capture_integrity_error(snapshot, calls)
+        if integrity_error is None:
+            return self._mark_data_ready(job=job, started_at=started_at)
+        if not calls:
+            return None
+        return self._mark_lineage_integrity_failed(job=job, started_at=started_at)
+
+    def _complete_capture(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+        snapshot_request: ReportInputSnapshotCreateRequest,
+        upstream_calls: list[ReportUpstreamCallCreateRequest],
+        failure_category: str | None = None,
+        failure_message: str | None = None,
+        retry_eligible: bool = False,
+    ) -> ReportJobLedgerRecord:
+        try:
+            snapshot, calls = self._snapshot_store.create_capture(
+                snapshot=snapshot_request,
+                upstream_calls=upstream_calls,
+            )
+        except ReportInputSnapshotLineageConflictError:
+            return self._mark_lineage_integrity_failed(job=job, started_at=started_at)
+
+        if failure_message:
+            return self._mark_failed(
+                job=job,
+                started_at=started_at,
+                failure_category=failure_category or "upstream_data_failed",
+                failure_message=failure_message,
+                retry_eligible=retry_eligible,
+            )
+        if _capture_integrity_error(snapshot, calls) is not None:
+            return self._mark_lineage_integrity_failed(job=job, started_at=started_at)
+        return self._mark_data_ready(job=job, started_at=started_at)
+
+    def _mark_data_ready(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+    ) -> ReportJobLedgerRecord:
+        record = self._job_ledger.mark_data_ready(
             job_id=job.job_id,
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
@@ -1077,10 +1084,50 @@ class PortfolioReviewSnapshotCaptureService:
         )
         record_report_operation(
             operation="snapshot_capture",
-            status=data_ready_job.status,
+            status=record.status,
             duration_seconds=perf_counter() - started_at,
         )
-        return data_ready_job
+        return record
+
+    def _mark_lineage_integrity_failed(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+    ) -> ReportJobLedgerRecord:
+        return self._mark_failed(
+            job=job,
+            started_at=started_at,
+            failure_category="data_incomplete",
+            failure_message="Report input capture lineage is incomplete or inconsistent.",
+            retry_eligible=False,
+        )
+
+    def _mark_failed(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+        failure_category: str,
+        failure_message: str,
+        retry_eligible: bool,
+    ) -> ReportJobLedgerRecord:
+        record = self._job_ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category=failure_category,
+            failure_message=failure_message,
+            retry_eligible=retry_eligible,
+        )
+        record_report_operation(
+            operation="snapshot_capture",
+            status=record.status,
+            failure_category=record.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return record
 
 
 def _first_portfolio_id(job: ReportJobLedgerRecord) -> str:
@@ -1264,6 +1311,37 @@ def _lineage_summary(
             }
         )
     return summary
+
+
+def _capture_integrity_error(
+    snapshot: ReportInputSnapshotRecord,
+    calls: list[ReportUpstreamCallRecord],
+) -> str | None:
+    summary = snapshot.lineage_summary
+    declared_call_count = summary.get("call_count")
+    if isinstance(declared_call_count, bool) or not isinstance(declared_call_count, int):
+        return "lineage_call_count_invalid"
+    if declared_call_count < 1:
+        return "lineage_call_count_required"
+    if declared_call_count != len(calls):
+        return "lineage_call_count_mismatch"
+
+    declared_services_value = summary.get("source_services")
+    if not isinstance(declared_services_value, list):
+        return "lineage_source_services_invalid"
+    declared_services = {
+        service.strip()
+        for service in declared_services_value
+        if isinstance(service, str) and service.strip()
+    }
+    actual_services = {call.service_name for call in calls}
+    if not actual_services or not actual_services.issubset(declared_services):
+        return "lineage_source_services_mismatch"
+    if any(call.correlation_id != snapshot.correlation_id for call in calls):
+        return "lineage_correlation_id_mismatch"
+    if any(call.trace_id != snapshot.trace_id for call in calls):
+        return "lineage_trace_id_mismatch"
+    return None
 
 
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:

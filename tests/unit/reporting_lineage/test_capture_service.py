@@ -455,8 +455,8 @@ def _recorded_call(
         failure_category="none",
         failure_message=None,
         captured_at=datetime.now(UTC),
-        correlation_id="corr-001",
-        trace_id="trace-001",
+        correlation_id="corr-101",
+        trace_id="trace-101",
     )
 
 
@@ -816,6 +816,7 @@ async def test_capture_service_reuses_existing_proof_pack_snapshot(tmp_path):
     assert record.status == "data_ready"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
+        "collecting_data",
         "data_ready",
     ]
 
@@ -847,6 +848,7 @@ async def test_capture_service_reuses_existing_wave_snapshot(tmp_path):
     assert record.status == "data_ready"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
+        "collecting_data",
         "data_ready",
     ]
 
@@ -970,6 +972,7 @@ async def test_capture_service_reuses_existing_outcome_review_snapshot(tmp_path)
     assert record.status == "data_ready"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
+        "collecting_data",
         "data_ready",
     ]
 
@@ -1038,8 +1041,8 @@ async def test_capture_service_returns_existing_terminal_or_captured_jobs(tmp_pa
     assert returned_terminal == data_ready
 
     ledger2, store2, job2 = _create_job(tmp_path, suffix="cached")
-    store2.create_snapshot(
-        ReportInputSnapshotCreateRequest(
+    store2.create_capture(
+        snapshot=ReportInputSnapshotCreateRequest(
             report_job_id=job2.job_id,
             report_type=job2.report_type,
             report_data_contract_version="v1",
@@ -1053,11 +1056,18 @@ async def test_capture_service_returns_existing_terminal_or_captured_jobs(tmp_pa
             captured_at=datetime.now(UTC),
             correlation_id=job2.correlation_id,
             trace_id=job2.trace_id,
-        )
+        ),
+        upstream_calls=[_recorded_call().to_create_request()],
     )
-    service2 = PortfolioReviewSnapshotCaptureService(snapshot_store=store2, job_ledger=ledger2)
+    provider = _FakePortfolioReviewInputProvider()
+    service2 = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store2,
+        job_ledger=ledger2,
+        portfolio_review_input_provider=provider,
+    )
     replayed = await service2.capture_for_job(job2)
     assert replayed.status == "data_ready"
+    assert provider.jobs == []
     assert [event.to_status for event in ledger2.list_status_events(job2.job_id)] == [
         "accepted",
         "data_ready",
@@ -1065,7 +1075,126 @@ async def test_capture_service_returns_existing_terminal_or_captured_jobs(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_capture_service_resumes_collecting_job_after_worker_restart(tmp_path):
+async def test_capture_service_repairs_missing_lineage_after_worker_restart(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="missing-lineage-restart")
+    collecting = ledger.mark_collecting_data(
+        job_id=job.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+    provider = _FakePortfolioReviewInputProvider()
+    existing = store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=provider.snapshot_payload,
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary=_lineage_summary(provider.upstream_calls),
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=provider,
+    )
+
+    resumed = await service.capture_for_job(collecting)
+
+    assert resumed.status == "data_ready"
+    assert provider.jobs == [job.job_id]
+    assert len(store.list_upstream_calls(existing.snapshot_id)) == 8
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "collecting_data",
+        "data_ready",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_fails_closed_for_partial_existing_lineage(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="partial-lineage")
+    snapshot = store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload={"report_id": "existing"},
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-core"], "call_count": 2},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    store.create_upstream_calls(
+        snapshot_id=snapshot.snapshot_id,
+        calls=[_recorded_call().to_create_request()],
+    )
+    provider = _FakePortfolioReviewInputProvider()
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=provider,
+    )
+
+    resumed = await service.capture_for_job(job)
+
+    assert resumed.status == "failed"
+    assert resumed.failure_category == "data_incomplete"
+    assert provider.jobs == []
+
+
+@pytest.mark.asyncio
+async def test_capture_service_replays_stored_capture_failure_without_marking_ready(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="stored-failure")
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload={
+                "capture_status": "failed",
+                "failure_category": "validation_failed",
+                "failure_message": "Requested report inputs were not fully supported.",
+            },
+            snapshot_storage_ref=None,
+            supportability_status="error",
+            completeness_status="error",
+            lineage_summary={"source_services": [], "call_count": 0},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    resumed = await service.capture_for_job(job)
+
+    assert resumed.status == "failed"
+    assert resumed.failure_category == "validation_failed"
+    assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
+        "accepted",
+        "failed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capture_service_rejects_success_without_source_lineage(tmp_path):
     ledger, store, job = _create_job(tmp_path, suffix="collecting-restart")
     collecting = ledger.mark_collecting_data(
         job_id=job.job_id,
@@ -1081,11 +1210,15 @@ async def test_capture_service_resumes_collecting_job_after_worker_restart(tmp_p
 
     resumed = await service.capture_for_job(collecting)
 
-    assert resumed.status == "data_ready"
+    assert resumed.status == "failed"
+    assert resumed.failure_category == "data_incomplete"
+    assert resumed.failure_message == (
+        "Report input capture lineage is incomplete or inconsistent."
+    )
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",
-        "data_ready",
+        "failed",
     ]
 
 
