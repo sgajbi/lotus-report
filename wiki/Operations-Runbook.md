@@ -39,9 +39,9 @@ for the implementation-backed `lotus-report` runtime.
 
 - `docs/operations/reporting-observability-metrics.md` records the code-backed first-wave metrics
   contract, dashboard contract, alert basis, and label restrictions.
-- implemented metrics cover report job submission, snapshot capture, render handoff, archive
-  handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay commands, batch
-  worker passes, scheduler passes, and operations attention scans.
+- implemented metrics cover report job submission, report-job worker passes, snapshot capture,
+  render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work
+  replay commands, batch worker passes, scheduler passes, and operations attention scans.
 - dedicated broader replay dashboards remain reserved until those command paths are
   implementation-backed.
 - metrics must not use high-cardinality or sensitive labels such as client, portfolio, tenant,
@@ -64,12 +64,12 @@ for the implementation-backed `lotus-report` runtime.
 - report job lifecycle state is durable in PostgreSQL and configured by
   `REPORT_JOB_LEDGER_DATABASE_URL`; runtime readiness fails if the database or mandatory ledger
   schema is unavailable
-- report-job, report-batch, and snapshot/upstream-call PostgreSQL adapters share a bounded
+- report-job, report-work, report-batch, and snapshot/upstream-call PostgreSQL adapters share a bounded
   process-local connection provider configured by `REPORT_POSTGRES_POOL_MIN_SIZE`,
   `REPORT_POSTGRES_POOL_MAX_SIZE`, `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`,
   `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`, `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS`, and
-  `REPORT_POSTGRES_APPLICATION_NAME`; tune the pool before increasing API, worker, or scheduler
-  concurrency
+  `REPORT_POSTGRES_APPLICATION_NAME`; tune the pool before increasing API, report-job worker,
+  batch-worker, or scheduler concurrency
 - RFC-0101 extends readiness to fail when either `report_input_snapshot` or
   `report_upstream_call` schema is unavailable
 - report job support queries are backed by indexes for idempotency lookup, tenant/region/time
@@ -91,8 +91,9 @@ for the implementation-backed `lotus-report` runtime.
   host-published canonical upstream ports while callers continue to use `report.dev.lotus`
 - Docker Compose starts a separate `lotus-report-postgres` service for local report job ledger
   parity; do not use a file database for runtime or integration evidence
-- Docker Compose containers initialize the PostgreSQL report-job ledger and report-input snapshot
-  migrations before serving the API, worker, or scheduler process. `/health/ready` must remain 503
+- Docker Compose containers initialize the PostgreSQL report-job ledger, work queue, and report-input
+  snapshot migrations before serving the API, report-job worker, batch worker, or scheduler process.
+  `/health/ready` must remain 503
   when those tables are absent. Both a fresh volume and the supported
   `report-status-event-pre-contract-v0` schema should become ready without manual SQL or volume
   deletion.
@@ -115,16 +116,49 @@ If any Report container exits with
 `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported`:
 
 1. preserve the PostgreSQL volume and capture the complete stable diagnostic;
-2. stop the API, worker, and scheduler from repeatedly attempting startup;
+2. stop the API, report-job worker, batch worker, and scheduler from repeatedly attempting startup;
 3. compare the named missing or incompatible columns with
    `docs/standards/migration-contract.md`;
 4. use an approved forward-fix or restore path for unsupported shapes;
-5. rerun `make migration-smoke`, then start the API, worker, and scheduler against the same volume;
+5. rerun `make migration-smoke`, then start the API, report-job worker, batch worker, and scheduler
+   against the same volume;
 6. confirm `/health/ready` returns `200` before resuming Gateway or Workbench validation.
 
 Do not repair this condition with manual column changes, destructive volume removal, or a
 Workbench fallback. Those paths can lose report history or make the browser advertise readiness
 that the reporting service has not proved.
+
+## Durable Report-Job Worker
+
+`lotus-report-job-worker` is the only daemonized owner of newly accepted report-job execution. The
+API must persist one `report_job_work_item` in the same transaction as the accepted job and return
+without waiting for source capture, render, or archive latency.
+
+Governed controls are:
+
+- `REPORT_JOB_WORKER_ID`: stable lease-owner identity for one worker instance;
+- `REPORT_JOB_WORKER_INTERVAL_SECONDS`: delay between bounded passes;
+- `REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS`: maximum work items claimed in one pass;
+- `REPORT_JOB_WORKER_LEASE_SECONDS`: lease duration before another worker may recover abandoned work;
+- `REPORT_JOB_WORKER_MAX_ATTEMPTS`: total bounded execution attempts;
+- `REPORT_JOB_WORKER_RETRY_BASE_SECONDS` and `REPORT_JOB_WORKER_RETRY_MAX_SECONDS`: bounded
+  exponential retry window.
+
+Scale workers only after confirming PostgreSQL pool capacity and downstream Core, Performance,
+Risk, Render, and Archive limits. Workers claim rows with PostgreSQL `SKIP LOCKED`; a lease token,
+not worker identity alone, proves completion or failure ownership. An interrupted worker leaves the
+work item recoverable after lease expiry. The execution pipeline resumes from the persisted job
+stage and must not append a duplicate transition for an already completed stage.
+
+For an accepted job that is not progressing:
+
+1. read the product-safe job status and lifecycle events;
+2. inspect worker logs and `lotus_report_job_runtime_last_items` without adding portfolio, tenant,
+   job, correlation, or trace identifiers as metric labels;
+3. verify the work item is `pending`, `retry_pending`, or has an expired `leased` state;
+4. verify downstream source health before increasing retry or concurrency settings;
+5. restart only the report-job worker when the lease is abandoned; do not recreate the request,
+   delete the work row, or reset the Report volume.
 
 ## RFC-0104 batch reporting posture
 
@@ -205,15 +239,18 @@ sequenceDiagram
     participant WB as lotus-workbench / caller
     participant GW as lotus-gateway
     participant REPORT as lotus-report
+    participant WORKER as lotus-report-job-worker
     participant PG as lotus-report-postgres
     participant RENDER as lotus-render
     participant ARCHIVE as lotus-archive
 
     WB->>GW: POST /api/v1/reports/portfolio-reviews
     GW->>REPORT: POST /reports/portfolio-reviews
-    REPORT->>PG: insert report_request, report_job, report_status_event
+    REPORT->>PG: atomically insert request, accepted job, event, work item
     REPORT-->>GW: 202 job handle
     GW-->>WB: 202 product-safe job handle
+    WORKER->>PG: claim bounded work-item lease
+    WORKER->>PG: complete work item or schedule bounded retry
     WB->>GW: GET /api/v1/report-jobs?portfolioId=...
     GW->>REPORT: GET /reports/jobs?portfolioId=...
     REPORT->>PG: indexed support search
@@ -283,9 +320,12 @@ Expected controls:
    retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
    item to replay work and does not change scheduler configuration,
 9. cancellation is bounded to pre-render/pre-archive/pre-completion jobs,
-10. every report job has one durable `report_request`, one durable `report_job`, and append-only
-   `report_status_event` rows with a versioned support-safe payload contract,
-11. regenerate, job replay, and batch-item replay persist durable `report_job_relationship` rows
+10. every accepted report job has one durable `report_request`, one durable `report_job`, one
+    `report_job_work_item`, and append-only `report_status_event` rows with a versioned support-safe
+    payload contract,
+11. a `202` response proves durable acceptance, not capture, render, archive, or delivery completion;
+    product callers must poll the source-owned status URL,
+12. regenerate, job replay, and batch-item replay persist durable `report_job_relationship` rows
    so operators can navigate source-to-derived and derived-to-source relationships from
    `GET /reports/jobs/{job_id}/diagnostics`.
 
@@ -314,29 +354,32 @@ owner.
 sequenceDiagram
     participant GW as lotus-gateway or operator caller
     participant REPORT as lotus-report
+    participant WORKER as lotus-report-job-worker
     participant CORE as lotus-core
     participant PERF as lotus-performance
     participant RISK as lotus-risk
+    participant RENDER as lotus-render
+    participant ARCHIVE as lotus-archive
     participant PG as lotus-report-postgres
 
     GW->>REPORT: POST /reports/portfolio-reviews
-    REPORT->>PG: insert report_request, report_job, accepted event
-    REPORT->>PG: mark job collecting_data
-    REPORT->>CORE: summary/detail/allocation/positions/transactions calls
-    REPORT->>PERF: workspace summary and contribution calls
-    REPORT->>RISK: risk calculation calls
-    REPORT->>PG: insert report_input_snapshot
-    REPORT->>PG: insert report_upstream_call rows
-    REPORT->>PG: mark job data_ready or failed
-    REPORT->>PG: mark job rendering
-    REPORT->>RENDER: POST /renders
-    RENDER-->>REPORT: rendered artifact metadata or failure
-    REPORT->>PG: mark job completed or failed
-    REPORT->>PG: mark job archiving
-    REPORT->>ARCHIVE: POST /documents
-    ARCHIVE-->>REPORT: archive document id or failure
-    REPORT->>PG: mark job archived or failed
-    REPORT-->>GW: 202 job handle with current status
+    REPORT->>PG: atomically insert request, accepted job, event, work item
+    REPORT-->>GW: 202 accepted job handle
+    WORKER->>PG: claim work-item lease
+    WORKER->>PG: mark job collecting_data
+    WORKER->>CORE: summary/detail/allocation/positions/transactions calls
+    WORKER->>PERF: workspace summary and contribution calls
+    WORKER->>RISK: risk calculation calls
+    WORKER->>PG: insert report_input_snapshot and upstream calls
+    WORKER->>PG: mark job data_ready or failed
+    WORKER->>PG: mark job rendering
+    WORKER->>RENDER: POST /renders
+    RENDER-->>WORKER: rendered artifact metadata or failure
+    WORKER->>PG: mark job completed or failed
+    WORKER->>PG: mark job archiving
+    WORKER->>ARCHIVE: POST /documents
+    ARCHIVE-->>WORKER: archive document id or failure
+    WORKER->>PG: mark job archived or failed; complete or retry work item
 ```
 
 Operational truths for this wave:
@@ -467,11 +510,10 @@ curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
   -d "{\"portfolio_scope\":{\"portfolio_ids\":[\"PB_SG_GLOBAL_BAL_001\"]},\"as_of_date\":\"2026-04-22\",\"requested_output_formats\":[\"pdf\"],\"reporting_currency\":\"USD\",\"options\":{\"sections\":[\"OVERVIEW\",\"PERFORMANCE\",\"RISK_ANALYTICS\"],\"benchmark_code\":\"BMK_PB_GLOBAL_BALANCED_60_40\"}}"
 ```
 
-The expected gateway response is a job handle with `report_request_id`, `report_job_id`, `status`,
-`status_url`, and `idempotency_key`. JSON-only requests typically advance the handle to
-`data_ready` before the response returns. PDF requests may continue through `rendering`,
-`completed`, `archiving`, and `archived` before the response returns when render and archive
-handoffs succeed synchronously. Use
+The expected gateway response is an immediate `202 Accepted` job handle with `report_request_id`,
+`report_job_id`, `status`, `status_url`, and `idempotency_key`. Acceptance means the request, job,
+event, and work item are durable; it does not mean source capture, PDF render, or archive handoff
+completed. The dedicated report-job worker advances the job asynchronously. Use
 `GET /api/v1/report-jobs?portfolioId=...&tenantId=...` for support search, `GET /api/v1/report-jobs/{job_id}` for status, and
 `GET /api/v1/report-jobs/{job_id}/events` for append-only lifecycle diagnostics. Use
 `POST /api/v1/report-jobs/{job_id}/cancel` only before the job reaches `rendering`, archive, or completion.
