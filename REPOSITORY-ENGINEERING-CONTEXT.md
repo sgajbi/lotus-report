@@ -248,7 +248,12 @@ Primary areas:
    snapshots, canonical snapshot hashing, immutable per-job capture, append-only upstream-call
    lineage, support-safe evidence query models, and readiness checks for RFC-0101. Portfolio-review
    snapshot capture depends on an injected input-provider port; concrete core/performance/risk
-   client construction belongs to the provider adapter, not the capture workflow.
+   client construction belongs to the provider adapter, not the capture workflow. Snapshot and
+   upstream-call evidence persist through one adapter transaction. Resume verifies a positive
+   declared call count, persisted row count, declared service coverage, and correlation/trace
+   identity before `data_ready`; zero-call historical gaps may be recollected and restored only for
+   the same immutable payload, while partial or conflicting lineage fails closed as
+   `data_incomplete`.
 14. `src/app/reporting_render/`
     render-package composition, lotus-render orchestration, and `lotus-archive` handoff for
     PDF-capable report jobs.

@@ -190,7 +190,9 @@ Key code areas:
   archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
 - `src/app/reporting_jobs/process.py`
   daemonized `lotus-report-job-worker` process that claims each work-item lease immediately before
-  execution and resumes the source-capture, render, and archive pipeline after process interruption
+  execution and resumes the source-capture, render, and archive pipeline after process interruption;
+  capture readiness requires a transactionally complete snapshot and upstream-call ledger, not
+  snapshot presence alone
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
   archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
