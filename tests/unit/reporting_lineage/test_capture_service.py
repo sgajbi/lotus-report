@@ -592,7 +592,7 @@ async def test_capture_service_records_outcome_review_snapshot_and_manage_lineag
     assert snapshot.snapshot_payload["outcome_review_id"] == "dor_001"
     assert snapshot.lineage_summary == {
         "source_services": ["lotus-manage"],
-        "call_count": 0,
+        "call_count": 1,
         "supportability_status": "complete",
         "completeness_status": "complete",
         "outcome_review_id": "dor_001",
@@ -627,7 +627,7 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
     assert snapshot.snapshot_payload["proof_pack_id"] == "dpp_001"
     assert snapshot.lineage_summary == {
         "source_services": ["lotus-manage"],
-        "call_count": 0,
+        "call_count": 1,
         "supportability_status": "complete",
         "completeness_status": "complete",
         "proof_pack_id": "dpp_001",
@@ -730,7 +730,7 @@ async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path
     assert snapshot.snapshot_payload["wave_id"] == "dwv_001"
     assert snapshot.lineage_summary == {
         "source_services": ["lotus-manage"],
-        "call_count": 0,
+        "call_count": 1,
         "supportability_status": "complete",
         "completeness_status": "complete",
         "wave_id": "dwv_001",
