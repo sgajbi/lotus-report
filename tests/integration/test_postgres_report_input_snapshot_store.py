@@ -11,6 +11,11 @@ import pytest
 from app.config import settings
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
+from app.reporting_lineage.capture_service import (
+    PortfolioReviewInputCapture,
+    PortfolioReviewSnapshotCaptureService,
+    _RecordedUpstreamCall,
+)
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportUpstreamCallCreateRequest,
@@ -206,6 +211,89 @@ def test_postgres_report_input_snapshot_store_rolls_back_capture_before_restart(
     )
     assert snapshot.report_job_id == report_job_id
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgres_capture_service_restores_lineage_after_worker_restart() -> None:
+    database_url = _database_url()
+    unique_suffix = uuid4().hex
+    ledger = own_postgres_adapter(PostgresReportJobLedger(database_url))
+    store = _store()
+    job = ledger.create_portfolio_review_job(
+        request=PortfolioReviewJobRequest(
+            portfolio_scope={"portfolio_ids": [f"PB_SG_GLOBAL_BAL_001_{unique_suffix}"]},
+            as_of_date="2026-04-22",
+            requested_output_formats=["json"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW"]},
+        ),
+        caller_context=ReportCallerContext(
+            triggered_by="advisor-123",
+            caller_application="lotus-gateway",
+            tenant_id="tenant-sg",
+            region="APAC",
+            correlation_id=f"corr-restart-{unique_suffix}",
+            trace_id=f"trace-restart-{unique_suffix}",
+        ),
+        idempotency_key=f"capture-restart-{unique_suffix}",
+    )
+    collecting = ledger.mark_collecting_data(
+        job_id=job.job_id,
+        actor=job.triggered_by,
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+    snapshot_payload = {
+        "report_id": f"portfolio-review:{unique_suffix}",
+        "portfolio_id": job.portfolio_scope["portfolio_ids"][0],
+        "as_of_date": job.as_of_date.isoformat(),
+        "contract_version": "v1",
+    }
+    snapshot = store.create_snapshot(
+        _request(
+            unique_suffix,
+            report_job_id=job.job_id,
+            snapshot_payload=snapshot_payload,
+            lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+    recorded_call = _RecordedUpstreamCall(
+        service_name="lotus-core",
+        endpoint="/reporting/portfolio-summary/query",
+        method="POST",
+        contract_version="v1",
+        request_payload={"portfolio_id": snapshot_payload["portfolio_id"]},
+        response_payload={"contract_version": "v1"},
+        response_ref=None,
+        status_code=200,
+        latency_ms=5,
+        supportability_status="complete",
+        completeness_status="complete",
+        failure_category="none",
+        failure_message=None,
+        captured_at=datetime.now(UTC),
+        correlation_id=job.correlation_id,
+        trace_id=job.trace_id,
+    )
+
+    class _RestartProvider:
+        async def collect_for_job(self, _job) -> PortfolioReviewInputCapture:
+            return PortfolioReviewInputCapture(
+                snapshot_payload=snapshot_payload,
+                upstream_calls=[recorded_call],
+            )
+
+    resumed = await PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_RestartProvider(),
+    ).capture_for_job(collecting)
+
+    assert resumed.status == "data_ready"
+    assert store.get_snapshot_by_job(job.job_id).snapshot_id == snapshot.snapshot_id
+    assert len(store.list_upstream_calls(snapshot.snapshot_id)) == 1
 
 
 def test_postgres_report_input_snapshot_store_rejects_conflicting_lineage() -> None:
