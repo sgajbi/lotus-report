@@ -182,19 +182,21 @@ Key code areas:
   aggregation read-model composition and live/static aggregation flows
 - `src/app/reporting_jobs/`
   durable report request/job/status-event and work-item ledgers, idempotency, leased asynchronous
-  execution with bounded retry, render metadata, archive metadata, rerender attempt state, and
-  bounded cancellation
+  execution with one-item claim-before-execute semantics, bounded explicit-failure and expired-lease
+  retry, coherent source-job terminalization, render metadata, archive metadata, rerender attempt
+  state, and bounded cancellation
 - `src/app/reporting_render/`
   governed render-package assembly, lotus-render orchestration, post-render archive handoff, and
   archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
 - `src/app/reporting_jobs/process.py`
-  daemonized `lotus-report-job-worker` process that claims bounded work-item leases and resumes the
-  source-capture, render, and archive pipeline after process interruption
+  daemonized `lotus-report-job-worker` process that claims each work-item lease immediately before
+  execution and resumes the source-capture, render, and archive pipeline after process interruption
 - `src/app/reporting_metrics.py`
   RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
   archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
-  worker, scheduler, and source-backed operations attention scan behavior, with reserved dedicated
-  broader replay posture and high-cardinality label rejection
+  worker, scheduler, report-work lease recovery/exhaustion/conflict, and source-backed operations
+  attention scan behavior, with reserved dedicated broader replay posture and high-cardinality
+  label rejection
 - `src/app/report_batch_orchestrator/`
   RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
   batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
