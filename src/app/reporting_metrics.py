@@ -65,6 +65,7 @@ IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
         "archive_handoff",
         "batch_scheduler_pass",
         "batch_worker_run",
+        "report_job_worker_run",
         "report_job_submission",
         "regenerate_from_upstream",
         "render_handoff",
@@ -190,6 +191,16 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "correlation identifiers."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_job_runtime_last_items",
+        metric_type="gauge",
+        labels=(METRIC_ITEM_STATE_LABEL,),
+        implemented=True,
+        description=(
+            "Stores item counts from the latest bounded report-job worker pass without job, "
+            "portfolio, tenant, idempotency, correlation, or trace identifiers."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -231,6 +242,11 @@ _EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = Counter(
         METRIC_SUPPORTABILITY_REASON_LABEL,
         METRIC_FRESHNESS_BUCKET_LABEL,
     ],
+)
+_REPORT_JOB_RUNTIME_LAST_ITEMS = Gauge(
+    "lotus_report_job_runtime_last_items",
+    REPORTING_METRIC_CONTRACTS[8].description,
+    [METRIC_ITEM_STATE_LABEL],
 )
 
 
@@ -292,6 +308,30 @@ def record_batch_worker_metrics(
     _BATCH_RUNTIME_LAST_ITEMS.labels(item_state="leased").set(max(0, leased_count))
     _BATCH_RUNTIME_LAST_ITEMS.labels(item_state="dispatched").set(max(0, dispatched_count))
     _BATCH_RUNTIME_LAST_ITEMS.labels(item_state="executed").set(max(0, executed_count))
+
+
+def record_report_job_worker_metrics(
+    *,
+    claimed_count: int,
+    completed_count: int,
+    retry_pending_count: int,
+    failed_count: int,
+    status: str = "completed",
+    failure_category: str | None = None,
+    duration_seconds: float | None = None,
+) -> None:
+    record_report_operation(
+        operation="report_job_worker_run",
+        status=status,
+        failure_category=failure_category,
+        duration_seconds=duration_seconds,
+    )
+    _REPORT_JOB_RUNTIME_LAST_ITEMS.labels(item_state="claimed").set(max(0, claimed_count))
+    _REPORT_JOB_RUNTIME_LAST_ITEMS.labels(item_state="completed").set(max(0, completed_count))
+    _REPORT_JOB_RUNTIME_LAST_ITEMS.labels(item_state="retry_pending").set(
+        max(0, retry_pending_count)
+    )
+    _REPORT_JOB_RUNTIME_LAST_ITEMS.labels(item_state="failed").set(max(0, failed_count))
 
 
 def record_batch_scheduler_metrics(

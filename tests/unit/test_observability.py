@@ -38,6 +38,7 @@ from app.reporting_metrics import (
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
     record_evidence_surface_supportability,
+    record_report_job_worker_metrics,
     record_report_operation,
     validate_reporting_metric_contracts,
 )
@@ -296,6 +297,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     assert "lotus_report_batch_pressure_last_counts" in implemented_names
     assert "lotus_report_attention_events_last_count" in implemented_names
     assert "lotus_report_evidence_surface_supportability_total" in implemented_names
+    assert "lotus_report_job_runtime_last_items" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {
         "report_job_submission",
@@ -306,6 +308,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         "regenerate_from_upstream",
         "replay_command",
         "stuck_state_scan",
+        "report_job_worker_run",
     } <= (IMPLEMENTED_REPORTING_OPERATIONS)
     assert {"rerender_command", "regenerate_command"} <= RESERVED_REPORTING_OPERATIONS
     assert "stuck_state_scan" not in RESERVED_REPORTING_OPERATIONS
@@ -443,6 +446,24 @@ def test_record_batch_worker_metrics_clamps_counts_and_classifies_skips():
         dispatched_count=0,
         executed_count=0,
         skipped_reason="max_active_items_reached",
+    )
+
+
+def test_record_report_job_worker_metrics_clamps_counts_and_records_failures():
+    record_report_job_worker_metrics(
+        claimed_count=-1,
+        completed_count=-2,
+        retry_pending_count=-3,
+        failed_count=-4,
+        duration_seconds=0.01,
+    )
+    record_report_job_worker_metrics(
+        claimed_count=2,
+        completed_count=1,
+        retry_pending_count=1,
+        failed_count=0,
+        status="failed",
+        failure_category="report_job_worker_runtime_error",
     )
 
 
