@@ -152,14 +152,17 @@ def test_report_input_snapshot_store_restores_missing_lineage_for_matching_snaps
     tmp_path,
 ) -> None:
     store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
-    existing = store.create_snapshot(_request())
+    existing = store.create_snapshot(
+        _request(lineage_summary={"source_services": ["lotus-core"], "call_count": 0})
+    )
 
     snapshot, calls = store.create_capture(
-        snapshot=_request(),
+        snapshot=_request(lineage_summary={"source_services": ["lotus-core"], "call_count": 1}),
         upstream_calls=[_upstream_call_request()],
     )
 
-    assert snapshot == existing
+    assert snapshot.snapshot_id == existing.snapshot_id
+    assert snapshot.lineage_summary["call_count"] == 1
     assert len(calls) == 1
 
 

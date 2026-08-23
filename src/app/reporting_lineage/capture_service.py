@@ -22,6 +22,7 @@ from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
     ReportUpstreamCallCreateRequest,
+    ReportUpstreamCallRecord,
 )
 from app.reporting_lineage.store import canonical_json_dumps
 from app.reporting_metrics import record_report_operation
@@ -74,6 +75,15 @@ class ReportInputSnapshotStorePort(Protocol):
         snapshot_id: str,
         calls: list[ReportUpstreamCallCreateRequest],
     ) -> list[Any]: ...
+
+    def create_capture(
+        self,
+        *,
+        snapshot: ReportInputSnapshotCreateRequest,
+        upstream_calls: list[ReportUpstreamCallCreateRequest],
+    ) -> tuple[ReportInputSnapshotRecord, list[ReportUpstreamCallRecord]]: ...
+
+    def list_upstream_calls(self, snapshot_id: str) -> list[ReportUpstreamCallRecord]: ...
 
 
 @dataclass(slots=True)
@@ -658,10 +668,9 @@ class PortfolioReviewSnapshotCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
-        snapshot = self._snapshot_store.create_snapshot(snapshot_request)
-        self._snapshot_store.create_upstream_calls(
-            snapshot_id=snapshot.snapshot_id,
-            calls=[call.to_create_request() for call in upstream_calls],
+        self._snapshot_store.create_capture(
+            snapshot=snapshot_request,
+            upstream_calls=[call.to_create_request() for call in upstream_calls],
         )
 
         if failure_message:
@@ -760,40 +769,38 @@ class PortfolioReviewSnapshotCaptureService:
         source_contract_version = _proof_pack_source_contract_version(source_system)
         source_method = _proof_pack_source_method(source_system)
 
-        snapshot = self._snapshot_store.create_snapshot(
-            ReportInputSnapshotCreateRequest(
-                report_job_id=job.job_id,
-                report_type=job.report_type,
-                report_data_contract_version="dpm_proof_pack_report_input.v1",
-                portfolio_scope=job.portfolio_scope,
-                as_of_date=job.as_of_date,
-                snapshot_payload=proof_pack_report_input,
-                snapshot_storage_ref=None,
-                supportability_status="complete",
-                completeness_status="complete",
-                lineage_summary={
-                    "source_services": [source_system],
-                    "call_count": 0,
-                    "supportability_status": "complete",
-                    "completeness_status": "complete",
-                    "proof_pack_id": proof_pack_report_input.get("proof_pack_id"),
-                    "source_type": source_type,
-                    "source_hash": proof_pack_report_input.get("content_hash"),
-                    **_portfolio_memory_lineage_summary(proof_pack_report_input),
-                },
-                captured_at=_utc_now(),
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
+        snapshot_request = ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="dpm_proof_pack_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=proof_pack_report_input,
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={
+                "source_services": [source_system],
+                "call_count": 1,
+                "supportability_status": "complete",
+                "completeness_status": "complete",
+                "proof_pack_id": proof_pack_report_input.get("proof_pack_id"),
+                "source_type": source_type,
+                "source_hash": proof_pack_report_input.get("content_hash"),
+                **_portfolio_memory_lineage_summary(proof_pack_report_input),
+            },
+            captured_at=_utc_now(),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
         )
         source_hash = _required_sha256(
             proof_pack_report_input,
             "content_hash",
             "proof_pack_report_input",
         )
-        self._snapshot_store.create_upstream_calls(
-            snapshot_id=snapshot.snapshot_id,
-            calls=[
+        self._snapshot_store.create_capture(
+            snapshot=snapshot_request,
+            upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name=source_system,
                     endpoint=source_endpoint,
@@ -884,39 +891,37 @@ class PortfolioReviewSnapshotCaptureService:
             )
             return failed_job
 
-        snapshot = self._snapshot_store.create_snapshot(
-            ReportInputSnapshotCreateRequest(
-                report_job_id=job.job_id,
-                report_type=job.report_type,
-                report_data_contract_version="dpm_outcome_report_input.v1",
-                portfolio_scope=job.portfolio_scope,
-                as_of_date=job.as_of_date,
-                snapshot_payload=outcome_report_input,
-                snapshot_storage_ref=None,
-                supportability_status="complete",
-                completeness_status="complete",
-                lineage_summary={
-                    "source_services": ["lotus-manage"],
-                    "call_count": 0,
-                    "supportability_status": "complete",
-                    "completeness_status": "complete",
-                    "outcome_review_id": outcome_report_input.get("outcome_review_id"),
-                    "source_hash": outcome_report_input.get("content_hash"),
-                    **_portfolio_memory_lineage_summary(outcome_report_input),
-                },
-                captured_at=_utc_now(),
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
+        snapshot_request = ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="dpm_outcome_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=outcome_report_input,
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={
+                "source_services": ["lotus-manage"],
+                "call_count": 1,
+                "supportability_status": "complete",
+                "completeness_status": "complete",
+                "outcome_review_id": outcome_report_input.get("outcome_review_id"),
+                "source_hash": outcome_report_input.get("content_hash"),
+                **_portfolio_memory_lineage_summary(outcome_report_input),
+            },
+            captured_at=_utc_now(),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
         )
         source_hash = _required_sha256(
             outcome_report_input,
             "content_hash",
             "outcome_report_input",
         )
-        self._snapshot_store.create_upstream_calls(
-            snapshot_id=snapshot.snapshot_id,
-            calls=[
+        self._snapshot_store.create_capture(
+            snapshot=snapshot_request,
+            upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name="lotus-manage",
                     endpoint="/api/v1/rebalance/outcome-reviews/{outcome_review_id}/report-input",
@@ -1011,35 +1016,33 @@ class PortfolioReviewSnapshotCaptureService:
             )
             return failed_job
 
-        snapshot = self._snapshot_store.create_snapshot(
-            ReportInputSnapshotCreateRequest(
-                report_job_id=job.job_id,
-                report_type=job.report_type,
-                report_data_contract_version="dpm_wave_report_input.v1",
-                portfolio_scope=job.portfolio_scope,
-                as_of_date=job.as_of_date,
-                snapshot_payload=wave_report_input,
-                snapshot_storage_ref=None,
-                supportability_status="complete",
-                completeness_status="complete",
-                lineage_summary={
-                    "source_services": ["lotus-manage"],
-                    "call_count": 0,
-                    "supportability_status": "complete",
-                    "completeness_status": "complete",
-                    "wave_id": wave_report_input.get("wave_id"),
-                    "source_hash": wave_report_input.get("content_hash"),
-                    **_portfolio_memory_lineage_summary(wave_report_input),
-                },
-                captured_at=_utc_now(),
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
+        snapshot_request = ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="dpm_wave_report_input.v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=wave_report_input,
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={
+                "source_services": ["lotus-manage"],
+                "call_count": 1,
+                "supportability_status": "complete",
+                "completeness_status": "complete",
+                "wave_id": wave_report_input.get("wave_id"),
+                "source_hash": wave_report_input.get("content_hash"),
+                **_portfolio_memory_lineage_summary(wave_report_input),
+            },
+            captured_at=_utc_now(),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
         )
         source_hash = _required_sha256(wave_report_input, "content_hash", "wave_report_input")
-        self._snapshot_store.create_upstream_calls(
-            snapshot_id=snapshot.snapshot_id,
-            calls=[
+        self._snapshot_store.create_capture(
+            snapshot=snapshot_request,
+            upstream_calls=[
                 ReportUpstreamCallCreateRequest(
                     service_name="lotus-manage",
                     endpoint="/api/v1/rebalance/waves/{wave_id}/report-input",
