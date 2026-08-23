@@ -46,7 +46,12 @@ def test_submission_atomically_creates_one_idempotent_work_item(tmp_path):
     assert work_item.attempt_count == 0
 
 
-def test_claim_complete_requires_owned_lease(tmp_path):
+def test_claim_complete_requires_owned_lease(tmp_path, monkeypatch):
+    lease_events = []
+    monkeypatch.setattr(
+        "app.reporting_jobs.ledger.record_report_job_work_lease_event",
+        lambda **event: lease_events.append(event),
+    )
     ledger = ReportJobLedger(tmp_path / "report.sqlite3")
     job = _submit(ledger)
     now = datetime.now(UTC) + timedelta(seconds=1)
@@ -62,6 +67,7 @@ def test_claim_complete_requires_owned_lease(tmp_path):
             lease_token="wrong-token",
             now=now,
         )
+    assert {event["outcome"] for event in lease_events} >= {"stale_conflict"}
 
     completed = ledger.complete_work_item(
         work_item_id=claimed[0].work_item_id,
@@ -121,7 +127,12 @@ def test_failure_retries_with_backoff_then_becomes_terminal(tmp_path):
     ]
 
 
-def test_expired_lease_is_recovered_and_reclaimed(tmp_path):
+def test_expired_lease_is_recovered_and_reclaimed(tmp_path, monkeypatch):
+    lease_events = []
+    monkeypatch.setattr(
+        "app.reporting_jobs.ledger.record_report_job_work_lease_event",
+        lambda **event: lease_events.append(event),
+    )
     ledger = ReportJobLedger(tmp_path / "report.sqlite3")
     _submit(ledger)
     now = datetime.now(UTC) + timedelta(seconds=1)
@@ -138,9 +149,15 @@ def test_expired_lease_is_recovered_and_reclaimed(tmp_path):
     assert reclaimed.lease_owner == "worker-2"
     assert reclaimed.attempt_count == 2
     assert reclaimed.last_error_category == "expired_work_lease"
+    assert {event["outcome"] for event in lease_events if event["count"] > 0} == {"recovered"}
 
 
-def test_expired_lease_exhaustion_terminalizes_work_and_source_job(tmp_path):
+def test_expired_lease_exhaustion_terminalizes_work_and_source_job(tmp_path, monkeypatch):
+    lease_events = []
+    monkeypatch.setattr(
+        "app.reporting_jobs.ledger.record_report_job_work_lease_event",
+        lambda **event: lease_events.append(event),
+    )
     ledger = ReportJobLedger(tmp_path / "report.sqlite3")
     job = _submit(ledger)
     now = datetime.now(UTC) + timedelta(seconds=1)
@@ -178,6 +195,7 @@ def test_expired_lease_exhaustion_terminalizes_work_and_source_job(tmp_path):
     assert [event.to_status for event in events] == ["accepted", "failed"]
     assert events[-1].correlation_id == "corr-1"
     assert events[-1].trace_id == "trace-1"
+    assert {event["outcome"] for event in lease_events if event["count"] > 0} == {"exhausted"}
 
 
 def test_repeated_expiry_never_claims_beyond_attempt_policy(tmp_path):

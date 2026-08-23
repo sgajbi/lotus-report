@@ -14,6 +14,7 @@ from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
 )
+from app.reporting_jobs.lease_telemetry import record_report_job_work_lease_event
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
@@ -466,7 +467,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         claimed_at = now or utc_now()
         lease_expires_at = claimed_at + timedelta(seconds=lease_seconds)
         with self._connect() as connection:
-            self._recover_expired_work_items(
+            recovered_count, exhausted_count = self._recover_expired_work_items(
                 connection=connection,
                 recovered_at=claimed_at,
                 retry_policy=retry_policy or ReportJobWorkRetryPolicy(),
@@ -506,7 +507,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 ).fetchone()
                 if claimed_row:
                     claimed.append(_work_item_from_row(claimed_row))
-            return claimed
+        record_report_job_work_lease_event(outcome="recovered", count=recovered_count)
+        record_report_job_work_lease_event(outcome="exhausted", count=exhausted_count)
+        return claimed
 
     def complete_work_item(
         self,
@@ -529,6 +532,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 (completed_at, completed_at, work_item_id, lease_token),
             ).fetchone()
             if not row:
+                record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             return _work_item_from_row(row)
 
@@ -554,6 +558,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 (work_item_id, lease_token),
             ).fetchone()
             if not current:
+                record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             attempt_count = int(current["attempt_count"])
             decision = decide_report_job_work_failure(
@@ -598,7 +603,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         connection: Connection[Mapping[str, Any]],
         recovered_at: datetime,
         retry_policy: ReportJobWorkRetryPolicy,
-    ) -> None:
+    ) -> tuple[int, int]:
+        recovered_count = 0
+        exhausted_count = 0
         expired_rows = connection.execute(
             """
             SELECT work_item_id, attempt_count, lease_owner, lease_expires_at
@@ -633,6 +640,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 ),
             )
             if decision.status == "failed":
+                exhausted_count += 1
                 self._terminalize_report_job_from_work(
                     connection=connection,
                     work_item_id=str(expired["work_item_id"]),
@@ -642,6 +650,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         "Report job work lease expired after the final permitted attempt."
                     ),
                 )
+            else:
+                recovered_count += 1
+        return recovered_count, exhausted_count
 
     def _terminalize_report_job_from_work(
         self,

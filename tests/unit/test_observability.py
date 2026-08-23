@@ -38,6 +38,7 @@ from app.reporting_metrics import (
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
     record_evidence_surface_supportability,
+    record_report_job_work_lease_event,
     record_report_job_worker_metrics,
     record_report_operation,
     validate_reporting_metric_contracts,
@@ -298,6 +299,7 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     assert "lotus_report_attention_events_last_count" in implemented_names
     assert "lotus_report_evidence_surface_supportability_total" in implemented_names
     assert "lotus_report_job_runtime_last_items" in implemented_names
+    assert "lotus_report_job_work_lease_events_total" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {
         "report_job_submission",
@@ -465,6 +467,16 @@ def test_record_report_job_worker_metrics_clamps_counts_and_records_failures():
         status="failed",
         failure_category="report_job_worker_runtime_error",
     )
+
+
+def test_report_job_work_lease_metrics_accept_only_bounded_outcomes():
+    record_report_job_work_lease_event(outcome="recovered", count=2)
+    record_report_job_work_lease_event(outcome="exhausted")
+    record_report_job_work_lease_event(outcome="stale_conflict")
+    record_report_job_work_lease_event(outcome="recovered", count=-1)
+
+    with pytest.raises(ValueError, match="unsupported_report_job_work_lease_outcome"):
+        record_report_job_work_lease_event(outcome="rjob_123")
 
 
 def test_record_batch_scheduler_metrics_clamps_counts():

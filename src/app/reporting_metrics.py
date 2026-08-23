@@ -18,6 +18,7 @@ METRIC_ATTENTION_SEVERITY_LABEL = "severity"
 METRIC_SUPPORTABILITY_STATE_LABEL = "state"
 METRIC_SUPPORTABILITY_REASON_LABEL = "reason"
 METRIC_FRESHNESS_BUCKET_LABEL = "freshness_bucket"
+REPORT_JOB_WORK_LEASE_OUTCOMES = frozenset({"recovered", "exhausted", "stale_conflict"})
 
 REPORTING_METRIC_LABELS = frozenset(
     {
@@ -201,6 +202,17 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "portfolio, tenant, idempotency, correlation, or trace identifiers."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_job_work_lease_events_total",
+        metric_type="counter",
+        labels=(METRIC_SCHEDULER_OUTCOME_LABEL,),
+        implemented=True,
+        description=(
+            "Counts recovered, exhausted, and stale-conflict report-work lease outcomes using "
+            "one bounded label without job, worker, portfolio, tenant, lease-token, or trace "
+            "identifiers."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -247,6 +259,11 @@ _REPORT_JOB_RUNTIME_LAST_ITEMS = Gauge(
     "lotus_report_job_runtime_last_items",
     REPORTING_METRIC_CONTRACTS[8].description,
     [METRIC_ITEM_STATE_LABEL],
+)
+_REPORT_JOB_WORK_LEASE_EVENTS_TOTAL = Counter(
+    "lotus_report_job_work_lease_events_total",
+    REPORTING_METRIC_CONTRACTS[9].description,
+    [METRIC_SCHEDULER_OUTCOME_LABEL],
 )
 
 
@@ -332,6 +349,15 @@ def record_report_job_worker_metrics(
         max(0, retry_pending_count)
     )
     _REPORT_JOB_RUNTIME_LAST_ITEMS.labels(item_state="failed").set(max(0, failed_count))
+
+
+def record_report_job_work_lease_event(*, outcome: str, count: int = 1) -> None:
+    if outcome not in REPORT_JOB_WORK_LEASE_OUTCOMES:
+        raise ValueError("unsupported_report_job_work_lease_outcome")
+    bounded_count = max(0, count)
+    if bounded_count == 0:
+        return
+    _REPORT_JOB_WORK_LEASE_EVENTS_TOTAL.labels(outcome=outcome).inc(bounded_count)
 
 
 def record_batch_scheduler_metrics(
