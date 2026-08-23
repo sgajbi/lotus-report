@@ -13,8 +13,9 @@ are implemented and proven.
 
 | Metric | Type | Labels | Source |
 | --- | --- | --- | --- |
-| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, snapshot capture, render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch worker pass, scheduler pass |
+| `lotus_report_operations_total` | counter | `operation`, `status`, `failure_category` | Report job submission, report-job worker pass, snapshot capture, render handoff, archive handoff, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch worker pass, scheduler pass |
 | `lotus_report_operation_duration_seconds` | histogram | `operation`, `status`, `failure_category` | Duration for the same implemented operations |
+| `lotus_report_job_runtime_last_items` | gauge | `item_state` | Latest bounded report-job worker pass counts for leased, succeeded, retry-pending, and failed work items |
 | `lotus_report_batch_runtime_last_items` | gauge | `item_state` | Latest bounded batch-worker pass counts for recovered, leased, dispatched, and executed items |
 | `lotus_report_batch_scheduler_last_schedules` | gauge | `outcome` | Latest bounded scheduler pass counts for attempted, materialized, and skipped schedules |
 | `lotus_report_batch_pressure_last_counts` | gauge | `pressure_state` | Latest bounded durable batch pressure counts |
@@ -52,8 +53,9 @@ First-wave dashboards may reference only implemented metrics:
 
 1. report operation volume and failure rate from `lotus_report_operations_total`,
 2. render/archive latency from `lotus_report_operation_duration_seconds` filtered by operation,
-3. batch worker activity from `lotus_report_batch_runtime_last_items`,
-4. scheduler materialization activity from `lotus_report_batch_scheduler_last_schedules`.
+3. report-job worker activity from `lotus_report_job_runtime_last_items`,
+4. batch worker activity from `lotus_report_batch_runtime_last_items`,
+5. scheduler materialization activity from `lotus_report_batch_scheduler_last_schedules`.
 
 Dashboards may include `operation="rerender_from_snapshot"`,
 `operation="regenerate_from_upstream"`, `operation="replay_command"`, and
@@ -69,6 +71,7 @@ metrics and tests.
 | --- | --- | --- | --- | --- |
 | Report operation failure pressure | `lotus_report_operations_total{status="failed"}` over a 15 minute window | warning | reporting-operations | Inspect `/reports/jobs`, job events, snapshot lineage, render metadata, and archive handoff status |
 | Render/archive latency pressure | `lotus_report_operation_duration_seconds` for `render_handoff` or `archive_handoff` over 5 minutes | warning | reporting-operations | Check `lotus-render` and `lotus-archive` health, logs, and downstream storage posture |
+| Report-job worker inactivity | `lotus_report_job_runtime_last_items{item_state="succeeded"}` unchanged while runnable work items exist | warning | reporting-operations | Inspect report-job worker logs, expired leases, retry posture, and downstream source health |
 | Batch worker inactivity | `lotus_report_batch_runtime_last_items{item_state="executed"}` unchanged while runnable batches exist | warning | reporting-operations | Inspect batch status, worker logs, and back-pressure limits |
 | Scheduler materialization drop | `lotus_report_batch_scheduler_last_schedules{outcome="materialized"}` remains zero while enabled schedules are due | warning | reporting-operations | Inspect schedule configuration, scheduler logs, and portfolio selector source availability |
 | Reporting attention pressure | `lotus_report_attention_events_last_count{severity="warning"}` over 15 minutes | warning | reporting-operations | Inspect `/reports/operations/attention`, report job diagnostics, batch item status, and replay only after retry eligibility is confirmed |

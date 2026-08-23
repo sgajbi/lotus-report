@@ -31,11 +31,12 @@
   `scripts/live/Start-LotusFrontOfficeCanonical.ps1 -CleanCoreState -BuildImages -RunValidation`
   when a change must be proven against the production-shaped local stack.
 - Docker runtime readiness proof
-  `docker compose up -d --build lotus-report lotus-report-batch-worker lotus-report-batch-scheduler`
+  `docker compose up -d --build lotus-report lotus-report-job-worker lotus-report-batch-worker lotus-report-batch-scheduler`
   against both a fresh volume and a preserved supported prior-schema volume, then verify
   `http://report.dev.lotus/health/ready` returns 200 and the PostgreSQL schema includes
-  `report_job`, `report_batch`, `report_input_snapshot`, `report_upstream_call`, and the typed
-  status-event contract. A destructive volume reset is not upgrade evidence.
+  `report_job`, `report_job_work_item`, `report_batch`, `report_input_snapshot`,
+  `report_upstream_call`, and the typed status-event contract. A destructive volume reset is not
+  upgrade evidence.
 
 ## What the gates protect
 
@@ -49,7 +50,8 @@
 
 ## Safe local database lifecycle
 
-Keep the canonical Report API, worker, and scheduler on their normal `lotus_report` database and
+Keep the canonical Report API, report-job worker, batch worker, and scheduler on their normal
+`lotus_report` database and
 run local PR-grade proof through the isolation helper:
 
 ```powershell
