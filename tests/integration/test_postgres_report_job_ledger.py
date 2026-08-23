@@ -166,6 +166,115 @@ def test_postgres_report_submission_persists_and_recovers_durable_work() -> None
     assert completed.status == "completed"
 
 
+def test_postgres_report_work_queue_enforces_lease_ownership_and_terminal_retry() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-terminal-work-{unique_suffix}",
+    )
+
+    assert (
+        ledger.claim_work_items(
+            worker_id="report-worker-idle",
+            limit=0,
+            lease_seconds=30,
+        )
+        == []
+    )
+
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    leased = next(
+        item
+        for item in ledger.claim_work_items(
+            worker_id="report-worker-terminal",
+            limit=25,
+            lease_seconds=30,
+            now=now,
+        )
+        if item.report_job_id == job.job_id
+    )
+    with pytest.raises(
+        InvalidReportJobWorkTransitionError,
+        match="report_job_work_lease_not_owned",
+    ):
+        ledger.fail_work_item(
+            work_item_id=leased.work_item_id,
+            lease_token="wrong-token",
+            error_category="worker_failure",
+            error_summary="foreign worker must not mutate this lease",
+            now=now,
+        )
+
+    terminal = ledger.fail_work_item(
+        work_item_id=leased.work_item_id,
+        lease_token=leased.lease_token or "",
+        error_category="worker_failure_category_that_is_intentionally_long_" * 3,
+        error_summary="  permanent   worker failure  " * 30,
+        retry_policy=ReportJobWorkRetryPolicy(max_attempts=1),
+        now=now,
+    )
+    assert terminal.status == "failed"
+    assert terminal.lease_token is None
+    assert terminal.last_error_category is not None
+    assert len(terminal.last_error_category) == 80
+    assert terminal.last_error_summary is not None
+    assert len(terminal.last_error_summary) <= 240
+    assert "  " not in terminal.last_error_summary
+
+
+def test_postgres_report_job_relationship_is_idempotent_and_queryable_from_both_jobs() -> None:
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    source = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-source-{unique_suffix}",
+    )
+    derived = ledger.create_portfolio_review_job(
+        request=request.model_copy(
+            update={"portfolio_scope": {"portfolio_ids": [f"PB_SG_DERIVED_{unique_suffix}"]}}
+        ),
+        caller_context=caller_context.model_copy(
+            update={
+                "correlation_id": f"corr-pg-derived-{unique_suffix}",
+                "trace_id": f"trace-pg-derived-{unique_suffix}",
+            }
+        ),
+        idempotency_key=f"portfolio-review-pg-derived-{unique_suffix}",
+    )
+
+    relationship = ledger.upsert_job_relationship(
+        source_job=source,
+        derived_job=derived,
+        relationship_type="failed_work_replay",
+        actor="operations-control",
+        reason="Replay after source data recovery.",
+        archive_consequence="new_document_version",
+        previous_archive_document_id="doc_previous",
+        new_archive_document_id="doc_replayed",
+    )
+    updated = ledger.upsert_job_relationship(
+        source_job=source,
+        derived_job=derived,
+        relationship_type="failed_work_replay",
+        actor="operations-supervisor",
+        reason="Replay approved after source reconciliation.",
+        archive_consequence="new_document_version",
+        previous_archive_document_id="doc_previous",
+        new_archive_document_id="doc_replayed",
+    )
+
+    assert updated.relationship_id == relationship.relationship_id
+    assert updated.actor == "operations-supervisor"
+    assert updated.reason == "Replay approved after source reconciliation."
+    assert ledger.list_job_relationships(source.job_id) == [updated]
+    assert ledger.list_job_relationships(derived.job_id) == [updated]
+
+
 def test_postgres_report_job_ledger_marks_collecting_data_data_ready_and_failed() -> None:
     ledger = _ledger()
     unique_suffix = uuid4().hex
