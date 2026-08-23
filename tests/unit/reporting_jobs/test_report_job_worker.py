@@ -153,3 +153,18 @@ async def test_worker_handles_empty_queue_without_side_effects():
 
     assert result.claimed_count == 0
     assert result.outcomes == []
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_unleased_work_before_report_execution():
+    ledger = _Ledger(items=[_work_item(status="pending")])
+    executor = _Executor()
+
+    with pytest.raises(RuntimeError, match="report_job_work_item_missing_lease_token"):
+        await ReportJobWorker(
+            work_ledger=ledger,
+            execution_service=executor,
+        ).run_once(worker_id="worker-1", max_items=5, lease_seconds=60)
+
+    assert ledger.completed == []
+    assert ledger.failed == []
