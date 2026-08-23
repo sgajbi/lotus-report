@@ -5,9 +5,9 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
 from app.reporting_jobs.event_contracts import (
@@ -32,8 +32,9 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
     WaveReportJobRequest,
 )
+from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
 
-ReportJobRequest = (
+ReportJobRequest: TypeAlias = (
     PortfolioReviewJobRequest
     | OutcomeReviewReportJobRequest
     | ProofPackReportJobRequest
@@ -54,6 +55,10 @@ class ReportJobNotFoundError(ValueError):
 
 
 class InvalidReportJobTransitionError(ValueError):
+    pass
+
+
+class InvalidReportJobWorkTransitionError(ValueError):
     pass
 
 
@@ -380,6 +385,33 @@ class ReportJobLedger:
                 ON report_job_relationship(derived_report_job_id, created_at)
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS report_job_work_item (
+                    work_item_id TEXT PRIMARY KEY,
+                    report_job_id TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    attempt_count INTEGER NOT NULL,
+                    available_at TEXT NOT NULL,
+                    lease_owner TEXT,
+                    lease_token TEXT,
+                    lease_acquired_at TEXT,
+                    lease_expires_at TEXT,
+                    last_error_category TEXT,
+                    last_error_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY(report_job_id) REFERENCES report_job(report_job_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_job_work_runnable
+                ON report_job_work_item(status, available_at, created_at)
+                """
+            )
 
     def create_portfolio_review_job(
         self,
@@ -394,6 +426,22 @@ class ReportJobLedger:
             request=request,
             caller_context=caller_context,
             idempotency_key=idempotency_key,
+        )
+
+    def submit_portfolio_review_job(
+        self,
+        *,
+        request: PortfolioReviewJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        return self._create_report_job(
+            report_type="portfolio_review",
+            accepted_message="Portfolio review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+            enqueue=True,
         )
 
     def create_outcome_review_report_job(
@@ -449,6 +497,7 @@ class ReportJobLedger:
         request: ReportJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        enqueue: bool = False,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -479,7 +528,10 @@ class ReportJobLedger:
                         raise IdempotencyConflictError(
                             "idempotency_key_reused_with_different_request"
                         )
-                    return self._load_by_request_id(connection, existing["report_request_id"])
+                    record = self._load_by_request_id(connection, existing["report_request_id"])
+                    if enqueue:
+                        self._ensure_work_item(connection, record=record)
+                    return record
 
                 now = utc_now()
                 request_id = f"rrq_{uuid4().hex}"
@@ -564,7 +616,188 @@ class ReportJobLedger:
                     trace_id=caller_context.trace_id,
                     created_at=now,
                 )
-                return self._load_by_request_id(connection, request_id)
+                record = self._load_by_request_id(connection, request_id)
+                if enqueue:
+                    self._ensure_work_item(connection, record=record)
+                return record
+
+    def _ensure_work_item(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        record: ReportJobLedgerRecord,
+    ) -> None:
+        if record.status in {"archived", "completed_with_warnings", "failed", "cancelled"}:
+            return
+        now_text = _dt_to_text(utc_now())
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO report_job_work_item (
+                work_item_id, report_job_id, status, attempt_count, available_at,
+                lease_owner, lease_token, lease_acquired_at, lease_expires_at,
+                last_error_category, last_error_summary, created_at, updated_at, completed_at
+            )
+            VALUES (?, ?, 'pending', 0, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, NULL)
+            """,
+            (f"rwork_{uuid4().hex}", record.job_id, now_text, now_text, now_text),
+        )
+
+    def get_work_item_for_job(self, job_id: str) -> ReportJobWorkItem | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM report_job_work_item WHERE report_job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return _work_item_from_row(row) if row else None
+
+    def claim_work_items(
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        lease_seconds: int,
+        now: datetime | None = None,
+    ) -> list[ReportJobWorkItem]:
+        if limit < 1:
+            return []
+        claimed_at = now or utc_now()
+        claimed_at_text = _dt_to_text(claimed_at)
+        lease_expires_at_text = _dt_to_text(claimed_at + timedelta(seconds=lease_seconds))
+        with self._lock:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    UPDATE report_job_work_item
+                    SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
+                        lease_acquired_at = NULL, lease_expires_at = NULL,
+                        available_at = ?, last_error_category = 'expired_work_lease',
+                        last_error_summary = 'Report job work lease expired before completion.',
+                        updated_at = ?
+                    WHERE status = 'leased' AND lease_expires_at < ?
+                    """,
+                    (claimed_at_text, claimed_at_text, claimed_at_text),
+                )
+                rows = connection.execute(
+                    """
+                    SELECT work_item_id
+                    FROM report_job_work_item
+                    WHERE status IN ('pending', 'retry_pending') AND available_at <= ?
+                    ORDER BY available_at ASC, created_at ASC, work_item_id ASC
+                    LIMIT ?
+                    """,
+                    (claimed_at_text, limit),
+                ).fetchall()
+                claimed: list[ReportJobWorkItem] = []
+                for row in rows:
+                    lease_token = f"rlease_{uuid4().hex}"
+                    connection.execute(
+                        """
+                        UPDATE report_job_work_item
+                        SET status = 'leased', attempt_count = attempt_count + 1,
+                            lease_owner = ?, lease_token = ?, lease_acquired_at = ?,
+                            lease_expires_at = ?, updated_at = ?
+                        WHERE work_item_id = ?
+                          AND status IN ('pending', 'retry_pending')
+                        """,
+                        (
+                            worker_id,
+                            lease_token,
+                            claimed_at_text,
+                            lease_expires_at_text,
+                            claimed_at_text,
+                            row["work_item_id"],
+                        ),
+                    )
+                    claimed_row = connection.execute(
+                        "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
+                        (row["work_item_id"],),
+                    ).fetchone()
+                    if claimed_row and claimed_row["lease_token"] == lease_token:
+                        claimed.append(_work_item_from_row(claimed_row))
+                return claimed
+
+    def complete_work_item(
+        self,
+        *,
+        work_item_id: str,
+        lease_token: str,
+        now: datetime | None = None,
+    ) -> ReportJobWorkItem:
+        completed_at_text = _dt_to_text(now or utc_now())
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE report_job_work_item
+                SET status = 'completed', lease_owner = NULL, lease_token = NULL,
+                    lease_acquired_at = NULL, lease_expires_at = NULL,
+                    updated_at = ?, completed_at = ?
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
+                """,
+                (completed_at_text, completed_at_text, work_item_id, lease_token),
+            )
+            if cursor.rowcount != 1:
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
+            row = connection.execute(
+                "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
+                (work_item_id,),
+            ).fetchone()
+            if not row:
+                raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+            return _work_item_from_row(row)
+
+    def fail_work_item(
+        self,
+        *,
+        work_item_id: str,
+        lease_token: str,
+        error_category: str,
+        error_summary: str,
+        retry_policy: ReportJobWorkRetryPolicy | None = None,
+        now: datetime | None = None,
+    ) -> ReportJobWorkItem:
+        policy = retry_policy or ReportJobWorkRetryPolicy()
+        failed_at = now or utc_now()
+        with self._connect() as connection:
+            current = connection.execute(
+                """
+                SELECT attempt_count FROM report_job_work_item
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
+                """,
+                (work_item_id, lease_token),
+            ).fetchone()
+            if not current:
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
+            attempt_count = int(current["attempt_count"])
+            terminal = attempt_count >= policy.max_attempts
+            next_status = "failed" if terminal else "retry_pending"
+            available_at = failed_at + timedelta(
+                seconds=policy.retry_delay_seconds(attempt_count=attempt_count)
+            )
+            connection.execute(
+                """
+                UPDATE report_job_work_item
+                SET status = ?, lease_owner = NULL, lease_token = NULL,
+                    lease_acquired_at = NULL, lease_expires_at = NULL,
+                    available_at = ?, last_error_category = ?, last_error_summary = ?,
+                    updated_at = ?
+                WHERE work_item_id = ?
+                """,
+                (
+                    next_status,
+                    _dt_to_text(available_at),
+                    error_category[:80],
+                    " ".join(error_summary.split())[:240],
+                    _dt_to_text(failed_at),
+                    work_item_id,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
+                (work_item_id,),
+            ).fetchone()
+            if not row:
+                raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+            return _work_item_from_row(row)
 
     def get_job(self, job_id: str) -> ReportJobLedgerRecord:
         with self._connect() as connection:
@@ -1684,6 +1917,25 @@ def _dt_from_text(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _work_item_from_row(row: sqlite3.Row) -> ReportJobWorkItem:
+    return ReportJobWorkItem(
+        work_item_id=row["work_item_id"],
+        report_job_id=row["report_job_id"],
+        status=row["status"],
+        attempt_count=int(row["attempt_count"]),
+        available_at=_dt_from_text(row["available_at"]) or utc_now(),
+        lease_owner=row["lease_owner"],
+        lease_token=row["lease_token"],
+        lease_acquired_at=_dt_from_text(row["lease_acquired_at"]),
+        lease_expires_at=_dt_from_text(row["lease_expires_at"]),
+        last_error_category=row["last_error_category"],
+        last_error_summary=row["last_error_summary"],
+        created_at=_dt_from_text(row["created_at"]) or utc_now(),
+        updated_at=_dt_from_text(row["updated_at"]) or utc_now(),
+        completed_at=_dt_from_text(row["completed_at"]),
+    )
 
 
 def _record_from_row(row: sqlite3.Row) -> ReportJobLedgerRecord:
