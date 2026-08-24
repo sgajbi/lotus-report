@@ -282,7 +282,10 @@ Primary areas:
     batch status, batch control, `run-once`, schedule list, and schedule `run-due` APIs expose the
     materialization/status/control/single-batch-run/config-backed-scheduler subset while keeping
     full product runtime support disabled until later scheduler-management and certification slices
-    are implemented and proven.
+    are implemented and proven. Batch and batch-item status reads compare the persisted batch
+    tenant with required caller context and return the existing not-found contract before linked
+    report-job or archive status lookup when the scopes differ; this is defense in depth for the
+    internal operator API, not production identity or entitlement certification.
 16. `src/app/reporting_persistence/`
     shared forward-only PostgreSQL migration execution, supported legacy-schema classification,
     stable migration failure vocabulary, and the single internal schema-lifecycle owner consumed
