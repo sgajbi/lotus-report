@@ -51,3 +51,22 @@ def test_supported_features_do_not_claim_batch_runtime_support() -> None:
     assert "`lotus-report.reporting.batch_scheduler_admin_api.v1`" in implementation_backed
     assert "`lotus-report.reporting.batch_scheduler_process.v1`" in implementation_backed
     assert "worker runtime" not in implementation_backed.lower()
+
+
+def test_batch_archive_document_handoff_is_documented_as_source_owned_and_fail_closed() -> None:
+    supported_features = (ROOT / "docs/supported-features.md").read_text(encoding="utf-8")
+    source_map = (ROOT / "docs/standards/batch-orchestration-source-map.md").read_text(
+        encoding="utf-8"
+    )
+    api_surface = (ROOT / "wiki/API-Surface.md").read_text(encoding="utf-8")
+    operations = (ROOT / "wiki/Operations-Runbook.md").read_text(encoding="utf-8")
+    context = (ROOT / "REPOSITORY-ENGINEERING-CONTEXT.md").read_text(encoding="utf-8")
+
+    for text in (supported_features, source_map, api_surface, operations, context):
+        assert "archive_document_id" in text or "archive document id" in text
+        assert "archived" in text
+
+    assert "never inferred by batch status" in source_map
+    assert "never derive a document id" in operations
+    assert "corrections and replacements" in operations
+    assert "source-owned archive document id only after" in context
