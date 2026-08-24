@@ -382,6 +382,12 @@ curl "http://127.0.0.1:8300/reports/batches/rbatch_example" \
   --config report-operator-headers.curl
 ```
 
+Batch and batch-item status reads are scoped to the tenant in the required caller context. An
+unknown batch and a batch owned by another tenant both return the same product-safe
+`report_batch_not_found` response before Report looks up linked job or archive status. This is an
+internal defense-in-depth boundary; it does not claim production identity or entitlement
+certification.
+
 Internal batch control:
 
 ```bash
