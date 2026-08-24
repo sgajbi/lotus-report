@@ -188,8 +188,16 @@ Current implemented semantics:
 - batch creation is idempotent through `Idempotency-Key`
 - explicit portfolio lists and selected subsets are supported when source-backed eligible
   candidates are provided
-- batch status returns product-safe item summaries, lifecycle timestamps, status counts,
-  correlation id, and trace id
+- batch and item status return product-safe summaries, lifecycle timestamps, status counts,
+  correlation id, trace id, the linked Report job state, and the source-owned archive document id
+  only after that exact job reaches `archived`
+- an `archive_document_id` of null means the output is not openable from batch status: the item may
+  be unlinked, rendering or archiving may still be in progress, the job may have failed or been
+  cancelled, or a legacy/inconsistent job link may be unresolved; use `report_job_status` to
+  distinguish those cases and never derive a document id from batch, item, portfolio, or job ids
+- replay relinks the item to the replay-scoped report job, so later status follows only that job;
+  corrections and replacements do not silently replace the batch reference and must be resolved
+  through the governed Archive metadata and report-job diagnostics boundaries
 - pause/resume/cancel/retry/recovery controls operate on the durable batch ledger and preserve
   already-created report jobs
 - internal dispatch can lease batch items, create or reuse one report job per item, and apply
