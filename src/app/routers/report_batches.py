@@ -8,6 +8,7 @@ from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
 )
 from app.report_batch_orchestrator.models import (
+    BATCH_ARCHIVED_STATUS_RESPONSE_EXAMPLE,
     BATCH_CONTROL_RESPONSE_EXAMPLE,
     BATCH_CREATE_REQUEST_EXAMPLE,
     BATCH_HANDLE_RESPONSE_EXAMPLE,
@@ -58,12 +59,19 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_scheduler,
     get_report_batch_worker,
 )
+from app.report_batch_orchestrator.status_projection import (
+    ReportJobArchiveStatusLookup,
+    build_batch_item_status,
+    build_batch_status,
+    load_report_job_archive_statuses,
+)
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
 )
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
+from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_metrics import (
     record_batch_pressure_metrics,
     record_batch_scheduler_metrics,
@@ -241,53 +249,6 @@ def _record_to_handle(record: ReportBatchRecord) -> BatchHandleResponse:
         status_url=_status_url(record.batch_id),
         idempotency_key=record.idempotency_key,
         item_count=record.item_count,
-    )
-
-
-def _record_item_to_status(item: Any) -> BatchItemStatusResponse:
-    return BatchItemStatusResponse(
-        batch_item_id=item.batch_item_id,
-        item_position=item.item_position,
-        portfolio_id=item.portfolio_id,
-        status=item.status,
-        report_job_id=item.report_job_id,
-        attempt_count=item.attempt_count,
-        retry_eligible=item.retry_eligible,
-        next_retry_at=item.next_retry_at,
-        last_error_category=item.last_error_category,
-        last_error_summary=item.last_error_summary,
-        created_at=item.created_at,
-        started_at=item.started_at,
-        completed_at=item.completed_at,
-        cancelled_at=item.cancelled_at,
-    )
-
-
-def _record_to_status(record: ReportBatchRecord) -> BatchStatusResponse:
-    status_counts: dict[str, int] = {}
-    for item in record.items:
-        status_counts[item.status] = status_counts.get(item.status, 0) + 1
-    return BatchStatusResponse(
-        batch_id=record.batch_id,
-        selector_mode=record.selector_mode,
-        tenant_id=record.tenant_id,
-        region=record.region,
-        materialized_portfolio_ids=record.materialized_portfolio_ids,
-        as_of_date=record.as_of_date,
-        requested_output_formats=record.requested_output_formats,
-        reporting_currency=record.reporting_currency,
-        status=record.status,
-        item_count=record.item_count,
-        status_counts=status_counts,
-        items=[_record_item_to_status(item) for item in record.items],
-        created_at=record.created_at,
-        updated_at=record.updated_at,
-        started_at=record.started_at,
-        completed_at=record.completed_at,
-        cancelled_at=record.cancelled_at,
-        failed_at=record.failed_at,
-        correlation_id=record.correlation_id,
-        trace_id=record.trace_id,
     )
 
 
@@ -629,7 +590,11 @@ async def create_report_batch(
                             "batch_status": {
                                 "summary": "Report batch status",
                                 "value": BATCH_STATUS_RESPONSE_EXAMPLE,
-                            }
+                            },
+                            "archived_document_available": {
+                                "summary": "Archived report document is available",
+                                "value": BATCH_ARCHIVED_STATUS_RESPONSE_EXAMPLE,
+                            },
                         },
                     }
                 }
@@ -650,12 +615,18 @@ async def get_report_batch_status(
         Path(description="Opaque durable report batch identifier.", examples=["rbch_example"]),
     ],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
+    report_job_lookup: ReportJobArchiveStatusLookup = Depends(get_report_job_ledger),
     _caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchStatusResponse:
     try:
-        return _record_to_status(ledger.get_batch(batch_id))
+        record = ledger.get_batch(batch_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
+    report_jobs_by_id = load_report_job_archive_statuses(
+        record.items,
+        report_job_lookup=report_job_lookup,
+    )
+    return build_batch_status(record, report_jobs_by_id=report_jobs_by_id)
 
 
 @router.get(
@@ -701,14 +672,21 @@ async def get_report_batch_item_status(
         Path(description="Opaque durable report batch item identifier.", examples=["rbci_example"]),
     ],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
+    report_job_lookup: ReportJobArchiveStatusLookup = Depends(get_report_job_ledger),
     _caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchItemStatusResponse:
     try:
-        return _record_item_to_status(
-            ledger.get_batch_item(batch_id=batch_id, batch_item_id=batch_item_id)
-        )
+        item = ledger.get_batch_item(batch_id=batch_id, batch_item_id=batch_item_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
+    report_jobs_by_id = load_report_job_archive_statuses(
+        [item],
+        report_job_lookup=report_job_lookup,
+    )
+    return build_batch_item_status(
+        item,
+        report_job=(report_jobs_by_id.get(item.report_job_id) if item.report_job_id else None),
+    )
 
 
 @router.post(

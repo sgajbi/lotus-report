@@ -24,6 +24,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ProofPackReportJobRequest,
     ReportCallerContext,
+    ReportJobArchiveStatusRecord,
     ReportJobLedgerRecord,
     ReportJobListFilters,
     ReportJobRelationshipRecord,
@@ -936,6 +937,38 @@ class ReportJobLedger:
             if not row:
                 raise ReportJobNotFoundError("report_job_not_found")
             return self._load_by_request_id(connection, row["report_request_id"])
+
+    def get_archive_statuses_by_job_ids(
+        self,
+        job_ids: list[str],
+    ) -> list[ReportJobArchiveStatusRecord]:
+        unique_job_ids = sorted({job_id for job_id in job_ids if job_id})
+        if not unique_job_ids:
+            return []
+
+        records: list[ReportJobArchiveStatusRecord] = []
+        with self._connect() as connection:
+            for offset in range(0, len(unique_job_ids), 500):
+                job_id_chunk = unique_job_ids[offset : offset + 500]
+                placeholders = ", ".join("?" for _ in job_id_chunk)
+                rows = connection.execute(
+                    f"""
+                    SELECT report_job_id, status, archive_document_id
+                    FROM report_job
+                    WHERE report_job_id IN ({placeholders})
+                    ORDER BY report_job_id ASC
+                    """,
+                    tuple(job_id_chunk),
+                ).fetchall()
+                records.extend(
+                    ReportJobArchiveStatusRecord(
+                        report_job_id=str(row["report_job_id"]),
+                        status=row["status"],
+                        archive_document_id=row["archive_document_id"],
+                    )
+                    for row in rows
+                )
+        return records
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]:
         with self._connect() as connection:

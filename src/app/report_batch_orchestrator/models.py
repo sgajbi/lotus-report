@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
+from app.reporting_jobs.models import ReportJobStatus
 
 BatchStatus = Literal[
     "materialized",
@@ -262,6 +263,8 @@ BATCH_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
             "portfolio_id": "PB_SG_GLOBAL_BAL_001",
             "status": "materialized",
             "report_job_id": None,
+            "report_job_status": None,
+            "archive_document_id": None,
             "attempt_count": 0,
             "retry_eligible": False,
             "next_retry_at": None,
@@ -281,6 +284,25 @@ BATCH_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
     "failed_at": None,
     "correlation_id": "corr-batch-1",
     "trace_id": "trace-batch-1",
+}
+
+BATCH_ARCHIVED_STATUS_RESPONSE_EXAMPLE: dict[str, Any] = {
+    **BATCH_STATUS_RESPONSE_EXAMPLE,
+    "status": "completed",
+    "item_count": 1,
+    "status_counts": {"succeeded": 1},
+    "items": [
+        {
+            **BATCH_STATUS_RESPONSE_EXAMPLE["items"][0],
+            "status": "succeeded",
+            "report_job_id": "rjob_83ca965c50334c40a17d2b8cc94873a5",
+            "report_job_status": "archived",
+            "archive_document_id": "doc_83ca965c50334c40a17d2b8cc94873a5",
+            "started_at": "2026-04-22T09:01:00Z",
+            "completed_at": "2026-04-22T09:04:00Z",
+        }
+    ],
+    "completed_at": "2026-04-22T09:04:00Z",
 }
 
 BATCH_CONTROL_RESPONSE_EXAMPLE: dict[str, Any] = {
@@ -421,6 +443,24 @@ class BatchItemStatusResponse(BaseModel):
         default=None,
         description="Linked report job identifier after dispatch creates or reuses a job.",
         examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    report_job_status: ReportJobStatus | None = Field(
+        default=None,
+        description=(
+            "Source Report lifecycle state for the currently linked report job. Null before "
+            "linking or when a legacy or inconsistent link cannot be resolved."
+        ),
+        examples=["archived"],
+    )
+    archive_document_id: str | None = Field(
+        default=None,
+        description=(
+            "Source-owned lotus-archive document identifier for the currently linked report "
+            "job. Populated only when that job is archived; null while archival is pending, "
+            "for a non-archived terminal job, or when the linked job cannot be resolved. "
+            "Correction and replacement posture remains owned by archive metadata."
+        ),
+        examples=["doc_83ca965c50334c40a17d2b8cc94873a5"],
     )
     attempt_count: int = Field(
         0,
