@@ -124,7 +124,12 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal durable batch materialization from a governed portfolio selector; returns a batch handle
   and status URL
 - `GET /reports/batches/{batch_id}`
-  internal product-safe batch status, item summary, and status counts
+  internal product-safe batch status, item summary, status counts, linked report-job lifecycle,
+  and source-owned archive document identity when the exact linked job is archived
+- `GET /reports/batches/{batch_id}/items/{batch_item_id}`
+  internal item status with the durable `report_job_id`, source `report_job_status`, and optional
+  `archive_document_id`; the document id remains null before archive completion or when the linked
+  job is unavailable
 - `POST /reports/batches/{batch_id}:pause`
   internal batch pause control before pending items are leased
 - `POST /reports/batches/{batch_id}:resume`

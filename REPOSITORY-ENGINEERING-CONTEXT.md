@@ -104,7 +104,10 @@ Current repository posture:
    back-pressure primitives, retry/recovery controls, the internal item execution bridge,
    bounded run-once and runtime-pass primitives, daemonized worker and scheduler processes,
    config-backed scheduler administration APIs, gateway exposure, and Workbench explicit
-   single-portfolio batch operation. Schedule CRUD, Workbench scheduler-management, and
+   single-portfolio batch operation. Batch and item status now compose the linked Report job state
+   and expose its source-owned archive document id only after that exact job is archived; delayed,
+   failed, missing, and inconsistent links fail closed, while correction/replacement resolution
+   remains owned by Archive metadata. Schedule CRUD, Workbench scheduler-management, and
    entitlement-certified public scheduler runtime remain future scope,
 15. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
    propagation, first-wave report metrics, rerender/regenerate controls, and failed-work replay for
