@@ -441,6 +441,61 @@ def test_report_batch_item_status_endpoint_returns_item_and_404s(tmp_path):
         _clear_overrides()
 
 
+def test_report_batch_status_reads_hide_cross_tenant_batches_before_job_lookup(tmp_path):
+    client, batch_ledger = _client(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("cross-tenant-status-source"),
+        ).json()
+        leased_item = batch_ledger.acquire_dispatch_items(
+            batch_id=batch["batch_id"],
+            worker_id="cross-tenant-status-test",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        linked_item = batch_ledger.mark_item_waiting_on_report_job(
+            batch_item_id=leased_item.batch_item_id,
+            lease_token=leased_item.lease_token,
+            report_job_id="rjob_cross_tenant_must_not_be_queried",
+        )
+
+        class _JobLookupMustNotRun:
+            def get_archive_statuses_by_job_ids(self, _job_ids):
+                raise AssertionError("Cross-tenant reads must stop before report-job lookup.")
+
+        app.dependency_overrides[get_report_job_ledger] = lambda: _JobLookupMustNotRun()
+        other_tenant_headers = _headers()
+        other_tenant_headers["X-Tenant-Id"] = "tenant-uk"
+
+        batch_response = client.get(
+            f"/reports/batches/{batch['batch_id']}",
+            headers=other_tenant_headers,
+        )
+        item_response = client.get(
+            f"/reports/batches/{batch['batch_id']}/items/{linked_item.batch_item_id}",
+            headers=other_tenant_headers,
+        )
+
+        expected_not_found = {
+            "detail": {
+                "code": "report_batch_not_found",
+                "message": "Report batch was not found.",
+            }
+        }
+        assert batch_response.status_code == 404
+        assert item_response.status_code == 404
+        assert batch_response.json() == expected_not_found
+        assert item_response.json() == expected_not_found
+        for response_body in (batch_response.text, item_response.text):
+            assert "tenant-sg" not in response_body
+            assert "PB_SG_GLOBAL_BAL_001" not in response_body
+            assert "archive_document_id" not in response_body
+    finally:
+        _clear_overrides()
+
+
 def test_report_batch_status_composes_archived_and_delayed_document_truth(tmp_path):
     client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
     try:

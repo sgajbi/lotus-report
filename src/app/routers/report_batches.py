@@ -464,6 +464,20 @@ def _not_found_error(exc: ValueError) -> HTTPException:
     )
 
 
+def _get_tenant_scoped_batch(
+    *,
+    ledger: ReportBatchLedgerPort,
+    batch_id: str,
+    caller_context: ReportCallerContext,
+) -> ReportBatchRecord:
+    """Load a batch without disclosing whether another tenant owns its identifier."""
+
+    record = ledger.get_batch(batch_id)
+    if record.tenant_id != caller_context.tenant_id:
+        raise ValueError("report_batch_not_found")
+    return record
+
+
 @router.post(
     "",
     response_model=BatchHandleResponse,
@@ -576,9 +590,9 @@ async def create_report_batch(
     response_model=BatchStatusResponse,
     summary="Get report batch status",
     description=(
-        "Returns product-safe status for a durable report batch and its materialized items. Use "
-        "this endpoint when operations need progress, item posture, retry eligibility, or linked "
-        "report-job identifiers for a known batch."
+        "Returns product-safe status for a durable report batch owned by the caller tenant and "
+        "its materialized items. Use this endpoint when operations need progress, item posture, "
+        "retry eligibility, or linked report-job identifiers for a known batch."
     ),
     openapi_extra={
         "responses": {
@@ -605,7 +619,9 @@ async def create_report_batch(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
@@ -616,10 +632,14 @@ async def get_report_batch_status(
     ],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
     report_job_lookup: ReportJobArchiveStatusLookup = Depends(get_report_job_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchStatusResponse:
     try:
-        record = ledger.get_batch(batch_id)
+        record = _get_tenant_scoped_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
     except ValueError as exc:
         raise _not_found_error(exc) from exc
     report_jobs_by_id = load_report_job_archive_statuses(
@@ -634,14 +654,15 @@ async def get_report_batch_status(
     response_model=BatchItemStatusResponse,
     summary="Get report batch item status",
     description=(
-        "Returns product-safe status for a specific item in a durable report batch, including "
-        "execution posture and retry metadata."
+        "Returns product-safe status for a specific item in a durable report batch owned by the "
+        "caller tenant, including execution posture and retry metadata."
     ),
     responses={
         404: {
             "model": ApiErrorResponse,
             "description": (
-                "Returned when the requested report batch or report batch item does not exist."
+                "Returned when the requested report batch does not exist within the caller tenant "
+                "or the report batch item does not exist."
             ),
             "content": {
                 "application/json": {
@@ -673,9 +694,14 @@ async def get_report_batch_item_status(
     ],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
     report_job_lookup: ReportJobArchiveStatusLookup = Depends(get_report_job_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchItemStatusResponse:
     try:
+        _get_tenant_scoped_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         item = ledger.get_batch_item(batch_id=batch_id, batch_item_id=batch_item_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
