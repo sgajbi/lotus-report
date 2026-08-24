@@ -2701,3 +2701,11 @@ class ReportJobLedgerRecord(BaseModel):
     archive_request_id: str | None = None
     archive_document_id: str | None = None
     archive_completed_at: datetime | None = None
+
+
+class ReportJobArchiveStatusRecord(BaseModel):
+    """Bounded source projection used by batch status composition."""
+
+    report_job_id: str
+    status: ReportJobStatus
+    archive_document_id: str | None = None

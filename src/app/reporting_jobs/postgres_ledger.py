@@ -35,6 +35,7 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ProofPackReportJobRequest,
     ReportCallerContext,
+    ReportJobArchiveStatusRecord,
     ReportJobLedgerRecord,
     ReportJobListFilters,
     ReportJobRelationshipRecord,
@@ -722,6 +723,33 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             if not row:
                 raise ReportJobNotFoundError("report_job_not_found")
             return self._load_by_request_id(connection, str(row["report_request_id"]))
+
+    def get_archive_statuses_by_job_ids(
+        self,
+        job_ids: list[str],
+    ) -> list[ReportJobArchiveStatusRecord]:
+        unique_job_ids = sorted({job_id for job_id in job_ids if job_id})
+        if not unique_job_ids:
+            return []
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT report_job_id, status, archive_document_id
+                FROM report_job
+                WHERE report_job_id = ANY(%s)
+                ORDER BY report_job_id ASC
+                """,
+                (unique_job_ids,),
+            ).fetchall()
+        return [
+            ReportJobArchiveStatusRecord(
+                report_job_id=str(row["report_job_id"]),
+                status=row["status"],
+                archive_document_id=row.get("archive_document_id"),
+            )
+            for row in rows
+        ]
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]:
         with self._connect() as connection:
