@@ -203,6 +203,49 @@ def _failed_batch_item_with_report_job(client, batch_ledger, report_ledger):
     return batch_id, failed_item, report_job
 
 
+def _advance_report_job_to_archived(report_ledger, report_job, *, document_id: str):
+    transition_context = {
+        "actor": "advisor-123",
+        "correlation_id": "corr-batch-1",
+        "trace_id": "trace-batch-1",
+    }
+    report_ledger.mark_collecting_data(job_id=report_job.job_id, **transition_context)
+    report_ledger.mark_data_ready(job_id=report_job.job_id, **transition_context)
+    report_ledger.mark_rendering(
+        job_id=report_job.job_id,
+        render_job_id=f"rdr_{report_job.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        **transition_context,
+    )
+    report_ledger.mark_completed(
+        job_id=report_job.job_id,
+        render_job_id=f"rdr_{report_job.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="a" * 64,
+        bounded_determinism_fingerprint="b" * 64,
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=842,
+        **transition_context,
+    )
+    archive_request_id = f"arch_{report_job.job_id}_pdf"
+    report_ledger.mark_archiving(
+        job_id=report_job.job_id,
+        archive_request_id=archive_request_id,
+        **transition_context,
+    )
+    return report_ledger.mark_archived(
+        job_id=report_job.job_id,
+        archive_request_id=archive_request_id,
+        archive_document_id=document_id,
+        **transition_context,
+    )
+
+
 class _WorkerRunSuccess:
     async def run_once(self, **kwargs):
         return BatchWorkerRunResult(
@@ -376,6 +419,9 @@ def test_report_batch_item_status_endpoint_returns_item_and_404s(tmp_path):
         assert item_body["batch_item_id"] == first_item["batch_item_id"]
         assert item_body["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
         assert item_body["status"] == "materialized"
+        assert item_body["report_job_id"] is None
+        assert item_body["report_job_status"] is None
+        assert item_body["archive_document_id"] is None
         assert item_body["retry_eligible"] is False
 
         missing_item_response = client.get(
@@ -391,6 +437,201 @@ def test_report_batch_item_status_endpoint_returns_item_and_404s(tmp_path):
         )
         assert missing_batch_item_response.status_code == 404
         assert missing_batch_item_response.json()["detail"]["code"] == "report_batch_not_found"
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_status_composes_archived_and_delayed_document_truth(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("batch-archive-document-status"),
+        ).json()
+        leased_items = batch_ledger.acquire_dispatch_items(
+            batch_id=batch["batch_id"],
+            worker_id="worker-archive-status-test",
+            lease_seconds=300,
+            limit=2,
+        )
+
+        linked_items = []
+        report_jobs = []
+        for leased in leased_items:
+            report_job = report_ledger.create_portfolio_review_job(
+                request=PortfolioReviewJobRequest(
+                    portfolio_scope={"portfolio_ids": [leased.portfolio_id]},
+                    as_of_date="2026-04-22",
+                    requested_output_formats=["pdf"],
+                    reporting_currency="USD",
+                    options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+                ),
+                caller_context=_caller_context(),
+                idempotency_key=leased.item_idempotency_key,
+            )
+            linked_items.append(
+                batch_ledger.mark_item_waiting_on_report_job(
+                    batch_item_id=leased.batch_item_id,
+                    lease_token=leased.lease_token,
+                    report_job_id=report_job.job_id,
+                )
+            )
+            report_jobs.append(report_job)
+
+        archived_job = _advance_report_job_to_archived(
+            report_ledger,
+            report_jobs[0],
+            document_id="doc_batch_portfolio_001",
+        )
+        batch_ledger.mark_item_succeeded(
+            batch_item_id=linked_items[0].batch_item_id,
+            report_job_id=archived_job.job_id,
+        )
+        report_ledger.mark_collecting_data(
+            job_id=report_jobs[1].job_id,
+            actor="advisor-123",
+            correlation_id="corr-batch-1",
+            trace_id="trace-batch-1",
+        )
+
+        response = client.get(
+            f"/reports/batches/{batch['batch_id']}",
+            headers=_headers(),
+        )
+        assert response.status_code == 200
+        items_by_portfolio = {item["portfolio_id"]: item for item in response.json()["items"]}
+
+        archived_item = items_by_portfolio[leased_items[0].portfolio_id]
+        assert archived_item["status"] == "succeeded"
+        assert archived_item["report_job_status"] == "archived"
+        assert archived_item["archive_document_id"] == "doc_batch_portfolio_001"
+
+        delayed_item = items_by_portfolio[leased_items[1].portfolio_id]
+        assert delayed_item["status"] == "waiting_on_report_job"
+        assert delayed_item["report_job_status"] == "collecting_data"
+        assert delayed_item["archive_document_id"] is None
+
+        item_response = client.get(
+            (f"/reports/batches/{batch['batch_id']}/items/{linked_items[0].batch_item_id}"),
+            headers=_headers(),
+        )
+        assert item_response.status_code == 200
+        assert item_response.json()["archive_document_id"] == "doc_batch_portfolio_001"
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_status_fails_closed_for_missing_linked_report_job(tmp_path):
+    client, batch_ledger, _report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("batch-missing-report-job-status"),
+        ).json()
+        leased = batch_ledger.acquire_dispatch_items(
+            batch_id=batch["batch_id"],
+            worker_id="worker-missing-job-test",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        linked = batch_ledger.mark_item_waiting_on_report_job(
+            batch_item_id=leased.batch_item_id,
+            lease_token=leased.lease_token,
+            report_job_id="rjob_missing_source_record",
+        )
+
+        response = client.get(
+            f"/reports/batches/{batch['batch_id']}/items/{linked.batch_item_id}",
+            headers=_headers(),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["report_job_id"] == "rjob_missing_source_record"
+        assert response.json()["report_job_status"] is None
+        assert response.json()["archive_document_id"] is None
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_status_keeps_correction_resolution_at_archive_boundary(tmp_path):
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("batch-correction-boundary"),
+        ).json()
+        leased = batch_ledger.acquire_dispatch_items(
+            batch_id=batch["batch_id"],
+            worker_id="worker-correction-boundary-test",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        source_job = report_ledger.create_portfolio_review_job(
+            request=PortfolioReviewJobRequest(
+                portfolio_scope={"portfolio_ids": [leased.portfolio_id]},
+                as_of_date="2026-04-22",
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+            ),
+            caller_context=_caller_context(),
+            idempotency_key=leased.item_idempotency_key,
+        )
+        linked = batch_ledger.mark_item_waiting_on_report_job(
+            batch_item_id=leased.batch_item_id,
+            lease_token=leased.lease_token,
+            report_job_id=source_job.job_id,
+        )
+        archived_source = _advance_report_job_to_archived(
+            report_ledger,
+            source_job,
+            document_id="doc_original_batch_output",
+        )
+        batch_ledger.mark_item_succeeded(
+            batch_item_id=linked.batch_item_id,
+            report_job_id=source_job.job_id,
+        )
+
+        replacement_job = report_ledger.create_portfolio_review_job(
+            request=PortfolioReviewJobRequest(
+                portfolio_scope={"portfolio_ids": [leased.portfolio_id]},
+                as_of_date="2026-04-22",
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+            ),
+            caller_context=_caller_context(),
+            idempotency_key=f"{leased.item_idempotency_key}:replacement",
+        )
+        archived_replacement = _advance_report_job_to_archived(
+            report_ledger,
+            replacement_job,
+            document_id="doc_replacement_output",
+        )
+        report_ledger.upsert_job_relationship(
+            source_job=archived_source,
+            derived_job=archived_replacement,
+            relationship_type="regenerate_replacement",
+            actor="advisor-123",
+            reason="Corrected portfolio review output.",
+            archive_consequence="replacement",
+            previous_archive_document_id="doc_original_batch_output",
+            new_archive_document_id="doc_replacement_output",
+        )
+
+        response = client.get(
+            f"/reports/batches/{batch['batch_id']}/items/{linked.batch_item_id}",
+            headers=_headers(),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["report_job_id"] == source_job.job_id
+        assert response.json()["report_job_status"] == "archived"
+        assert response.json()["archive_document_id"] == "doc_original_batch_output"
+        assert response.json()["archive_document_id"] != "doc_replacement_output"
     finally:
         _clear_overrides()
 
@@ -420,6 +661,14 @@ def test_report_batch_item_replay_relinks_failed_item_idempotently(tmp_path):
         replayed_item = batch_ledger.get_batch_item(batch_id, failed_item.batch_item_id)
         assert replayed_item.report_job_id == body["replayed_report_job_id"]
         assert replayed_item.retry_eligible is False
+        replayed_status = client.get(
+            f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}",
+            headers=_headers(),
+        )
+        assert replayed_status.status_code == 200
+        assert replayed_status.json()["report_job_id"] == body["replayed_report_job_id"]
+        assert replayed_status.json()["report_job_status"] == "accepted"
+        assert replayed_status.json()["archive_document_id"] is None
         second = client.post(
             f"/reports/batches/{batch_id}/items/{failed_item.batch_item_id}/replay",
             json={"reason": "Retry item after upstream service recovered."},
@@ -1060,6 +1309,9 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     handle_example = create_post["responses"]["202"]["content"]["application/json"]["example"]
     status_get = schema["paths"]["/reports/batches/{batch_id}"]["get"]
     status_example = status_get["responses"]["200"]["content"]["application/json"]["example"]
+    archived_status_example = status_get["responses"]["200"]["content"]["application/json"][
+        "examples"
+    ]["archived_document_available"]["value"]
     retry_post = schema["paths"]["/reports/batches/{batch_id}:retry-failed"]["post"]
     replay_post = schema["paths"]["/reports/batches/{batch_id}/items/{batch_item_id}/replay"][
         "post"
@@ -1084,6 +1336,15 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
     assert create_example["selector_mode"] == "explicit_portfolio_list"
     assert handle_example["batch_id"].startswith("rbch_")
     assert status_example["status_counts"] == {"materialized": 2}
+    assert archived_status_example["items"][0]["report_job_status"] == "archived"
+    assert archived_status_example["items"][0]["archive_document_id"].startswith("doc_")
+    item_schema = schema["components"]["schemas"]["BatchItemStatusResponse"]
+    assert "report_job_status" in item_schema["properties"]
+    assert "archive_document_id" in item_schema["properties"]
+    assert (
+        "Populated only when that job is archived"
+        in item_schema["properties"]["archive_document_id"]["description"]
+    )
     assert replay_request["reason"]
     assert replay_response["source_report_job_id"].startswith("rjob_")
     assert replay_response["replayed_report_job_id"].startswith("rjob_")

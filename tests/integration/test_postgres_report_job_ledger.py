@@ -459,6 +459,12 @@ def test_postgres_report_job_ledger_persists_render_and_archive_handoff() -> Non
     assert archived.status == "archived"
     assert archived.archive_document_id == f"doc_{unique_suffix}"
     assert archived.archive_completed_at is not None
+    archive_statuses = ledger.get_archive_statuses_by_job_ids(
+        [ready.job_id, f"rjob_missing_{unique_suffix}", ready.job_id]
+    )
+    assert [status.report_job_id for status in archive_statuses] == [ready.job_id]
+    assert archive_statuses[0].status == "archived"
+    assert archive_statuses[0].archive_document_id == f"doc_{unique_suffix}"
     assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
         "accepted",
         "data_ready",
