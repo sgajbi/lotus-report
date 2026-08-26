@@ -209,6 +209,9 @@ Current implemented semantics:
   linked report job ids, back-pressure reasons, skip reasons, and per-item execution outcomes
 - internal runtime passes can scan durable runnable batches and invoke the single-batch worker for
   a limited number of batches; this is a service primitive only and is not a public API or daemon
+- a runtime pass is scoped to one tenant: it selects only batches whose persisted
+  `tenant_id` matches `REPORT_BATCH_WORKER_TENANT_ID`, and the worker refuses any batch outside
+  that tenant
 - the `lotus-report-batch-worker` Docker Compose service runs the bounded runtime pass as a
   daemonized internal background worker process under configured interval, batch-count, lease, and
   back-pressure limits
@@ -220,8 +223,26 @@ Current implemented semantics:
   `POST /reports/batch-schedules:run-due` runs one bounded scheduler materialization pass over
   enabled schedules without executing batch items
 
+Tenant scope of the background worker:
+
+- one `lotus-report-batch-worker` process advances batches for exactly one tenant, named by
+  `REPORT_BATCH_WORKER_TENANT_ID`. Operating more than one tenant means running one worker
+  process per governed tenant, each with its own value.
+- a batch whose tenant has no running worker is **not advanced**. It stays materialized and
+  visible through the status API; it does not fail and nothing is lost. Symptom to expect if a
+  tenant's worker is missing or misconfigured: batches for that tenant sit at `materialized` with
+  no linked report jobs while other tenants progress normally.
+- to diagnose, compare `REPORT_BATCH_WORKER_TENANT_ID` on each running worker against the
+  `tenant_id` of the stalled batch from `GET /reports/batches/{batch_id}`. Start or correct the
+  worker for that tenant; no batch state needs repair.
+- this is deliberate. Before it, one worker scanned every tenant's runnable batches and dispatched
+  them under its own configured tenant, so a batch belonging to one tenant produced report jobs
+  owned by another. Not advancing a batch is recoverable; advancing it into the wrong tenant is
+  not.
+
 Still not supported:
 
+- multi-tenant throughput from a single worker process (one process per governed tenant today)
 - Workbench scheduler-management surface
 - schedule CRUD or persisted scheduler registry management
 - entitlement-certified public scheduler runtime
