@@ -17,6 +17,7 @@ class BatchRuntimeLedger(Protocol):
     def list_runnable_batch_ids(
         self,
         *,
+        tenant_id: str,
         limit: int = 10,
         now: datetime | None = None,
     ) -> list[str]: ...
@@ -45,6 +46,10 @@ class ReportBatchRuntime:
     production-shaped unit that a later process manager can invoke: scan a small
     ordered set of runnable batches from the durable ledger and advance each
     through the existing single-batch worker primitive.
+
+    A pass is scoped to the tenant of the caller context it runs under, so a
+    background worker only advances batches it is governed to act for. Running
+    for more than one tenant means running one process per governed tenant.
     """
 
     def __init__(
@@ -71,6 +76,7 @@ class ReportBatchRuntime:
             return BatchRuntimePassResult(worker_id=worker_id)
 
         batch_ids = self._batch_ledger.list_runnable_batch_ids(
+            tenant_id=caller_context.tenant_id,
             limit=max_batches,
             now=now,
         )

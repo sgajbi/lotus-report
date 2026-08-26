@@ -342,11 +342,47 @@ def test_postgres_batch_runtime_scan_returns_only_runnable_batches() -> None:
         worker_id=f"pg-runtime-worker-{unique_suffix}",
     )
 
-    batch_ids = batch_ledger.list_runnable_batch_ids(limit=1000)
+    batch_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-sg", limit=1000)
 
     assert runnable.batch_id in batch_ids
     assert waiting.batch_id in batch_ids
     assert paused.batch_id not in batch_ids
+
+
+def test_postgres_batch_runtime_scan_is_scoped_to_one_tenant() -> None:
+    """The persistence boundary itself must exclude another tenant's runnable batches."""
+
+    unique_suffix = uuid4().hex
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    governed_caller = _caller(unique_suffix)
+    foreign_caller = governed_caller.model_copy(update={"tenant_id": "tenant-uk"})
+    governed = batch_ledger.create_batch(
+        request=_request(unique_suffix, f"PB_SG_TENANT_SCOPE_{unique_suffix}"),
+        caller_context=governed_caller,
+        idempotency_key=f"batch-pg-tenant-scope-sg-{unique_suffix}",
+    )
+    foreign_request = _request(unique_suffix, f"PB_UK_TENANT_SCOPE_{unique_suffix}")
+    foreign_request = foreign_request.model_copy(
+        update={
+            "source_candidates": [
+                candidate.model_copy(update={"tenant_id": "tenant-uk"})
+                for candidate in foreign_request.source_candidates
+            ]
+        }
+    )
+    foreign = batch_ledger.create_batch(
+        request=foreign_request,
+        caller_context=foreign_caller,
+        idempotency_key=f"batch-pg-tenant-scope-uk-{unique_suffix}",
+    )
+
+    governed_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-sg", limit=1000)
+    foreign_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-uk", limit=1000)
+
+    assert governed.batch_id in governed_ids
+    assert foreign.batch_id not in governed_ids
+    assert foreign.batch_id in foreign_ids
+    assert governed.batch_id not in foreign_ids
 
 
 def test_postgres_batch_item_lease_expiry_and_stale_token_protection() -> None:
