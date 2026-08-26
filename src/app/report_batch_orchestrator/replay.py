@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.report_batch_orchestrator.execution import TENANT_MISMATCH_CATEGORY
 from app.report_batch_orchestrator.models import (
     BatchItemReplayRequest,
     BatchRetryPolicy,
@@ -43,6 +45,16 @@ class BatchReplayLedger(Protocol):
     def get_batch(self, batch_id: str) -> ReportBatchRecord: ...
 
     def get_batch_item(self, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord: ...
+
+    def mark_item_failed(
+        self,
+        *,
+        batch_item_id: str,
+        error_category: str,
+        error_summary: str,
+        retryable: bool,
+        retry_policy: BatchRetryPolicy | None = None,
+    ) -> ReportBatchItemRecord: ...
 
     def relink_failed_item_for_replay(
         self,
@@ -100,9 +112,11 @@ class ReportBatchItemReplayService:
         *,
         batch_ledger: BatchReplayLedger,
         report_job_ledger: BatchReplayReportJobLedger,
+        logger: logging.Logger | None = None,
     ) -> None:
         self._batch_ledger = batch_ledger
         self._report_job_ledger = report_job_ledger
+        self._logger = logger or logging.getLogger("report_batch_replay")
 
     def replay_item(
         self,
@@ -118,6 +132,7 @@ class ReportBatchItemReplayService:
             caller_context=caller_context,
         )
         item = self._batch_ledger.get_batch_item(batch_id, batch_item_id)
+        self._refuse_foreign_linked_job(batch=batch, item=item)
         replay_key = _batch_item_replay_idempotency_key(
             batch_item_id=batch_item_id,
             idempotency_key=idempotency_key,
@@ -185,6 +200,54 @@ class ReportBatchItemReplayService:
             replayed_report_job=replayed_job,
             idempotency_key=idempotency_key or "",
         )
+
+    def _refuse_foreign_linked_job(
+        self,
+        *,
+        batch: ReportBatchRecord,
+        item: ReportBatchItemRecord,
+    ) -> None:
+        """Refuse to replay an item whose linked report job belongs to another tenant.
+
+        Admitting the batch is not enough: the item-to-job link was written by whichever
+        worker dispatched it, so a link created before dispatch was tenant-scoped can point
+        at another tenant's job. A same-tenant caller replaying such an item would otherwise
+        read that job and derive a new one from it.
+
+        The caller is told only that the item cannot be replayed - the existing 409 contract,
+        which is true and discloses nothing about the other tenant - and the item is
+        quarantined so it stops presenting itself as replayable.
+        """
+
+        report_job_id = item.report_job_id
+        if report_job_id is None:
+            return
+        job = self._report_job_ledger.get_job(report_job_id)
+        if job.tenant_id == batch.tenant_id:
+            return
+
+        self._logger.error(
+            "batch_item_tenant_mismatch",
+            extra={
+                "extra_fields": {
+                    "batch_id": batch.batch_id,
+                    "batch_item_id": item.batch_item_id,
+                    "report_job_id": report_job_id,
+                    "failure_category": TENANT_MISMATCH_CATEGORY,
+                    "command": "batch_item_replay",
+                }
+            },
+        )
+        self._batch_ledger.mark_item_failed(
+            batch_item_id=item.batch_item_id,
+            error_category=TENANT_MISMATCH_CATEGORY,
+            error_summary=(
+                "Linked report job belongs to a different tenant than its batch; "
+                "replay refused and the item quarantined for operator review."
+            ),
+            retryable=False,
+        )
+        raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 
     def _source_job_for_item(self, item: ReportBatchItemRecord) -> ReportJobLedgerRecord:
         if item.status != "failed_retryable" or not item.retry_eligible:

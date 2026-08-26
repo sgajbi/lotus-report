@@ -193,10 +193,12 @@ class ReportBatchExecutionService:
         self._logger.error(
             "batch_item_tenant_mismatch",
             extra={
-                "batch_id": batch.batch_id,
-                "batch_item_id": item.batch_item_id,
-                "report_job_id": report_job_id,
-                "failure_category": TENANT_MISMATCH_CATEGORY,
+                "extra_fields": {
+                    "batch_id": batch.batch_id,
+                    "batch_item_id": item.batch_item_id,
+                    "report_job_id": report_job_id,
+                    "failure_category": TENANT_MISMATCH_CATEGORY,
+                }
             },
         )
         quarantined = self._batch_ledger.mark_item_failed(

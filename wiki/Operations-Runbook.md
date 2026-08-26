@@ -246,12 +246,19 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
   **linked report job** with the tenant of its batch. If they differ the item is refused, marked
   `failed_terminal` with error category `batch_item_tenant_mismatch`, and never retried. No
   snapshot, render, or archive work is started.
+- the same comparison runs on **batch-item replay**. A caller who legitimately owns the batch, but
+  whose item is linked to another tenant's report job, receives the ordinary
+  `409 report_batch_item_cannot_be_replayed` contract - true, and disclosing nothing about the other
+  tenant - and the item is quarantined the same way. No replayed job and no lineage relationship is
+  created.
 - this is deliberately loud rather than the product-safe not-found used on caller-facing routes.
   There is no caller to disclose to on a background path, and a silent skip would leave the item
   looking merely slow.
 - signal: `lotus_report_operations_total{operation="batch_worker_run",status="failed",
-  failure_category="batch_item_tenant_mismatch"}` increments, and the worker logs
-  `batch_item_tenant_mismatch` with the batch, item, and report-job identifiers.
+  failure_category="batch_item_tenant_mismatch"}` increments on the execution path, and both paths
+  log `batch_item_tenant_mismatch` with the batch, item, and report-job identifiers under
+  `extra_fields` so they survive the JSON formatter. The replay path additionally logs
+  `command=batch_item_replay`.
 - **a quarantined item needs a human.** Retry (`:retry-failed`) will not resurrect it, and it is
   excluded from runnable-batch scans, both by design. Establish which of the two tenants the work
   legitimately belongs to before doing anything; the item and the job disagree, so one of them is
