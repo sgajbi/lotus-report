@@ -780,9 +780,16 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
     def list_runnable_batch_ids(
         self,
         *,
+        tenant_id: str,
         limit: int = 10,
         now: Any | None = None,
     ) -> list[str]:
+        """List runnable batches for one tenant only.
+
+        tenant_id is required rather than optional so a background caller cannot
+        accidentally scan every tenant by omitting it.
+        """
+
         if limit < 1:
             return []
 
@@ -794,7 +801,8 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 FROM report_batch
                 JOIN report_batch_item
                   ON report_batch_item.batch_id = report_batch.batch_id
-                WHERE report_batch.status IN ('materialized', 'running')
+                WHERE report_batch.tenant_id = %s
+                  AND report_batch.status IN ('materialized', 'running')
                   AND (
                     report_batch_item.status IN (
                       'materialized',
@@ -819,7 +827,7 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 ORDER BY report_batch.created_at, report_batch.batch_id
                 LIMIT %s
                 """,
-                (scan_at, scan_at, limit),
+                (tenant_id, scan_at, scan_at, limit),
             ).fetchall()
         return [str(row["batch_id"]) for row in rows]
 

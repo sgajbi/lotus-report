@@ -202,3 +202,77 @@ async def test_runtime_pass_honors_zero_max_batches_without_scanning(tmp_path) -
 
     assert result.scanned_batch_ids == []
     assert result.batch_results == []
+
+
+def _caller_for(tenant_id: str) -> ReportCallerContext:
+    return _caller().model_copy(update={"tenant_id": tenant_id})
+
+
+def _request_for(portfolio_id: str, tenant_id: str) -> BatchCreateRequest:
+    return _request(portfolio_id).model_copy(
+        update={
+            "source_candidates": [
+                _candidate(portfolio_id).model_copy(update={"tenant_id": tenant_id})
+            ]
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_pass_only_scans_batches_of_the_governed_tenant(tmp_path) -> None:
+    """A background pass must not advance a batch belonging to another tenant."""
+
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    governed = batch_ledger.create_batch(
+        request=_request_for("PB_SG_GLOBAL_BAL_001", "tenant-sg"),
+        caller_context=_caller_for("tenant-sg"),
+        idempotency_key=f"runtime-governed-{uuid4().hex}",
+    )
+    foreign = batch_ledger.create_batch(
+        request=_request_for("PB_UK_GLOBAL_BAL_001", "tenant-uk"),
+        caller_context=_caller_for("tenant-uk"),
+        idempotency_key=f"runtime-foreign-{uuid4().hex}",
+    )
+
+    result = await _runtime(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+    ).run_pass(
+        caller_context=_caller_for("tenant-sg"),
+        worker_id="runtime-tenant-scope-1",
+        max_batches=5,
+    )
+
+    assert result.scanned_batch_ids == [governed.batch_id]
+    assert foreign.batch_id not in result.scanned_batch_ids
+    untouched = batch_ledger.get_batch(foreign.batch_id)
+    assert untouched.status == "materialized"
+    assert [item.status for item in untouched.items] == ["materialized"]
+    assert [item.report_job_id for item in untouched.items] == [None]
+
+
+@pytest.mark.asyncio
+async def test_runtime_pass_does_not_create_report_jobs_under_a_foreign_tenant(tmp_path) -> None:
+    """Report jobs derived from a batch must carry the batch tenant, never the worker's."""
+
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    batch_ledger.create_batch(
+        request=_request_for("PB_UK_GLOBAL_BAL_001", "tenant-uk"),
+        caller_context=_caller_for("tenant-uk"),
+        idempotency_key=f"runtime-foreign-only-{uuid4().hex}",
+    )
+
+    result = await _runtime(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+    ).run_pass(
+        caller_context=_caller_for("tenant-sg"),
+        worker_id="runtime-tenant-scope-2",
+        max_batches=5,
+    )
+
+    assert result.scanned_batch_ids == []
+    assert result.dispatched_count == 0
+    assert result.executed_count == 0
