@@ -31,9 +31,11 @@ from app.reporting_render.replay_service import (
     assert_replay_eligible,
 )
 
-# The only item states either replay branch acts on. Anything else is already non-replayable,
-# so a mismatch there must be refused without touching the record.
-REPLAYABLE_ITEM_STATUSES = ("waiting_on_report_job", "failed_retryable")
+# The two branches replay_item can take. _replay_branch_for is the single predicate: branch
+# selection, the source-job loader, and the foreign-link quarantine all derive from it, so a
+# later narrowing cannot leave one of them acting on a state the others no longer do.
+REPLAY_BRANCH_IDEMPOTENT = "idempotent_replay"
+REPLAY_BRANCH_NEW = "new_replay"
 
 
 @dataclass(frozen=True)
@@ -136,12 +138,15 @@ class ReportBatchItemReplayService:
             caller_context=caller_context,
         )
         item = self._batch_ledger.get_batch_item(batch_id, batch_item_id)
-        self._refuse_foreign_linked_job(batch=batch, item=item)
+        # Establish the request is well-formed before anything can mutate durable state: a
+        # missing Idempotency-Key must not be able to quarantine an item.
         replay_key = _batch_item_replay_idempotency_key(
             batch_item_id=batch_item_id,
             idempotency_key=idempotency_key,
         )
-        if item.status == "waiting_on_report_job" and item.report_job_id:
+        branch = self._replay_branch_for(item)
+        self._refuse_foreign_linked_job(batch=batch, item=item, branch=branch)
+        if branch == REPLAY_BRANCH_IDEMPOTENT and item.report_job_id:
             replayed_job = self._report_job_ledger.get_job(item.report_job_id)
             if replayed_job.idempotency_key != replay_key:
                 raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
@@ -205,11 +210,29 @@ class ReportBatchItemReplayService:
             idempotency_key=idempotency_key or "",
         )
 
+    @staticmethod
+    def _replay_branch_for(item: ReportBatchItemRecord) -> str | None:
+        """Which replay branch would act on this item, or None if replay would not act.
+
+        Single source of truth. Branch selection, `_source_job_for_item` and the foreign-link
+        quarantine all read this, so narrowing replay eligibility cannot leave the quarantine
+        mutating a state replay no longer touches.
+        """
+
+        if not item.report_job_id:
+            return None
+        if item.status == "waiting_on_report_job":
+            return REPLAY_BRANCH_IDEMPOTENT
+        if item.status == "failed_retryable" and item.retry_eligible:
+            return REPLAY_BRANCH_NEW
+        return None
+
     def _refuse_foreign_linked_job(
         self,
         *,
         batch: ReportBatchRecord,
         item: ReportBatchItemRecord,
+        branch: str | None,
     ) -> None:
         """Refuse to replay an item whose linked report job belongs to another tenant.
 
@@ -235,10 +258,11 @@ class ReportBatchItemReplayService:
         job = self._report_job_ledger.get_job(report_job_id)
         if job.tenant_id == batch.tenant_id:
             return
-        if item.status not in REPLAYABLE_ITEM_STATUSES:
-            # Already non-replayable: refuse without mutating anything.
-            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 
+        # Observe unconditionally: the corrupt link is a fact regardless of what the caller
+        # asked for, and a terminal item carrying one is the *stronger* signal - the dispatch
+        # that wrote the link already happened, so a report exists against another tenant's
+        # job. Recording only the states we also mutate would hide exactly those.
         self._logger.error(
             "batch_item_tenant_mismatch",
             extra={
@@ -246,11 +270,16 @@ class ReportBatchItemReplayService:
                     "batch_id": batch.batch_id,
                     "batch_item_id": item.batch_item_id,
                     "report_job_id": report_job_id,
+                    "item_status": item.status,
                     "failure_category": TENANT_MISMATCH_CATEGORY,
                     "command": "batch_item_replay",
+                    "quarantined": branch is not None,
                 }
             },
         )
+        if branch is None:
+            # Replay would not have acted on this item, so the refusal must not either.
+            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
         self._batch_ledger.mark_item_failed(
             batch_item_id=item.batch_item_id,
             error_category=TENANT_MISMATCH_CATEGORY,
@@ -263,9 +292,7 @@ class ReportBatchItemReplayService:
         raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 
     def _source_job_for_item(self, item: ReportBatchItemRecord) -> ReportJobLedgerRecord:
-        if item.status != "failed_retryable" or not item.retry_eligible:
-            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
-        if not item.report_job_id:
+        if self._replay_branch_for(item) != REPLAY_BRANCH_NEW or not item.report_job_id:
             raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
         return self._report_job_ledger.get_job(item.report_job_id)
 

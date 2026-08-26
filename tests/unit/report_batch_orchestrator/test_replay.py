@@ -8,6 +8,8 @@ from app.report_batch_orchestrator.models import (
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.replay import (
+    REPLAY_BRANCH_IDEMPOTENT,
+    REPLAY_BRANCH_NEW,
     ReportBatchItemReplayService,
     _batch_item_replay_idempotency_key,
     get_report_batch_item_replay_service,
@@ -617,3 +619,89 @@ def test_replay_still_quarantines_a_replayable_item_with_a_foreign_linked_job(tm
         "batch_item_tenant_mismatch"
     ]
     assert batch_ledger.item.status == "failed_terminal"
+
+
+def test_a_succeeded_item_with_a_foreign_link_is_still_observed(tmp_path, caplog):
+    """Not mutating is right; not recording is not.
+
+    A terminal item carrying a foreign link is the STRONGER signal: the dispatch that wrote
+    the link already happened, so a report exists against another tenant's job. Recording
+    only the states we also mutate would hide exactly those, and the runbook tells operators
+    to find these by the log line.
+    """
+
+    import logging
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(
+        _item(report_job_id=source.job_id, status="succeeded", retry_eligible=False)
+    )
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with caplog.at_level(logging.ERROR, logger="report_batch_replay"):
+        with pytest.raises(InvalidReportJobTransitionError):
+            service.replay_item(
+                batch_id="rbch_replay",
+                batch_item_id="rbit_replay",
+                command=BatchItemReplayRequest(reason="Replay of already-succeeded work."),
+                caller_context=_caller(),
+                idempotency_key="succeeded-foreign-link-observed",
+            )
+
+    mismatches = [
+        record for record in caplog.records if record.getMessage() == "batch_item_tenant_mismatch"
+    ]
+    assert len(mismatches) == 1, "A foreign link must be recorded even when nothing is mutated"
+    fields = mismatches[0].extra_fields
+    assert fields["item_status"] == "succeeded"
+    assert fields["quarantined"] is False
+    assert fields["report_job_id"] == source.job_id
+    assert batch_ledger.quarantines == []
+
+
+def test_a_malformed_replay_request_cannot_quarantine_an_item(tmp_path):
+    """A missing Idempotency-Key must be refused before anything can mutate durable state."""
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Malformed request."),
+            caller_context=_caller(),
+            idempotency_key="   ",
+        )
+
+    assert batch_ledger.quarantines == []
+    assert batch_ledger.item.status == "failed_retryable"
+    assert batch_ledger.item.retry_eligible is True
+
+
+def test_replay_branch_predicate_is_the_only_eligibility_rule():
+    """Branch selection, the source-job loader and the quarantine must not diverge."""
+
+    branch_for = ReportBatchItemReplayService._replay_branch_for
+
+    linked = {"report_job_id": "rjob_linked"}
+
+    assert branch_for(_item(status="waiting_on_report_job", **linked)) == REPLAY_BRANCH_IDEMPOTENT
+    assert (
+        branch_for(_item(status="failed_retryable", retry_eligible=True, **linked))
+        == REPLAY_BRANCH_NEW
+    )
+    assert branch_for(_item(status="failed_retryable", retry_eligible=False, **linked)) is None
+    assert branch_for(_item(status="succeeded", retry_eligible=False, **linked)) is None
+    assert branch_for(_item(status="failed_terminal", retry_eligible=False, **linked)) is None
+    # An unlinked item has nothing to replay from, whatever its status.
+    assert branch_for(_item(status="waiting_on_report_job", report_job_id=None)) is None
