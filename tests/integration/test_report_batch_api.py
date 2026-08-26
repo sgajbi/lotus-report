@@ -4,12 +4,13 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
 from app.report_batch_orchestrator.execution import BatchItemExecutionResult
 from app.report_batch_orchestrator.ledger import (
     MissingBatchIdempotencyKeyError,
     ReportBatchLedger,
 )
-from app.report_batch_orchestrator.models import BatchCreateRequest
+from app.report_batch_orchestrator.models import BatchCreateRequest, BatchDispatchPolicy
 from app.report_batch_orchestrator.replay import (
     ReportBatchItemReplayService,
     get_report_batch_item_replay_service,
@@ -25,7 +26,7 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_scheduler,
     get_report_batch_worker,
 )
-from app.report_batch_orchestrator.worker import BatchWorkerRunResult
+from app.report_batch_orchestrator.worker import BatchWorkerRunResult, ReportBatchWorker
 from app.reporting_jobs.ledger import ReportJobLedger, _dt_to_text
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 from app.reporting_jobs.service import get_report_job_ledger
@@ -1619,3 +1620,49 @@ def test_report_batch_control_routes_remain_available_to_the_owning_tenant(tmp_p
         assert batch_ledger.get_batch(batch_id).status == "cancelled"
     finally:
         _clear_overrides()
+
+
+def test_report_batch_run_once_rejects_cross_tenant_callers_without_mutating(tmp_path):
+    """The operator run-once route reaches the real worker, which must admit the caller."""
+
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    app.dependency_overrides[get_report_batch_worker] = lambda: ReportBatchWorker(
+        batch_ledger=batch_ledger,
+        dispatcher=ReportBatchDispatcher(
+            batch_ledger=batch_ledger,
+            report_job_ledger=report_ledger,
+            policy=BatchDispatchPolicy(max_active_items=5),
+        ),
+        execution_service=_ExecutionMustNotRun(),
+    )
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("cross-tenant-run-once-source"),
+        ).json()
+        batch_id = batch["batch_id"]
+        before = batch_ledger.get_batch(batch_id)
+
+        other_tenant_headers = _headers()
+        other_tenant_headers["X-Tenant-Id"] = "tenant-uk"
+        response = client.post(
+            f"/reports/batches/{batch_id}:run-once",
+            json={"worker_id": "lotus-report-batch-worker-cross-tenant"},
+            headers=other_tenant_headers,
+        )
+
+        assert response.status_code == 404
+        assert response.json() == EXPECTED_BATCH_NOT_FOUND
+        assert "tenant-sg" not in response.text
+        after = batch_ledger.get_batch(batch_id)
+        assert after.status == before.status
+        assert [item.status for item in after.items] == [item.status for item in before.items]
+        assert [item.report_job_id for item in after.items] == [None, None]
+    finally:
+        _clear_overrides()
+
+
+class _ExecutionMustNotRun:
+    async def execute_item(self, *, batch_id: str, batch_item_id: str):
+        raise AssertionError("Cross-tenant run-once must stop before item execution.")

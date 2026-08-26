@@ -210,3 +210,78 @@ async def test_worker_executes_existing_waiting_items_under_dispatch_back_pressu
     assert result.executed_count == 1
     assert refreshed.status == "completed"
     assert refreshed.items[0].status == "succeeded"
+
+
+def _caller_for(tenant_id: str) -> ReportCallerContext:
+    return _caller().model_copy(update={"tenant_id": tenant_id})
+
+
+@pytest.mark.asyncio
+async def test_worker_run_once_rejects_a_cross_tenant_caller(tmp_path) -> None:
+    """run_once is reachable from an operator route, so it must admit before mutating."""
+
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    batch = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=_caller_for("tenant-sg"),
+        idempotency_key=f"worker-cross-tenant-{uuid4().hex}",
+    )
+    worker = ReportBatchWorker(
+        batch_ledger=batch_ledger,
+        dispatcher=ReportBatchDispatcher(
+            batch_ledger=batch_ledger,
+            report_job_ledger=report_job_ledger,
+            policy=BatchDispatchPolicy(max_active_items=5),
+        ),
+        execution_service=_SucceedingExecutionService(batch_ledger=batch_ledger),
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        await worker.run_once(
+            batch_id=batch.batch_id,
+            caller_context=_caller_for("tenant-uk"),
+            worker_id="worker-cross-tenant-1",
+        )
+
+    assert str(excinfo.value) == "report_batch_not_found"
+    untouched = batch_ledger.get_batch(batch.batch_id)
+    assert untouched.status == "materialized"
+    assert [item.status for item in untouched.items] == ["materialized"]
+    assert [item.report_job_id for item in untouched.items] == [None]
+    assert [item.lease_token for item in untouched.items] == [None]
+
+
+@pytest.mark.asyncio
+async def test_worker_run_once_does_not_leak_batch_status_to_a_cross_tenant_caller(
+    tmp_path,
+) -> None:
+    """Admission runs before the runnable-status check, so no status is returned."""
+
+    batch_ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    batch = batch_ledger.create_batch(
+        request=_request("PB_SG_GLOBAL_BAL_001"),
+        caller_context=_caller_for("tenant-sg"),
+        idempotency_key=f"worker-status-leak-{uuid4().hex}",
+    )
+    batch_ledger.pause_batch(batch_id=batch.batch_id)
+    worker = ReportBatchWorker(
+        batch_ledger=batch_ledger,
+        dispatcher=ReportBatchDispatcher(
+            batch_ledger=batch_ledger,
+            report_job_ledger=report_job_ledger,
+            policy=BatchDispatchPolicy(max_active_items=5),
+        ),
+        execution_service=_SucceedingExecutionService(batch_ledger=batch_ledger),
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        await worker.run_once(
+            batch_id=batch.batch_id,
+            caller_context=_caller_for("tenant-uk"),
+            worker_id="worker-status-leak-1",
+        )
+
+    assert "paused" not in str(excinfo.value)
+    assert str(excinfo.value) == "report_batch_not_found"
