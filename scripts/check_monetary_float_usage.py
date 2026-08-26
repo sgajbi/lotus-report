@@ -19,6 +19,13 @@ KEYWORDS = (
 )
 IGNORE_DIRS = {"tests", ".venv", "venv", "docs", "rfcs", "output", "build", "dist", "__pycache__"}
 
+# The scanner's own source necessarily contains the vocabulary it searches for: KEYWORDS,
+# FLOAT_ANNOTATION, and the justification template it writes into the allowlist all mention
+# monetary words next to the word "float". Scanning itself therefore reports guaranteed false
+# positives - "migrate to Decimal" alone satisfies the "rate" keyword - which then get
+# allowlisted as if they were real monetary floats. This file is the rule, never the subject.
+SELF_PATH = Path(__file__).resolve()
+
 FLOAT_ANNOTATION = re.compile(r"\bfloat\b")
 
 
@@ -32,6 +39,8 @@ def is_candidate(path: Path) -> bool:
 def scan_repo(repo_root: Path) -> list[str]:
     findings: list[str] = []
     for file_path in repo_root.rglob("*.py"):
+        if file_path.resolve() == SELF_PATH:
+            continue
         if not is_candidate(file_path.relative_to(repo_root)):
             continue
         rel = file_path.relative_to(repo_root).as_posix()
