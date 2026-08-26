@@ -384,7 +384,10 @@ Important validation expectations:
    not trigger workflow runs from events caused by `GITHUB_TOKEN`, so an automated merge under it
    pushes to `main` without triggering anything, and the commit lands ungated. The workflow fails
    visibly when the secret is absent rather than falling back.
-13. `Main Releasability Gate` is dispatch-only and is invoked by
+13. Gate concurrency is keyed on `github.sha`, not `github.ref`. With `cancel-in-progress: true`
+   a branch-keyed group lets a second merge cancel the in-flight gate for the first commit,
+   leaving it with a cancelled run that is neither pass nor fail and that nothing reports.
+14. `Main Releasability Gate` is dispatch-only and is invoked by
    `merged-pr-main-releasability.yml` after a merge, against an immutable tag at the merge commit.
    It asserts `expected_sha` matches the checkout before any substantive job runs, so a run always
    proves which revision it validated. Audit a merge by

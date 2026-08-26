@@ -15,7 +15,9 @@ the merge commit, and its first job refuses to continue unless the checked-out r
 
 That is deliberate. Automated merges run under `secrets.LOTUS_AUTOMERGE_TOKEN`; had they run under
 `github.token`, GitHub would not treat the merge push as a trigger and the gate would silently not
-run at all. A dispatcher that fails is visible; a suppressed push trigger is not.
+run at all. A dispatcher that fails is visible; a suppressed push trigger is not. Gate concurrency
+is also keyed per commit rather than per branch, so a later merge cannot cancel an earlier commit's
+in-flight gate and leave it with a run that is neither pass nor fail.
 
 **Auditing a merge:** use `gh run list --commit <full-sha>`. Listing by `--branch main` misses the
 run, because the dispatch ref is a tag rather than `main`.

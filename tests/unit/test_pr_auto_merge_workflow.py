@@ -111,3 +111,20 @@ def test_main_releasability_is_dispatch_only() -> None:
 
     assert "workflow_dispatch:" in workflow
     assert 'branches: [ "main" ]' not in workflow
+
+
+def test_main_releasability_concurrency_is_keyed_per_commit_not_per_branch() -> None:
+    """A branch-keyed group lets a second merge cancel the first commit's in-flight gate.
+
+    With `cancel-in-progress: true` and a group keyed on `github.ref`, every gate run on `main`
+    shares one group. Two merges close together leave the earlier commit with a *cancelled* run —
+    not passed, not failed — and nothing reports that. Keyed on `github.sha`, each commit gets its
+    own group and cannot be cancelled by a later one.
+
+    Third of the three independent paths to an ungated `main` commit recorded in #180.
+    """
+
+    workflow = (WORKFLOW_ROOT / "main-releasability.yml").read_text(encoding="utf-8")
+
+    assert "group: ${{ github.workflow }}-${{ github.sha }}" in workflow
+    assert "group: ${{ github.workflow }}-${{ github.ref }}" not in workflow
