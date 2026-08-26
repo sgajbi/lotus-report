@@ -15,7 +15,7 @@ from app.report_batch_orchestrator.models import (
     ReportBatchItemRecord,
     ReportBatchRecord,
 )
-from app.reporting_jobs.ledger import ReportJobLedger
+from app.reporting_jobs.ledger import ReportJobLedger, ReportJobNotFoundError
 from app.reporting_jobs.models import ReportCallerContext, ReportJobLedgerRecord
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
@@ -719,7 +719,18 @@ class _JobLedgerWithMissingJob:
 
     def get_job(self, job_id: str):
         self.lookups += 1
-        raise ValueError("report_job_not_found")
+        raise ReportJobNotFoundError("report_job_not_found")
+
+
+class _JobLedgerWithTransientFault:
+    """A connection or query fault, not an absent row."""
+
+    def __init__(self) -> None:
+        self.lookups = 0
+
+    def get_job(self, job_id: str):
+        self.lookups += 1
+        raise RuntimeError("connection reset by peer")
 
 
 @pytest.mark.asyncio
@@ -789,3 +800,39 @@ async def test_a_missing_linked_job_does_not_stall_the_rest_of_the_pass(tmp_path
         tenant_id=batch.tenant_id,
         limit=10,
     )
+
+
+@pytest.mark.asyncio
+async def test_a_transient_ledger_fault_is_not_mistaken_for_a_dangling_link(tmp_path) -> None:
+    """Quarantine is permanent, so a brief outage must not be read as a data defect.
+
+    Misclassifying a connection fault would terminally fail every waiting item whose
+    batch-ledger write then succeeded — a worse outage than the one the lookup prevents.
+    """
+
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+
+    class _MustNotRun:
+        async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+        async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+    service = ReportBatchExecutionService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_JobLedgerWithTransientFault(),
+        capture_service=_MustNotRun(),
+        render_service=_MustNotRun(),
+    )
+
+    result = await service.execute_item(
+        batch_id=batch.batch_id,
+        batch_item_id=item.batch_item_id,
+    )
+
+    assert result.failure_category != "batch_item_report_job_missing"
+    assert result.item_status == "failed_retryable"
+    assert result.retry_eligible is True
+    surviving = batch_ledger.get_batch_item(batch.batch_id, item.batch_item_id)
+    assert surviving.status == "failed_retryable"

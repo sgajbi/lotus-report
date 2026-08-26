@@ -15,6 +15,7 @@ from app.reporting_jobs.execution import (
     ReportRenderOrchestrationService,
     ReportSnapshotCaptureService,
 )
+from app.reporting_jobs.ledger import ReportJobNotFoundError
 from app.reporting_jobs.models import ReportJobLedgerRecord
 
 # Metrics are recorded at the boundary (worker process, run-once route), never here:
@@ -188,6 +189,13 @@ class ReportBatchExecutionService:
         the execution handler instead would mark them `retryable=True` and reproduce the
         same loop more slowly.
 
+        Only `ReportJobNotFoundError` means an absent row. A connection or query fault must
+        not be read as a dangling link: quarantine is permanent, so misclassifying a brief
+        report-ledger outage would terminally fail every waiting item whose batch-ledger
+        write then succeeded - a wider outage than the stall this lookup prevents. Any other
+        exception is recorded `retryable=True` with the same category the execution handler
+        uses, because that is what a transient fault is.
+
         This is a background path with no caller to disclose to, so both are loud rather
         than opaque: quarantined as terminally failed, never retried, resolved by a human.
         """
@@ -197,16 +205,23 @@ class ReportBatchExecutionService:
             return None
         try:
             job = self._report_job_ledger.get_job(report_job_id)
-        except Exception:
+        except ReportJobNotFoundError:
             return self._quarantine(
                 batch=batch,
                 item=item,
                 report_job_id=report_job_id,
                 category=MISSING_LINKED_JOB_CATEGORY,
                 summary=(
-                    "Linked report job could not be loaded; execution refused and the item "
+                    "Linked report job does not exist; execution refused and the item "
                     "quarantined for operator review."
                 ),
+            )
+        except Exception as exc:
+            return self._retryable_failure(
+                batch=batch,
+                item=item,
+                report_job_id=report_job_id,
+                summary=str(exc) or exc.__class__.__name__,
             )
         if job.tenant_id == batch.tenant_id:
             return None
@@ -219,6 +234,33 @@ class ReportBatchExecutionService:
                 "Linked report job belongs to a different tenant than its batch; "
                 "execution refused and the item quarantined for operator review."
             ),
+        )
+
+    def _retryable_failure(
+        self,
+        *,
+        batch: ReportBatchRecord,
+        item: ReportBatchItemRecord,
+        report_job_id: str,
+        summary: str,
+    ) -> BatchItemExecutionResult:
+        """Record a transient fault the way the execution handler does: retryable."""
+
+        failed_item = self._batch_ledger.mark_item_failed(
+            batch_item_id=item.batch_item_id,
+            error_category="batch_execution_failed",
+            error_summary=summary,
+            retryable=True,
+            retry_policy=self._retry_policy,
+        )
+        return BatchItemExecutionResult(
+            batch_id=batch.batch_id,
+            batch_item_id=item.batch_item_id,
+            report_job_id=report_job_id,
+            item_status=failed_item.status,
+            report_job_status="unknown",
+            failure_category=failed_item.last_error_category,
+            retry_eligible=failed_item.retry_eligible,
         )
 
     def _quarantine(
