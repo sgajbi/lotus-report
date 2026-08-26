@@ -1515,3 +1515,107 @@ def test_reporting_attention_endpoint_returns_operator_safe_scan(tmp_path):
     assert "tenant-sg" not in serialized
     assert "corr-batch-1" not in serialized
     assert "trace-batch-1" not in serialized
+
+
+def _control_paths(batch_id: str) -> dict[str, str]:
+    return {
+        "pause": f"/reports/batches/{batch_id}:pause",
+        "resume": f"/reports/batches/{batch_id}:resume",
+        "cancel": f"/reports/batches/{batch_id}:cancel",
+        "retry-failed": f"/reports/batches/{batch_id}:retry-failed",
+        "recover-expired-leases": f"/reports/batches/{batch_id}:recover-expired-leases",
+    }
+
+
+EXPECTED_BATCH_NOT_FOUND = {
+    "detail": {
+        "code": "report_batch_not_found",
+        "message": "Report batch was not found.",
+    }
+}
+
+
+def test_report_batch_control_routes_reject_cross_tenant_callers_without_mutating(tmp_path):
+    client, batch_ledger = _client(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("cross-tenant-control-source"),
+        ).json()
+        batch_id = batch["batch_id"]
+        before = batch_ledger.get_batch(batch_id)
+
+        other_tenant_headers = _headers()
+        other_tenant_headers["X-Tenant-Id"] = "tenant-uk"
+
+        for control, path in _control_paths(batch_id).items():
+            response = client.post(path, headers=other_tenant_headers)
+            assert response.status_code == 404, control
+            assert response.json() == EXPECTED_BATCH_NOT_FOUND, control
+            assert "tenant-sg" not in response.text, control
+            assert "PB_SG_GLOBAL_BAL_001" not in response.text, control
+
+        after = batch_ledger.get_batch(batch_id)
+        assert after.status == before.status
+        assert after.updated_at == before.updated_at
+        assert [item.status for item in after.items] == [item.status for item in before.items]
+        assert [item.lease_token for item in after.items] == [
+            item.lease_token for item in before.items
+        ]
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_control_routes_do_not_disclose_cross_tenant_existence(tmp_path):
+    """A batch owned by another tenant must answer exactly like an unknown identifier."""
+
+    client, _ = _client(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("cross-tenant-control-disclosure"),
+        ).json()
+        other_tenant_headers = _headers()
+        other_tenant_headers["X-Tenant-Id"] = "tenant-uk"
+
+        known = _control_paths(batch["batch_id"])
+        unknown = _control_paths("rbch_does_not_exist")
+        for control, path in known.items():
+            cross_tenant = client.post(path, headers=other_tenant_headers)
+            absent = client.post(unknown[control], headers=other_tenant_headers)
+            assert cross_tenant.status_code == absent.status_code == 404, control
+            assert cross_tenant.json() == absent.json() == EXPECTED_BATCH_NOT_FOUND, control
+    finally:
+        _clear_overrides()
+
+
+def test_report_batch_control_routes_remain_available_to_the_owning_tenant(tmp_path):
+    client, batch_ledger = _client(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("same-tenant-control-source"),
+        ).json()
+        batch_id = batch["batch_id"]
+
+        paused = client.post(f"/reports/batches/{batch_id}:pause", headers=_headers())
+        resumed = client.post(f"/reports/batches/{batch_id}:resume", headers=_headers())
+        retried = client.post(f"/reports/batches/{batch_id}:retry-failed", headers=_headers())
+        recovered = client.post(
+            f"/reports/batches/{batch_id}:recover-expired-leases",
+            headers=_headers(),
+        )
+        cancelled = client.post(f"/reports/batches/{batch_id}:cancel", headers=_headers())
+
+        assert paused.status_code == 200
+        assert paused.json()["status"] == "paused"
+        assert resumed.status_code == 200
+        assert retried.status_code == 200
+        assert recovered.status_code == 200
+        assert cancelled.status_code == 200
+        assert batch_ledger.get_batch(batch_id).status == "cancelled"
+    finally:
+        _clear_overrides()

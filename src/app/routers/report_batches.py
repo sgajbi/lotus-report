@@ -65,6 +65,7 @@ from app.report_batch_orchestrator.status_projection import (
     build_batch_status,
     load_report_job_archive_statuses,
 )
+from app.report_batch_orchestrator.tenant_admission import load_admitted_batch
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
@@ -464,20 +465,6 @@ def _not_found_error(exc: ValueError) -> HTTPException:
     )
 
 
-def _get_tenant_scoped_batch(
-    *,
-    ledger: ReportBatchLedgerPort,
-    batch_id: str,
-    caller_context: ReportCallerContext,
-) -> ReportBatchRecord:
-    """Load a batch without disclosing whether another tenant owns its identifier."""
-
-    record = ledger.get_batch(batch_id)
-    if record.tenant_id != caller_context.tenant_id:
-        raise ValueError("report_batch_not_found")
-    return record
-
-
 @router.post(
     "",
     response_model=BatchHandleResponse,
@@ -635,7 +622,7 @@ async def get_report_batch_status(
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchStatusResponse:
     try:
-        record = _get_tenant_scoped_batch(
+        record = load_admitted_batch(
             ledger=ledger,
             batch_id=batch_id,
             caller_context=caller_context,
@@ -697,7 +684,7 @@ async def get_report_batch_item_status(
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchItemStatusResponse:
     try:
-        _get_tenant_scoped_batch(
+        load_admitted_batch(
             ledger=ledger,
             batch_id=batch_id,
             caller_context=caller_context,
@@ -877,16 +864,23 @@ def _record_failed_batch_item_replay_metric(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
 async def pause_report_batch(
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchControlResponse:
     try:
+        load_admitted_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         result = ledger.pause_batch(batch_id=batch_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
@@ -915,16 +909,23 @@ async def pause_report_batch(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
 async def resume_report_batch(
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchControlResponse:
     try:
+        load_admitted_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         result = ledger.resume_batch(batch_id=batch_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
@@ -953,16 +954,23 @@ async def resume_report_batch(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
 async def cancel_report_batch(
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchControlResponse:
     try:
+        load_admitted_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         result = ledger.cancel_batch(batch_id=batch_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
@@ -990,16 +998,23 @@ async def cancel_report_batch(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
 async def retry_failed_report_batch_items(
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchControlResponse:
     try:
+        load_admitted_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         result = ledger.retry_failed_items(batch_id=batch_id)
     except ValueError as exc:
         raise _not_found_error(exc) from exc
@@ -1027,16 +1042,23 @@ async def retry_failed_report_batch_items(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         )
     },
 )
 async def recover_expired_report_batch_leases(
     batch_id: Annotated[str, Path(description="Opaque durable report batch identifier.")],
     ledger: ReportBatchLedgerPort = Depends(get_report_batch_ledger),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchRecoveryResponse:
     try:
+        load_admitted_batch(
+            ledger=ledger,
+            batch_id=batch_id,
+            caller_context=caller_context,
+        )
         result = ledger.recover_expired_leases(batch_id=batch_id)
         batch = ledger.get_batch(batch_id)
     except ValueError as exc:
@@ -1095,7 +1117,9 @@ async def recover_expired_report_batch_leases(
         **_error_response(
             404,
             example_key="report_batch_not_found",
-            description="Returned when the requested report batch does not exist.",
+            description=(
+                "Returned when the requested report batch does not exist within the caller tenant."
+            ),
         ),
         **_error_response(
             409,
