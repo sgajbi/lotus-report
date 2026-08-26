@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 from prometheus_client import Counter, Gauge, Histogram
 
 from app.report_batch_orchestrator.models import BatchPressureSnapshot
+
+BATCH_ITEM_TENANT_MISMATCH = "batch_item_tenant_mismatch"
 
 METRIC_OPERATION_LABEL = "operation"
 METRIC_STATUS_LABEL = "status"
@@ -298,6 +301,26 @@ def record_report_operation(
             status=status_label,
             failure_category=failure_label,
         ).observe(max(0.0, duration_seconds))
+
+
+def record_batch_item_quarantines(execution_results: Iterable[Any]) -> int:
+    """Record each tenant-mismatch quarantine as an operator-visible failure.
+
+    Called from the boundary rather than from the execution service: app.reporting_metrics
+    imports report_batch_orchestrator.models, so the domain package cannot import it back.
+    """
+
+    quarantined = 0
+    for result in execution_results:
+        if getattr(result, "failure_category", None) != BATCH_ITEM_TENANT_MISMATCH:
+            continue
+        quarantined += 1
+        record_report_operation(
+            operation="batch_worker_run",
+            status="failed",
+            failure_category=BATCH_ITEM_TENANT_MISMATCH,
+        )
+    return quarantined
 
 
 def record_batch_worker_metrics(

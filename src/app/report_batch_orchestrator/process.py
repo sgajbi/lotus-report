@@ -19,7 +19,11 @@ from app.report_batch_orchestrator.models import BatchDispatchPolicy
 from app.report_batch_orchestrator.runtime import BatchRuntimePassResult, ReportBatchRuntime
 from app.report_batch_orchestrator.service import get_report_batch_runtime
 from app.reporting_jobs.models import ReportCallerContext
-from app.reporting_metrics import record_batch_pressure_metrics, record_batch_worker_metrics
+from app.reporting_metrics import (
+    record_batch_item_quarantines,
+    record_batch_pressure_metrics,
+    record_batch_worker_metrics,
+)
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -130,6 +134,11 @@ class BatchWorkerProcess:
                         "back_pressure_stopped" if result.back_pressure_stopped else None
                     ),
                     duration_seconds=perf_counter() - started_at,
+                )
+                record_batch_item_quarantines(
+                    execution_result
+                    for batch_result in result.batch_results
+                    for execution_result in batch_result.execution_results
                 )
                 record_batch_pressure_metrics(result.pressure_snapshot)
                 self._log_pass_result(iteration=iteration, result=result)

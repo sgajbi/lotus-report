@@ -593,3 +593,119 @@ async def test_batch_item_execution_rejects_waiting_item_without_report_job(tmp_
 
     with pytest.raises(ValueError, match="batch_item_report_job_missing"):
         await service.execute_item(batch_id=batch.batch_id, batch_item_id="rbit_static")
+
+
+class _JobLedgerWithForeignTenant:
+    """A report-job ledger whose linked job belongs to a different tenant than its batch.
+
+    Reproduces the residual #170 cannot reach by admitting the batch record: a link created
+    by a worker that was not yet tenant-scoped points at another tenant's report job. The
+    mismatch is on the far side of the link, so no check on the batch can see it.
+    """
+
+    def __init__(self, *, inner: ReportJobLedger, foreign_tenant_id: str) -> None:
+        self._inner = inner
+        self._foreign_tenant_id = foreign_tenant_id
+        self.executed_job_ids: list[str] = []
+
+    def get_job(self, job_id: str) -> ReportJobLedgerRecord:
+        self.executed_job_ids.append(job_id)
+        job = self._inner.get_job(job_id)
+        return job.model_copy(update={"tenant_id": self._foreign_tenant_id})
+
+
+@pytest.mark.asyncio
+async def test_batch_item_execution_quarantines_a_cross_tenant_report_job(tmp_path) -> None:
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+    foreign_ledger = _JobLedgerWithForeignTenant(
+        inner=report_job_ledger,
+        foreign_tenant_id="tenant-uk",
+    )
+
+    class _CaptureMustNotRun:
+        async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("A cross-tenant report job must never be executed.")
+
+    class _RenderMustNotRun:
+        async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("A cross-tenant report job must never be rendered.")
+
+    service = ReportBatchExecutionService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=foreign_ledger,
+        capture_service=_CaptureMustNotRun(),
+        render_service=_RenderMustNotRun(),
+    )
+
+    result = await service.execute_item(
+        batch_id=batch.batch_id,
+        batch_item_id=item.batch_item_id,
+    )
+
+    assert result.failure_category == "batch_item_tenant_mismatch"
+    assert result.report_job_status == "not_executed"
+    assert result.item_status == "failed_terminal"
+    assert result.retry_eligible is False
+
+
+@pytest.mark.asyncio
+async def test_quarantined_cross_tenant_item_is_never_retried(tmp_path) -> None:
+    """A quarantine an operator has not resolved must not be resurrected by retry or scan."""
+
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+    foreign_ledger = _JobLedgerWithForeignTenant(
+        inner=report_job_ledger,
+        foreign_tenant_id="tenant-uk",
+    )
+
+    class _MustNotRun:
+        async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+        async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+    service = ReportBatchExecutionService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=foreign_ledger,
+        capture_service=_MustNotRun(),
+        render_service=_MustNotRun(),
+    )
+    await service.execute_item(batch_id=batch.batch_id, batch_item_id=item.batch_item_id)
+
+    quarantined = batch_ledger.get_batch_item(batch.batch_id, item.batch_item_id)
+    assert quarantined.status == "failed_terminal"
+    assert quarantined.retry_eligible is False
+
+    batch_ledger.retry_failed_items(batch_id=batch.batch_id)
+    after_retry = batch_ledger.get_batch_item(batch.batch_id, item.batch_item_id)
+    assert after_retry.status == "failed_terminal"
+
+    runnable = batch_ledger.list_runnable_batch_ids(tenant_id=batch.tenant_id, limit=10)
+    assert batch.batch_id not in runnable
+
+
+@pytest.mark.asyncio
+async def test_batch_item_execution_proceeds_when_the_linked_job_tenant_matches(
+    tmp_path,
+) -> None:
+    """The comparison must be a no-op on the ordinary path."""
+
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    archive_client = _ArchiveClientSuccess()
+    service = _execution_service(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        store=store,
+        render_client=_RenderClientSuccess(),
+        archive_client=archive_client,
+    )
+
+    result = await service.execute_item(
+        batch_id=batch.batch_id,
+        batch_item_id=item.batch_item_id,
+    )
+
+    assert result.failure_category is None
+    assert result.item_status == "succeeded"

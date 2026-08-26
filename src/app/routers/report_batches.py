@@ -74,6 +74,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import ApiErrorResponse, ReportCallerContext
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_metrics import (
+    record_batch_item_quarantines,
     record_batch_pressure_metrics,
     record_batch_scheduler_metrics,
     record_batch_worker_metrics,
@@ -1175,5 +1176,6 @@ async def run_report_batch_once(
         skipped_reason=result.skipped_reason,
         duration_seconds=perf_counter() - started_at,
     )
+    record_batch_item_quarantines(result.execution_results)
     record_batch_pressure_metrics(batch_ledger.batch_pressure_snapshot())
     return _worker_run_response(result)
