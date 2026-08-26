@@ -141,7 +141,7 @@ class ReportBatchItemReplayService:
             replayed_job = self._report_job_ledger.get_job(item.report_job_id)
             if replayed_job.idempotency_key != replay_key:
                 raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
-            source_job = self._source_job_for_replayed_job(replayed_job)
+            source_job = self._source_job_for_replayed_job(batch=batch, replayed_job=replayed_job)
             return BatchItemReplayResult(
                 batch_id=batch_id,
                 item=item,
@@ -257,15 +257,42 @@ class ReportBatchItemReplayService:
         return self._report_job_ledger.get_job(item.report_job_id)
 
     def _source_job_for_replayed_job(
-        self, replayed_job: ReportJobLedgerRecord
+        self,
+        *,
+        batch: ReportBatchRecord,
+        replayed_job: ReportJobLedgerRecord,
     ) -> ReportJobLedgerRecord:
+        """Resolve the source job behind a replayed job, refusing a foreign-tenant source.
+
+        This is one dereference further than the item-to-job link: the identifier comes from
+        a lineage event payload, not from the batch item. A batch whose *replayed* job is
+        same-tenant can still have a source job belonging to another tenant, so passing the
+        fence on the replayed job says nothing about this one. Every identifier followed out
+        of the batch is checked where it is followed, not where it was first held.
+        """
+
         for event in self._report_job_ledger.list_status_events(replayed_job.job_id):
             source_job_id = event.event_payload.get("source_job_id")
             if event.event_type == "batch_item_replay_lineage_bound" and isinstance(
                 source_job_id,
                 str,
             ):
-                return self._report_job_ledger.get_job(source_job_id)
+                source_job = self._report_job_ledger.get_job(source_job_id)
+                if source_job.tenant_id != batch.tenant_id:
+                    self._logger.error(
+                        TENANT_MISMATCH_CATEGORY,
+                        extra={
+                            "extra_fields": {
+                                "batch_id": batch.batch_id,
+                                "report_job_id": replayed_job.job_id,
+                                "source_job_id": source_job_id,
+                                "failure_category": TENANT_MISMATCH_CATEGORY,
+                                "command": "batch_item_replay_lineage",
+                            }
+                        },
+                    )
+                    raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
+                return source_job
         raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 
     def _request_for_item(

@@ -267,6 +267,22 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
   worker that was not tenant-scoped, which is only possible for links created before that scoping
   existed. A non-zero count is worth investigating rather than clearing.
 
+Quarantined batch items (`batch_item_report_job_missing`):
+
+- the same check quarantines an item whose linked report job **cannot be loaded at all**.
+  `report_batch_item.report_job_id` carries no foreign key - report jobs live in a separate ledger,
+  so one is not expressible - and the lookup runs before the execution error handler. Left to raise,
+  a single broken link would abort the whole worker pass and abort it again on the same row every
+  interval, so **one unresolvable item would stop every tenant's batches advancing**.
+- treated as terminal for the same reason as the tenant mismatch: a dangling link is a durable data
+  defect, not a transient failure. Routing it to the retry path would mark it `retryable=True` and
+  reproduce the same stall more slowly.
+- to diagnose, take the `report_job_id` from the log line and look it up through the report-job
+  status surface. Either the job was removed while the batch item still referenced it, or the item
+  was written with an identifier that never existed; the two need different corrections.
+- like the tenant mismatch, this needs a human. It is not cleared by retry and not picked up by a
+  later pass.
+
 Still not supported:
 
 - multi-tenant throughput from a single worker process (one process per governed tenant today)
