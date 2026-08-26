@@ -240,6 +240,26 @@ Tenant scope of the background worker:
   owned by another. Not advancing a batch is recoverable; advancing it into the wrong tenant is
   not.
 
+Quarantined batch items (`batch_item_tenant_mismatch`):
+
+- before executing a dispatched item, the execution bridge compares the persisted tenant of the
+  **linked report job** with the tenant of its batch. If they differ the item is refused, marked
+  `failed_terminal` with error category `batch_item_tenant_mismatch`, and never retried. No
+  snapshot, render, or archive work is started.
+- this is deliberately loud rather than the product-safe not-found used on caller-facing routes.
+  There is no caller to disclose to on a background path, and a silent skip would leave the item
+  looking merely slow.
+- signal: `lotus_report_operations_total{operation="batch_worker_run",status="failed",
+  failure_category="batch_item_tenant_mismatch"}` increments, and the worker logs
+  `batch_item_tenant_mismatch` with the batch, item, and report-job identifiers.
+- **a quarantined item needs a human.** Retry (`:retry-failed`) will not resurrect it, and it is
+  excluded from runnable-batch scans, both by design. Establish which of the two tenants the work
+  legitimately belongs to before doing anything; the item and the job disagree, so one of them is
+  wrong and the fix depends on which.
+- expected volume is zero. A mismatch means a link between item and report job was created by a
+  worker that was not tenant-scoped, which is only possible for links created before that scoping
+  existed. A non-zero count is worth investigating rather than clearing.
+
 Still not supported:
 
 - multi-tenant throughput from a single worker process (one process per governed tenant today)

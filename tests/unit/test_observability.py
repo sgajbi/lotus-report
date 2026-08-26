@@ -556,3 +556,60 @@ def test_record_evidence_surface_supportability_accepts_degraded_empty_and_stale
         reason="evidence_surface_empty",
         freshness_bucket="unknown",
     )
+
+
+def test_batch_item_quarantines_are_recorded_as_operator_visible_failures() -> None:
+    """The quarantine signal must reach metrics from the boundary, not the domain service."""
+
+    from app.reporting_metrics import (
+        BATCH_ITEM_TENANT_MISMATCH,
+        record_batch_item_quarantines,
+    )
+
+    class _Result:
+        def __init__(self, failure_category: str | None) -> None:
+            self.failure_category = failure_category
+
+    recorded = record_batch_item_quarantines(
+        [
+            _Result(BATCH_ITEM_TENANT_MISMATCH),
+            _Result("batch_execution_failed"),
+            _Result(None),
+            _Result(BATCH_ITEM_TENANT_MISMATCH),
+        ]
+    )
+
+    assert recorded == 2
+
+
+def test_reporting_metrics_is_not_imported_by_the_batch_orchestrator_package() -> None:
+    """app.reporting_metrics imports this package's models; importing it back is a cycle.
+
+    process.py and scheduler_process.py are boundary entry points that are not loaded by
+    report_batch_orchestrator/__init__.py, so they may import metrics. Anything __init__
+    loads must not.
+    """
+
+    import ast
+    from pathlib import Path
+
+    package = Path(__file__).resolve().parents[2] / "src/app/report_batch_orchestrator"
+    boundary_modules = {"process.py", "scheduler_process.py"}
+    offenders = []
+    for module in sorted(package.glob("*.py")):
+        if module.name in boundary_modules:
+            continue
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "app.reporting_metrics":
+                offenders.append(module.name)
+            if isinstance(node, ast.Import):
+                offenders.extend(
+                    module.name for alias in node.names if alias.name == "app.reporting_metrics"
+                )
+
+    assert offenders == [], (
+        "These modules import app.reporting_metrics and are loaded by the package __init__, "
+        f"which is a circular import: {sorted(set(offenders))}. Record the metric at the "
+        "boundary instead."
+    )

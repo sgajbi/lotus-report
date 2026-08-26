@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -15,6 +16,11 @@ from app.reporting_jobs.execution import (
     ReportSnapshotCaptureService,
 )
 from app.reporting_jobs.models import ReportJobLedgerRecord
+
+# Metrics are recorded at the boundary (worker process, run-once route), never here:
+# app.reporting_metrics imports this package's models, so importing it back from a module
+# that report_batch_orchestrator/__init__.py loads would be a circular import.
+TENANT_MISMATCH_CATEGORY = "batch_item_tenant_mismatch"
 
 
 class BatchExecutionLedger(Protocol):
@@ -60,6 +66,7 @@ class ReportBatchExecutionService:
         capture_service: ReportSnapshotCaptureService,
         render_service: ReportRenderOrchestrationService,
         retry_policy: BatchRetryPolicy | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self._batch_ledger = batch_ledger
         self._report_job_ledger = report_job_ledger
@@ -69,6 +76,7 @@ class ReportBatchExecutionService:
             render_service=render_service,
         )
         self._retry_policy = retry_policy or BatchRetryPolicy()
+        self._logger = logger or logging.getLogger("report_batch_execution")
 
     async def execute_item(
         self,
@@ -76,9 +84,13 @@ class ReportBatchExecutionService:
         batch_id: str,
         batch_item_id: str,
     ) -> BatchItemExecutionResult:
-        item = self._load_waiting_item(batch_id=batch_id, batch_item_id=batch_item_id)
+        batch, item = self._load_waiting_item(batch_id=batch_id, batch_item_id=batch_item_id)
         if item.report_job_id is None:
             raise ValueError("batch_item_report_job_missing")
+
+        quarantined = self._quarantine_on_tenant_mismatch(batch=batch, item=item)
+        if quarantined is not None:
+            return quarantined
 
         try:
             job = await self._job_execution_service.execute_job(job_id=item.report_job_id)
@@ -139,14 +151,73 @@ class ReportBatchExecutionService:
             report_job_status=job.status,
         )
 
-    def _load_waiting_item(self, *, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord:
+    def _load_waiting_item(
+        self,
+        *,
+        batch_id: str,
+        batch_item_id: str,
+    ) -> tuple[ReportBatchRecord, ReportBatchItemRecord]:
         batch = self._batch_ledger.get_batch(batch_id)
         for item in batch.items:
             if item.batch_item_id == batch_item_id:
                 if item.status != "waiting_on_report_job":
                     raise ValueError("batch_item_not_waiting_on_report_job")
-                return item
+                return batch, item
         raise ValueError("report_batch_item_not_found")
+
+    def _quarantine_on_tenant_mismatch(
+        self,
+        *,
+        batch: ReportBatchRecord,
+        item: ReportBatchItemRecord,
+    ) -> BatchItemExecutionResult | None:
+        """Refuse to execute a report job that belongs to a different tenant than its batch.
+
+        Batch admission fences the batch record, but the link from item to report job was
+        created by whichever worker dispatched it. A link created before dispatch was
+        tenant-scoped can point at another tenant's job, and no admission check on the batch
+        can see that, because the mismatch is on the far side of the link.
+
+        This is a background path with no caller to disclose to, so the mismatch is loud
+        rather than opaque: the item is quarantined as terminally failed, never retried, and
+        an operator has to resolve it.
+        """
+
+        report_job_id = item.report_job_id
+        if report_job_id is None:
+            return None
+        job = self._report_job_ledger.get_job(report_job_id)
+        if job.tenant_id == batch.tenant_id:
+            return None
+
+        self._logger.error(
+            "batch_item_tenant_mismatch",
+            extra={
+                "batch_id": batch.batch_id,
+                "batch_item_id": item.batch_item_id,
+                "report_job_id": report_job_id,
+                "failure_category": TENANT_MISMATCH_CATEGORY,
+            },
+        )
+        quarantined = self._batch_ledger.mark_item_failed(
+            batch_item_id=item.batch_item_id,
+            error_category=TENANT_MISMATCH_CATEGORY,
+            error_summary=(
+                "Linked report job belongs to a different tenant than its batch; "
+                "execution refused and the item quarantined for operator review."
+            ),
+            retryable=False,
+            retry_policy=self._retry_policy,
+        )
+        return BatchItemExecutionResult(
+            batch_id=batch.batch_id,
+            batch_item_id=item.batch_item_id,
+            report_job_id=report_job_id,
+            item_status=quarantined.status,
+            report_job_status="not_executed",
+            failure_category=quarantined.last_error_category,
+            retry_eligible=quarantined.retry_eligible,
+        )
 
 
 def _is_successful_job(job: ReportJobLedgerRecord) -> bool:
