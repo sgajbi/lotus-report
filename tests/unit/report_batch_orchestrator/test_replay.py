@@ -465,3 +465,93 @@ def test_replay_still_works_when_the_linked_job_tenant_matches(tmp_path):
 
     assert batch_ledger.quarantines == []
     assert result.replayed_report_job.job_id != source.job_id
+
+
+class _LineageSourceInAnotherTenant:
+    """Replayed job is same-tenant; the SOURCE it points at through lineage is not.
+
+    One dereference further than the item-to-job link: the identifier comes from a lineage
+    event payload, so passing the fence on the replayed job says nothing about this one.
+    """
+
+    def __init__(self, inner: ReportJobLedger, *, replayed_job_id: str, source_job_id: str) -> None:
+        self._inner = inner
+        self._replayed_job_id = replayed_job_id
+        self._source_job_id = source_job_id
+
+    def get_job(self, job_id: str):
+        job = self._inner.get_job(job_id)
+        if job_id == self._source_job_id:
+            return job.model_copy(update={"tenant_id": "tenant-uk"})
+        return job
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_replay_refuses_when_the_lineage_source_job_is_another_tenants(tmp_path):
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+    replayed = service.replay_item(
+        batch_id="rbch_replay",
+        batch_item_id="rbit_replay",
+        command=BatchItemReplayRequest(reason="Seed a replayed job with lineage."),
+        caller_context=_caller(),
+        idempotency_key="lineage-source-seed",
+    )
+    replayed_job_id = replayed.replayed_report_job.job_id
+
+    fenced = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_LineageSourceInAnotherTenant(
+            report_ledger,
+            replayed_job_id=replayed_job_id,
+            source_job_id=source.job_id,
+        ),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        fenced.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Idempotent re-request."),
+            caller_context=_caller(),
+            idempotency_key="lineage-source-seed",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+
+
+def test_replay_returns_the_lineage_source_when_it_is_the_same_tenant(tmp_path):
+    """The comparison must be a no-op on the ordinary idempotent path."""
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+    first = service.replay_item(
+        batch_id="rbch_replay",
+        batch_item_id="rbit_replay",
+        command=BatchItemReplayRequest(reason="Seed."),
+        caller_context=_caller(),
+        idempotency_key="lineage-same-tenant",
+    )
+
+    second = service.replay_item(
+        batch_id="rbch_replay",
+        batch_item_id="rbit_replay",
+        command=BatchItemReplayRequest(reason="Idempotent re-request."),
+        caller_context=_caller(),
+        idempotency_key="lineage-same-tenant",
+    )
+
+    assert second.replayed_report_job.job_id == first.replayed_report_job.job_id
+    assert second.source_report_job.job_id == source.job_id

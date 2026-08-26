@@ -709,3 +709,83 @@ async def test_batch_item_execution_proceeds_when_the_linked_job_tenant_matches(
 
     assert result.failure_category is None
     assert result.item_status == "succeeded"
+
+
+class _JobLedgerWithMissingJob:
+    """report_batch_item.report_job_id has no foreign key and jobs live in another ledger."""
+
+    def __init__(self) -> None:
+        self.lookups = 0
+
+    def get_job(self, job_id: str):
+        self.lookups += 1
+        raise ValueError("report_job_not_found")
+
+
+@pytest.mark.asyncio
+async def test_a_missing_linked_job_is_quarantined_not_raised(tmp_path) -> None:
+    """An absent linked job must not escape execute_item and kill the worker pass."""
+
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+
+    class _MustNotRun:
+        async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+        async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+    service = ReportBatchExecutionService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_JobLedgerWithMissingJob(),
+        capture_service=_MustNotRun(),
+        render_service=_MustNotRun(),
+    )
+
+    result = await service.execute_item(
+        batch_id=batch.batch_id,
+        batch_item_id=item.batch_item_id,
+    )
+
+    assert result.failure_category == "batch_item_report_job_missing"
+    assert result.item_status == "failed_terminal"
+    assert result.retry_eligible is False
+
+
+@pytest.mark.asyncio
+async def test_a_missing_linked_job_does_not_stall_the_rest_of_the_pass(tmp_path) -> None:
+    """One broken link must not stop every other tenant's batches advancing.
+
+    The lookup runs before the execution try-block, so an exception here would leave the
+    item waiting and take down the pass on the same row every time.
+    """
+
+    batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
+
+    class _MustNotRun:
+        async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+        async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+            raise AssertionError("must not run")
+
+    service = ReportBatchExecutionService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_JobLedgerWithMissingJob(),
+        capture_service=_MustNotRun(),
+        render_service=_MustNotRun(),
+    )
+
+    first = await service.execute_item(
+        batch_id=batch.batch_id,
+        batch_item_id=item.batch_item_id,
+    )
+
+    assert first.item_status == "failed_terminal"
+    quarantined = batch_ledger.get_batch_item(batch.batch_id, item.batch_item_id)
+    assert quarantined.status == "failed_terminal"
+    assert quarantined.retry_eligible is False
+    assert batch.batch_id not in batch_ledger.list_runnable_batch_ids(
+        tenant_id=batch.tenant_id,
+        limit=10,
+    )
