@@ -380,6 +380,16 @@ Important validation expectations:
    agents do not normalize the wrong parameter shape by accident,
 11. PR auto-merge must use GitHub rebase auto-merge to preserve the repo's linear non-squash history
    policy; `tests/unit/test_pr_auto_merge_workflow.py` protects this workflow posture.
+12. PR auto-merge must run under `secrets.LOTUS_AUTOMERGE_TOKEN`, never `github.token`. GitHub does
+   not trigger workflow runs from events caused by `GITHUB_TOKEN`, so an automated merge under it
+   pushes to `main` without triggering anything, and the commit lands ungated. The workflow fails
+   visibly when the secret is absent rather than falling back.
+13. `Main Releasability Gate` is dispatch-only and is invoked by
+   `merged-pr-main-releasability.yml` after a merge, against an immutable tag at the merge commit.
+   It asserts `expected_sha` matches the checkout before any substantive job runs, so a run always
+   proves which revision it validated. Audit a merge by
+   `gh run list --commit <full-sha>`; `--branch main` misses the synthetic dispatch ref.
+   The token rule and the dispatcher are both required: either alone is a single point of failure.
 
 ## Codebase Review And Issue Discovery
 

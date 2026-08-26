@@ -8,6 +8,18 @@
 2. `Pull Request Merge Gate`
 3. `Main Releasability Gate`
 
+`Main Releasability Gate` does not run on push. It is dispatched by
+`merged-pr-main-releasability.yml` once a pull request merges, against an immutable tag created at
+the merge commit, and its first job refuses to continue unless the checked-out revision matches the
+`expected_sha` it was dispatched with.
+
+That is deliberate. Automated merges run under `secrets.LOTUS_AUTOMERGE_TOKEN`; had they run under
+`github.token`, GitHub would not treat the merge push as a trigger and the gate would silently not
+run at all. A dispatcher that fails is visible; a suppressed push trigger is not.
+
+**Auditing a merge:** use `gh run list --commit <full-sha>`. Listing by `--branch main` misses the
+run, because the dispatch ref is a tag rather than `main`.
+
 ## Local command mapping
 
 - `make check`
