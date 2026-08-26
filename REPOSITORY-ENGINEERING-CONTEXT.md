@@ -338,9 +338,18 @@ Use these commands as the primary local contract:
 5. Docker build
    `make docker-build`
 6. domain-data-product contract validation
-   `make domain-product-validate`
+   `make domain-product-validate` - also runs inside `make check` and `make ci`; listed here for
+   running it alone
 7. idea evidence intake contract validation
-   `make idea-evidence-intake-contract-gate`
+   `make idea-evidence-intake-contract-gate` - also runs inside `make check` and `make ci`
+
+These, `make idea-evidence-materialization-contract-gate` and `make monetary-float-guard` were
+declared and invoked by nothing until issue #182: never run in CI, and passing only by luck. A
+`.PHONY` declaration says a target is not a file; it is not an invocation, and documenting a command
+instructs a human rather than enforcing anything.
+`tests/unit/test_gate_reachability.py` fails if any gate-shaped target becomes unreachable from a
+blocking lane, so a fifth cannot arrive dead. A target that legitimately runs elsewhere carries a
+recorded disposition rather than an absence.
 8. supported prior-schema upgrade proof
    `make migration-upgrade-smoke`
 

@@ -25,7 +25,11 @@ run, because the dispatch ref is a tag rather than `main`.
 ## Local command mapping
 
 - `make check`
-  lint, typecheck, OpenAPI gate, unit tests
+  lint, typecheck, OpenAPI gate, monetary float guard, domain-data-product contract validation,
+  idea-evidence intake and materialization contract gates, unit tests.
+  The four contract and guard targets ran in **no** lane until issue #182 - they were declared,
+  documented, and invoked by nothing. `tests/unit/test_gate_reachability.py` now fails if any
+  gate-shaped target stops being reachable from `check` or `ci`.
 - `make ci`
   automation-oriented migration, integration, e2e, coverage, and security proof against a
   caller-owned isolated PostgreSQL database

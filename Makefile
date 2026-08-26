@@ -74,9 +74,9 @@ test-coverage:
 security-audit:
 	python scripts/run_security_audit.py
 
-check: lint typecheck openapi-gate test
+check: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate test
 
-ci: lint typecheck openapi-gate migration-smoke test-integration test-e2e test-coverage security-audit
+ci: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
 
 ci-local:
 	python scripts/run_isolated_ci.py
