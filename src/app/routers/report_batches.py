@@ -633,6 +633,7 @@ async def get_report_batch_status(
     report_jobs_by_id = load_report_job_archive_statuses(
         record.items,
         report_job_lookup=report_job_lookup,
+        tenant_id=record.tenant_id,
     )
     return build_batch_status(record, report_jobs_by_id=report_jobs_by_id)
 
@@ -696,6 +697,7 @@ async def get_report_batch_item_status(
     report_jobs_by_id = load_report_job_archive_statuses(
         [item],
         report_job_lookup=report_job_lookup,
+        tenant_id=caller_context.tenant_id,
     )
     return build_batch_item_status(
         item,

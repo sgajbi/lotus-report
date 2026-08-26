@@ -463,7 +463,7 @@ def test_report_batch_status_reads_hide_cross_tenant_batches_before_job_lookup(t
         )
 
         class _JobLookupMustNotRun:
-            def get_archive_statuses_by_job_ids(self, _job_ids):
+            def get_archive_statuses_by_job_ids(self, _job_ids, *, tenant_id):
                 raise AssertionError("Cross-tenant reads must stop before report-job lookup.")
 
         app.dependency_overrides[get_report_job_ledger] = lambda: _JobLookupMustNotRun()
@@ -1742,5 +1742,62 @@ def test_every_batch_scoped_mutation_route_admits_the_caller(tmp_path):
         assert [item.report_job_id for item in after.items] == [
             item.report_job_id for item in before.items
         ]
+    finally:
+        _clear_overrides()
+
+
+def test_batch_status_does_not_project_a_cross_tenant_linked_report_job(tmp_path):
+    """Pre-fix state can link a batch to another tenant's job; status must not read it.
+
+    Admission passes because the batch is genuinely the caller's. The mismatch is on the
+    far side of the link, so the tenant has to travel with the lookup.
+    """
+
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("cross-tenant-status-projection"),
+        ).json()
+        batch_id = batch["batch_id"]
+
+        foreign_caller = _caller_context().model_copy(update={"tenant_id": "tenant-uk"})
+        foreign_job = report_ledger.create_portfolio_review_job(
+            request=PortfolioReviewJobRequest(
+                portfolio_scope={"portfolio_ids": ["PB_UK_SECRET_001"]},
+                as_of_date="2026-04-22",
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW"]},
+            ),
+            caller_context=foreign_caller,
+            idempotency_key="foreign-tenant-linked-job",
+        )
+        leased = batch_ledger.acquire_dispatch_items(
+            batch_id=batch_id,
+            worker_id="cross-tenant-projection",
+            lease_seconds=300,
+            limit=1,
+        )[0]
+        linked = batch_ledger.mark_item_waiting_on_report_job(
+            batch_item_id=leased.batch_item_id,
+            lease_token=leased.lease_token,
+            report_job_id=foreign_job.job_id,
+        )
+
+        batch_status = client.get(f"/reports/batches/{batch_id}", headers=_headers())
+        item_status = client.get(
+            f"/reports/batches/{batch_id}/items/{linked.batch_item_id}",
+            headers=_headers(),
+        )
+
+        assert batch_status.status_code == 200
+        assert item_status.status_code == 200
+        for body in (batch_status.text, item_status.text):
+            assert "tenant-uk" not in body
+            assert "PB_UK_SECRET_001" not in body
+        assert item_status.json()["report_job_status"] is None
+        assert item_status.json()["archive_document_id"] is None
     finally:
         _clear_overrides()

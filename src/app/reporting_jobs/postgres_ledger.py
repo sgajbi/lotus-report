@@ -727,7 +727,16 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
     def get_archive_statuses_by_job_ids(
         self,
         job_ids: list[str],
+        *,
+        tenant_id: str,
     ) -> list[ReportJobArchiveStatusRecord]:
+        """Project archive status for one tenant only.
+
+        tenant_id is required rather than optional so a caller cannot accidentally read
+        another tenant's job by omitting it. A job outside the tenant is not returned, so
+        neither its lifecycle status nor its archive_document_id can reach the projection.
+        """
+
         unique_job_ids = sorted({job_id for job_id in job_ids if job_id})
         if not unique_job_ids:
             return []
@@ -735,12 +744,18 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT report_job_id, status, archive_document_id
+                SELECT
+                    report_job.report_job_id,
+                    report_job.status,
+                    report_job.archive_document_id
                 FROM report_job
-                WHERE report_job_id = ANY(%s)
-                ORDER BY report_job_id ASC
+                JOIN report_request
+                  ON report_request.report_request_id = report_job.report_request_id
+                WHERE report_request.tenant_id = %s
+                  AND report_job.report_job_id = ANY(%s)
+                ORDER BY report_job.report_job_id ASC
                 """,
-                (unique_job_ids,),
+                (tenant_id, unique_job_ids),
             ).fetchall()
         return [
             ReportJobArchiveStatusRecord(

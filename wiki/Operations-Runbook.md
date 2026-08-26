@@ -240,6 +240,16 @@ Tenant scope of the background worker:
   owned by another. Not advancing a batch is recoverable; advancing it into the wrong tenant is
   not.
 
+Batch status reads are tenant-scoped through the link, not only at the batch:
+
+- `GET /reports/batches/{batch_id}` and the item-status route resolve linked report jobs with the
+  admitted batch tenant, so a job belonging to another tenant is not returned by the lookup at all.
+  Its lifecycle status and `archive_document_id` therefore cannot appear in either response.
+- the effect on a cross-linked item is that it reads as **unlinked**: `report_job_status` and
+  `archive_document_id` are `null`. That is deliberate - the caller owns the batch, so the response
+  is not an error, but nothing is disclosed about the foreign job. An item stuck in that shape is a
+  data defect and shows up as a quarantine on the execution path below.
+
 Quarantined batch items (`batch_item_tenant_mismatch`):
 
 - before executing a dispatched item, the execution bridge compares the persisted tenant of the

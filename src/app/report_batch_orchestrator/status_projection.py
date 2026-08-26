@@ -16,6 +16,8 @@ class ReportJobArchiveStatusLookup(Protocol):
     def get_archive_statuses_by_job_ids(
         self,
         job_ids: list[str],
+        *,
+        tenant_id: str,
     ) -> list[ReportJobArchiveStatusRecord]: ...
 
 
@@ -23,13 +25,26 @@ def load_report_job_archive_statuses(
     items: Iterable[ReportBatchItemRecord],
     *,
     report_job_lookup: ReportJobArchiveStatusLookup,
+    tenant_id: str,
 ) -> dict[str, ReportJobArchiveStatusRecord]:
+    """Resolve linked report jobs for a batch, scoped to the admitted batch tenant.
+
+    A batch item's report_job_id was written by whichever worker dispatched it, so durable
+    state predating tenant-scoped dispatch can link a batch to another tenant's job. Passing
+    batch admission says nothing about the job on the other end of that link, so the tenant
+    travels with the lookup: a foreign job is not returned, and therefore neither its
+    lifecycle status nor its archive_document_id can reach the response.
+    """
+
     job_ids = sorted({item.report_job_id for item in items if item.report_job_id})
     if not job_ids:
         return {}
     return {
         record.report_job_id: record
-        for record in report_job_lookup.get_archive_statuses_by_job_ids(job_ids)
+        for record in report_job_lookup.get_archive_statuses_by_job_ids(
+            job_ids,
+            tenant_id=tenant_id,
+        )
     }
 
 
