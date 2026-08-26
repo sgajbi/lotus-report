@@ -176,9 +176,9 @@ def test_setup_observability_supports_fastapi_deferred_included_routers():
     setup_observability(app)
     app.include_router(router)
 
-    client = TestClient(app)
-    live = client.get("/health/live")
-    metrics = client.get("/metrics")
+    with TestClient(app) as client:
+        live = client.get("/health/live")
+        metrics = client.get("/metrics")
 
     assert live.status_code == 200
     assert live.json() == {"status": "live"}
