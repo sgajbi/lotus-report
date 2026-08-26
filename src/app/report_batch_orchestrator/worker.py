@@ -11,6 +11,7 @@ from app.report_batch_orchestrator.models import (
     BatchRuntimeLoad,
     ReportBatchRecord,
 )
+from app.report_batch_orchestrator.tenant_admission import admit_batch
 from app.reporting_jobs.models import ReportCallerContext
 
 RUNNABLE_BATCH_STATUSES = {"materialized", "running"}
@@ -77,7 +78,10 @@ class ReportBatchWorker:
         dispatch_policy: BatchDispatchPolicy | None = None,
         recover_expired_leases: bool = True,
     ) -> BatchWorkerRunResult:
-        before = self._batch_ledger.get_batch(batch_id)
+        before = admit_batch(
+            self._batch_ledger.get_batch(batch_id),
+            caller_context=caller_context,
+        )
         if before.status not in RUNNABLE_BATCH_STATUSES:
             return BatchWorkerRunResult(
                 batch_id=batch_id,
