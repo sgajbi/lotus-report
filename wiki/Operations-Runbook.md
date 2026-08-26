@@ -269,7 +269,11 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
 
 Quarantined batch items (`batch_item_report_job_missing`):
 
-- the same check quarantines an item whose linked report job **cannot be loaded at all**.
+- the same check quarantines an item whose linked report job **does not exist**. Only an absent
+  row qualifies: a connection or query fault against the report ledger is recorded as an ordinary
+  retryable `batch_execution_failed`, never as a quarantine. Quarantine is permanent, so reading a
+  brief ledger outage as a dangling link would terminally fail every waiting item at once - a wider
+  outage than the stall the check prevents.
   `report_batch_item.report_job_id` carries no foreign key - report jobs live in a separate ledger,
   so one is not expressible - and the lookup runs before the execution error handler. Left to raise,
   a single broken link would abort the whole worker pass and abort it again on the same row every
@@ -278,8 +282,9 @@ Quarantined batch items (`batch_item_report_job_missing`):
   defect, not a transient failure. Routing it to the retry path would mark it `retryable=True` and
   reproduce the same stall more slowly.
 - to diagnose, take the `report_job_id` from the log line and look it up through the report-job
-  status surface. Either the job was removed while the batch item still referenced it, or the item
-  was written with an identifier that never existed; the two need different corrections.
+  status surface. It will not be there. Either the job was removed while the batch item still
+  referenced it, or the item was written with an identifier that never existed; the two need
+  different corrections.
 - like the tenant mismatch, this needs a human. It is not cleared by retry and not picked up by a
   later pass.
 
