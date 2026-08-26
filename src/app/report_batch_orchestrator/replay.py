@@ -31,6 +31,10 @@ from app.reporting_render.replay_service import (
     assert_replay_eligible,
 )
 
+# The only item states either replay branch acts on. Anything else is already non-replayable,
+# so a mismatch there must be refused without touching the record.
+REPLAYABLE_ITEM_STATUSES = ("waiting_on_report_job", "failed_retryable")
+
 
 @dataclass(frozen=True)
 class BatchItemReplayResult:
@@ -215,8 +219,14 @@ class ReportBatchItemReplayService:
         read that job and derive a new one from it.
 
         The caller is told only that the item cannot be replayed - the existing 409 contract,
-        which is true and discloses nothing about the other tenant - and the item is
-        quarantined so it stops presenting itself as replayable.
+        which is true and discloses nothing about the other tenant.
+
+        The item is quarantined only when it is in a state replay would otherwise have acted
+        on. `mark_item_failed` has no source-status predicate: it rewrites whatever it is
+        given, increments the attempt count, and can flip a completed batch to
+        `completed_with_failures`. Applying it to a `succeeded` item would destroy finished
+        work in response to a call that was never going to change anything, which is a worse
+        outcome than the disclosure this refusal prevents.
         """
 
         report_job_id = item.report_job_id
@@ -225,6 +235,9 @@ class ReportBatchItemReplayService:
         job = self._report_job_ledger.get_job(report_job_id)
         if job.tenant_id == batch.tenant_id:
             return
+        if item.status not in REPLAYABLE_ITEM_STATUSES:
+            # Already non-replayable: refuse without mutating anything.
+            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
 
         self._logger.error(
             "batch_item_tenant_mismatch",
