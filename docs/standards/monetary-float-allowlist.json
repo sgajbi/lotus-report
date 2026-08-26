@@ -4,12 +4,6 @@
   "generated_at": "2026-07-18T14:44:28Z",
   "allowlist": [
     {
-      "finding": "scripts/check_monetary_float_usage.py:112:\"justification\": \"Temporary approved monetary float usage; migrate to Decimal.\",",
-      "justification": "Temporary approved monetary float usage; migrate to Decimal.",
-      "owner": "platform-governance",
-      "review_by": "2026-08-24"
-    },
-    {
       "finding": "src/app/models/contracts.py:15:value: float",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
