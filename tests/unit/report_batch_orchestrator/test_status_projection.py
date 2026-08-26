@@ -64,11 +64,16 @@ def test_archive_status_lookup_is_deduplicated_and_omits_unlinked_items() -> Non
     class _Lookup:
         requested_job_ids: list[str] = []
 
+        requested_tenant_id: str = ""
+
         def get_archive_statuses_by_job_ids(
             self,
             job_ids: list[str],
+            *,
+            tenant_id: str,
         ) -> list[ReportJobArchiveStatusRecord]:
             self.requested_job_ids = job_ids
+            self.requested_tenant_id = tenant_id
             return [
                 ReportJobArchiveStatusRecord(
                     report_job_id="rjob_linked",
@@ -81,7 +86,9 @@ def test_archive_status_lookup_is_deduplicated_and_omits_unlinked_items() -> Non
     result = load_report_job_archive_statuses(
         [_item(), _item(), _item(report_job_id=None)],
         report_job_lookup=lookup,
+        tenant_id="tenant-sg",
     )
 
     assert lookup.requested_job_ids == ["rjob_linked"]
+    assert lookup.requested_tenant_id == "tenant-sg"
     assert list(result) == ["rjob_linked"]
