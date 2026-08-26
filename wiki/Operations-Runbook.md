@@ -256,7 +256,11 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
   **linked report job** with the tenant of its batch. If they differ the item is refused, marked
   `failed_terminal` with error category `batch_item_tenant_mismatch`, and never retried. No
   snapshot, render, or archive work is started.
-- the same comparison runs on **batch-item replay**. A caller who legitimately owns the batch, but
+- the same comparison runs on **batch-item replay**, but only quarantines an item replay would
+  otherwise have acted on (`waiting_on_report_job` or `failed_retryable`). An already-completed or
+  terminal item with a foreign link is refused without being modified: rewriting a `succeeded` item
+  would destroy finished work in response to a call that was never going to change anything, and
+  could flip its batch to `completed_with_failures`. A caller who legitimately owns the batch, but
   whose item is linked to another tenant's report job, receives the ordinary
   `409 report_batch_item_cannot_be_replayed` contract - true, and disclosing nothing about the other
   tenant - and the item is quarantined the same way. No replayed job and no lineage relationship is

@@ -555,3 +555,65 @@ def test_replay_returns_the_lineage_source_when_it_is_the_same_tenant(tmp_path):
 
     assert second.replayed_report_job.job_id == first.replayed_report_job.job_id
     assert second.source_report_job.job_id == source.job_id
+
+
+def test_replay_never_rewrites_a_succeeded_item_with_a_foreign_linked_job(tmp_path):
+    """A call that was never going to change anything must not destroy completed work.
+
+    mark_item_failed has no source-status predicate: it rewrites whatever it is given,
+    increments the attempt count, and can flip a completed batch to completed_with_failures.
+    A succeeded item is already non-replayable, so the mismatch is refused without mutating.
+    """
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    succeeded_item = _item(
+        report_job_id=source.job_id,
+        status="succeeded",
+        retry_eligible=False,
+    )
+    batch_ledger = _ReplayLedgerRecordingQuarantine(succeeded_item)
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Replay of already-succeeded work."),
+            caller_context=_caller(),
+            idempotency_key="succeeded-foreign-link",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+    assert batch_ledger.quarantines == []
+    assert batch_ledger.item.status == "succeeded"
+    assert batch_ledger.item.attempt_count == succeeded_item.attempt_count
+
+
+def test_replay_still_quarantines_a_replayable_item_with_a_foreign_linked_job(tmp_path):
+    """The narrowing must not stop the quarantine on work replay would have acted on."""
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Foreign link on retryable work."),
+            caller_context=_caller(),
+            idempotency_key="retryable-foreign-link",
+        )
+
+    assert [entry["error_category"] for entry in batch_ledger.quarantines] == [
+        "batch_item_tenant_mismatch"
+    ]
+    assert batch_ledger.item.status == "failed_terminal"
