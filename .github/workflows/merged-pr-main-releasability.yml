@@ -1,0 +1,52 @@
+name: Merged PR Main Releasability Dispatch
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  dispatch-main-releasability:
+    name: Dispatch Main Releasability
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch main releasability gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MERGE_COMMIT_SHA" ]; then
+            echo "::error::pull_request.merge_commit_sha is required for exact-main releasability dispatch"
+            exit 1
+          fi
+
+          dispatch_ref="main-releasability-${MERGE_COMMIT_SHA}"
+          existing_ref_sha=""
+          if existing_ref_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$dispatch_ref" --jq .object.sha 2>/dev/null)"; then
+            if [ "$existing_ref_sha" != "$MERGE_COMMIT_SHA" ]; then
+              echo "::error::Dispatch ref $dispatch_ref points to $existing_ref_sha, expected $MERGE_COMMIT_SHA"
+              exit 1
+            fi
+          else
+            existing_ref_sha=""
+          fi
+          if [ -z "$existing_ref_sha" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$dispatch_ref" \
+              -f sha="$MERGE_COMMIT_SHA" >/dev/null
+          fi
+          gh workflow run main-releasability.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$dispatch_ref" \
+            -f expected_sha="$MERGE_COMMIT_SHA" \
+            -f triggering_pr="$PR_NUMBER" \
+            -f source_branch="main"
