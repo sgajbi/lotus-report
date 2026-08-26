@@ -1666,3 +1666,81 @@ def test_report_batch_run_once_rejects_cross_tenant_callers_without_mutating(tmp
 class _ExecutionMustNotRun:
     async def execute_item(self, *, batch_id: str, batch_item_id: str):
         raise AssertionError("Cross-tenant run-once must stop before item execution.")
+
+
+BATCH_SCOPED_MUTATION_ROUTES: dict[str, dict[str, object] | None] = {
+    "/reports/batches/{batch_id}:pause": None,
+    "/reports/batches/{batch_id}:resume": None,
+    "/reports/batches/{batch_id}:cancel": None,
+    "/reports/batches/{batch_id}:retry-failed": None,
+    "/reports/batches/{batch_id}:recover-expired-leases": None,
+    "/reports/batches/{batch_id}:run-once": {
+        "worker_id": "lotus-report-batch-worker-admission-sweep"
+    },
+    "/reports/batches/{batch_id}/items/{batch_item_id}/replay": {
+        "reason": "Cross-tenant admission sweep."
+    },
+}
+
+
+def _discovered_batch_scoped_mutation_routes() -> set[str]:
+    """Discover from the published contract, so the sweep covers what callers can reach."""
+
+    return {
+        path
+        for path, operations in app.openapi()["paths"].items()
+        if "{batch_id}" in path and "post" in operations
+    }
+
+
+def test_every_batch_scoped_mutation_route_admits_the_caller(tmp_path):
+    """Fail closed when a batch-scoped mutation route has no cross-tenant admission case.
+
+    This is the durable half of #170: the five control routes it found were unfenced
+    because nothing observed that they were unfenced. A new route added without an
+    entry here fails this test rather than shipping unadmitted.
+    """
+
+    assert _discovered_batch_scoped_mutation_routes() == set(BATCH_SCOPED_MUTATION_ROUTES), (
+        "A batch-scoped mutation route was added or removed without updating its "
+        "cross-tenant admission case in BATCH_SCOPED_MUTATION_ROUTES."
+    )
+
+    client, batch_ledger, report_ledger = _client_with_report_jobs(tmp_path)
+    app.dependency_overrides[get_report_batch_worker] = lambda: ReportBatchWorker(
+        batch_ledger=batch_ledger,
+        dispatcher=ReportBatchDispatcher(
+            batch_ledger=batch_ledger,
+            report_job_ledger=report_ledger,
+            policy=BatchDispatchPolicy(max_active_items=5),
+        ),
+        execution_service=_ExecutionMustNotRun(),
+    )
+    try:
+        batch = client.post(
+            "/reports/batches",
+            json=_payload(),
+            headers=_headers("admission-sweep-source"),
+        ).json()
+        batch_id = batch["batch_id"]
+        batch_item_id = batch_ledger.get_batch(batch_id).items[0].batch_item_id
+        before = batch_ledger.get_batch(batch_id)
+
+        other_tenant_headers = _headers("admission-sweep-attempt")
+        other_tenant_headers["X-Tenant-Id"] = "tenant-uk"
+
+        for template, body in BATCH_SCOPED_MUTATION_ROUTES.items():
+            path = template.format(batch_id=batch_id, batch_item_id=batch_item_id)
+            response = client.post(path, json=body, headers=other_tenant_headers)
+            assert response.status_code == 404, template
+            assert response.json() == EXPECTED_BATCH_NOT_FOUND, template
+            assert "tenant-sg" not in response.text, template
+
+        after = batch_ledger.get_batch(batch_id)
+        assert after.status == before.status
+        assert [item.status for item in after.items] == [item.status for item in before.items]
+        assert [item.report_job_id for item in after.items] == [
+            item.report_job_id for item in before.items
+        ]
+    finally:
+        _clear_overrides()
