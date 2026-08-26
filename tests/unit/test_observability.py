@@ -613,3 +613,62 @@ def test_reporting_metrics_is_not_imported_by_the_batch_orchestrator_package() -
         f"which is a circular import: {sorted(set(offenders))}. Record the metric at the "
         "boundary instead."
     )
+
+
+def test_quarantine_log_identifiers_reach_the_json_formatter(caplog) -> None:
+    """`extra=` alone is invisible: JsonFormatter merges only record.extra_fields."""
+
+    import json as _json
+    import logging as _logging
+
+    from app.observability import JsonFormatter
+
+    record = _logging.LogRecord(
+        name="report_batch_execution",
+        level=_logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg="batch_item_tenant_mismatch",
+        args=(),
+        exc_info=None,
+    )
+    record.extra_fields = {
+        "batch_id": "rbch_x",
+        "batch_item_id": "rbci_x",
+        "report_job_id": "rjob_x",
+        "failure_category": "batch_item_tenant_mismatch",
+    }
+
+    payload = _json.loads(JsonFormatter().format(record))
+
+    assert payload["batch_id"] == "rbch_x"
+    assert payload["report_job_id"] == "rjob_x"
+    assert payload["failure_category"] == "batch_item_tenant_mismatch"
+
+
+def test_quarantine_logging_uses_extra_fields_not_bare_extra() -> None:
+    """Guard the calling convention, not just the formatter."""
+
+    import ast
+    from pathlib import Path
+
+    source = (
+        Path(__file__).resolve().parents[2] / "src/app/report_batch_orchestrator/execution.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    extras = [
+        keyword.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "extra"
+    ]
+    assert extras, "expected at least one logging call with extra="
+    for extra in extras:
+        assert isinstance(extra, ast.Dict)
+        keys = [key.value for key in extra.keys if isinstance(key, ast.Constant)]
+        assert keys == ["extra_fields"], (
+            "Log identifiers must be nested under 'extra_fields'; JsonFormatter ignores "
+            f"bare extra= attributes. Found keys: {keys}"
+        )

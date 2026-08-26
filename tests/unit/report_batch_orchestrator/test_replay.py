@@ -342,3 +342,126 @@ def test_batch_replay_does_not_create_a_report_job_for_a_cross_tenant_caller(tmp
     assert batch_ledger.relinks == 0
     assert report_ledger.list_status_events(source.job_id) == events_before
     assert report_ledger.list_job_relationships(source.job_id) == []
+
+
+class _ReplayLedgerRecordingQuarantine(_ReplayLedger):
+    def __init__(self, item: ReportBatchItemRecord) -> None:
+        super().__init__(item)
+        self.quarantines: list[dict[str, object]] = []
+
+    def mark_item_failed(
+        self,
+        *,
+        batch_item_id: str,
+        error_category: str,
+        error_summary: str,
+        retryable: bool,
+        retry_policy=None,
+    ) -> ReportBatchItemRecord:
+        self.quarantines.append(
+            {
+                "batch_item_id": batch_item_id,
+                "error_category": error_category,
+                "retryable": retryable,
+            }
+        )
+        self.item = self.item.model_copy(
+            update={"status": "failed_terminal", "retry_eligible": False}
+        )
+        return self.item
+
+
+class _ForeignTenantJobLedger:
+    """Wraps a real job ledger so the linked job reports a different tenant."""
+
+    def __init__(self, inner: ReportJobLedger, foreign_tenant_id: str) -> None:
+        self._inner = inner
+        self._foreign_tenant_id = foreign_tenant_id
+        self.created_jobs = 0
+
+    def get_job(self, job_id: str):
+        return self._inner.get_job(job_id).model_copy(update={"tenant_id": self._foreign_tenant_id})
+
+    def create_portfolio_review_job(self, **kwargs):
+        self.created_jobs += 1
+        raise AssertionError("A foreign-tenant linked job must never be replayed.")
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_replay_refuses_an_item_whose_linked_job_belongs_to_another_tenant(tmp_path):
+    """Admitting the batch is not enough: the link can point at another tenant's job."""
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Same-tenant caller, foreign linked job."),
+            caller_context=_caller(),
+            idempotency_key="foreign-linked-job-replay",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+    assert batch_ledger.relinks == 0
+    assert report_ledger.list_job_relationships(source.job_id) == []
+
+
+def test_replay_quarantines_the_item_so_it_stops_presenting_as_replayable(tmp_path):
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_ForeignTenantJobLedger(report_ledger, "tenant-uk"),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Same-tenant caller, foreign linked job."),
+            caller_context=_caller(),
+            idempotency_key="foreign-linked-job-replay",
+        )
+
+    assert batch_ledger.quarantines == [
+        {
+            "batch_item_id": "rbit_replay",
+            "error_category": "batch_item_tenant_mismatch",
+            "retryable": False,
+        }
+    ]
+    assert batch_ledger.item.status == "failed_terminal"
+    assert batch_ledger.item.retry_eligible is False
+
+
+def test_replay_still_works_when_the_linked_job_tenant_matches(tmp_path):
+    """The comparison must be a no-op on the ordinary path."""
+
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+
+    result = service.replay_item(
+        batch_id="rbch_replay",
+        batch_item_id="rbit_replay",
+        command=BatchItemReplayRequest(reason="Ordinary same-tenant replay."),
+        caller_context=_caller(),
+        idempotency_key="same-tenant-replay",
+    )
+
+    assert batch_ledger.quarantines == []
+    assert result.replayed_report_job.job_id != source.job_id
