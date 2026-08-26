@@ -55,7 +55,15 @@ def test_auto_merge_uses_a_token_that_can_trigger_downstream_workflows() -> None
     assert "GH_TOKEN: ${{ github.token }}" not in workflow, GATEWAY_REFERENCE_NOTE
 
 
-def test_auto_merge_fails_visibly_when_the_token_is_absent() -> None:
+def test_auto_merge_warns_when_the_token_is_absent() -> None:
+    """Named for what the guard does, not what it should do.
+
+    The guard `exit 0`s, so `Queue Auto Merge` reports **success** whether it armed or skipped.
+    That is the silent-success defect recorded on lotus-platform#710, and it is deliberately not
+    fixed here: this workflow is byte-identical to lotus-gateway's, and a local improvement would
+    cost that identity for a fix that belongs estate-wide.
+    """
+
     """A missing secret must not silently fall back to an ineligible token."""
 
     workflow = (WORKFLOW_ROOT / "pr-auto-merge.yml").read_text(encoding="utf-8")
