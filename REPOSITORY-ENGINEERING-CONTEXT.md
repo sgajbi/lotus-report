@@ -282,10 +282,16 @@ Primary areas:
     batch status, batch control, `run-once`, schedule list, and schedule `run-due` APIs expose the
     materialization/status/control/single-batch-run/config-backed-scheduler subset while keeping
     full product runtime support disabled until later scheduler-management and certification slices
-    are implemented and proven. Batch and batch-item status reads compare the persisted batch
-    tenant with required caller context and return the existing not-found contract before linked
-    report-job or archive status lookup when the scopes differ; this is defense in depth for the
-    internal operator API, not production identity or entitlement certification.
+    are implemented and proven. `src/app/report_batch_orchestrator/tenant_admission.py` is the
+    single owner of batch tenant admission: every externally invocable batch read, control,
+    replay, and worker-run path compares the persisted batch tenant with required caller context
+    and returns the existing not-found contract before any mutation, downstream call, lease,
+    replay creation, or linked report-job or archive status lookup, so cross-tenant and unknown
+    identifiers are indistinguishable. The runtime pass and the `lotus-report-batch-worker`
+    process are scoped to one governed tenant: `list_runnable_batch_ids` requires a `tenant_id`
+    and the pass supplies its caller-context tenant, so operating more than one tenant means one
+    worker process per tenant. This is defense in depth for the internal operator API, not
+    production identity or entitlement certification.
 16. `src/app/reporting_persistence/`
     shared forward-only PostgreSQL migration execution, supported legacy-schema classification,
     stable migration failure vocabulary, and the single internal schema-lifecycle owner consumed
