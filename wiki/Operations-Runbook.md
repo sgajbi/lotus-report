@@ -256,11 +256,21 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
   **linked report job** with the tenant of its batch. If they differ the item is refused, marked
   `failed_terminal` with error category `batch_item_tenant_mismatch`, and never retried. No
   snapshot, render, or archive work is started.
-- the same comparison runs on **batch-item replay**, but only quarantines an item replay would
-  otherwise have acted on (`waiting_on_report_job` or `failed_retryable`). An already-completed or
-  terminal item with a foreign link is refused without being modified: rewriting a `succeeded` item
-  would destroy finished work in response to a call that was never going to change anything, and
-  could flip its batch to `completed_with_failures`. A caller who legitimately owns the batch, but
+- the same comparison runs on **batch-item replay**. The rule there is *observe always, mutate only
+  for a request that would otherwise have acted*:
+  - the mismatch is **always logged**, whatever the item's state. A terminal item carrying a foreign
+    link is the **stronger** signal, not a weaker one — the dispatch that wrote the link already
+    happened, so a report exists against another tenant's job. The log line carries `item_status`
+    and `quarantined` so the two cases are distinguishable.
+  - the item is **quarantined only** when replay would otherwise have acted on it
+    (`waiting_on_report_job`, or `failed_retryable` while still retry-eligible). Rewriting a
+    `succeeded` item would destroy finished work in response to a call that was never going to
+    change anything, and could flip its batch to `completed_with_failures`.
+  - a **malformed** request — a missing or blank `Idempotency-Key` — is refused before any of this,
+    so it cannot quarantine anything.
+  - **searching for mismatches**: grep the worker and API logs for `batch_item_tenant_mismatch`
+    rather than relying on the quarantine category alone, because the items with the strongest
+    evidence are exactly the ones that are logged but **not** quarantined. A caller who legitimately owns the batch, but
   whose item is linked to another tenant's report job, receives the ordinary
   `409 report_batch_item_cannot_be_replayed` contract - true, and disclosing nothing about the other
   tenant - and the item is quarantined the same way. No replayed job and no lineage relationship is
