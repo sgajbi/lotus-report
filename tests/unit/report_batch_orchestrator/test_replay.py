@@ -285,3 +285,60 @@ def test_batch_replay_service_factory_wires_runtime_dependencies(monkeypatch):
 
     assert service._batch_ledger is batch_ledger
     assert service._report_job_ledger is report_job_ledger
+
+
+def _other_tenant_caller() -> ReportCallerContext:
+    return _caller().model_copy(update={"tenant_id": "tenant-uk"})
+
+
+class _ItemLookupMustNotRun(_ReplayLedger):
+    def get_batch_item(self, batch_id: str, batch_item_id: str) -> ReportBatchItemRecord:
+        raise AssertionError("Cross-tenant replay must stop before the batch-item lookup.")
+
+
+def test_batch_replay_rejects_cross_tenant_callers_before_any_item_lookup(tmp_path):
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ItemLookupMustNotRun(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Cross-tenant replay attempt."),
+            caller_context=_other_tenant_caller(),
+            idempotency_key="cross-tenant-replay",
+        )
+
+    assert str(excinfo.value) == "report_batch_not_found"
+    assert batch_ledger.relinks == 0
+
+
+def test_batch_replay_does_not_create_a_report_job_for_a_cross_tenant_caller(tmp_path):
+    report_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = _source_job(report_ledger)
+    batch_ledger = _ReplayLedger(_item(report_job_id=source.job_id))
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_ledger,
+    )
+    events_before = report_ledger.list_status_events(source.job_id)
+
+    with pytest.raises(ValueError):
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Cross-tenant replay attempt."),
+            caller_context=_other_tenant_caller(),
+            idempotency_key="cross-tenant-replay",
+        )
+
+    assert batch_ledger.item.status == "failed_retryable"
+    assert batch_ledger.item.report_job_id == source.job_id
+    assert batch_ledger.relinks == 0
+    assert report_ledger.list_status_events(source.job_id) == events_before
+    assert report_ledger.list_job_relationships(source.job_id) == []

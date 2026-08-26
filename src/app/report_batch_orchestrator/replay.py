@@ -10,6 +10,7 @@ from app.report_batch_orchestrator.models import (
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.service import get_report_batch_ledger
+from app.report_batch_orchestrator.tenant_admission import admit_batch
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -112,7 +113,10 @@ class ReportBatchItemReplayService:
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> BatchItemReplayResult:
-        batch = self._batch_ledger.get_batch(batch_id)
+        batch = admit_batch(
+            self._batch_ledger.get_batch(batch_id),
+            caller_context=caller_context,
+        )
         item = self._batch_ledger.get_batch_item(batch_id, batch_item_id)
         replay_key = _batch_item_replay_idempotency_key(
             batch_item_id=batch_item_id,
