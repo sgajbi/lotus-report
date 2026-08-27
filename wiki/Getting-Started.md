@@ -46,8 +46,8 @@ advisor-only separation, and AI guardrails all matter.
 
 ## First docs to read
 
-- [README.md](../README.md)
-- [REPOSITORY-ENGINEERING-CONTEXT.md](../REPOSITORY-ENGINEERING-CONTEXT.md)
-- [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
-- [docs/operations/development-workflow-and-ci-strategy.md](../docs/operations/development-workflow-and-ci-strategy.md)
+- [README.md](https://github.com/sgajbi/lotus-report/blob/main/README.md)
+- [REPOSITORY-ENGINEERING-CONTEXT.md](https://github.com/sgajbi/lotus-report/blob/main/REPOSITORY-ENGINEERING-CONTEXT.md)
+- [docs/standards/data-model-ownership.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/data-model-ownership.md)
+- [docs/operations/development-workflow-and-ci-strategy.md](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/development-workflow-and-ci-strategy.md)
 - [Portfolio Review Report](Portfolio-Review-Report)

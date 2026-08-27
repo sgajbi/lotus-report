@@ -10,16 +10,16 @@
 
 ## Local standards and guidance
 
-- [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
-- [docs/standards/enterprise-readiness.md](../docs/standards/enterprise-readiness.md)
-- [docs/standards/migration-contract.md](../docs/standards/migration-contract.md)
-- [docs/standards/rfc-traceability.md](../docs/standards/rfc-traceability.md)
-- [docs/supported-features.md](../docs/supported-features.md)
+- [docs/standards/data-model-ownership.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/data-model-ownership.md)
+- [docs/standards/enterprise-readiness.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/enterprise-readiness.md)
+- [docs/standards/migration-contract.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/migration-contract.md)
+- [docs/standards/rfc-traceability.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/rfc-traceability.md)
+- [docs/supported-features.md](https://github.com/sgajbi/lotus-report/blob/main/docs/supported-features.md)
 
 ## Local RFCs
 
-- [RFC-0001: Test Pyramid Rebalance and Meaningful Coverage Hardening](../rfcs/RFC-0001-test-pyramid-rebalance-and-meaningful-coverage-hardening.md)
-- [RFC-0002: First-Class Portfolio Review Report Endpoint](../rfcs/RFC-0002-first-class-portfolio-review-report-endpoint.md)
+- [RFC-0001: Test Pyramid Rebalance and Meaningful Coverage Hardening](https://github.com/sgajbi/lotus-report/blob/main/rfcs/RFC-0001-test-pyramid-rebalance-and-meaningful-coverage-hardening.md)
+- [RFC-0002: First-Class Portfolio Review Report Endpoint](https://github.com/sgajbi/lotus-report/blob/main/rfcs/RFC-0002-first-class-portfolio-review-report-endpoint.md)
   done; shipped first-class portfolio review report contract for advisor/client meeting workflows
 
 ## Current emphasis

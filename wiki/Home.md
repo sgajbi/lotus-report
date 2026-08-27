@@ -4,10 +4,10 @@
 
 ## Start here
 
-- Repo entrypoint: [README.md](../README.md)
-- Repo context: [REPOSITORY-ENGINEERING-CONTEXT.md](../REPOSITORY-ENGINEERING-CONTEXT.md)
+- Repo entrypoint: [README.md](https://github.com/sgajbi/lotus-report/blob/main/README.md)
+- Repo context: [REPOSITORY-ENGINEERING-CONTEXT.md](https://github.com/sgajbi/lotus-report/blob/main/REPOSITORY-ENGINEERING-CONTEXT.md)
 - Local ownership guidance:
-  [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
+  [docs/standards/data-model-ownership.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/data-model-ownership.md)
 
 ## Current phase
 
