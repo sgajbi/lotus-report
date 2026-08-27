@@ -3,6 +3,23 @@
 Current scope: operator-facing checks, support-safe evidence paths, and copy-paste command examples
 for the implementation-backed `lotus-report` runtime.
 
+## Contents
+
+1. [First Response Matrix](#first-response-matrix)
+2. [Important operational checks](#important-operational-checks)
+3. [Health and readiness surfaces](#health-and-readiness-surfaces)
+4. [RFC-0105 metrics contract](#rfc-0105-metrics-contract)
+5. [Observability vocabulary owner](#observability-vocabulary-owner)
+6. [Operational truths](#operational-truths)
+7. [Schema Upgrade And Startup Recovery](#schema-upgrade-and-startup-recovery)
+8. [Durable Report-Job Worker](#durable-report-job-worker)
+9. [RFC-0104 batch reporting posture](#rfc-0104-batch-reporting-posture)
+10. [RFC-0100 gateway-first job flow](#rfc-0100-gateway-first-job-flow)
+11. [RFC-0101 snapshot and lineage flow](#rfc-0101-snapshot-and-lineage-flow)
+12. [PostgreSQL ledger operations](#postgresql-ledger-operations)
+13. [Practical probes](#practical-probes)
+14. [Key references](#key-references)
+
 ## First Response Matrix
 
 | Situation | First action | Evidence path |
@@ -614,7 +631,7 @@ curl http://127.0.0.1:8300/health/ready
 curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
 ```
 
-Portfolio review proof:
+### Portfolio review proof
 
 ```powershell
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20" `
@@ -633,7 +650,7 @@ Expected posture:
 4. `advisor_briefing` should stay deterministic and advisor-only.
 5. `ai_readiness` should describe guarded assistance and blocked advice/suitability use cases.
 
-Portfolio review report job proof:
+### Portfolio review report job proof
 
 ```powershell
 curl -X POST "http://gateway.dev.lotus:8111/api/v1/reports/portfolio-reviews" `
@@ -659,7 +676,7 @@ paths `POST /reports/portfolio-reviews`, `GET /reports/jobs`, `GET /reports/jobs
 
 Reusable operator command examples:
 
-Job status, events, and support-safe reads:
+### Job status, events, and support-safe reads
 
 ```powershell
 curl "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example" `
@@ -678,7 +695,7 @@ curl "http://127.0.0.1:8300/reports/jobs/rjob_example/lineage" `
   --config report-operator-headers.curl
 ```
 
-Job cancellation and correction commands:
+### Job cancellation and correction commands
 
 ```powershell
 curl -X POST "http://gateway.dev.lotus:8111/api/v1/report-jobs/rjob_example/cancel" `
@@ -703,7 +720,7 @@ curl -X POST "http://127.0.0.1:8300/reports/jobs/rjob_failed_example/replay" `
   -d "{\"reason\":\"retry_failed_work\"}"
 ```
 
-Batch materialization and status:
+### Batch materialization and status
 
 ```powershell
 curl -X POST "http://127.0.0.1:8300/reports/batches" `
@@ -716,7 +733,7 @@ curl "http://127.0.0.1:8300/reports/batches/rbatch_example" `
   --config report-operator-headers.curl
 ```
 
-Batch controls:
+### Batch controls
 
 ```powershell
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:pause" `
@@ -735,7 +752,7 @@ curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:recover-expir
   --config report-operator-headers.curl
 ```
 
-Batch item replay and bounded run-once:
+### Batch item replay and bounded run-once
 
 ```powershell
 curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example/items/rbci_failed_example/replay" `
