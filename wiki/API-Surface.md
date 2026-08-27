@@ -147,6 +147,18 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal RFC-0105 failed-work replay command for implementation-backed RFC-0104 batch items whose
   linked report job failed; relinks the item to a replay-scoped report job without scheduler CRUD,
   registry mutation, or archive distribution behavior
+- `GET /reports/batch-schedules`
+  internal list of governed report batch schedules
+- `POST /reports/batch-schedules:run-due`
+  internal bounded scheduler pass that materialises batches for schedules currently due
+
+  Unlike every other route on this page, this one does **not** derive its tenant from the calling
+  caller context. `run_due_report_batch_schedules` builds its context from
+  `batch_scheduler_caller_context(config, ...)`, so the tenant comes from the scheduler's own
+  configuration rather than from the `X-Caller-App` identity that invoked it. It materialises new
+  batches and performs no lookup of existing tenant-scoped state, so it is a creation path rather
+  than a cross-tenant read — but a caller cannot select the tenant a scheduler pass acts for, and
+  that assumption is tracked as [#177](https://github.com/sgajbi/lotus-report/issues/177).
 - `GET /reports/operations/attention`
   internal RFC-0105 source-backed attention scan for active report jobs and batch items; returns
   bounded stuck-state and SLA-breach events with opaque identifiers, thresholds, age, bounded
