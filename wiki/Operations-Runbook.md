@@ -752,8 +752,8 @@ curl -X POST "http://127.0.0.1:8300/reports/batches/rbatch_example:run-once" `
 
 ## Key references
 
-- [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
-- [docs/standards/enterprise-readiness.md](../docs/standards/enterprise-readiness.md)
-- [docs/standards/migration-contract.md](../docs/standards/migration-contract.md)
-- [docs/standards/scalability-availability.md](../docs/standards/scalability-availability.md)
+- [docs/standards/data-model-ownership.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/data-model-ownership.md)
+- [docs/standards/enterprise-readiness.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/enterprise-readiness.md)
+- [docs/standards/migration-contract.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/migration-contract.md)
+- [docs/standards/scalability-availability.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/scalability-availability.md)
 - [Portfolio Review Report](Portfolio-Review-Report)

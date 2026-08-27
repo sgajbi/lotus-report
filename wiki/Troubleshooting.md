@@ -24,5 +24,5 @@ make ci
 
 ## References
 
-- [docs/standards/data-model-ownership.md](../docs/standards/data-model-ownership.md)
-- [docs/operations/development-workflow-and-ci-strategy.md](../docs/operations/development-workflow-and-ci-strategy.md)
+- [docs/standards/data-model-ownership.md](https://github.com/sgajbi/lotus-report/blob/main/docs/standards/data-model-ownership.md)
+- [docs/operations/development-workflow-and-ci-strategy.md](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/development-workflow-and-ci-strategy.md)
