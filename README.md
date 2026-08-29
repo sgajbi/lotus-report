@@ -325,6 +325,10 @@ Repo-native gate mapping:
   merge-gate automation proof with migration smoke, integration tests, e2e tests, coverage, and
   security audit. The caller must provide an isolated PostgreSQL database through
   `REPORT_JOB_LEDGER_DATABASE_URL`; never point this target at a database used by running services.
+  The lane marks that contract via `REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED`, so the
+  integration-test session trusts the given database. Bare `pytest tests/integration` (or
+  `make test-integration`) instead provisions its own ephemeral `lotus_report_ci_<token>`
+  database, so it is safe alongside the running local stack.
 - `make ci-local`
   preferred workstation command. It uses the configured PostgreSQL server and credentials to
   create a uniquely named database, runs `make ci` against that database, and drops only the

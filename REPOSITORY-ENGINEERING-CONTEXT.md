@@ -376,7 +376,10 @@ Important validation expectations:
 3. workstation PR-grade proof must use `make ci-local`; it creates one uniquely named database on
    the configured server, runs `make ci` against that database, and drops only the helper-owned
    database in guaranteed cleanup. Direct `make ci` callers must already own an isolated database
-   and must never target a database used by running Report services,
+   and must never target a database used by running Report services; the `ci` lane exports
+   `REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED` so the integration-test session trusts that
+   caller-owned database, while bare integration invocations provision their own ephemeral
+   `lotus_report_ci_<token>` database and drop it at session end,
 4. migration smoke must prove both the current schema and the supported immediately preceding
    status-event schema through the shared production migration owner; fresh-database proof alone
    cannot clear an upgrade claim,
