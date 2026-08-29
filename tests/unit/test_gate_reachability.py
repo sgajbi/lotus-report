@@ -124,8 +124,9 @@ def test_dispositioned_targets_are_not_also_in_the_lanes() -> None:
 
 WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 
-# `make <target>` in a workflow run line, tolerating variable assignments after the target.
-_WORKFLOW_MAKE = re.compile(r"\bmake ([a-z][a-z0-9-]*)")
+# `make <target>` at command position - line start or after a shell connector - so text that
+# merely mentions a target (an echo argument, a quoted string) is not counted as execution.
+_WORKFLOW_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*make\s+([a-z][a-z0-9-]*)")
 
 # `$(MAKE) <target>` inside a Makefile recipe line - prerequisite lists do not capture these.
 _RECIPE_MAKE = re.compile(r"^	.*\$\(MAKE\) ([a-z][a-z0-9-]*)", re.M)
@@ -158,7 +159,12 @@ def _workflow_invoked_targets() -> set[str]:
     )
     for workflow in workflow_files:
         for command in _workflow_run_commands(workflow):
-            invoked.update(_WORKFLOW_MAKE.findall(command))
+            for line in command.splitlines():
+                stripped = line.lstrip()
+                if stripped.startswith("#"):
+                    # A shell-commented line inside a live run block never executes.
+                    continue
+                invoked.update(_WORKFLOW_MAKE.findall(stripped))
     return invoked
 
 
