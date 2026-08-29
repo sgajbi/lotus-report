@@ -45,6 +45,15 @@ DISPOSITIONED = {
 }
 
 
+def _prerequisites(header_remainder: str) -> list[str]:
+    """Prerequisite names from a target header, with any inline comment discarded.
+
+    `lint: real-dep # gate-name is checked separately` names one prerequisite; the
+    comment text must not resurrect a gate as reachable.
+    """
+    return header_remainder.split("#", 1)[0].split()
+
+
 def _makefile() -> str:
     return MAKEFILE.read_text(encoding="utf-8")
 
@@ -77,7 +86,7 @@ def _reachable_from_lanes() -> set[str]:
         reachable.add(target)
         expansion = re.search(rf"^{re.escape(target)}: (.+)$", makefile, re.M)
         if expansion is not None:
-            frontier.extend(expansion.group(1).split())
+            frontier.extend(_prerequisites(expansion.group(1)))
     return reachable
 
 
@@ -242,7 +251,7 @@ def _workflow_reachable_targets(workflow_path: Path) -> set[str]:
             continue
         header = re.match(rf"^{re.escape(target)}: (.+)$", block, re.M)
         if header is not None:
-            frontier.extend(header.group(1).split())
+            frontier.extend(_prerequisites(header.group(1)))
         frontier.extend(_recipe_invoked_targets(block))
     return reachable
 
