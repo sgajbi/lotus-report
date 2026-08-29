@@ -1,4 +1,8 @@
 from functools import lru_cache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
 
 from app.clients.core_query_client import CoreQueryClient
 from app.config import settings
@@ -17,6 +21,12 @@ from app.reporting_render.service import get_portfolio_review_render_orchestrati
 @lru_cache(maxsize=1)
 def get_report_batch_ledger() -> PostgresReportBatchLedger:
     return PostgresReportBatchLedger(connection_provider=get_postgres_connection_provider())
+
+
+def get_schedule_definition_service() -> "ScheduleDefinitionService":
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
+
+    return ScheduleDefinitionService(get_report_batch_ledger())
 
 
 def get_report_batch_worker() -> ReportBatchWorker:

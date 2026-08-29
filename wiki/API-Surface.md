@@ -148,9 +148,23 @@ boundaries, and copy-paste request examples for direct service and support workf
   linked report job failed; relinks the item to a replay-scoped report job without scheduler CRUD,
   registry mutation, or archive distribution behavior
 - `GET /reports/batch-schedules`
-  internal list of governed report batch schedules
+  internal list of governed report batch schedules: configured schedules plus the caller
+  tenant's stored recurring definitions with a `next_run_at` projection
+- `POST /reports/batch-schedules`
+  creates a durable, tenant-fenced recurring report-pack schedule (explicit portfolio list,
+  `monthly_end` or `quarter_end` cadence) validated through the governed report-ordering
+  catalogue; an identical retry converges on the already-created schedule
+- `GET /reports/batch-schedules/{schedule_id}`
+  one stored schedule with its full governance audit trail; foreign or unknown ids return the
+  same not-found shape, so schedule ids are not an existence oracle across tenants
+- `PATCH /reports/batch-schedules/{schedule_id}`
+  partial update, enable, or disable; disabling stops future runs without deleting the
+  definition or any batch history; every effective change is audited with a field-level diff
 - `POST /reports/batch-schedules:run-due`
-  internal bounded scheduler pass that materialises batches for schedules currently due
+  internal bounded scheduler pass that materialises batches for schedules currently due -
+  configured schedules and due stored definitions of the scheduler's own tenant ride the same
+  loop, so stored-schedule batches carry `batch_schedule_id` lineage exactly like configured
+  ones; an optional `evaluation_date` lets an operator simulate a period-end pass
 
   Unlike every other route on this page, this one does **not** derive its tenant from the calling
   caller context. `run_due_report_batch_schedules` builds its context from

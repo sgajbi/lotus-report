@@ -611,3 +611,57 @@ def test_postgres_mark_item_failed_rejects_unknown_item() -> None:
             error_summary="missing item",
             retryable=True,
         )
+
+
+def test_postgres_schedule_definition_roundtrip_and_audit_order():
+    """Issue #167: the durable schedule store holds definitions and audit on PostgreSQL."""
+
+    from datetime import UTC, datetime
+
+    from app.report_batch_orchestrator.schedule_definitions import (
+        BatchScheduleAuditRecord,
+        StoredBatchSchedule,
+    )
+
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    now = datetime(2026, 8, 29, 10, 0, tzinfo=UTC)
+    schedule = StoredBatchSchedule(
+        schedule_id="rbsc_pg_roundtrip",
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        owner_actor="advisor-123",
+        enabled=True,
+        cadence="quarter_end",
+        portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+        requested_output_formats=["pdf"],
+        reporting_currency="USD",
+        options={"sections": ["OVERVIEW"]},
+        max_batch_size=25,
+        created_at=now,
+        updated_at=None,
+    )
+    ledger.save_schedule_definition(schedule)
+    assert ledger.get_schedule_definition("rbsc_pg_roundtrip") == schedule
+    assert schedule in ledger.list_schedule_definitions("tenant-sg")
+    assert ledger.list_schedule_definitions("tenant-uk") == []
+
+    for index, action in enumerate(["created", "disabled", "enabled"]):
+        ledger.append_schedule_audit(
+            BatchScheduleAuditRecord(
+                audit_id=f"rbsa_pg_{index}",
+                schedule_id="rbsc_pg_roundtrip",
+                action=action,
+                actor="advisor-123",
+                correlation_id="corr-pg",
+                changes={"step": index},
+                created_at=now,
+            )
+        )
+    audit = ledger.list_schedule_audit("rbsc_pg_roundtrip")
+    assert [record.action for record in audit] == ["created", "disabled", "enabled"]
+
+    ledger.save_schedule_definition(
+        schedule.model_copy(update={"enabled": False, "updated_at": now})
+    )
+    assert ledger.get_schedule_definition("rbsc_pg_roundtrip").enabled is False

@@ -214,9 +214,13 @@ Key code areas:
   governed `REPORT_BATCH_SCHEDULES_JSON`, resolves explicit, all-active, and inline manifest
   schedule selectors through `lotus-core` or governed schedule manifest metadata, and creates
   durable idempotent scheduled batches for the worker to execute. `GET /reports/batch-schedules`
-  and `POST /reports/batch-schedules:run-due` expose config-backed scheduler inspection and a
-  bounded scheduler materialization pass; schedule CRUD and entitlement-certified public scheduler
-  runtime remain future scope
+  and `POST /reports/batch-schedules:run-due` expose scheduler inspection and a bounded
+  materialization pass. Recurring report-pack definitions are a governed API surface:
+  `POST/GET/PATCH /reports/batch-schedules[/{schedule_id}]` create, inspect, update, enable and
+  disable tenant-fenced stored schedules (explicit portfolio lists, month-end or quarter-end
+  cadence) that materialize through the same scheduler loop with full audit and
+  `batch_schedule_id` lineage; entitlement-certified public scheduler runtime remains future
+  scope
 - `src/app/report_ordering_catalogue/`
   Report-owned, versioned business catalogue for supported report families, ordering modes,
   formats, configuration fields, sections, and live Render supportability. The same definitions

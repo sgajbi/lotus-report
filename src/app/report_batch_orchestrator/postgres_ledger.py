@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Iterator, Mapping
 from uuid import uuid4
 
 from psycopg import Connection
@@ -32,6 +32,13 @@ from app.report_batch_orchestrator.models import (
 )
 from app.report_batch_orchestrator.selector import materialize_portfolios
 from app.reporting_jobs.models import ReportCallerContext
+
+if TYPE_CHECKING:
+    from app.report_batch_orchestrator.schedule_definitions import (
+        BatchScheduleAuditRecord,
+        StoredBatchSchedule,
+    )
+
 from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
@@ -872,6 +879,109 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
             ).fetchall()
         return [str(row["batch_id"]) for row in rows]
 
+    def save_schedule_definition(self, schedule: "StoredBatchSchedule") -> "StoredBatchSchedule":
+        from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
+
+        assert isinstance(schedule, StoredBatchSchedule)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO report_batch_schedule_definition (
+                    schedule_id, tenant_id, region, booking_center_code, owner_actor,
+                    enabled, cadence, portfolio_ids_json, requested_output_formats_json,
+                    reporting_currency, options_json, max_batch_size, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (schedule_id) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    cadence = EXCLUDED.cadence,
+                    portfolio_ids_json = EXCLUDED.portfolio_ids_json,
+                    requested_output_formats_json = EXCLUDED.requested_output_formats_json,
+                    reporting_currency = EXCLUDED.reporting_currency,
+                    options_json = EXCLUDED.options_json,
+                    max_batch_size = EXCLUDED.max_batch_size,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (
+                    schedule.schedule_id,
+                    schedule.tenant_id,
+                    schedule.region,
+                    schedule.booking_center_code,
+                    schedule.owner_actor,
+                    schedule.enabled,
+                    schedule.cadence,
+                    Jsonb(schedule.portfolio_ids),
+                    Jsonb(schedule.requested_output_formats),
+                    schedule.reporting_currency,
+                    Jsonb(schedule.options),
+                    schedule.max_batch_size,
+                    schedule.created_at,
+                    schedule.updated_at,
+                ),
+            )
+        return schedule
+
+    def get_schedule_definition(self, schedule_id: str) -> "StoredBatchSchedule | None":
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM report_batch_schedule_definition WHERE schedule_id = %s",
+                (schedule_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return _schedule_definition_from_row(row)
+
+    def list_schedule_definitions(self, tenant_id: str) -> "list[StoredBatchSchedule]":
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM report_batch_schedule_definition
+                WHERE tenant_id = %s
+                ORDER BY created_at, schedule_id
+                """,
+                (tenant_id,),
+            ).fetchall()
+        return [_schedule_definition_from_row(row) for row in rows]
+
+    def append_schedule_audit(
+        self, record: "BatchScheduleAuditRecord"
+    ) -> "BatchScheduleAuditRecord":
+        from app.report_batch_orchestrator.schedule_definitions import BatchScheduleAuditRecord
+
+        assert isinstance(record, BatchScheduleAuditRecord)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO report_batch_schedule_audit (
+                    audit_id, schedule_id, action, actor, correlation_id,
+                    changes_json, created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    record.audit_id,
+                    record.schedule_id,
+                    record.action,
+                    record.actor,
+                    record.correlation_id,
+                    Jsonb(record.changes),
+                    record.created_at,
+                ),
+            )
+        return record
+
+    def list_schedule_audit(self, schedule_id: str) -> "list[BatchScheduleAuditRecord]":
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM report_batch_schedule_audit
+                WHERE schedule_id = %s
+                ORDER BY audit_sequence
+                """,
+                (schedule_id,),
+            ).fetchall()
+        return [_schedule_audit_from_row(row) for row in rows]
+
     def get_batch(self, batch_id: str) -> ReportBatchRecord:
         with self._connect() as connection:
             return self._load_batch(connection, batch_id)
@@ -1066,3 +1176,38 @@ def _nullable_str(value: Any) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _schedule_definition_from_row(row: Any) -> "StoredBatchSchedule":
+    from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
+
+    return StoredBatchSchedule(
+        schedule_id=row["schedule_id"],
+        tenant_id=row["tenant_id"],
+        region=row["region"],
+        booking_center_code=row["booking_center_code"],
+        owner_actor=row["owner_actor"],
+        enabled=row["enabled"],
+        cadence=row["cadence"],
+        portfolio_ids=list(row["portfolio_ids_json"]),
+        requested_output_formats=list(row["requested_output_formats_json"]),
+        reporting_currency=row["reporting_currency"],
+        options=dict(row["options_json"]),
+        max_batch_size=row["max_batch_size"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _schedule_audit_from_row(row: Any) -> "BatchScheduleAuditRecord":
+    from app.report_batch_orchestrator.schedule_definitions import BatchScheduleAuditRecord
+
+    return BatchScheduleAuditRecord(
+        audit_id=row["audit_id"],
+        schedule_id=row["schedule_id"],
+        action=row["action"],
+        actor=row["actor"],
+        correlation_id=row["correlation_id"],
+        changes=dict(row["changes_json"]),
+        created_at=row["created_at"],
+    )

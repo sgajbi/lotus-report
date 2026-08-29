@@ -1,7 +1,10 @@
+from dataclasses import replace
+from datetime import UTC, date, datetime
 from time import perf_counter
 from typing import Annotated, Any, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, status
+from pydantic import BaseModel, Field
 
 from app.report_batch_orchestrator.ledger import (
     BatchIdempotencyConflictError,
@@ -39,6 +42,15 @@ from app.report_batch_orchestrator.replay import (
     BatchItemReplayResult,
     get_report_batch_item_replay_service,
 )
+from app.report_batch_orchestrator.schedule_definitions import (
+    BatchScheduleAuditRecord,
+    BatchScheduleDefinitionCreateRequest,
+    BatchScheduleDefinitionUpdateRequest,
+    ScheduleDefinitionError,
+    ScheduleDefinitionService,
+    StoredBatchSchedule,
+    next_run_at,
+)
 from app.report_batch_orchestrator.scheduler import (
     BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE,
     BATCH_SCHEDULER_RUN_REQUEST_EXAMPLE,
@@ -58,6 +70,7 @@ from app.report_batch_orchestrator.service import (
     get_report_batch_ledger,
     get_report_batch_scheduler,
     get_report_batch_worker,
+    get_schedule_definition_service,
 )
 from app.report_batch_orchestrator.status_projection import (
     ReportJobArchiveStatusLookup,
@@ -145,6 +158,12 @@ class ReportBatchSchedulerPort(Protocol):
 
 
 BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
+    "batch_schedule_not_found": {
+        "detail": {
+            "code": "batch_schedule_not_found",
+            "message": "Batch schedule was not found.",
+        }
+    },
     "missing_idempotency_key": {
         "detail": {
             "code": "missing_idempotency_key",
@@ -317,9 +336,188 @@ def _scheduler_config_error(exc: BatchScheduleConfigError) -> HTTPException:
     )
 
 
+class StoredBatchScheduleResponse(StoredBatchSchedule):
+    """A stored schedule definition plus its computed next materialization date."""
+
+    next_run_at: date = Field(
+        ...,
+        description=(
+            "Next date a run-due pass materializes (or idempotently re-echoes) a cycle "
+            "for this schedule, computed from its cadence and creation date."
+        ),
+    )
+
+
+class BatchScheduleDefinitionListResponse(BatchScheduleListResponse):
+    """Configured schedules plus caller-defined stored schedule definitions."""
+
+    defined_schedules: list[StoredBatchScheduleResponse] = Field(
+        default_factory=list,
+        description=(
+            "Stored schedule definitions owned by the caller's tenant, with next-run "
+            "projection. Configuration-file schedules stay in `schedules`."
+        ),
+    )
+
+
+class BatchScheduleDefinitionDetailResponse(BaseModel):
+    """One stored schedule with its full governance audit trail."""
+
+    schedule: StoredBatchScheduleResponse = Field(
+        ..., description="The stored schedule definition."
+    )
+    audit: list[BatchScheduleAuditRecord] = Field(
+        ..., description="Change history, oldest first: create, updates, enable/disable."
+    )
+
+
+def schedule_definition_service_dependency() -> ScheduleDefinitionService:
+    return get_schedule_definition_service()
+
+
+def _stored_schedule_response(
+    schedule: StoredBatchSchedule, *, today: date | None = None
+) -> StoredBatchScheduleResponse:
+    effective_today = today or date.today()
+    return StoredBatchScheduleResponse(
+        **schedule.model_dump(),
+        next_run_at=next_run_at(
+            schedule.cadence,
+            today=effective_today,
+            created_on=schedule.created_at.date(),
+        ),
+    )
+
+
+def _schedule_definition_error(exc: ScheduleDefinitionError) -> HTTPException:
+    if exc.code == "batch_schedule_not_found":
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code, "message": exc.message},
+        )
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
+@schedules_router.post(
+    "",
+    response_model=StoredBatchScheduleResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a recurring report-pack schedule",
+    description=(
+        "Creates a durable, tenant-fenced recurring report-pack schedule under the caller's "
+        "own scope. Stored schedules use explicit portfolio lists only and validate through "
+        "the same governed report-ordering catalogue as manual orders, so a schedule can "
+        "never widen scope beyond what its creator could order manually. An identical retry "
+        "converges on the already-created schedule. Every change is audited."
+    ),
+    responses={
+        **_error_response(
+            400,
+            example_key="invalid_batch_selector",
+            description=(
+                "Returned when the definition fails governed ordering validation or the "
+                "caller context lacks tenant scope."
+            ),
+        )
+    },
+)
+async def create_report_batch_schedule_definition(
+    request: BatchScheduleDefinitionCreateRequest,
+    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> StoredBatchScheduleResponse:
+    try:
+        schedule = service.create_schedule(
+            request=request,
+            caller_context=caller_context,
+            now=datetime.now(UTC),
+        )
+    except ScheduleDefinitionError as exc:
+        raise _schedule_definition_error(exc) from exc
+    return _stored_schedule_response(schedule)
+
+
+@schedules_router.get(
+    "/{schedule_id}",
+    response_model=BatchScheduleDefinitionDetailResponse,
+    summary="Get one stored schedule with its audit trail",
+    description=(
+        "Returns one stored schedule definition owned by the caller's tenant, with its "
+        "complete governance audit trail (create, updates, enable/disable). Foreign or "
+        "unknown schedule ids return the same not-found shape, so schedule ids are not an "
+        "existence oracle across tenants."
+    ),
+    responses={
+        **_error_response(
+            404,
+            example_key="batch_schedule_not_found",
+            description="Returned when no schedule with this id exists in the caller tenant.",
+        )
+    },
+)
+async def get_report_batch_schedule_definition(
+    schedule_id: str,
+    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchScheduleDefinitionDetailResponse:
+    try:
+        schedule = service.get_schedule(schedule_id=schedule_id, caller_context=caller_context)
+        audit = service.list_audit(schedule_id=schedule_id, caller_context=caller_context)
+    except ScheduleDefinitionError as exc:
+        raise _schedule_definition_error(exc) from exc
+    return BatchScheduleDefinitionDetailResponse(
+        schedule=_stored_schedule_response(schedule),
+        audit=audit,
+    )
+
+
+@schedules_router.patch(
+    "/{schedule_id}",
+    response_model=StoredBatchScheduleResponse,
+    summary="Update, enable, or disable a stored schedule",
+    description=(
+        "Partially updates a stored schedule owned by the caller's tenant. Disabling stops "
+        "future runs without deleting the definition or any batch history. A no-change "
+        "request converges on the stored definition without rewriting it. Every effective "
+        "change is audited with actor, correlation id, and a field-level diff."
+    ),
+    responses={
+        **_error_response(
+            400,
+            example_key="invalid_batch_selector",
+            description="Returned when the updated definition fails governed validation.",
+        ),
+        **_error_response(
+            404,
+            example_key="batch_schedule_not_found",
+            description="Returned when no schedule with this id exists in the caller tenant.",
+        ),
+    },
+)
+async def update_report_batch_schedule_definition(
+    schedule_id: str,
+    request: BatchScheduleDefinitionUpdateRequest,
+    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> StoredBatchScheduleResponse:
+    try:
+        schedule = service.update_schedule(
+            schedule_id=schedule_id,
+            request=request,
+            caller_context=caller_context,
+            now=datetime.now(UTC),
+        )
+    except ScheduleDefinitionError as exc:
+        raise _schedule_definition_error(exc) from exc
+    return _stored_schedule_response(schedule)
+
+
 @schedules_router.get(
     "",
-    response_model=BatchScheduleListResponse,
+    response_model=BatchScheduleDefinitionListResponse,
     summary="List governed report batch schedules",
     description=(
         "Returns the currently configured report batch schedules from the governed scheduler "
@@ -353,12 +551,23 @@ def _scheduler_config_error(exc: BatchScheduleConfigError) -> HTTPException:
 )
 async def list_report_batch_schedules(
     config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
-    _caller_context: ReportCallerContext = Depends(caller_context_dependency),
-) -> BatchScheduleListResponse:
+    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchScheduleDefinitionListResponse:
     try:
-        return batch_schedule_list_response(config)
+        configured = batch_schedule_list_response(config)
     except BatchScheduleConfigError as exc:
         raise _scheduler_config_error(exc) from exc
+    try:
+        stored = service.list_schedules(caller_context=caller_context)
+    except ScheduleDefinitionError:
+        # A caller without tenant scope still sees the configured surface; stored
+        # definitions are tenant-fenced and therefore absent.
+        stored = []
+    return BatchScheduleDefinitionListResponse(
+        **configured.model_dump(),
+        defined_schedules=[_stored_schedule_response(schedule) for schedule in stored],
+    )
 
 
 @schedules_router.post(
@@ -418,6 +627,7 @@ async def run_due_report_batch_schedules(
     request: BatchSchedulerRunRequest,
     scheduler: ReportBatchSchedulerPort = Depends(get_report_batch_scheduler),
     config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
+    definition_service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
     _operator_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchSchedulerRunResponse:
     started_at = perf_counter()
@@ -425,6 +635,19 @@ async def run_due_report_batch_schedules(
         config,
         pass_sequence=request.pass_sequence,
     )
+    # Stored definitions ride the same scheduler loop as configured schedules: same
+    # candidate resolution, cycle materialization, deterministic idempotency, and
+    # batch_schedule_id lineage. A stored schedule materializes only through a
+    # scheduler of its own tenant.
+    stored_definitions = definition_service.due_definitions_for_scheduler(
+        tenant_id=config.tenant_id,
+        today=request.evaluation_date or date.today(),
+    )
+    if stored_definitions:
+        config = replace(
+            config,
+            schedules=tuple(config.schedules) + tuple(stored_definitions),
+        )
     try:
         result = await scheduler.run_due_schedules(
             config=config,

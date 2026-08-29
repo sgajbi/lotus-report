@@ -236,9 +236,16 @@ Current implemented semantics:
   `REPORT_BATCH_SCHEDULES_JSON`, verifies explicit, all-active, and inline manifest schedule
   selectors through `lotus-core` or governed schedule manifest metadata, and materializes durable
   idempotent scheduled batches for the worker process to execute
-- `GET /reports/batch-schedules` lists the configured schedules, and
-  `POST /reports/batch-schedules:run-due` runs one bounded scheduler materialization pass over
-  enabled schedules without executing batch items
+- `GET /reports/batch-schedules` lists the configured schedules plus the caller tenant's stored
+  recurring definitions, and `POST /reports/batch-schedules:run-due` runs one bounded scheduler
+  materialization pass over enabled schedules - configured and due stored definitions of the
+  scheduler's tenant - without executing batch items
+- stored recurring definitions are created and managed through
+  `POST/GET/PATCH /reports/batch-schedules[/{schedule_id}]`: tenant-fenced, explicit portfolio
+  lists only, `monthly_end`/`quarter_end` cadence, audited on every change. A stored schedule
+  becomes due only for period ends on or after its creation date, and repeated run-due passes
+  for the same period converge on the same batch through the deterministic cycle idempotency
+  key - there is no per-schedule run state to repair
 
 Tenant scope of the background worker:
 
