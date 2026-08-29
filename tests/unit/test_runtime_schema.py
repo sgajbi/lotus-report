@@ -115,7 +115,7 @@ def test_ensure_runtime_schema_checks_batch_and_snapshot_stores_under_lock(monke
         def __enter__(self) -> None:
             calls.append(("lock_enter", self._connection_provider.__class__.__name__))
 
-        def __exit__(self, exc_type, exc, tb) -> None:
+        def __exit__(self, _exc_type, exc, _tb) -> None:
             calls.append(("lock_exit", self._connection_provider.__class__.__name__))
 
     monkeypatch.setattr(

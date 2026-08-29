@@ -187,7 +187,7 @@ async def test_middleware_blocks_oversized_payload(monkeypatch):
         "headers": [(b"content-length", b"2")],
     }
     request = _request(scope, body=b"xx")
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 413
 
 
@@ -208,7 +208,7 @@ async def test_middleware_denies_missing_service_identity(monkeypatch):
         ],
     }
     request = _request(scope)
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 403
 
 
@@ -231,7 +231,7 @@ async def test_middleware_production_profile_denies_direct_write_without_identit
         ],
     }
     request = _request(scope)
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 403
     assert json.loads(response.body)["reason"] == "missing_service_identity"
 
@@ -249,7 +249,7 @@ async def test_middleware_rejects_invalid_content_length(monkeypatch):
         "headers": [(b"content-length", b"abc")],
     }
     request = _request(scope, body=b"{}")
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 400
     assert json.loads(response.body) == {"detail": "invalid_content_length"}
 
@@ -266,7 +266,7 @@ async def test_middleware_blocks_missing_content_length_oversized_body(monkeypat
         "headers": [],
     }
     request = _request(scope, body=b"xx")
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 413
     assert json.loads(response.body) == {"detail": "payload_too_large"}
 
@@ -283,7 +283,7 @@ async def test_middleware_blocks_streamed_oversized_body(monkeypatch):
         "headers": [],
     }
     request = _request(scope, chunks=[b"x", b"y"])
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 413
 
 
@@ -299,7 +299,7 @@ async def test_middleware_rejects_underdeclared_oversized_body(monkeypatch):
         "headers": [(b"content-length", b"1")],
     }
     request = _request(scope, body=b"xx")
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 413
 
 
@@ -537,7 +537,7 @@ async def test_middleware_read_denies_missing_service_identity(monkeypatch):
         ],
     }
     request = _request(scope)
-    response = await middleware(request, lambda req: None)  # pragma: no cover
+    response = await middleware(request, lambda _req: None)  # pragma: no cover
     assert response.status_code == 403
 
 

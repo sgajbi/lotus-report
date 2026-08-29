@@ -26,7 +26,7 @@ class _RecordingAsyncClient:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, _exc_type, exc, _tb):
         return False
 
     async def post(self, url: str, json: dict, headers: dict):
@@ -46,7 +46,7 @@ class _SequencedRecordingAsyncClient:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, _exc_type, exc, _tb):
         return False
 
     async def post(self, url: str, json: dict, headers: dict):

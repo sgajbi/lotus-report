@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-upgrade-smoke migration-apply test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-upgrade-smoke migration-apply complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate code-health-gates test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
 
 TEST_SUITE ?= unit
 TEST_PATH ?= tests/$(TEST_SUITE)
@@ -74,13 +74,35 @@ test-coverage:
 security-audit:
 	python scripts/run_security_audit.py
 
-check: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate test
+# Equality-banked code-health thresholds: each equals today's measurement exactly, so
+# any regression fails and any improvement is banked by lowering the bound in the
+# same commit (reporting_read_service.py at 4508 lines and CC 34 in
+# reporting_render/package_builder.py are the current ceilings, not aspirations).
+SOURCE_FILE_MAX_LINES ?= 4508
+MAX_CYCLOMATIC_COMPLEXITY ?= 34
+MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 11
+
+complexity-gate:
+	python scripts/python_complexity_inventory.py --limit 20 --max-cc $(MAX_CYCLOMATIC_COMPLEXITY) --max-high-complexity $(MAX_HIGH_COMPLEXITY_FUNCTIONS)
+
+source-size-gate:
+	python scripts/source_size_gate.py --max-lines=$(SOURCE_FILE_MAX_LINES)
+
+dead-code-gate:
+	python scripts/dead_code_gate.py
+
+dependency-hygiene-gate:
+	python -m deptry .
+
+code-health-gates: complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate
+
+check: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate test
 
 # Direct `make ci` documents a caller-owned isolated database (README, repository
 # context); mark it so the integration-test session trusts the given URL instead of
 # provisioning a nested database or demanding CREATEDB (issue #179).
 ci: export REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED = true
-ci: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
+ci: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
 
 ci-local:
 	python scripts/run_isolated_ci.py

@@ -15,7 +15,7 @@ class _FlakyAsyncClient:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, _exc_type, exc, _tb):
         return False
 
     async def post(self, url: str, json=None, headers=None):
@@ -39,7 +39,7 @@ class _AlwaysTimeoutAsyncClient:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, _exc_type, exc, _tb):
         return False
 
     async def post(self, url: str, json=None, headers=None):
@@ -61,7 +61,7 @@ class _SequenceAsyncClient:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, _exc_type, exc, _tb):
         return False
 
     async def post(self, url: str, json=None, headers=None):

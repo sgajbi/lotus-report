@@ -31,6 +31,16 @@ never fired both leave no tag behind. The only way to distinguish them is the ru
 run, because the dispatch ref is a tag rather than `main` - and tag presence is not durable
 evidence, because consumed tags are reclaimed.
 
+## Code-health gates
+
+`make code-health-gates` runs four equality-banked fitness functions in both governed lanes:
+`complexity-gate` (max cyclomatic complexity and rank-D+ function count),
+`source-size-gate` (largest module), `dead-code-gate` (Vulture over a proven-non-empty tree,
+zero findings and no whitelist), and `dependency-hygiene-gate` (deptry). Thresholds equal
+today's measurement exactly - `tests/unit/test_code_health_gates.py` asserts the equality in
+both directions and proves each gate can fail, so a regression blocks and an improvement must
+be banked in the same commit.
+
 ## Local command mapping
 
 - `make check`
