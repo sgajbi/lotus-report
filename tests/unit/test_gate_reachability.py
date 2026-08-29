@@ -16,6 +16,11 @@ checking while everyone assumes something is.**
 
 The reachability check is what was missing, not the gates. Wiring the four in fixes today; this
 fixes the class, so a fifth cannot arrive dead.
+
+Issue #187 then corrected this module's boundary: reachability from `check`/`ci` measures intent,
+because no workflow invokes those aggregate lanes. Enforcement is what the workflows actually run,
+so the workflow-reachability test below reads `.github/workflows/*.yml` and follows `$(MAKE)`
+recipe chaining - a gate is alive only when a CI lane executes it, directly or transitively.
 """
 
 from __future__ import annotations
@@ -114,4 +119,91 @@ def test_dispositioned_targets_are_not_also_in_the_lanes() -> None:
     assert contradictory == [], (
         f"These targets are reachable from a blocking lane AND carry a disposition saying they run "
         f"elsewhere: {contradictory}. Remove the allowance - it is no longer true."
+    )
+
+
+WORKFLOWS_DIR = ROOT / ".github" / "workflows"
+
+# `make <target>` in a workflow run line, tolerating variable assignments after the target.
+_WORKFLOW_MAKE = re.compile(r"\bmake ([a-z][a-z0-9-]*)")
+
+# `$(MAKE) <target>` inside a Makefile recipe line - prerequisite lists do not capture these.
+_RECIPE_MAKE = re.compile(r"^	.*\$\(MAKE\) ([a-z][a-z0-9-]*)", re.M)
+
+
+def _workflow_invoked_targets() -> set[str]:
+    invoked: set[str] = set()
+    workflow_files = sorted(WORKFLOWS_DIR.glob("*.yml"))
+    assert workflow_files, (
+        "No workflow files found; a workflow-reachability check with no workflows asserts nothing."
+    )
+    for workflow in workflow_files:
+        invoked.update(_WORKFLOW_MAKE.findall(workflow.read_text(encoding="utf-8")))
+    return invoked
+
+
+def _makefile_blocks() -> dict[str, str]:
+    """Each target's header-plus-recipe block, so recipe-level $(MAKE) chaining is visible."""
+
+    makefile = _makefile()
+    blocks: dict[str, str] = {}
+    current: str | None = None
+    lines: list[str] = []
+    for line in makefile.splitlines(keepends=True):
+        header = re.match(r"^([a-z][a-z0-9-]*):", line)
+        if header is not None:
+            if current is not None:
+                blocks[current] = "".join(lines)
+            current = header.group(1)
+            lines = [line]
+        elif current is not None:
+            lines.append(line)
+    if current is not None:
+        blocks[current] = "".join(lines)
+    return blocks
+
+
+def _workflow_reachable_targets() -> set[str]:
+    """Targets some workflow executes: directly, via prerequisites, or via $(MAKE) recipes."""
+
+    blocks = _makefile_blocks()
+    reachable: set[str] = set()
+    frontier = list(_workflow_invoked_targets())
+    while frontier:
+        target = frontier.pop()
+        if target in reachable:
+            continue
+        reachable.add(target)
+        block = blocks.get(target)
+        if block is None:
+            continue
+        header = re.match(rf"^{re.escape(target)}: (.+)$", block, re.M)
+        if header is not None:
+            frontier.extend(header.group(1).split())
+        frontier.extend(_RECIPE_MAKE.findall(block))
+    return reachable
+
+
+def test_every_declared_gate_is_executed_by_some_workflow() -> None:
+    """Lane reachability is intent; this is enforcement.
+
+    No workflow invokes `make check` or `make ci`, so a gate reachable only from those lanes has
+    never run in CI (issue #187). Every gate-shaped target must be executed by at least one
+    workflow - directly, or transitively through a target a workflow invokes (the
+    `lint` -> `$(MAKE) monetary-float-guard` recipe path counts, and must, or the one gate that
+    does work would be a false positive here).
+    """
+
+    declared = _declared_gate_targets()
+    workflow_reachable = _workflow_reachable_targets()
+
+    assert workflow_reachable, (
+        "No make targets are invoked by any workflow; this check would assert nothing."
+    )
+
+    dead = sorted(name for name in declared if name not in workflow_reachable)
+    assert dead == [], (
+        "These gate targets are declared in the Makefile, but no workflow executes them directly "
+        f"or transitively, so they never run in CI whatever the `check`/`ci` lanes say: {dead}. "
+        "Wire each into a workflow lane (or a target a workflow runs), or delete it. See #187."
     )

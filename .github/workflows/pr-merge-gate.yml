@@ -64,6 +64,8 @@ jobs:
         run: make migration-smoke
       - name: Security Audit
         run: make security-audit
+      - name: Domain Product Contract Gate
+        run: make domain-product-validate
 
   test-suites:
     name: PR Merge Gate / Tests (${{ matrix.suite }})
