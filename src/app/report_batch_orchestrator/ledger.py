@@ -1057,7 +1057,20 @@ class ReportBatchLedger:
         with self._connect() as connection:
             rows = connection.execute(
                 f"""
-                SELECT DISTINCT report_batch.batch_id, report_batch.created_at
+                SELECT batch_id
+                FROM (
+                    SELECT
+                        runnable.batch_id,
+                        runnable.created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY runnable.tenant_id
+                            ORDER BY runnable.created_at, runnable.batch_id
+                        ) AS tenant_rank
+                    FROM (
+                SELECT DISTINCT
+                    report_batch.batch_id,
+                    report_batch.tenant_id,
+                    report_batch.created_at
                 FROM report_batch
                 JOIN report_batch_item
                   ON report_batch_item.batch_id = report_batch.batch_id
@@ -1084,7 +1097,12 @@ class ReportBatchLedger:
                       )
                     )
                   )
-                ORDER BY report_batch.created_at, report_batch.batch_id
+                    ) AS runnable
+                ) AS ranked
+                -- Round-robin across tenants: every tenant's oldest batch outranks
+                -- any tenant's second-oldest, so one backlogged tenant cannot
+                -- monopolize the bounded scan window and starve the others.
+                ORDER BY tenant_rank, created_at, batch_id
                 LIMIT ?
                 """,
                 (*tenant_ids, _dt_to_text(scan_at), _dt_to_text(scan_at), limit),
