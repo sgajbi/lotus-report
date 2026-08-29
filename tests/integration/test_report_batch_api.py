@@ -2005,3 +2005,42 @@ def test_run_due_materializes_a_stored_schedule_with_lineage(tmp_path):
         ] == []
     finally:
         _clear_overrides()
+
+
+def test_schedule_definition_routes_fail_closed_without_tenant_scope(tmp_path):
+    """A caller context whose tenant header is blank cannot define or see stored
+    schedules: create refuses with a typed 400, the list omits stored definitions."""
+
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
+    from app.routers.report_batches import schedule_definition_service_dependency
+
+    client, ledger = _client(tmp_path)
+    app.dependency_overrides[schedule_definition_service_dependency] = lambda: (
+        ScheduleDefinitionService(ledger)
+    )
+    app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
+    blank_tenant = {**_headers(), "X-Tenant-Id": ""}
+    try:
+        # The caller-context dependency refuses a blank tenant before any schedule
+        # code runs; the service keeps its own scope guard for non-HTTP callers.
+        refused = client.post(
+            "/reports/batch-schedules",
+            headers=blank_tenant,
+            json=_schedule_definition_payload(),
+        )
+        assert refused.status_code == 400
+        assert refused.json()["detail"]["code"] == "missing_caller_context"
+
+        listing = client.get("/reports/batch-schedules", headers=blank_tenant)
+        assert listing.status_code == 400
+        assert listing.json()["detail"]["code"] == "missing_caller_context"
+
+        missing = client.patch(
+            "/reports/batch-schedules/rbsc_absent",
+            headers=_headers(),
+            json={"enabled": False},
+        )
+        assert missing.status_code == 404
+        assert missing.json()["detail"]["code"] == "batch_schedule_not_found"
+    finally:
+        _clear_overrides()

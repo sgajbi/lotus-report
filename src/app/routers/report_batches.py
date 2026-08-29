@@ -558,12 +558,9 @@ async def list_report_batch_schedules(
         configured = batch_schedule_list_response(config)
     except BatchScheduleConfigError as exc:
         raise _scheduler_config_error(exc) from exc
-    try:
-        stored = service.list_schedules(caller_context=caller_context)
-    except ScheduleDefinitionError:
-        # A caller without tenant scope still sees the configured surface; stored
-        # definitions are tenant-fenced and therefore absent.
-        stored = []
+    # The caller-context dependency has already refused any request without a
+    # usable tenant, so the service's own scope guard cannot fire here.
+    stored = service.list_schedules(caller_context=caller_context)
     return BatchScheduleDefinitionListResponse(
         **configured.model_dump(),
         defined_schedules=[_stored_schedule_response(schedule) for schedule in stored],
