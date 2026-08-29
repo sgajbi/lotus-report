@@ -22,8 +22,10 @@ in-flight gate and leave it with a run that is neither pass nor fail.
 The dispatch tag is consumed, not kept. At the end of every governed run, the
 `reclaim-dispatch-tag` job deletes the exact `main-releasability-<sha>` tag the run validated,
 after proving the tag still points at that SHA. Cleanup can never change the gate's verdict
-(`continue-on-error` at job and step level; any guard failure warns and retains the tag), so a
-missing tag means a consumed run, never a suppressed one.
+(`continue-on-error` at job and step level; any guard failure warns and retains the tag).
+
+Tag absence is therefore not evidence in either direction: a consumed run and a dispatcher that
+never fired both leave no tag behind. The only way to distinguish them is the run lookup below.
 
 **Auditing a merge:** use `gh run list --commit <full-sha>`. Listing by `--branch main` misses the
 run, because the dispatch ref is a tag rather than `main` - and tag presence is not durable
