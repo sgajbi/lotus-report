@@ -460,3 +460,38 @@ def test_runnable_scan_round_robins_across_tenants(tmp_path):
     # starve the quiet tenant; round-robin returns each tenant's oldest first.
     assert backlogged[0].batch_id in scanned
     assert quiet.batch_id in scanned
+
+
+def test_runnable_scan_rotates_when_more_tenants_than_the_window(tmp_path):
+    """With more authorized tenants than the scan limit, the rank-1 tie-break
+    rotates instead of always favouring the same oldest tenants."""
+
+    ledger = ReportBatchLedger(tmp_path / "rotation.sqlite3")
+    tenants = ["tenant-1", "tenant-2", "tenant-3"]
+    for tenant in tenants:
+        caller = _caller().model_copy(
+            update={"tenant_id": tenant, "correlation_id": f"corr-{tenant}"}
+        )
+        request = _explicit_request("PB_ROT")
+        request = request.model_copy(
+            update={
+                "source_candidates": [
+                    candidate.model_copy(update={"tenant_id": tenant})
+                    for candidate in request.source_candidates
+                ]
+            }
+        )
+        ledger.create_batch(
+            request=request,
+            caller_context=caller,
+            idempotency_key=f"rot-{tenant}",
+        )
+
+    batch_tenants = set()
+    for _ in range(30):
+        scanned = ledger.list_runnable_batch_ids(tenant_ids=tenants, limit=1)
+        batch_tenants.add(ledger.get_batch(scanned[0]).tenant_id)
+
+    # The odds of thirty random rank-1 picks landing on one tenant are ~3e-14;
+    # a fixed created_at tie-break would land on the same tenant every time.
+    assert len(batch_tenants) > 1
