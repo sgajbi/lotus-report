@@ -1,6 +1,8 @@
+import os
 import re
 from datetime import UTC, date, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -1452,6 +1454,8 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
 
 
 def test_report_batch_ledger_service_factory_uses_runtime_settings():
+    if not os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL"):
+        pytest.skip("REPORT_JOB_LEDGER_DATABASE_URL is required for the factory proof")
     get_report_batch_ledger.cache_clear()
     try:
         ledger = get_report_batch_ledger()
