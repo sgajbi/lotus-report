@@ -287,12 +287,30 @@ Quarantined batch items (`batch_item_tenant_mismatch`):
     so it cannot quarantine anything.
   - **searching for mismatches**: grep the worker and API logs for `batch_item_tenant_mismatch`
     rather than relying on the quarantine category alone, because the items with the strongest
-    evidence are exactly the ones that are logged but **not** quarantined. A caller who legitimately owns the batch, but
-  whose item is linked to another tenant's report job, receives the ordinary
-  `409 report_batch_item_cannot_be_replayed` contract - true, and disclosing nothing about the other
-  tenant - and the item is quarantined the same way. No replayed job and no lineage relationship is
-  created.
+    evidence are exactly the ones that are logged but **not** quarantined.
+  - a caller who legitimately owns the batch, but whose item is linked to another tenant's report
+    job, receives the ordinary `409 report_batch_item_cannot_be_replayed` contract - true, and
+    disclosing nothing about the other tenant - and the item is quarantined the same way. No
+    replayed job and no lineage relationship is created.
 - this is deliberately loud rather than the product-safe not-found used on caller-facing routes.
+
+Quarantined batch items (`batch_item_link_dangling`):
+
+- `report_job_id` carries no foreign key, so a retention purge, ledger restore, or manual cleanup
+  can leave an item pointing at a job that no longer exists. Replay of such an item behaves by
+  item state:
+  - a **terminal** item (`succeeded`, exhausted retries) is refused with the ordinary
+    `409 report_batch_item_cannot_be_replayed` **without needing the link to resolve** - the
+    refusal is decided by the item's own state, so it stays a stable 409 through purged links and
+    report-ledger outages alike. The link is still observed best-effort; if it cannot be resolved
+    the API log carries `batch_item_link_unresolvable` at warning.
+  - an item replay **would have acted on** (`waiting_on_report_job`, or retry-eligible
+    `failed_retryable`) is quarantined: marked `failed_terminal` with error category
+    `batch_item_link_dangling`, logged under the same event name, and refused with the ordinary
+    409. Every retry would re-hit the missing job, so leaving it actionable would be a permanent
+    silent trap.
+  - a report-ledger **outage** during such a replay is not a dangling link: the error propagates
+    loudly and nothing is quarantined - the item is not corrupt, the ledger is down.
   There is no caller to disclose to on a background path, and a silent skip would leave the item
   looking merely slow.
 - signal: `lotus_report_operations_total{operation="batch_worker_run",status="failed",
