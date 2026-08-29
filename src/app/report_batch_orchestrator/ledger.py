@@ -244,6 +244,7 @@ class ReportBatchLedger:
                     options_json TEXT NOT NULL,
                     max_batch_size INTEGER NOT NULL,
                     fingerprint TEXT NOT NULL,
+                    cadence_effective_on TEXT NOT NULL,
                     revision INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT
@@ -1145,9 +1146,10 @@ class ReportBatchLedger:
                         schedule_id, tenant_id, region, booking_center_code, owner_actor,
                         enabled, cadence, portfolio_ids_json,
                         requested_output_formats_json, reporting_currency, options_json,
-                        max_batch_size, fingerprint, revision, created_at, updated_at
+                        max_batch_size, fingerprint, cadence_effective_on, revision,
+                        created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         schedule.schedule_id,
@@ -1163,6 +1165,7 @@ class ReportBatchLedger:
                         json.dumps(schedule.options),
                         schedule.max_batch_size,
                         schedule.fingerprint,
+                        schedule.cadence_effective_on.isoformat(),
                         schedule.revision,
                         schedule.created_at.isoformat(),
                         schedule.updated_at.isoformat() if schedule.updated_at else None,
@@ -1182,8 +1185,9 @@ class ReportBatchLedger:
                     row["schedule_id"] if row else schedule.schedule_id
                 ) from exc
             return
-        cursor = connection.execute(
-            """
+        try:
+            cursor = connection.execute(
+                """
             UPDATE report_batch_schedule_definition SET
                 enabled = ?,
                 cadence = ?,
@@ -1193,25 +1197,31 @@ class ReportBatchLedger:
                 options_json = ?,
                 max_batch_size = ?,
                 fingerprint = ?,
+                cadence_effective_on = ?,
                 revision = ?,
                 updated_at = ?
             WHERE schedule_id = ? AND revision = ?
             """,
-            (
-                1 if schedule.enabled else 0,
-                schedule.cadence,
-                json.dumps(schedule.portfolio_ids),
-                json.dumps(schedule.requested_output_formats),
-                schedule.reporting_currency,
-                json.dumps(schedule.options),
-                schedule.max_batch_size,
-                schedule.fingerprint,
-                schedule.revision,
-                schedule.updated_at.isoformat() if schedule.updated_at else None,
-                schedule.schedule_id,
-                schedule.revision - 1,
-            ),
-        )
+                (
+                    1 if schedule.enabled else 0,
+                    schedule.cadence,
+                    json.dumps(schedule.portfolio_ids),
+                    json.dumps(schedule.requested_output_formats),
+                    schedule.reporting_currency,
+                    json.dumps(schedule.options),
+                    schedule.max_batch_size,
+                    schedule.fingerprint,
+                    schedule.cadence_effective_on.isoformat(),
+                    schedule.revision,
+                    schedule.updated_at.isoformat() if schedule.updated_at else None,
+                    schedule.schedule_id,
+                    schedule.revision - 1,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            if "fingerprint" not in str(exc):
+                raise
+            raise DuplicateScheduleDefinition(schedule.schedule_id) from exc
         if cursor.rowcount != 1:
             raise StaleScheduleRevision(schedule.schedule_id)
 
@@ -1482,6 +1492,7 @@ def _add_sqlite_column_if_missing(
 
 
 def _schedule_from_row(row: sqlite3.Row) -> "StoredBatchSchedule":
+    from datetime import date as _date
     from datetime import datetime as _datetime
 
     from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
@@ -1499,6 +1510,7 @@ def _schedule_from_row(row: sqlite3.Row) -> "StoredBatchSchedule":
         reporting_currency=row["reporting_currency"],
         options=_json_dict(row["options_json"]),
         max_batch_size=row["max_batch_size"],
+        cadence_effective_on=_date.fromisoformat(row["cadence_effective_on"]),
         revision=row["revision"],
         created_at=_datetime.fromisoformat(row["created_at"]),
         updated_at=(_datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None),

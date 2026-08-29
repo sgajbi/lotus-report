@@ -910,10 +910,12 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                         schedule_id, tenant_id, region, booking_center_code, owner_actor,
                         enabled, cadence, portfolio_ids_json,
                         requested_output_formats_json, reporting_currency, options_json,
-                        max_batch_size, fingerprint, revision, created_at, updated_at
+                        max_batch_size, fingerprint, cadence_effective_on, revision,
+                        created_at, updated_at
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s
                     )
                     """,
                     (
@@ -930,6 +932,7 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                         Jsonb(schedule.options),
                         schedule.max_batch_size,
                         schedule.fingerprint,
+                        schedule.cadence_effective_on,
                         schedule.revision,
                         schedule.created_at,
                         schedule.updated_at,
@@ -951,8 +954,9 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                     row["schedule_id"] if row else schedule.schedule_id
                 ) from exc
             return
-        result = connection.execute(
-            """
+        try:
+            result = connection.execute(
+                """
             UPDATE report_batch_schedule_definition SET
                 enabled = %s,
                 cadence = %s,
@@ -962,25 +966,32 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 options_json = %s,
                 max_batch_size = %s,
                 fingerprint = %s,
+                cadence_effective_on = %s,
                 revision = %s,
                 updated_at = %s
             WHERE schedule_id = %s AND revision = %s
             """,
-            (
-                schedule.enabled,
-                schedule.cadence,
-                Jsonb(schedule.portfolio_ids),
-                Jsonb(schedule.requested_output_formats),
-                schedule.reporting_currency,
-                Jsonb(schedule.options),
-                schedule.max_batch_size,
-                schedule.fingerprint,
-                schedule.revision,
-                schedule.updated_at,
-                schedule.schedule_id,
-                schedule.revision - 1,
-            ),
-        )
+                (
+                    schedule.enabled,
+                    schedule.cadence,
+                    Jsonb(schedule.portfolio_ids),
+                    Jsonb(schedule.requested_output_formats),
+                    schedule.reporting_currency,
+                    Jsonb(schedule.options),
+                    schedule.max_batch_size,
+                    schedule.fingerprint,
+                    schedule.cadence_effective_on,
+                    schedule.revision,
+                    schedule.updated_at,
+                    schedule.schedule_id,
+                    schedule.revision - 1,
+                ),
+            )
+        except UniqueViolation as exc:
+            constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+            if constraint != "uq_report_batch_schedule_fingerprint_enabled":
+                raise
+            raise DuplicateScheduleDefinition(schedule.schedule_id) from exc
         if result.rowcount != 1:
             raise StaleScheduleRevision(schedule.schedule_id)
 
@@ -1257,6 +1268,7 @@ def _schedule_definition_from_row(row: Any) -> "StoredBatchSchedule":
         reporting_currency=row["reporting_currency"],
         options=dict(row["options_json"]),
         max_batch_size=row["max_batch_size"],
+        cadence_effective_on=row["cadence_effective_on"],
         revision=row["revision"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],

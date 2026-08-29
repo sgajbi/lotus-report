@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS report_batch_schedule_definition (
     options_json JSONB NOT NULL,
     max_batch_size INTEGER NOT NULL CHECK (max_batch_size > 0),
     fingerprint TEXT NOT NULL,
+    cadence_effective_on DATE NOT NULL,
     revision INTEGER NOT NULL CHECK (revision > 0),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ

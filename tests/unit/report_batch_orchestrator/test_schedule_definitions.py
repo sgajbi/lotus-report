@@ -428,6 +428,7 @@ def test_stored_definitions_fold_into_the_scheduler_pass_itself() -> None:
             reporting_currency="USD",
             options={"sections": ["OVERVIEW", "PERFORMANCE"]},
             max_batch_size=10,
+            cadence_effective_on=NOW.date(),
             created_at=NOW,
             updated_at=None,
         )
@@ -576,3 +577,80 @@ def test_cycle_identity_survives_a_cadence_change() -> None:
 
     assert before == after
     assert len({before, other_cycle, other_schedule}) == 3
+
+
+def test_a_cadence_change_anchors_dueness_to_its_effective_date(tmp_path: Path) -> None:
+    """Switching quarterly to monthly on August 15 must not owe July 31: due-ness
+    anchors on the cadence's effective date, not the schedule's creation date."""
+
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    service = _service(tmp_path)
+    created_at = _datetime(2026, 5, 10, 9, 0, tzinfo=_UTC)
+    schedule = service.create_schedule(
+        request=_create_request(), caller_context=_caller(), now=created_at
+    )
+
+    changed_at = _datetime(2026, 8, 15, 9, 0, tzinfo=_UTC)
+    switched = service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(cadence="monthly_end"),
+        caller_context=_caller(),
+        now=changed_at,
+    )
+    assert switched.cadence_effective_on == changed_at.date()
+
+    # July 31 predates the cadence change: nothing due on August 16.
+    assert (
+        service.due_definitions_for_scheduler(
+            tenant_id="tenant-sg",
+            region="APAC",
+            booking_center_code="SG",
+            today=date(2026, 8, 16),
+        )
+        == []
+    )
+    # The first month end after the change is due.
+    due = service.due_definitions_for_scheduler(
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        today=date(2026, 8, 31),
+    )
+    assert [definition.as_of_date for definition in due] == [date(2026, 8, 31)]
+
+    # A non-cadence update leaves the anchor alone.
+    service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(reporting_currency="SGD"),
+        caller_context=_caller(),
+        now=_datetime(2026, 9, 1, 9, 0, tzinfo=_UTC),
+    )
+    unchanged = service.get_schedule(schedule_id=schedule.schedule_id, caller_context=_caller())
+    assert unchanged.cadence_effective_on == changed_at.date()
+
+
+def test_an_update_that_duplicates_another_enabled_schedule_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Making one enabled schedule identical to another violates the fingerprint
+    index on the update path too, and surfaces as a typed conflict."""
+
+    service = _service(tmp_path)
+    service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    other = service.create_schedule(
+        request=_create_request(cadence="monthly_end"), caller_context=_caller(), now=NOW
+    )
+
+    with pytest.raises(ScheduleDefinitionError) as excinfo:
+        service.update_schedule(
+            schedule_id=other.schedule_id,
+            request=BatchScheduleDefinitionUpdateRequest(cadence="quarter_end"),
+            caller_context=_caller(),
+            now=NOW,
+        )
+    assert excinfo.value.code == "batch_schedule_duplicate_definition"
+
+    survivor = service.get_schedule(schedule_id=other.schedule_id, caller_context=_caller())
+    assert survivor.cadence == "monthly_end"
