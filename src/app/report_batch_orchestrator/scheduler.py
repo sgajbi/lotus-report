@@ -633,13 +633,18 @@ class ReportBatchScheduler:
                 # applies from the next period, and this pass mints nothing.
                 skipped.append(schedule.schedule_id)
                 continue
-            except Exception:
+            except ValueError:
                 if not schedule.stable_cycle_identity:
                     raise
                 # One advisor's stale stored schedule - a portfolio gone inactive,
-                # a transient upstream failure - must not abort the whole pass and
-                # starve every other schedule. Configured schedules keep raising:
-                # their failures are deployment defects an operator must see.
+                # an oversized pack, a validation refusal - must not abort the
+                # whole pass and starve every other schedule. The catch is the
+                # domain-failure family only (ValueError, which Pydantic's
+                # ValidationError subclasses): infrastructure faults - PostgreSQL
+                # down, pool exhausted, schema invalid - propagate and fail the
+                # pass loudly, because they are not properties of one schedule.
+                # Configured schedules keep raising even for domain failures:
+                # theirs are deployment defects an operator must see.
                 _LOGGER.exception(
                     "stored_schedule_materialization_failed",
                     extra={
