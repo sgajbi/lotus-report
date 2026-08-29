@@ -97,12 +97,22 @@ class ReportBatchRuntime:
         back_pressure_stopped = False
 
         for batch_id in batch_ids:
-            batch_tenant_id = str(self._batch_ledger.get_batch(batch_id).tenant_id)
+            batch = self._batch_ledger.get_batch(batch_id)
+            batch_tenant_id = str(batch.tenant_id)
             if batch_tenant_id not in authorized:
                 # Defence in depth behind the SQL predicate: an out-of-set batch
                 # is not advanced and is not an error condition of the pass.
                 continue
-            derived_context = caller_context.model_copy(update={"tenant_id": batch_tenant_id})
+            # The full operating scope comes from the batch, not the worker: a
+            # UK tenant's report jobs must carry the batch's own region and
+            # booking centre, never an APAC worker's configured values.
+            derived_context = caller_context.model_copy(
+                update={
+                    "tenant_id": batch_tenant_id,
+                    "region": str(batch.region),
+                    "booking_center_code": batch.booking_center_code,
+                }
+            )
             result = await self._worker.run_once(
                 batch_id=batch_id,
                 caller_context=derived_context,

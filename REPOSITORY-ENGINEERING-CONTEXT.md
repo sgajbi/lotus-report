@@ -293,9 +293,12 @@ Primary areas:
     and returns the existing not-found contract before any mutation, downstream call, lease,
     replay creation, or linked report-job or archive status lookup, so cross-tenant and unknown
     identifiers are indistinguishable. The runtime pass and the `lotus-report-batch-worker`
-    process are scoped to one governed tenant: `list_runnable_batch_ids` requires a `tenant_id`
-    and the pass supplies its caller-context tenant, so operating more than one tenant means one
-    worker process per tenant. This is defense in depth for the internal operator API, not
+    process are scoped to an explicit authorized tenant set: `list_runnable_batch_ids` requires
+    `tenant_ids` (empty selects nothing, no unscoped mode), an empty or unset
+    `REPORT_BATCH_WORKER_TENANT_IDS` fails worker startup, and every mutation runs under a
+    per-batch caller context derived from the batch's own tenant, region, and booking centre,
+    validated against the set - one process now serves several governed tenants with no ambient
+    authority. This is defense in depth for the internal operator API, not
     production identity or entitlement certification.
 16. `src/app/reporting_persistence/`
     shared forward-only PostgreSQL migration execution, supported legacy-schema classification,

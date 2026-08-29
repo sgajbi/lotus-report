@@ -291,8 +291,8 @@ def test_multi_tenant_pass_derives_context_per_batch_and_ignores_out_of_set(tmp_
         def __init__(self):
             self.scanned_with = None
             self.batches = {
-                "rbch_in_a": "tenant-a",
-                "rbch_in_b": "tenant-b",
+                "rbch_in_a": ("tenant-a", "APAC", "SG"),
+                "rbch_in_b": ("tenant-b", "EMEA", "UK"),
             }
 
         def list_runnable_batch_ids(self, *, tenant_ids, limit=10, now=None):
@@ -304,7 +304,14 @@ def test_multi_tenant_pass_derives_context_per_batch_and_ignores_out_of_set(tmp_
         def get_batch(self, batch_id):
             from types import SimpleNamespace
 
-            return SimpleNamespace(tenant_id=self.batches.get(batch_id, "tenant-foreign"))
+            tenant_id, region, booking_center_code = self.batches.get(
+                batch_id, ("tenant-foreign", "AMER", "US")
+            )
+            return SimpleNamespace(
+                tenant_id=tenant_id,
+                region=region,
+                booking_center_code=booking_center_code,
+            )
 
         def batch_pressure_snapshot(self, *, now=None):
             from app.report_batch_orchestrator.models import BatchPressureSnapshot
@@ -318,7 +325,14 @@ def test_multi_tenant_pass_derives_context_per_batch_and_ignores_out_of_set(tmp_
         async def run_once(self, *, batch_id, caller_context, worker_id, **kwargs):
             from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 
-            self.contexts.append((batch_id, caller_context.tenant_id))
+            self.contexts.append(
+                (
+                    batch_id,
+                    caller_context.tenant_id,
+                    caller_context.region,
+                    caller_context.booking_center_code,
+                )
+            )
             return BatchWorkerRunResult(
                 batch_id=batch_id,
                 batch_status_before="materialized",
@@ -346,8 +360,8 @@ def test_multi_tenant_pass_derives_context_per_batch_and_ignores_out_of_set(tmp_
     assert ledger.scanned_with == ("tenant-a", "tenant-b")
     # Each mutation ran under the batch's own tenant - never the base context's.
     assert worker.contexts == [
-        ("rbch_in_a", "tenant-a"),
-        ("rbch_in_b", "tenant-b"),
+        ("rbch_in_a", "tenant-a", "APAC", "SG"),
+        ("rbch_in_b", "tenant-b", "EMEA", "UK"),
     ]
     # The foreign batch was neither advanced nor an error condition of the pass.
     assert len(result.batch_results) == 2
