@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.report_batch_orchestrator.models import (
     BatchDispatchPolicy,
@@ -17,10 +18,12 @@ class BatchRuntimeLedger(Protocol):
     def list_runnable_batch_ids(
         self,
         *,
-        tenant_id: str,
+        tenant_ids: Sequence[str],
         limit: int = 10,
         now: datetime | None = None,
     ) -> list[str]: ...
+
+    def get_batch(self, batch_id: str) -> Any: ...
 
     def batch_pressure_snapshot(self, *, now: datetime | None = None) -> BatchPressureSnapshot: ...
 
@@ -47,9 +50,12 @@ class ReportBatchRuntime:
     ordered set of runnable batches from the durable ledger and advance each
     through the existing single-batch worker primitive.
 
-    A pass is scoped to the tenant of the caller context it runs under, so a
-    background worker only advances batches it is governed to act for. Running
-    for more than one tenant means running one process per governed tenant.
+    A pass is scoped to an explicit authorized tenant set: the scan selects only
+    batches of those tenants, and every mutation runs under a per-batch caller
+    context derived from the batch's own tenant - so derived report jobs always
+    carry the batch's tenant, never the worker's - validated against the same
+    set before anything is advanced. There is no all-tenants mode, and a batch
+    outside the set is simply not touched: not advanced, not an error.
     """
 
     def __init__(
@@ -66,6 +72,7 @@ class ReportBatchRuntime:
         *,
         caller_context: ReportCallerContext,
         worker_id: str,
+        authorized_tenant_ids: Sequence[str] | None = None,
         max_batches: int = 5,
         runtime_load: BatchRuntimeLoad | None = None,
         dispatch_policy: BatchDispatchPolicy | None = None,
@@ -75,8 +82,13 @@ class ReportBatchRuntime:
         if max_batches < 1:
             return BatchRuntimePassResult(worker_id=worker_id)
 
+        authorized = tuple(
+            authorized_tenant_ids
+            if authorized_tenant_ids is not None
+            else [str(caller_context.tenant_id)]
+        )
         batch_ids = self._batch_ledger.list_runnable_batch_ids(
-            tenant_id=caller_context.tenant_id,
+            tenant_ids=authorized,
             limit=max_batches,
             now=now,
         )
@@ -85,9 +97,15 @@ class ReportBatchRuntime:
         back_pressure_stopped = False
 
         for batch_id in batch_ids:
+            batch_tenant_id = str(self._batch_ledger.get_batch(batch_id).tenant_id)
+            if batch_tenant_id not in authorized:
+                # Defence in depth behind the SQL predicate: an out-of-set batch
+                # is not advanced and is not an error condition of the pass.
+                continue
+            derived_context = caller_context.model_copy(update={"tenant_id": batch_tenant_id})
             result = await self._worker.run_once(
                 batch_id=batch_id,
-                caller_context=caller_context,
+                caller_context=derived_context,
                 worker_id=worker_id,
                 runtime_load=runtime_load,
                 dispatch_policy=dispatch_policy,

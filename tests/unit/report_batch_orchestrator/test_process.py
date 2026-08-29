@@ -26,6 +26,7 @@ class _Runtime:
         *,
         caller_context: ReportCallerContext,
         worker_id: str,
+        authorized_tenant_ids: tuple[str, ...] = (),
         max_batches: int = 5,
         dispatch_policy: BatchDispatchPolicy | None = None,
         recover_expired_leases: bool = True,
@@ -57,6 +58,7 @@ class _FailingRuntime:
         *,
         caller_context: ReportCallerContext,
         worker_id: str,
+        authorized_tenant_ids: tuple[str, ...] = (),
         max_batches: int = 5,
         dispatch_policy: BatchDispatchPolicy | None = None,
         recover_expired_leases: bool = True,
@@ -76,7 +78,7 @@ def _config() -> BatchWorkerProcessConfig:
         worker_id="worker-unit-1",
         interval_seconds=0.1,
         max_batches_per_pass=3,
-        caller_context_tenant_id="tenant-sg",
+        authorized_tenant_ids=("tenant-sg",),
         caller_context_region="APAC",
         caller_context_booking_center_code="SG",
         caller_context_role="system",
@@ -107,7 +109,7 @@ def test_batch_worker_config_from_settings_maps_runtime_policy() -> None:
     assert config.worker_id == "worker-config-1"
     assert config.interval_seconds == 2.5
     assert config.max_batches_per_pass == 13
-    assert config.caller_context_tenant_id == "tenant-private-bank"
+    assert config.authorized_tenant_ids == ("tenant-private-bank",)
     assert config.caller_context_region == "EMEA"
     assert config.caller_context_booking_center_code == "CH"
     assert config.caller_context_role == "operations"
@@ -285,3 +287,25 @@ def test_main_accepts_explicit_max_iterations(monkeypatch) -> None:
     process_module.main()
 
     assert calls == [3]
+
+
+def test_worker_startup_fails_without_an_explicit_authorized_tenant_set():
+    """Issue #178 acceptance: empty or unset authority fails startup - never a
+    hardcoded tenant, never all tenants."""
+
+    from app.config import Settings
+    from app.report_batch_orchestrator.process import batch_worker_config_from_settings
+
+    empty = Settings(
+        REPORT_BATCH_WORKER_TENANT_ID="",
+        REPORT_BATCH_WORKER_TENANT_IDS="",
+    )
+    with pytest.raises(RuntimeError):
+        batch_worker_config_from_settings(empty)
+
+    multi = Settings(REPORT_BATCH_WORKER_TENANT_IDS="tenant-a, tenant-b,tenant-a")
+    config = batch_worker_config_from_settings(multi)
+    assert config.authorized_tenant_ids == ("tenant-a", "tenant-b")
+
+    legacy = Settings(REPORT_BATCH_WORKER_TENANT_ID="tenant-legacy")
+    assert batch_worker_config_from_settings(legacy).authorized_tenant_ids == ("tenant-legacy",)

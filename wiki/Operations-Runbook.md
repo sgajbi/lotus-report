@@ -249,16 +249,20 @@ Current implemented semantics:
 
 Tenant scope of the background worker:
 
-- one `lotus-report-batch-worker` process advances batches for exactly one tenant, named by
-  `REPORT_BATCH_WORKER_TENANT_ID`. Operating more than one tenant means running one worker
-  process per governed tenant, each with its own value.
-- a batch whose tenant has no running worker is **not advanced**. It stays materialized and
-  visible through the status API; it does not fail and nothing is lost. Symptom to expect if a
-  tenant's worker is missing or misconfigured: batches for that tenant sit at `materialized` with
-  no linked report jobs while other tenants progress normally.
-- to diagnose, compare `REPORT_BATCH_WORKER_TENANT_ID` on each running worker against the
-  `tenant_id` of the stalled batch from `GET /reports/batches/{batch_id}`. Start or correct the
-  worker for that tenant; no batch state needs repair.
+- one `lotus-report-batch-worker` process advances batches for its **explicit authorized tenant
+  set**, named by `REPORT_BATCH_WORKER_TENANT_IDS` (comma-separated; the legacy singular
+  `REPORT_BATCH_WORKER_TENANT_ID` still works as a one-member set). An empty or unset value fails
+  startup - there is no all-tenants mode and no defaulted tenant.
+- the runnable-batch scan selects only the authorized set, and every mutation runs under a
+  per-batch caller context derived from the batch's own tenant and validated against the same
+  set - so derived report jobs always carry the batch's tenant, never the worker's.
+- a batch whose tenant is in no running worker's authorized set is **not advanced**. It stays
+  materialized and visible through the status API; it does not fail and nothing is lost. Symptom:
+  batches for that tenant sit at `materialized` with no linked report jobs while other tenants
+  progress normally.
+- to diagnose, compare `REPORT_BATCH_WORKER_TENANT_IDS` across running workers against the
+  `tenant_id` of the stalled batch from `GET /reports/batches/{batch_id}`. Add the tenant to a
+  worker's set or start a worker that carries it; no batch state needs repair.
 - this is deliberate. Before it, one worker scanned every tenant's runnable batches and dispatched
   them under its own configured tenant, so a batch belonging to one tenant produced report jobs
   owned by another. Not advancing a batch is recoverable; advancing it into the wrong tenant is
@@ -356,7 +360,6 @@ Quarantined batch items (`batch_item_report_job_missing`):
 
 Still not supported:
 
-- multi-tenant throughput from a single worker process (one process per governed tenant today)
 - Workbench scheduler-management surface
 - schedule CRUD or persisted scheduler registry management
 - entitlement-certified public scheduler runtime

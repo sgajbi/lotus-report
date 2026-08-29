@@ -276,3 +276,78 @@ async def test_runtime_pass_does_not_create_report_jobs_under_a_foreign_tenant(t
     assert result.scanned_batch_ids == []
     assert result.dispatched_count == 0
     assert result.executed_count == 0
+
+
+def test_multi_tenant_pass_derives_context_per_batch_and_ignores_out_of_set(tmp_path):
+    """Issue #178 acceptance: an in-set batch progresses under a caller context
+    carrying its own batch tenant, an out-of-set batch is untouched (not an
+    error), and the scan itself is set-scoped."""
+
+    import asyncio
+
+    from app.report_batch_orchestrator.runtime import ReportBatchRuntime
+
+    class _Ledger:
+        def __init__(self):
+            self.scanned_with = None
+            self.batches = {
+                "rbch_in_a": "tenant-a",
+                "rbch_in_b": "tenant-b",
+            }
+
+        def list_runnable_batch_ids(self, *, tenant_ids, limit=10, now=None):
+            self.scanned_with = tuple(tenant_ids)
+            # Simulate a stale row sneaking past the predicate to exercise the
+            # defence-in-depth validation as well.
+            return ["rbch_in_a", "rbch_in_b", "rbch_foreign"]
+
+        def get_batch(self, batch_id):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(tenant_id=self.batches.get(batch_id, "tenant-foreign"))
+
+        def batch_pressure_snapshot(self, *, now=None):
+            from app.report_batch_orchestrator.models import BatchPressureSnapshot
+
+            return BatchPressureSnapshot()
+
+    class _WorkerSpy:
+        def __init__(self):
+            self.contexts = []
+
+        async def run_once(self, *, batch_id, caller_context, worker_id, **kwargs):
+            from app.report_batch_orchestrator.worker import BatchWorkerRunResult
+
+            self.contexts.append((batch_id, caller_context.tenant_id))
+            return BatchWorkerRunResult(
+                batch_id=batch_id,
+                batch_status_before="materialized",
+                batch_status_after="running",
+                recovered_count=0,
+                leased_count=0,
+                dispatched_count=1,
+                executed_count=1,
+            )
+
+    ledger = _Ledger()
+    worker = _WorkerSpy()
+    runtime = ReportBatchRuntime(batch_ledger=ledger, worker=worker)
+    base_context = _caller()
+
+    result = asyncio.run(
+        runtime.run_pass(
+            caller_context=base_context,
+            worker_id="worker-multi",
+            authorized_tenant_ids=("tenant-a", "tenant-b"),
+            max_batches=10,
+        )
+    )
+
+    assert ledger.scanned_with == ("tenant-a", "tenant-b")
+    # Each mutation ran under the batch's own tenant - never the base context's.
+    assert worker.contexts == [
+        ("rbch_in_a", "tenant-a"),
+        ("rbch_in_b", "tenant-b"),
+    ]
+    # The foreign batch was neither advanced nor an error condition of the pass.
+    assert len(result.batch_results) == 2

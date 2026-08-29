@@ -342,7 +342,7 @@ def test_postgres_batch_runtime_scan_returns_only_runnable_batches() -> None:
         worker_id=f"pg-runtime-worker-{unique_suffix}",
     )
 
-    batch_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-sg", limit=1000)
+    batch_ids = batch_ledger.list_runnable_batch_ids(tenant_ids=["tenant-sg"], limit=1000)
 
     assert runnable.batch_id in batch_ids
     assert waiting.batch_id in batch_ids
@@ -376,8 +376,8 @@ def test_postgres_batch_runtime_scan_is_scoped_to_one_tenant() -> None:
         idempotency_key=f"batch-pg-tenant-scope-uk-{unique_suffix}",
     )
 
-    governed_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-sg", limit=1000)
-    foreign_ids = batch_ledger.list_runnable_batch_ids(tenant_id="tenant-uk", limit=1000)
+    governed_ids = batch_ledger.list_runnable_batch_ids(tenant_ids=["tenant-sg"], limit=1000)
+    foreign_ids = batch_ledger.list_runnable_batch_ids(tenant_ids=["tenant-uk"], limit=1000)
 
     assert governed.batch_id in governed_ids
     assert foreign.batch_id not in governed_ids
@@ -768,3 +768,40 @@ def test_postgres_schedule_atomic_write_duplicate_and_stale_guards():
                 }
             )
         )
+
+
+def test_postgres_multi_tenant_scan_returns_in_set_batches_only():
+    """Issue #178 acceptance: the PostgreSQL runnable scan selects across the
+    authorized set and nothing else; an empty set selects nothing."""
+
+    unique_suffix = uuid4().hex
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    in_set = []
+    for tenant in ("tenant-a", "tenant-b", "tenant-outside"):
+        tenant_id = f"{tenant}-{unique_suffix}"
+        caller = _caller(tenant_id).model_copy(update={"tenant_id": tenant_id})
+        request = _request(
+            tenant_id,
+            f"PB_{tenant.upper().replace('-', '_')}_{unique_suffix}",
+        )
+        request = request.model_copy(
+            update={
+                "source_candidates": [
+                    candidate.model_copy(update={"tenant_id": tenant_id})
+                    for candidate in request.source_candidates
+                ]
+            }
+        )
+        batch = ledger.create_batch(
+            request=request,
+            caller_context=caller,
+            idempotency_key=f"multi-{tenant}-{unique_suffix}",
+        )
+        in_set.append((f"{tenant}-{unique_suffix}", batch.batch_id))
+
+    authorized = [in_set[0][0], in_set[1][0]]
+    runnable = ledger.list_runnable_batch_ids(tenant_ids=authorized, limit=50)
+    assert in_set[0][1] in runnable
+    assert in_set[1][1] in runnable
+    assert in_set[2][1] not in runnable
+    assert ledger.list_runnable_batch_ids(tenant_ids=[], limit=50) == []
