@@ -48,19 +48,40 @@ def _rebind_database_url(target_conninfo: str) -> None:
     get_postgres_connection_provider.cache_clear()
 
 
+def _server_reachable(conninfo: str) -> bool:
+    import psycopg
+
+    try:
+        with psycopg.connect(conninfo, connect_timeout=2):
+            return True
+    except psycopg.Error:
+        return False
+
+
 @pytest.fixture(scope="session", autouse=True)
 def isolated_report_database() -> Iterator[None]:
-    source_conninfo = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
-    if not source_conninfo:
-        yield
-        return
     if os.environ.get(CALLER_OWNED_DATABASE_SENTINEL):
         # The caller vouches the database is already isolated (CI's ephemeral
-        # service container, or make ci-local's helper-owned database). Trust it:
-        # provisioning here would nest a second temporary database and demand
-        # CREATEDB from least-privilege roles that do not need it.
+        # service container, make ci's documented caller-owned contract, or
+        # make ci-local's helper-owned database). Trust it: provisioning here
+        # would nest a second temporary database and demand CREATEDB from
+        # least-privilege roles that do not need it.
         yield
         return
+
+    environment_conninfo = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
+    # The settings default IS the live local product DSN (port 5439), so an unset
+    # environment variable does not mean "no database": factory-backed tests would
+    # construct adapters against the running product stack. The effective value is
+    # what must be isolated.
+    source_conninfo = environment_conninfo or settings.report_job_ledger_database_url
+    if not environment_conninfo and not _server_reachable(source_conninfo):
+        # No caller-supplied database and nothing listening on the default: the
+        # PostgreSQL-backed tests skip, and nothing can connect anywhere.
+        yield
+        return
+
+    original_environment = environment_conninfo
     with provision_isolated_database(source_conninfo) as database:
         _rebind_database_url(database.target_conninfo)
         try:
@@ -70,4 +91,9 @@ def isolated_report_database() -> Iterator[None]:
                 close_postgres_connection_provider()
             except Exception:
                 get_postgres_connection_provider.cache_clear()
-            _rebind_database_url(source_conninfo)
+            if original_environment is None:
+                os.environ.pop("REPORT_JOB_LEDGER_DATABASE_URL", None)
+                settings.report_job_ledger_database_url = source_conninfo
+                get_postgres_connection_provider.cache_clear()
+            else:
+                _rebind_database_url(original_environment)
