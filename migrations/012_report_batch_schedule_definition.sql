@@ -14,9 +14,17 @@ CREATE TABLE IF NOT EXISTS report_batch_schedule_definition (
     reporting_currency TEXT,
     options_json JSONB NOT NULL,
     max_batch_size INTEGER NOT NULL CHECK (max_batch_size > 0),
+    fingerprint TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision > 0),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ
 );
+
+-- Identical concurrent creates converge at the database: one enabled schedule per
+-- logical definition and execution scope. Disabled rows are history, not identity.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_batch_schedule_fingerprint_enabled
+ON report_batch_schedule_definition (fingerprint)
+WHERE enabled;
 
 CREATE INDEX IF NOT EXISTS idx_report_batch_schedule_tenant
 ON report_batch_schedule_definition (tenant_id, enabled);
