@@ -104,3 +104,26 @@ def test_provider_close_releases_idle_connections_and_blocks_reuse(monkeypatch):
     assert connection.closed
     with pytest.raises(RuntimeError, match="postgres_connection_provider_closed"):
         provider.acquire()
+
+
+def test_closing_an_uncached_provider_never_constructs_one(monkeypatch) -> None:
+    """Shutdown must not open connections (issue #179 review chain).
+
+    With an empty cache, close used to build a brand-new eagerly-connecting
+    provider purely to shut it down - app teardown became a connection attempt
+    against whatever DSN was configured.
+    """
+    from app import postgres
+
+    postgres.get_postgres_connection_provider.cache_clear()
+    monkeypatch.setattr(
+        postgres.PostgresConnectionProvider,
+        "from_settings",
+        classmethod(
+            lambda cls, _settings: (_ for _ in ()).throw(
+                AssertionError("shutdown constructed a provider")
+            )
+        ),
+    )
+
+    postgres.close_postgres_connection_provider()

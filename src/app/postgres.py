@@ -155,5 +155,12 @@ def get_postgres_connection_provider() -> PostgresConnectionProvider:
 
 
 def close_postgres_connection_provider() -> None:
-    get_postgres_connection_provider().close()
+    """Close the cached provider if one exists; never construct one to close it.
+
+    Shutdown must not open connections: with an empty cache this used to build a
+    brand-new provider - eagerly connecting - purely to shut it down, which turned
+    app teardown into a connection attempt against whatever DSN was configured.
+    """
+    if get_postgres_connection_provider.cache_info().currsize:
+        get_postgres_connection_provider().close()
     get_postgres_connection_provider.cache_clear()
