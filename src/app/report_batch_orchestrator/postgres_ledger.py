@@ -39,6 +39,10 @@ if TYPE_CHECKING:
         StoredBatchSchedule,
     )
 
+from app.report_batch_orchestrator.ledger import (
+    DuplicateScheduleDefinition,
+    StaleScheduleRevision,
+)
 from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
 
 
@@ -880,9 +884,29 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
         return [str(row["batch_id"]) for row in rows]
 
     def save_schedule_definition(self, schedule: "StoredBatchSchedule") -> "StoredBatchSchedule":
-        with self._connect() as connection:
-            self._write_schedule_definition(connection, schedule)
+        try:
+            with self._connect() as connection:
+                self._write_schedule_definition(connection, schedule)
+        except DuplicateScheduleDefinition as exc:
+            raise self._resolved_duplicate(exc, schedule) from exc
         return schedule
+
+    def _resolved_duplicate(
+        self,
+        exc: DuplicateScheduleDefinition,
+        schedule: "StoredBatchSchedule",
+    ) -> DuplicateScheduleDefinition:
+        if exc.existing_schedule_id:
+            return exc
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT schedule_id FROM report_batch_schedule_definition
+                WHERE fingerprint = %s AND enabled
+                """,
+                (schedule.fingerprint,),
+            ).fetchone()
+        return DuplicateScheduleDefinition(row["schedule_id"] if row else schedule.schedule_id)
 
     def save_schedule_definition_with_audit(
         self,
@@ -891,17 +915,15 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
     ) -> "StoredBatchSchedule":
         """Definition and audit event in one transaction - a schedule must never
         exist without the audit record that explains it."""
-        with self._connect() as connection:
-            self._write_schedule_definition(connection, schedule)
-            self._write_schedule_audit(connection, record)
+        try:
+            with self._connect() as connection:
+                self._write_schedule_definition(connection, schedule)
+                self._write_schedule_audit(connection, record)
+        except DuplicateScheduleDefinition as exc:
+            raise self._resolved_duplicate(exc, schedule) from exc
         return schedule
 
     def _write_schedule_definition(self, connection: Any, schedule: "StoredBatchSchedule") -> None:
-        from app.report_batch_orchestrator.schedule_definitions import (
-            DuplicateScheduleDefinition,
-            StaleScheduleRevision,
-        )
-
         if schedule.revision == 1:
             try:
                 connection.execute(
@@ -942,17 +964,10 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
                 if constraint != "uq_report_batch_schedule_fingerprint_enabled":
                     raise
-                with self._connect() as lookup:
-                    row = lookup.execute(
-                        """
-                        SELECT schedule_id FROM report_batch_schedule_definition
-                        WHERE fingerprint = %s AND enabled
-                        """,
-                        (schedule.fingerprint,),
-                    ).fetchone()
-                raise DuplicateScheduleDefinition(
-                    row["schedule_id"] if row else schedule.schedule_id
-                ) from exc
+                # Winner resolution happens on a fresh connection in the public
+                # wrapper, after this failed transaction releases its connection -
+                # a pool of size one must not deadlock against itself.
+                raise DuplicateScheduleDefinition("") from exc
             return
         try:
             result = connection.execute(

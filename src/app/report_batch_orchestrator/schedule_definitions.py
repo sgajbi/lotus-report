@@ -45,6 +45,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.report_batch_orchestrator.ledger import (
+    DuplicateScheduleDefinition,
+    StaleScheduleRevision,
+)
 from app.report_batch_orchestrator.scheduler import BatchScheduleDefinition
 from app.report_ordering_catalogue.validation import (
     ReportOrderingSubmissionError,
@@ -230,18 +234,6 @@ def definition_fingerprint(
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
-
-
-class DuplicateScheduleDefinition(Exception):
-    """Raised by a store when an enabled definition with this fingerprint exists."""
-
-    def __init__(self, existing_schedule_id: str) -> None:
-        super().__init__(existing_schedule_id)
-        self.existing_schedule_id = existing_schedule_id
-
-
-class StaleScheduleRevision(Exception):
-    """Raised by a store when an update's expected revision no longer matches."""
 
 
 class StoredBatchSchedule(BaseModel):
@@ -560,9 +552,9 @@ class ScheduleDefinitionService:
         """Enabled stored schedules due under this scheduler's full scope.
 
         The scheduler process runs under one configured identity; a stored schedule
-        materializes only through a scheduler whose tenant AND region match its
-        binding (and booking centre when both sides carry one), so an EMEA-created
-        definition can never run as an APAC batch under APAC identity.
+        materializes only through a scheduler whose tenant, region, AND booking
+        centre exactly match its binding (None matching only None), so a batch is
+        never stamped with an execution identity its definition was not bound to.
         """
 
         definitions: list[BatchScheduleDefinition] = []
@@ -571,11 +563,10 @@ class ScheduleDefinitionService:
                 continue
             if schedule.region != region:
                 continue
-            if (
-                schedule.booking_center_code is not None
-                and booking_center_code is not None
-                and schedule.booking_center_code != booking_center_code
-            ):
+            if schedule.booking_center_code != booking_center_code:
+                # Exact match, None included: the scheduler stamps its own
+                # configured booking centre onto every batch, so a schedule bound
+                # elsewhere - or bound nowhere - must not run under this identity.
                 continue
             as_of = due_as_of_date(
                 schedule.cadence,
