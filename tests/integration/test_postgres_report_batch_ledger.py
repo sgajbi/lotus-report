@@ -667,3 +667,79 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
     stored = ledger.get_schedule_definition("rbsc_pg_roundtrip")
     assert stored.enabled is False
     assert stored.revision == 2
+
+
+def test_postgres_schedule_atomic_write_duplicate_and_stale_guards():
+    """The PostgreSQL adapter honours the same schedule-store contract as SQLite:
+    atomic definition+audit, database-level duplicate convergence, and
+    stale-revision refusal."""
+
+    from datetime import UTC, datetime
+    from uuid import uuid4 as _uuid4
+
+    import pytest as _pytest
+
+    from app.report_batch_orchestrator.schedule_definitions import (
+        BatchScheduleAuditRecord,
+        DuplicateScheduleDefinition,
+        StaleScheduleRevision,
+        StoredBatchSchedule,
+    )
+
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    now = datetime(2026, 8, 29, 11, 0, tzinfo=UTC)
+    suffix = _uuid4().hex
+
+    def _schedule(schedule_id: str, **overrides) -> StoredBatchSchedule:
+        payload = dict(
+            schedule_id=schedule_id,
+            tenant_id=f"tenant-{suffix}",
+            region="APAC",
+            booking_center_code="SG",
+            owner_actor="advisor-123",
+            enabled=True,
+            cadence="quarter_end",
+            portfolio_ids=[f"PB_{suffix}"],
+            requested_output_formats=["pdf"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW"]},
+            max_batch_size=25,
+            created_at=now,
+            updated_at=None,
+        )
+        payload.update(overrides)
+        return StoredBatchSchedule(**payload)
+
+    first = _schedule(f"rbsc_pg_atomic_{suffix}")
+    saved = ledger.save_schedule_definition_with_audit(
+        first,
+        BatchScheduleAuditRecord(
+            audit_id=f"rbsa_pg_atomic_{suffix}",
+            schedule_id=first.schedule_id,
+            action="created",
+            actor="advisor-123",
+            correlation_id="corr-pg-atomic",
+            changes={"definition": {}},
+            created_at=now,
+        ),
+    )
+    assert saved == first
+    assert [r.action for r in ledger.list_schedule_audit(first.schedule_id)] == ["created"]
+
+    # Same fingerprint, different id: the partial unique index refuses and names
+    # the winner.
+    with _pytest.raises(DuplicateScheduleDefinition) as dup:
+        ledger.save_schedule_definition(_schedule(f"rbsc_pg_racer_{suffix}"))
+    assert dup.value.existing_schedule_id == first.schedule_id
+
+    # Stale revision: an update guarded on a revision that is no longer current.
+    with _pytest.raises(StaleScheduleRevision):
+        ledger.save_schedule_definition(
+            first.model_copy(update={"max_batch_size": 7, "revision": 9, "updated_at": now})
+        )
+
+    # The genuine next revision applies.
+    ledger.save_schedule_definition(
+        first.model_copy(update={"reporting_currency": "SGD", "revision": 2, "updated_at": now})
+    )
+    assert ledger.get_schedule_definition(first.schedule_id).reporting_currency == "SGD"
