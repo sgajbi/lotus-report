@@ -259,6 +259,15 @@ class BatchSchedulerRunRequest(BaseModel):
         ),
         examples=[1],
     )
+    evaluation_date: date | None = Field(
+        None,
+        description=(
+            "Optional evaluation date for stored schedule due-ness, defaulting to today. "
+            "Lets an operator simulate a period-end run; configured schedules are unaffected "
+            "because their as-of dates are fixed in configuration."
+        ),
+        examples=["2026-09-30"],
+    )
 
 
 class BatchSchedulerMaterializationResponse(BaseModel):

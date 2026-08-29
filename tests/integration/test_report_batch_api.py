@@ -1442,7 +1442,12 @@ def test_report_batch_openapi_examples_are_complete_and_product_safe():
         "BatchWorkerRunRequest",
         "BatchWorkerRunResponse",
         "BatchWorkerItemExecutionResponse",
-        "BatchScheduleListResponse",
+        "BatchScheduleDefinitionListResponse",
+        "BatchScheduleDefinitionDetailResponse",
+        "BatchScheduleDefinitionCreateRequest",
+        "BatchScheduleDefinitionUpdateRequest",
+        "StoredBatchScheduleResponse",
+        "BatchScheduleAuditRecord",
         "BatchScheduleSummaryResponse",
         "BatchSchedulerRunRequest",
         "BatchSchedulerRunResponse",
@@ -1803,5 +1808,175 @@ def test_batch_status_does_not_project_a_cross_tenant_linked_report_job(tmp_path
             assert "PB_UK_SECRET_001" not in body
         assert item_status.json()["report_job_status"] is None
         assert item_status.json()["archive_document_id"] is None
+    finally:
+        _clear_overrides()
+
+
+def _schedule_definition_payload(**overrides):
+    payload = {
+        "cadence": "quarter_end",
+        "portfolio_ids": ["PB_SG_GLOBAL_BAL_001"],
+        "requested_output_formats": ["pdf"],
+        "reporting_currency": "USD",
+        "options": {"sections": ["OVERVIEW", "PERFORMANCE"]},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_recurring_schedule_definition_lifecycle_via_api(tmp_path):
+    """Issue #167 acceptance 1-3 (Report side): create, list with next_run_at,
+    audit trail, tenant fencing, and disable-without-history-loss."""
+
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
+    from app.routers.report_batches import schedule_definition_service_dependency
+
+    client, ledger = _client(tmp_path)
+    app.dependency_overrides[schedule_definition_service_dependency] = lambda: (
+        ScheduleDefinitionService(ledger)
+    )
+    try:
+        created = client.post(
+            "/reports/batch-schedules",
+            headers=_headers(),
+            json=_schedule_definition_payload(),
+        )
+        assert created.status_code == 201
+        body = created.json()
+        schedule_id = body["schedule_id"]
+        assert schedule_id.startswith("rbsc_")
+        assert body["tenant_id"] == "tenant-sg"
+        assert body["owner_actor"] == "advisor-123"
+        assert body["next_run_at"]
+
+        retried = client.post(
+            "/reports/batch-schedules",
+            headers=_headers(),
+            json=_schedule_definition_payload(),
+        )
+        assert retried.status_code == 201
+        assert retried.json()["schedule_id"] == schedule_id
+
+        listing = client.get("/reports/batch-schedules", headers=_headers())
+        assert listing.status_code == 200
+        defined = listing.json()["defined_schedules"]
+        assert [entry["schedule_id"] for entry in defined] == [schedule_id]
+        assert defined[0]["next_run_at"]
+
+        detail = client.get(f"/reports/batch-schedules/{schedule_id}", headers=_headers())
+        assert detail.status_code == 200
+        assert [record["action"] for record in detail.json()["audit"]] == ["created"]
+
+        foreign = client.get(
+            f"/reports/batch-schedules/{schedule_id}",
+            headers={**_headers(), "X-Tenant-Id": "tenant-uk"},
+        )
+        assert foreign.status_code == 404
+        assert foreign.json()["detail"]["code"] == "batch_schedule_not_found"
+
+        disabled = client.patch(
+            f"/reports/batch-schedules/{schedule_id}",
+            headers=_headers(),
+            json={"enabled": False},
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["enabled"] is False
+
+        after = client.get(f"/reports/batch-schedules/{schedule_id}", headers=_headers())
+        assert [record["action"] for record in after.json()["audit"]] == [
+            "created",
+            "disabled",
+        ]
+
+        rejected = client.post(
+            "/reports/batch-schedules",
+            headers=_headers(),
+            json=_schedule_definition_payload(options={"sections": ["NOT_A_SECTION"]}),
+        )
+        assert rejected.status_code == 400
+    finally:
+        _clear_overrides()
+
+
+def test_run_due_materializes_a_stored_schedule_with_lineage(tmp_path):
+    """Issue #167 acceptance 1: a stored quarter-end schedule materializes a batch
+    through the ordinary scheduler pass, and the items carry the schedule id in
+    their lineage options exactly as configured schedules do."""
+
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
+    from app.routers.report_batches import schedule_definition_service_dependency
+
+    client, ledger = _client(tmp_path)
+    app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
+    app.dependency_overrides[get_report_batch_scheduler] = lambda: _SchedulerForApi(ledger)
+    app.dependency_overrides[schedule_definition_service_dependency] = lambda: (
+        ScheduleDefinitionService(ledger)
+    )
+    try:
+        created = client.post(
+            "/reports/batch-schedules",
+            headers=_headers(),
+            json=_schedule_definition_payload(),
+        )
+        assert created.status_code == 201
+        schedule_id = created.json()["schedule_id"]
+        next_run = created.json()["next_run_at"]
+
+        run = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 11, "evaluation_date": next_run},
+            headers=_headers("stored-schedule-run"),
+        )
+        assert run.status_code == 200
+        run_body = run.json()
+        stored_runs = [
+            entry for entry in run_body["materialized"] if entry["schedule_id"] == schedule_id
+        ]
+        assert len(stored_runs) == 1
+        batch = ledger.get_batch(stored_runs[0]["batch_id"])
+        assert batch.options["batch_schedule_id"] == schedule_id
+        assert batch.options["batch_frequency"] == "quarterly"
+        assert batch.as_of_date.isoformat() == next_run
+
+        rerun = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 12, "evaluation_date": next_run},
+            headers=_headers("stored-schedule-rerun"),
+        )
+        assert rerun.status_code == 200
+        rerun_entries = [
+            entry for entry in rerun.json()["materialized"] if entry["schedule_id"] == schedule_id
+        ]
+        assert len(rerun_entries) == 1
+        assert rerun_entries[0]["batch_id"] == stored_runs[0]["batch_id"]
+
+        before_due = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 13, "evaluation_date": "2026-08-30"},
+            headers=_headers("stored-schedule-not-due"),
+        )
+        assert before_due.status_code == 200
+        assert [
+            entry
+            for entry in before_due.json()["materialized"]
+            if entry["schedule_id"] == schedule_id
+        ] == []
+
+        client.patch(
+            f"/reports/batch-schedules/{schedule_id}",
+            headers=_headers(),
+            json={"enabled": False},
+        )
+        disabled_run = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 14, "evaluation_date": next_run},
+            headers=_headers("stored-schedule-disabled"),
+        )
+        assert disabled_run.status_code == 200
+        assert [
+            entry
+            for entry in disabled_run.json()["materialized"]
+            if entry["schedule_id"] == schedule_id
+        ] == []
     finally:
         _clear_overrides()
