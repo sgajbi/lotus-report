@@ -286,6 +286,15 @@ def test_due_definitions_bridge_into_the_scheduler_shape(tmp_path: Path) -> None
         today=date(2026, 9, 30),
     )
     assert foreign_booking_center == []
+    # Exact match includes None: a scheduler without a configured booking centre
+    # must not run a schedule bound to one.
+    no_booking_center = service.due_definitions_for_scheduler(
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code=None,
+        today=date(2026, 9, 30),
+    )
+    assert no_booking_center == []
 
 
 def test_stored_schedule_to_definition_validates_through_the_scheduler_model(

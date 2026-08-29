@@ -39,6 +39,22 @@ class MissingBatchIdempotencyKeyError(ValueError):
     pass
 
 
+class DuplicateScheduleDefinition(Exception):
+    """Raised by a schedule store when an enabled definition with this fingerprint exists.
+
+    An empty existing_schedule_id means the store could not resolve the winner on
+    the failed connection; the public wrappers resolve it on a fresh one.
+    """
+
+    def __init__(self, existing_schedule_id: str) -> None:
+        super().__init__(existing_schedule_id)
+        self.existing_schedule_id = existing_schedule_id
+
+
+class StaleScheduleRevision(Exception):
+    """Raised by a schedule store when an update's expected revision no longer matches."""
+
+
 class BatchIdempotencyConflictError(ValueError):
     pass
 
@@ -1114,9 +1130,29 @@ class ReportBatchLedger:
         return [str(row["batch_id"]) for row in rows]
 
     def save_schedule_definition(self, schedule: "StoredBatchSchedule") -> "StoredBatchSchedule":
-        with self._lock, self._connect() as connection:
-            self._write_schedule_definition(connection, schedule)
+        try:
+            with self._lock, self._connect() as connection:
+                self._write_schedule_definition(connection, schedule)
+        except DuplicateScheduleDefinition as exc:
+            raise self._resolved_duplicate(exc, schedule) from exc
         return schedule
+
+    def _resolved_duplicate(
+        self,
+        exc: DuplicateScheduleDefinition,
+        schedule: "StoredBatchSchedule",
+    ) -> DuplicateScheduleDefinition:
+        if exc.existing_schedule_id:
+            return exc
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT schedule_id FROM report_batch_schedule_definition
+                WHERE fingerprint = ? AND enabled = 1
+                """,
+                (schedule.fingerprint,),
+            ).fetchone()
+        return DuplicateScheduleDefinition(row["schedule_id"] if row else schedule.schedule_id)
 
     def save_schedule_definition_with_audit(
         self,
@@ -1125,19 +1161,17 @@ class ReportBatchLedger:
     ) -> "StoredBatchSchedule":
         """Definition and audit event in one transaction - a schedule must never
         exist without the audit record that explains it."""
-        with self._lock, self._connect() as connection:
-            self._write_schedule_definition(connection, schedule)
-            self._write_schedule_audit(connection, record)
+        try:
+            with self._lock, self._connect() as connection:
+                self._write_schedule_definition(connection, schedule)
+                self._write_schedule_audit(connection, record)
+        except DuplicateScheduleDefinition as exc:
+            raise self._resolved_duplicate(exc, schedule) from exc
         return schedule
 
     def _write_schedule_definition(
         self, connection: sqlite3.Connection, schedule: "StoredBatchSchedule"
     ) -> None:
-        from app.report_batch_orchestrator.schedule_definitions import (
-            DuplicateScheduleDefinition,
-            StaleScheduleRevision,
-        )
-
         if schedule.revision == 1:
             try:
                 connection.execute(
@@ -1174,16 +1208,10 @@ class ReportBatchLedger:
             except sqlite3.IntegrityError as exc:
                 if "fingerprint" not in str(exc):
                     raise
-                row = connection.execute(
-                    """
-                    SELECT schedule_id FROM report_batch_schedule_definition
-                    WHERE fingerprint = ? AND enabled = 1
-                    """,
-                    (schedule.fingerprint,),
-                ).fetchone()
-                raise DuplicateScheduleDefinition(
-                    row["schedule_id"] if row else schedule.schedule_id
-                ) from exc
+                # Winner resolution happens on a fresh connection in the public
+                # wrapper, after this failed transaction releases its connection -
+                # a pool of size one must not deadlock against itself.
+                raise DuplicateScheduleDefinition("") from exc
             return
         try:
             cursor = connection.execute(
