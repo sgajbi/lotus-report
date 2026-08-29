@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -9,7 +10,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_DECLARATION_DIR = ROOT / "contracts" / "domain-data-products"
-PLATFORM_ROOT = ROOT.parent / "lotus-platform"
+# Developer machines keep lotus-platform as a sibling checkout; CI cannot, so the
+# gate step checks the platform contracts out inside the workspace and points
+# LOTUS_PLATFORM_ROOT at them. The gate fails loudly either way when the
+# validator is absent - it never degrades to a skip.
+PLATFORM_ROOT = Path(os.environ.get("LOTUS_PLATFORM_ROOT", ROOT.parent / "lotus-platform"))
 PLATFORM_DECLARATION_DIR = PLATFORM_ROOT / "platform-contracts" / "domain-data-products"
 PLATFORM_VOCABULARY_DIR = PLATFORM_ROOT / "platform-contracts" / "domain-vocabulary"
 PLATFORM_VALIDATOR_PATH = PLATFORM_DECLARATION_DIR / "validate_domain_data_product_contracts.py"

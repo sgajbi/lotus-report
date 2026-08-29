@@ -64,7 +64,15 @@ jobs:
         run: make migration-smoke
       - name: Security Audit
         run: make security-audit
+      - name: Check Out Platform Domain Contracts
+        uses: actions/checkout@v6
+        with:
+          repository: sgajbi/lotus-platform
+          path: .lotus-platform
+          sparse-checkout: platform-contracts
       - name: Domain Product Contract Gate
+        env:
+          LOTUS_PLATFORM_ROOT: ${{ github.workspace }}/.lotus-platform
         run: make domain-product-validate
 
   test-suites:
