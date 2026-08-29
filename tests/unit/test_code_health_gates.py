@@ -326,3 +326,45 @@ def test_sqlite_connections_are_close_bounded_everywhere() -> None:
         "sqlite3.connect used as a bare context manager never closes the connection; "
         f"wrap in contextlib.closing: {offenders}"
     )
+
+
+def test_complexity_findings_include_nested_class_methods() -> None:
+    """Radon nests methods under class entries; a top-level-only parse leaves every
+    class method invisible to the gate (review finding on #199)."""
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from python_complexity_inventory import parse_complexity_payload
+
+    payload = {
+        "src/app/example.py": [
+            {
+                "name": "ExampleService",
+                "type": "class",
+                "rank": "A",
+                "complexity": 2,
+                "lineno": 1,
+                "methods": [
+                    {
+                        "name": "hot_path",
+                        "type": "method",
+                        "rank": "E",
+                        "complexity": 33,
+                        "lineno": 10,
+                        "closures": [
+                            {
+                                "name": "inner",
+                                "type": "function",
+                                "rank": "D",
+                                "complexity": 21,
+                                "lineno": 12,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    findings = parse_complexity_payload(payload)
+
+    names = [(finding.name, finding.complexity) for finding in findings]
+    assert names == [("hot_path", 33), ("inner", 21), ("ExampleService", 2)]
