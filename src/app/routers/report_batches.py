@@ -473,8 +473,9 @@ async def get_report_batch_schedule_definition(
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchScheduleDefinitionDetailResponse:
     try:
-        schedule = service.get_schedule(schedule_id=schedule_id, caller_context=caller_context)
-        audit = service.list_audit(schedule_id=schedule_id, caller_context=caller_context)
+        schedule, audit = service.get_schedule_with_audit(
+            schedule_id=schedule_id, caller_context=caller_context
+        )
     except ScheduleDefinitionError as exc:
         raise _schedule_definition_error(exc) from exc
     return BatchScheduleDefinitionDetailResponse(

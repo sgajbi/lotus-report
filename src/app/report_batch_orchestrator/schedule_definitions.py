@@ -19,7 +19,13 @@ Deliberate boundaries:
   caller schedule?") unanswerable by inspection.
 - A schedule becomes due only for period ends on or after its creation date:
   creating a quarter-end pack in February must not retroactively materialize the
-  December pack.
+  December pack. A cadence change resets that anchor to its own effective date -
+  deliberately: cycles owed under the old cadence but never materialized (a
+  daemon outage spanning the change) are not resurrected under the new cadence,
+  because mixing epochs would owe packs the new definition never described.
+  Operators changing cadence during an outage should run the operator
+  :run-due route first; missed historical packs remain orderable through the
+  ordinary batch API.
 - Portfolio-scope truth is owned upstream of this module. Report cannot verify a
   portfolio's authoritative tenant today: lotus-core's discovery has no tenant
   concept (issue #177, blocked on lotus-core#798), and manual batch orders carry
@@ -214,9 +220,10 @@ class BatchScheduleDefinitionCreateRequest(BaseModel):
     @field_validator("portfolio_ids")
     @classmethod
     def _portfolio_ids_must_be_non_blank(cls, value: list[str]) -> list[str]:
-        if any(not portfolio_id.strip() for portfolio_id in value):
+        stripped = [portfolio_id.strip() for portfolio_id in value]
+        if any(not portfolio_id for portfolio_id in stripped):
             raise ValueError("portfolio identifiers must be non-blank")
-        return value
+        return stripped
 
 
 class BatchScheduleDefinitionUpdateRequest(BaseModel):
@@ -230,9 +237,12 @@ class BatchScheduleDefinitionUpdateRequest(BaseModel):
     @field_validator("portfolio_ids")
     @classmethod
     def _portfolio_ids_must_be_non_blank(cls, value: list[str] | None) -> list[str] | None:
-        if value is not None and any(not portfolio_id.strip() for portfolio_id in value):
+        if value is None:
+            return None
+        stripped = [portfolio_id.strip() for portfolio_id in value]
+        if any(not portfolio_id for portfolio_id in stripped):
             raise ValueError("portfolio identifiers must be non-blank")
-        return value
+        return stripped
 
     requested_output_formats: list[str] | None = Field(
         None, min_length=1, description="Replacement output formats, if changing."
@@ -383,6 +393,10 @@ class ScheduleDefinitionStore(Protocol):
 
     def list_schedule_audit(self, schedule_id: str) -> list[BatchScheduleAuditRecord]: ...
 
+    def get_schedule_definition_with_audit(
+        self, schedule_id: str
+    ) -> tuple[StoredBatchSchedule | None, list[BatchScheduleAuditRecord]]: ...
+
 
 _MUTABLE_FIELDS = (
     "cadence",
@@ -393,6 +407,23 @@ _MUTABLE_FIELDS = (
     "max_batch_size",
     "enabled",
 )
+
+
+def _caller_owns_scope(
+    schedule: "StoredBatchSchedule", caller_context: ReportCallerContext
+) -> bool:
+    """CRUD access requires the full execution-scope triple, exactly.
+
+    A schedule is bound to tenant, region, and booking centre and only ever runs
+    under that identity; an APAC/SG caller of the same tenant must not read,
+    list, or modify an EMEA/UK schedule.
+    """
+
+    return (
+        schedule.tenant_id == caller_context.tenant_id
+        and schedule.region == caller_context.region
+        and schedule.booking_center_code == caller_context.booking_center_code
+    )
 
 
 def _require_scoped_caller(caller_context: ReportCallerContext) -> None:
@@ -506,9 +537,9 @@ class ScheduleDefinitionService:
     ) -> StoredBatchSchedule:
         _require_scoped_caller(caller_context)
         schedule = self._store.get_schedule_definition(schedule_id)
-        if schedule is None or schedule.tenant_id != caller_context.tenant_id:
+        if schedule is None or not _caller_owns_scope(schedule, caller_context):
             # Same shape for absent and foreign: a schedule id must not become an
-            # existence oracle across tenants.
+            # existence oracle across tenants, regions, or booking centres.
             raise ScheduleDefinitionError(
                 "batch_schedule_not_found", "Batch schedule was not found."
             )
@@ -520,7 +551,28 @@ class ScheduleDefinitionService:
         caller_context: ReportCallerContext,
     ) -> list[StoredBatchSchedule]:
         _require_scoped_caller(caller_context)
-        return self._store.list_schedule_definitions(str(caller_context.tenant_id))
+        return [
+            schedule
+            for schedule in self._store.list_schedule_definitions(str(caller_context.tenant_id))
+            if _caller_owns_scope(schedule, caller_context)
+        ]
+
+    def get_schedule_with_audit(
+        self,
+        *,
+        schedule_id: str,
+        caller_context: ReportCallerContext,
+    ) -> tuple[StoredBatchSchedule, list[BatchScheduleAuditRecord]]:
+        """Definition and audit trail from one storage snapshot, so a concurrent
+        update cannot make the detail response contradict itself."""
+
+        _require_scoped_caller(caller_context)
+        schedule, audit = self._store.get_schedule_definition_with_audit(schedule_id)
+        if schedule is None or not _caller_owns_scope(schedule, caller_context):
+            raise ScheduleDefinitionError(
+                "batch_schedule_not_found", "Batch schedule was not found."
+            )
+        return schedule, audit
 
     def list_audit(
         self,
@@ -528,8 +580,9 @@ class ScheduleDefinitionService:
         schedule_id: str,
         caller_context: ReportCallerContext,
     ) -> list[BatchScheduleAuditRecord]:
-        self.get_schedule(schedule_id=schedule_id, caller_context=caller_context)
-        return self._store.list_schedule_audit(schedule_id)
+        return self.get_schedule_with_audit(schedule_id=schedule_id, caller_context=caller_context)[
+            1
+        ]
 
     def update_schedule(
         self,
@@ -624,13 +677,40 @@ class ScheduleDefinitionService:
                 # configured booking centre onto every batch, so a schedule bound
                 # elsewhere - or bound nowhere - must not run under this identity.
                 continue
-            for as_of in due_as_of_dates(
+            owed = due_as_of_dates(
                 schedule.cadence,
                 today=today,
                 created_on=schedule.cadence_effective_on,
-            ):
+            )
+            if owed and owed[0] != _first_owed_period(schedule, today):
+                # The window kept only the most recent periods: older packs are
+                # expired by policy, not generated silently late. Loud, so an
+                # operator can order them manually through the batch API.
+                _log_backfill_truncation(schedule, today)
+            for as_of in owed:
                 definitions.append(stored_schedule_to_definition(schedule, as_of_date=as_of))
         return definitions
+
+
+def _first_owed_period(schedule: StoredBatchSchedule, today: date) -> date | None:
+    first = _period_end_on_or_after(schedule.cadence, schedule.cadence_effective_on)
+    return first if first <= today else None
+
+
+def _log_backfill_truncation(schedule: StoredBatchSchedule, today: date) -> None:
+    import logging
+
+    logging.getLogger("report_batch_scheduler").warning(
+        "stored_schedule_backfill_truncated",
+        extra={
+            "extra_fields": {
+                "schedule_id": schedule.schedule_id,
+                "tenant_id": schedule.tenant_id,
+                "backfill_limit": STORED_SCHEDULE_BACKFILL_LIMIT,
+                "evaluated_on": today.isoformat(),
+            }
+        },
+    )
 
 
 def stored_schedule_to_definition(

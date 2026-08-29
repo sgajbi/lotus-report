@@ -906,3 +906,171 @@ def test_partial_candidate_resolution_refuses_the_stored_cycle() -> None:
     assert result.skipped_schedule_ids == ("rbsc_partial",)
     assert result.materialized == ()
     assert ledger.created == []
+
+
+def test_crud_is_fenced_by_the_full_execution_scope(tmp_path: Path) -> None:
+    """Same tenant, different region or booking centre: the schedule is invisible
+    and unmodifiable - it only ever runs under its exact bound identity."""
+
+    service = _service(tmp_path)
+    schedule = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+
+    same_tenant_other_region = ReportCallerContext(
+        triggered_by="advisor-456",
+        caller_application="lotus-gateway",
+        tenant_id="tenant-sg",
+        region="EMEA",
+        booking_center_code="SG",
+        role="advisor",
+        correlation_id="corr-region",
+        trace_id="trace-region",
+    )
+    assert service.list_schedules(caller_context=same_tenant_other_region) == []
+    with pytest.raises(ScheduleDefinitionError):
+        service.get_schedule(
+            schedule_id=schedule.schedule_id,
+            caller_context=same_tenant_other_region,
+        )
+
+    same_tenant_other_centre = ReportCallerContext(
+        triggered_by="advisor-789",
+        caller_application="lotus-gateway",
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="HK",
+        role="advisor",
+        correlation_id="corr-centre",
+        trace_id="trace-centre",
+    )
+    with pytest.raises(ScheduleDefinitionError):
+        service.update_schedule(
+            schedule_id=schedule.schedule_id,
+            request=BatchScheduleDefinitionUpdateRequest(enabled=False),
+            caller_context=same_tenant_other_centre,
+            now=NOW,
+        )
+
+
+def test_portfolio_ids_are_stored_stripped(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    schedule = service.create_schedule(
+        request=_create_request(portfolio_ids=["  PB_SG_GLOBAL_BAL_001  "]),
+        caller_context=_caller(),
+        now=NOW,
+    )
+    assert schedule.portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
+
+
+def test_detail_snapshot_returns_definition_and_audit_together(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    schedule = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(reporting_currency="SGD"),
+        caller_context=_caller(),
+        now=NOW,
+    )
+
+    snapshot, audit = service.get_schedule_with_audit(
+        schedule_id=schedule.schedule_id, caller_context=_caller()
+    )
+    assert snapshot.reporting_currency == "SGD"
+    assert [record.action for record in audit] == ["created", "updated"]
+
+
+def test_update_model_edges_and_store_roundtrip(tmp_path: Path) -> None:
+    """Small contract edges: explicit-None portfolio list is a no-op, duplicate ids
+    in an update are dropped, and the SQLite store's standalone audit methods and
+    absent-id snapshot behave."""
+
+    assert BatchScheduleDefinitionUpdateRequest(portfolio_ids=None).portfolio_ids is None
+
+    service = _service(tmp_path)
+    schedule = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    deduped = service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(portfolio_ids=["PB_A", "PB_A", "PB_B"]),
+        caller_context=_caller(),
+        now=NOW,
+    )
+    assert deduped.portfolio_ids == ["PB_A", "PB_B"]
+
+    ledger = ReportBatchLedger(tmp_path / "standalone.sqlite3")
+    from app.report_batch_orchestrator.schedule_definitions import (
+        BatchScheduleAuditRecord,
+    )
+
+    record = BatchScheduleAuditRecord(
+        audit_id="rbsa_standalone",
+        schedule_id="rbsc_missing",
+        action="created",
+        actor="advisor-123",
+        correlation_id="corr-standalone",
+        changes={},
+        created_at=NOW,
+    )
+    ledger.append_schedule_audit(record)
+    assert ledger.list_schedule_audit("rbsc_missing") == [record]
+    assert ledger.get_schedule_definition_with_audit("rbsc_absent") == (None, [])
+
+
+def test_a_racing_create_with_an_unresolvable_winner_is_a_typed_conflict(
+    tmp_path: Path,
+) -> None:
+    """If the unique index fires but the winner cannot be read back (or belongs to
+    another tenant), the caller gets a typed retryable conflict, not a 500."""
+
+    from app.report_batch_orchestrator.schedule_definitions import (
+        DuplicateScheduleDefinition,
+    )
+
+    ledger = ReportBatchLedger(tmp_path / "schedules.sqlite3")
+
+    class _RacingStore:
+        def __getattr__(self, name):
+            return getattr(ledger, name)
+
+        def list_schedule_definitions(self, tenant_id):
+            return []
+
+        def save_schedule_definition_with_audit(self, schedule, record):
+            raise DuplicateScheduleDefinition("")
+
+        def get_schedule_definition(self, schedule_id):
+            return None
+
+    service = ScheduleDefinitionService(_RacingStore())
+    with pytest.raises(ScheduleDefinitionError) as excinfo:
+        service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    assert excinfo.value.code == "batch_schedule_conflict"
+
+
+def test_backfill_truncation_is_logged_loudly(tmp_path: Path, caplog) -> None:
+    """More owed periods than the window keeps is expired-by-policy - and loud."""
+
+    import logging
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    service = _service(tmp_path)
+    service.create_schedule(
+        request=_create_request(cadence="monthly_end"),
+        caller_context=_caller(),
+        now=_datetime(2024, 1, 10, 9, 0, tzinfo=_UTC),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="report_batch_scheduler"):
+        due = service.due_definitions_for_scheduler(
+            tenant_id="tenant-sg",
+            region="APAC",
+            booking_center_code="SG",
+            today=date(2026, 8, 29),
+        )
+
+    assert len(due) == 12
+    truncations = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "stored_schedule_backfill_truncated"
+    ]
+    assert len(truncations) == 1

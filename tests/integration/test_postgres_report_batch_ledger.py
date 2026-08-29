@@ -746,6 +746,13 @@ def test_postgres_schedule_atomic_write_duplicate_and_stale_guards():
     )
     assert ledger.get_schedule_definition(first.schedule_id).reporting_currency == "SGD"
 
+    # The snapshot read returns definition and audit from one transaction, and
+    # (None, []) for an absent id.
+    snap_schedule, snap_audit = ledger.get_schedule_definition_with_audit(first.schedule_id)
+    assert snap_schedule.reporting_currency == "SGD"
+    assert [r.action for r in snap_audit] == ["created"]
+    assert ledger.get_schedule_definition_with_audit("rbsc_pg_absent") == (None, [])
+
     # An update that collides with another enabled definition's fingerprint is a
     # duplicate, not a stale revision.
     second = _schedule(f"rbsc_pg_other_{suffix}", cadence="monthly_end")

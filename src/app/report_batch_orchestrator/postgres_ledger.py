@@ -1061,14 +1061,35 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
 
     def list_schedule_audit(self, schedule_id: str) -> "list[BatchScheduleAuditRecord]":
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM report_batch_schedule_audit
-                WHERE schedule_id = %s
-                ORDER BY audit_sequence
-                """,
+            return self._read_schedule_audit(connection, schedule_id)
+
+    def get_schedule_definition_with_audit(
+        self, schedule_id: str
+    ) -> "tuple[StoredBatchSchedule | None, list[BatchScheduleAuditRecord]]":
+        """Definition and audit in one transaction, so the pair cannot straddle a
+        concurrent update."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM report_batch_schedule_definition WHERE schedule_id = %s",
                 (schedule_id,),
-            ).fetchall()
+            ).fetchone()
+            if row is None:
+                return None, []
+            return _schedule_definition_from_row(row), self._read_schedule_audit(
+                connection, schedule_id
+            )
+
+    def _read_schedule_audit(
+        self, connection: Any, schedule_id: str
+    ) -> "list[BatchScheduleAuditRecord]":
+        rows = connection.execute(
+            """
+            SELECT * FROM report_batch_schedule_audit
+            WHERE schedule_id = %s
+            ORDER BY audit_sequence
+            """,
+            (schedule_id,),
+        ).fetchall()
         return [_schedule_audit_from_row(row) for row in rows]
 
     def get_batch(self, batch_id: str) -> ReportBatchRecord:
