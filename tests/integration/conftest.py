@@ -76,9 +76,21 @@ def isolated_report_database() -> Iterator[None]:
     # what must be isolated.
     source_conninfo = environment_conninfo or settings.report_job_ledger_database_url
     if not environment_conninfo and not _server_reachable(source_conninfo):
-        # No caller-supplied database and nothing listening on the default: the
-        # PostgreSQL-backed tests skip, and nothing can connect anywhere.
-        yield
+        # No caller-supplied database and nothing listening on the default. The
+        # PostgreSQL-backed tests skip - but the probe is a moment in time, and a
+        # server that comes up mid-session must not hand the product DSN to a
+        # factory-backed test, so the cached settings are pointed at a DSN that can
+        # never resolve for the session's duration.
+        unreachable_placeholder = (
+            "postgresql://lotus_report_isolated@localhost:1/lotus_report_unreachable"
+        )
+        settings.report_job_ledger_database_url = unreachable_placeholder
+        get_postgres_connection_provider.cache_clear()
+        try:
+            yield
+        finally:
+            settings.report_job_ledger_database_url = source_conninfo
+            get_postgres_connection_provider.cache_clear()
         return
 
     original_environment = environment_conninfo

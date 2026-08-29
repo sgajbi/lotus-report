@@ -47,4 +47,8 @@ Every way of running the integration suite is safe alongside `docker compose up`
 - Cleanup is symmetric: dropping the ephemeral test database cannot remove the product runtime,
   and `docker compose down` on the product stack cannot remove a test database mid-run beyond
   taking the whole server down with it.
-- With `REPORT_JOB_LEDGER_DATABASE_URL` unset, the PostgreSQL-backed integration tests skip.
+- With `REPORT_JOB_LEDGER_DATABASE_URL` unset, the session falls back to the configured default
+  server: if it is reachable, the suite provisions the same ephemeral database and the
+  PostgreSQL-backed tests run, isolated; if nothing is listening, those tests skip and the cached
+  configuration is pointed at an unresolvable placeholder for the session, so a server starting
+  mid-run cannot hand the product database to a test.
