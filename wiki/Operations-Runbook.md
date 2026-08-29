@@ -226,9 +226,10 @@ Current implemented semantics:
   linked report job ids, back-pressure reasons, skip reasons, and per-item execution outcomes
 - internal runtime passes can scan durable runnable batches and invoke the single-batch worker for
   a limited number of batches; this is a service primitive only and is not a public API or daemon
-- a runtime pass is scoped to one tenant: it selects only batches whose persisted
-  `tenant_id` matches `REPORT_BATCH_WORKER_TENANT_ID`, and the worker refuses any batch outside
-  that tenant
+- a runtime pass is scoped to the worker's explicit authorized tenant set
+  (`REPORT_BATCH_WORKER_TENANT_IDS`): the scan selects only batches of those tenants, and each
+  batch is advanced under a caller context derived from its own persisted tenant, region, and
+  booking centre - validated against the set; anything outside it is untouched
 - the `lotus-report-batch-worker` Docker Compose service runs the bounded runtime pass as a
   daemonized internal background worker process under configured interval, batch-count, lease, and
   back-pressure limits
