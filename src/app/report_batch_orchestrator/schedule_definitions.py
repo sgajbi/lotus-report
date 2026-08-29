@@ -43,7 +43,7 @@ from datetime import date, datetime
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.report_batch_orchestrator.ledger import (
     DuplicateScheduleDefinition,
@@ -170,8 +170,20 @@ class BatchScheduleDefinitionCreateRequest(BaseModel):
     max_batch_size: int = Field(
         250,
         ge=1,
-        description="Upper bound on portfolios materialized per scheduled batch.",
+        le=1000,
+        description=(
+            "Upper bound on portfolios materialized per scheduled batch; capped at "
+            "the batch model's own limit so a stored definition can never fail "
+            "validation on its due date."
+        ),
     )
+
+    @field_validator("portfolio_ids")
+    @classmethod
+    def _portfolio_ids_must_be_non_blank(cls, value: list[str]) -> list[str]:
+        if any(not portfolio_id.strip() for portfolio_id in value):
+            raise ValueError("portfolio identifiers must be non-blank")
+        return value
 
 
 class BatchScheduleDefinitionUpdateRequest(BaseModel):
@@ -181,6 +193,14 @@ class BatchScheduleDefinitionUpdateRequest(BaseModel):
     portfolio_ids: list[str] | None = Field(
         None, min_length=1, description="Replacement explicit portfolio list, if changing."
     )
+
+    @field_validator("portfolio_ids")
+    @classmethod
+    def _portfolio_ids_must_be_non_blank(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and any(not portfolio_id.strip() for portfolio_id in value):
+            raise ValueError("portfolio identifiers must be non-blank")
+        return value
+
     requested_output_formats: list[str] | None = Field(
         None, min_length=1, description="Replacement output formats, if changing."
     )
@@ -191,7 +211,10 @@ class BatchScheduleDefinitionUpdateRequest(BaseModel):
         None, description="Replacement governed ordering options, if changing."
     )
     max_batch_size: int | None = Field(
-        None, ge=1, description="Replacement per-batch portfolio bound, if changing."
+        None,
+        ge=1,
+        le=1000,
+        description="Replacement per-batch portfolio bound, if changing.",
     )
     enabled: bool | None = Field(
         None,
@@ -256,7 +279,7 @@ class StoredBatchSchedule(BaseModel):
         None, description="Reporting currency, or None for the portfolio default."
     )
     options: dict[str, Any] = Field(..., description="Governed report-ordering options.")
-    max_batch_size: int = Field(..., description="Per-batch portfolio bound.")
+    max_batch_size: int = Field(..., ge=1, le=1000, description="Per-batch portfolio bound.")
     cadence_effective_on: date = Field(
         ...,
         description=(

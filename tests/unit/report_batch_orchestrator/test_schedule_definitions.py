@@ -663,3 +663,107 @@ def test_an_update_that_duplicates_another_enabled_schedule_is_refused(
 
     survivor = service.get_schedule(schedule_id=other.schedule_id, caller_context=_caller())
     assert survivor.cadence == "monthly_end"
+
+
+def test_blank_portfolio_ids_and_oversized_bounds_are_rejected_at_the_model() -> None:
+    with pytest.raises(ValueError):
+        BatchScheduleDefinitionCreateRequest(cadence="quarter_end", portfolio_ids=["   "])
+    with pytest.raises(ValueError):
+        BatchScheduleDefinitionCreateRequest(
+            cadence="quarter_end",
+            portfolio_ids=["PB_1"],
+            max_batch_size=1001,
+        )
+    with pytest.raises(ValueError):
+        BatchScheduleDefinitionUpdateRequest(portfolio_ids=[""])
+    with pytest.raises(ValueError):
+        BatchScheduleDefinitionUpdateRequest(max_batch_size=2000)
+
+
+def test_a_failing_stored_schedule_does_not_abort_the_pass() -> None:
+    """One advisor's stale schedule (inactive portfolio, upstream hiccup) is
+    contained: the pass logs, skips it, and still materializes the rest.
+    Configured schedules keep raising - their failures are deployment defects."""
+
+    import asyncio
+
+    from app.report_batch_orchestrator.scheduler import (
+        BatchSchedulerConfig,
+        ReportBatchScheduler,
+    )
+
+    class _LedgerSpy:
+        def __init__(self):
+            self.created = []
+
+        def create_batch(self, *, request, caller_context, idempotency_key):
+            if "PB_BROKEN" in request.portfolio_ids:
+                raise ValueError("inactive_portfolio")
+            self.created.append(idempotency_key)
+
+            class _Batch:
+                batch_id = "rbch_ok"
+                status = "materialized"
+                item_count = 1
+
+            return _Batch()
+
+    class _Portfolios:
+        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+            return 200, {"portfolio_id": portfolio_id, "status": "active"}
+
+    def _stored(schedule_id: str, portfolio: str):
+        from app.report_batch_orchestrator.schedule_definitions import (
+            StoredBatchSchedule,
+        )
+
+        return stored_schedule_to_definition(
+            StoredBatchSchedule(
+                schedule_id=schedule_id,
+                tenant_id="tenant-sg",
+                region="APAC",
+                booking_center_code="SG",
+                owner_actor="advisor-123",
+                enabled=True,
+                cadence="quarter_end",
+                portfolio_ids=[portfolio],
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+                max_batch_size=10,
+                cadence_effective_on=NOW.date(),
+                created_at=NOW,
+                updated_at=None,
+            ),
+            as_of_date=date(2026, 9, 30),
+        )
+
+    class _StoredSource:
+        def due_definitions_for_scheduler(self, **kwargs):
+            return [_stored("rbsc_broken", "PB_BROKEN"), _stored("rbsc_healthy", "PB_OK")]
+
+    ledger = _LedgerSpy()
+    scheduler = ReportBatchScheduler(
+        batch_ledger=ledger,
+        portfolio_source=_Portfolios(),
+        stored_schedule_source=_StoredSource(),
+    )
+    config = BatchSchedulerConfig(
+        scheduler_id="containment-test",
+        interval_seconds=60.0,
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="scheduler",
+        schedules=(),
+    )
+    result = asyncio.run(
+        scheduler.run_due_schedules(
+            config=config,
+            caller_context=_caller(),
+            evaluation_date=date(2026, 9, 30),
+        )
+    )
+
+    assert "rbsc_broken" in result.skipped_schedule_ids
+    assert [entry.schedule_id for entry in result.materialized] == ["rbsc_healthy"]
