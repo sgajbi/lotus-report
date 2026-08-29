@@ -64,8 +64,6 @@ def test_auto_merge_warns_when_the_token_is_absent() -> None:
     cost that identity for a fix that belongs estate-wide.
     """
 
-    """A missing secret must not silently fall back to an ineligible token."""
-
     workflow = (WORKFLOW_ROOT / "pr-auto-merge.yml").read_text(encoding="utf-8")
 
     assert 'if [ -z "$GH_TOKEN" ]; then' in workflow
