@@ -128,8 +128,25 @@ WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 # merely mentions a target (an echo argument, a quoted string) is not counted as execution.
 _WORKFLOW_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*make\s+([a-z][a-z0-9-]*)")
 
-# `$(MAKE) <target>` inside a Makefile recipe line - prerequisite lists do not capture these.
-_RECIPE_MAKE = re.compile(r"^	.*\$\(MAKE\) ([a-z][a-z0-9-]*)", re.M)
+# `$(MAKE) <target>` at command position in a recipe line - same discipline as the
+# workflow matcher: a commented-out recursive make, or one quoted inside an echo,
+# is not an invocation.
+_RECIPE_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*\$\(MAKE\) ([a-z][a-z0-9-]*)")
+
+
+def _recipe_invoked_targets(block: str) -> list[str]:
+    """Targets a recipe chains to via $(MAKE), ignoring comments and quoted text."""
+    invoked: list[str] = []
+    for line in block.splitlines():
+        if not line.startswith("	"):
+            continue
+        command = line.lstrip("	").lstrip()
+        while command[:1] in {"@", "-", "+"}:
+            command = command[1:].lstrip()
+        if command.startswith("#"):
+            continue
+        invoked.extend(_RECIPE_MAKE.findall(command))
+    return invoked
 
 
 def _workflow_run_commands(workflow_path: Path) -> list[str]:
@@ -206,7 +223,7 @@ def _workflow_reachable_targets() -> set[str]:
         header = re.match(rf"^{re.escape(target)}: (.+)$", block, re.M)
         if header is not None:
             frontier.extend(header.group(1).split())
-        frontier.extend(_RECIPE_MAKE.findall(block))
+        frontier.extend(_recipe_invoked_targets(block))
     return reachable
 
 
