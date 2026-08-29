@@ -155,6 +155,7 @@ class ReportBatchRecord(BaseModel):
     selector_mode: BatchSelectorMode
     tenant_id: str
     region: str
+    booking_center_code: str | None = None
     materialized_portfolio_ids: list[str]
     as_of_date: date
     requested_output_formats: list[str]
