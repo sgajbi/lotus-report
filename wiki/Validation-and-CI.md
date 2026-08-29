@@ -40,8 +40,9 @@ evidence, because consumed tags are reclaimed.
   the lanes themselves - `make lint` had quietly chained three of the four gates all along, and
   `domain-product-validate` alone had never executed until it was wired as an explicit workflow
   step. `tests/unit/test_gate_reachability.py` now enforces both directions: gates must be
-  reachable from `check`/`ci` *and* executed by at least one workflow `run` step (directly or
-  through `$(MAKE)` chains).
+  reachable from `check`/`ci` *and* executed by **each** governed lane - `pr-merge-gate.yml` and
+  `main-releasability.yml` independently, directly or through `$(MAKE)` chains. A gate missing
+  from one lane fails the test naming that lane.
 - `make ci`
   automation-oriented migration, integration, e2e, coverage, and security proof against a
   caller-owned isolated PostgreSQL database

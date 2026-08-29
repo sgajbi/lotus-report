@@ -351,9 +351,11 @@ alive by accident - and only `domain-product-validate` had no execution path unt
 as an explicit step in both gate lanes (with a sparse checkout of lotus-platform contracts,
 because the validator needs them and runners have no sibling checkout).
 `tests/unit/test_gate_reachability.py` enforces both boundaries: every gate-shaped target must be
-reachable from `check`/`ci` (lanes stay complete for humans) AND must be executed by at least one
-workflow `run` step, directly or transitively through prerequisites and `$(MAKE)` recipe chains
-(CI actually runs it). A target that legitimately runs elsewhere carries a recorded disposition
+reachable from `check`/`ci` (lanes stay complete for humans) AND must be executed by **each**
+governed workflow - `pr-merge-gate.yml` and `main-releasability.yml` independently - directly or
+transitively through prerequisites and `$(MAKE)` recipe chains. One lane alone is not enough:
+missing from the PR gate allows unvalidated merges, missing from releasability leaves the exact
+merged revision unvalidated. A target that legitimately runs elsewhere carries a recorded disposition
 rather than an absence.
 8. supported prior-schema upgrade proof
    `make migration-upgrade-smoke`
