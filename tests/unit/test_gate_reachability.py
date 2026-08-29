@@ -124,6 +124,11 @@ def test_dispositioned_targets_are_not_also_in_the_lanes() -> None:
 
 WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 
+# Enforcement means a lane that blocks merge or release. The feature lane and the
+# auto-merge/dispatch plumbing run other things; a gate invoked only there would be
+# advisory, not enforced, so discovery is restricted to the two governed lanes.
+BLOCKING_WORKFLOWS = ("pr-merge-gate.yml", "main-releasability.yml")
+
 # `make <target>` at command position - line start or after a shell connector - so text that
 # merely mentions a target (an echo argument, a quoted string) is not counted as execution.
 _WORKFLOW_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*make\s+([a-z][a-z0-9-]*)")
@@ -170,9 +175,11 @@ def _workflow_run_commands(workflow_path: Path) -> list[str]:
 
 def _workflow_invoked_targets() -> set[str]:
     invoked: set[str] = set()
-    workflow_files = sorted(WORKFLOWS_DIR.glob("*.yml"))
-    assert workflow_files, (
-        "No workflow files found; a workflow-reachability check with no workflows asserts nothing."
+    workflow_files = [WORKFLOWS_DIR / name for name in BLOCKING_WORKFLOWS]
+    missing = [path.name for path in workflow_files if not path.exists()]
+    assert not missing, (
+        f"Blocking workflows are missing: {missing}. If a governed lane was renamed, update "
+        "BLOCKING_WORKFLOWS - with the old name gone this check would silently assert nothing."
     )
     for workflow in workflow_files:
         for command in _workflow_run_commands(workflow):
