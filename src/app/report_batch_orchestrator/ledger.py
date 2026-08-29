@@ -1101,8 +1101,11 @@ class ReportBatchLedger:
                 ) AS ranked
                 -- Round-robin across tenants: every tenant's oldest batch outranks
                 -- any tenant's second-oldest, so one backlogged tenant cannot
-                -- monopolize the bounded scan window and starve the others.
-                ORDER BY tenant_rank, created_at, batch_id
+                -- monopolize the bounded scan window. Ties within a rank rotate
+                -- randomly per pass - stateless fairness when the authorized set
+                -- is larger than the window, instead of a cursor to persist and
+                -- repair. Within one tenant, age order is preserved by the rank.
+                ORDER BY tenant_rank, RANDOM()
                 LIMIT ?
                 """,
                 (*tenant_ids, _dt_to_text(scan_at), _dt_to_text(scan_at), limit),
