@@ -77,7 +77,7 @@ def _reachable_from_lanes() -> set[str]:
     for lane in BLOCKING_LANES:
         match = re.search(rf"^{lane}: (.+)$", makefile, re.M)
         assert match is not None, f"The `{lane}` lane is missing from the Makefile."
-        frontier.extend(match.group(1).split())
+        frontier.extend(_prerequisites(match.group(1)))
 
     while frontier:
         target = frontier.pop()
@@ -138,9 +138,16 @@ WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 # advisory, not enforced, so discovery is restricted to the two governed lanes.
 BLOCKING_WORKFLOWS = ("pr-merge-gate.yml", "main-releasability.yml")
 
-# `make <target>` at command position - line start or after a shell connector - so text that
-# merely mentions a target (an echo argument, a quoted string) is not counted as execution.
-_WORKFLOW_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*make\s+([a-z][a-z0-9-]*)")
+# `make <target>` at unconditional command position: line start, or after `&&`/`;`. A command
+# after `||` runs only when the previous one failed, and conditional is not enforcement - which
+# also rejects the `true || make <gate>` bypass. Text that merely mentions a target (an echo
+# argument, a quoted string) is not execution either.
+#
+# Threat model: these matchers refuse *drift* - a gate removed, commented out, quoted away, or
+# conditioned off. An author deliberately constructing an evasion the shell would accept (a make
+# wrapper function, an eval, a variable holding the word "make") is beyond any static matcher;
+# review owns that boundary, and this comment records where it lies.
+_WORKFLOW_MAKE = re.compile(r"(?:^|&&|;)\s*make\s+([a-z][a-z0-9-]*)")
 
 _QUOTED_TEXT = re.compile(r"'[^']*'|\"[^\"]*\"")
 
@@ -160,7 +167,7 @@ def _strip_noncommand_text(command: str) -> str:
 # `$(MAKE) <target>` at command position in a recipe line - same discipline as the
 # workflow matcher: a commented-out recursive make, or one quoted inside an echo,
 # is not an invocation.
-_RECIPE_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*\$\(MAKE\) ([a-z][a-z0-9-]*)")
+_RECIPE_MAKE = re.compile(r"(?:^|&&|;)\s*\$\(MAKE\) ([a-z][a-z0-9-]*)")
 
 
 def _recipe_invoked_targets(block: str) -> list[str]:
