@@ -101,6 +101,8 @@ jobs:
         run: make migration-smoke
       - name: Security Audit
         run: make security-audit
+      - name: Code Health Gates
+        run: make code-health-gates
       - name: Check Out Platform Domain Contracts
         uses: actions/checkout@v6
         with:
