@@ -20,6 +20,11 @@ _DATABASE_NAME_LIMIT = 63
 _TOKEN_LENGTH = 12
 _ADMIN_DATABASE = "postgres"
 
+# Set truthy when REPORT_JOB_LEDGER_DATABASE_URL already names a caller-owned isolated
+# database (CI's ephemeral service container, or this helper's own child run), so the
+# integration-test session does not provision a second nested database.
+CALLER_OWNED_DATABASE_SENTINEL = "REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED"
+
 
 class IsolatedCiConfigurationError(ValueError):
     """Raised when local CI cannot derive a safe database lifecycle."""
@@ -146,6 +151,7 @@ def run_isolated_ci(
 
     child_environment = dict(environ or os.environ)
     child_environment["REPORT_JOB_LEDGER_DATABASE_URL"] = database.target_conninfo
+    child_environment[CALLER_OWNED_DATABASE_SENTINEL] = "true"
 
     _create_database(database)
     print(f"Created isolated local CI database '{database.database_name}'.")
