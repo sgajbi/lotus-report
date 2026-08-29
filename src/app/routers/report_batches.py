@@ -384,7 +384,7 @@ def _stored_schedule_response(
         next_run_at=next_run_at(
             schedule.cadence,
             today=effective_today,
-            created_on=schedule.created_at.date(),
+            created_on=schedule.cadence_effective_on,
         ),
     )
 
@@ -393,6 +393,15 @@ def _schedule_definition_error(exc: ScheduleDefinitionError) -> HTTPException:
     if exc.code == "batch_schedule_not_found":
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": exc.code, "message": exc.message},
+        )
+    if exc.code in {
+        "batch_schedule_update_conflict",
+        "batch_schedule_duplicate_definition",
+        "batch_schedule_conflict",
+    }:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
         )
     return HTTPException(

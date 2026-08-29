@@ -638,6 +638,7 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
         reporting_currency="USD",
         options={"sections": ["OVERVIEW"]},
         max_batch_size=25,
+        cadence_effective_on=now.date(),
         created_at=now,
         updated_at=None,
     )
@@ -704,6 +705,7 @@ def test_postgres_schedule_atomic_write_duplicate_and_stale_guards():
             reporting_currency="USD",
             options={"sections": ["OVERVIEW"]},
             max_batch_size=25,
+            cadence_effective_on=now.date(),
             created_at=now,
             updated_at=None,
         )
@@ -743,3 +745,19 @@ def test_postgres_schedule_atomic_write_duplicate_and_stale_guards():
         first.model_copy(update={"reporting_currency": "SGD", "revision": 2, "updated_at": now})
     )
     assert ledger.get_schedule_definition(first.schedule_id).reporting_currency == "SGD"
+
+    # An update that collides with another enabled definition's fingerprint is a
+    # duplicate, not a stale revision.
+    second = _schedule(f"rbsc_pg_other_{suffix}", cadence="monthly_end")
+    ledger.save_schedule_definition(second)
+    with _pytest.raises(DuplicateScheduleDefinition):
+        ledger.save_schedule_definition(
+            second.model_copy(
+                update={
+                    "cadence": "quarter_end",
+                    "reporting_currency": "SGD",
+                    "revision": 2,
+                    "updated_at": now,
+                }
+            )
+        )

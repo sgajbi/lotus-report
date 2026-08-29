@@ -265,6 +265,15 @@ class StoredBatchSchedule(BaseModel):
     )
     options: dict[str, Any] = Field(..., description="Governed report-ordering options.")
     max_batch_size: int = Field(..., description="Per-batch portfolio bound.")
+    cadence_effective_on: date = Field(
+        ...,
+        description=(
+            "Date this schedule's cadence took effect: creation date, reset when the "
+            "cadence changes. Due-ness anchors here, so switching a quarterly "
+            "schedule to monthly mid-period does not retroactively owe the month "
+            "ends that passed under the old cadence."
+        ),
+    )
     revision: int = Field(
         1,
         ge=1,
@@ -412,6 +421,7 @@ class ScheduleDefinitionService:
             reporting_currency=request.reporting_currency,
             options=request.options,
             max_batch_size=request.max_batch_size,
+            cadence_effective_on=now.date(),
             created_at=now,
             updated_at=None,
         )
@@ -503,6 +513,8 @@ class ScheduleDefinitionService:
             # An identical retry converges on the stored definition without a
             # rewrite: no updated_at churn, no audit noise.
             return existing
+        if "cadence" in updates:
+            updates["cadence_effective_on"] = now.date()
         updated = existing.model_copy(
             update={**updates, "updated_at": now, "revision": existing.revision + 1}
         )
@@ -529,6 +541,12 @@ class ScheduleDefinitionService:
             raise ScheduleDefinitionError(
                 "batch_schedule_update_conflict",
                 "The schedule changed concurrently; reload it and retry the update.",
+            ) from exc
+        except DuplicateScheduleDefinition as exc:
+            raise ScheduleDefinitionError(
+                "batch_schedule_duplicate_definition",
+                "The change would make this schedule identical to another enabled "
+                "schedule in the same scope.",
             ) from exc
 
     def due_definitions_for_scheduler(
@@ -562,7 +580,7 @@ class ScheduleDefinitionService:
             as_of = due_as_of_date(
                 schedule.cadence,
                 today=today,
-                created_on=schedule.created_at.date(),
+                created_on=schedule.cadence_effective_on,
             )
             if as_of is None:
                 continue
