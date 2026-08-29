@@ -343,13 +343,18 @@ Use these commands as the primary local contract:
 7. idea evidence intake contract validation
    `make idea-evidence-intake-contract-gate` - also runs inside `make check` and `make ci`
 
-These, `make idea-evidence-materialization-contract-gate` and `make monetary-float-guard` were
-declared and invoked by nothing until issue #182: never run in CI, and passing only by luck. A
-`.PHONY` declaration says a target is not a file; it is not an invocation, and documenting a command
-instructs a human rather than enforcing anything.
-`tests/unit/test_gate_reachability.py` fails if any gate-shaped target becomes unreachable from a
-blocking lane, so a fifth cannot arrive dead. A target that legitimately runs elsewhere carries a
-recorded disposition rather than an absence.
+Issue #182 wired all gate targets into `check`/`ci`; issue #187 then corrected the measurement:
+no workflow invokes those aggregate lanes, so lane reachability is intent, not enforcement. The
+measured truth is that `make lint` (which CI does run) has chained `monetary-float-guard` and the
+two idea-evidence contract gates via `$(MAKE)` recipe lines since each was introduced - those were
+alive by accident - and only `domain-product-validate` had no execution path until #187 wired it
+as an explicit step in both gate lanes (with a sparse checkout of lotus-platform contracts,
+because the validator needs them and runners have no sibling checkout).
+`tests/unit/test_gate_reachability.py` enforces both boundaries: every gate-shaped target must be
+reachable from `check`/`ci` (lanes stay complete for humans) AND must be executed by at least one
+workflow `run` step, directly or transitively through prerequisites and `$(MAKE)` recipe chains
+(CI actually runs it). A target that legitimately runs elsewhere carries a recorded disposition
+rather than an absence.
 8. supported prior-schema upgrade proof
    `make migration-upgrade-smoke`
 
