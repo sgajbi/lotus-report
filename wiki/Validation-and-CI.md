@@ -36,9 +36,12 @@ evidence, because consumed tags are reclaimed.
 - `make check`
   lint, typecheck, OpenAPI gate, monetary float guard, domain-data-product contract validation,
   idea-evidence intake and materialization contract gates, unit tests.
-  The four contract and guard targets ran in **no** lane until issue #182 - they were declared,
-  documented, and invoked by nothing. `tests/unit/test_gate_reachability.py` now fails if any
-  gate-shaped target stops being reachable from `check` or `ci`.
+  Issue #182 put all gate targets into these lanes; issue #187 then measured that CI never runs
+  the lanes themselves - `make lint` had quietly chained three of the four gates all along, and
+  `domain-product-validate` alone had never executed until it was wired as an explicit workflow
+  step. `tests/unit/test_gate_reachability.py` now enforces both directions: gates must be
+  reachable from `check`/`ci` *and* executed by at least one workflow `run` step (directly or
+  through `$(MAKE)` chains).
 - `make ci`
   automation-oriented migration, integration, e2e, coverage, and security proof against a
   caller-owned isolated PostgreSQL database

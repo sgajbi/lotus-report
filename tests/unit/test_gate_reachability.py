@@ -131,6 +131,25 @@ _WORKFLOW_MAKE = re.compile(r"\bmake ([a-z][a-z0-9-]*)")
 _RECIPE_MAKE = re.compile(r"^	.*\$\(MAKE\) ([a-z][a-z0-9-]*)", re.M)
 
 
+def _workflow_run_commands(workflow_path: Path) -> list[str]:
+    """The executable `run` values of every step, and nothing else.
+
+    Scanning raw YAML would count `make <gate>` inside comments, step names, or a
+    commented-out `run:` line as CI execution - exactly the drift this test exists
+    to refuse.
+    """
+    import yaml
+
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    commands: list[str] = []
+    for job in (workflow.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            run = step.get("run")
+            if isinstance(run, str):
+                commands.append(run)
+    return commands
+
+
 def _workflow_invoked_targets() -> set[str]:
     invoked: set[str] = set()
     workflow_files = sorted(WORKFLOWS_DIR.glob("*.yml"))
@@ -138,7 +157,8 @@ def _workflow_invoked_targets() -> set[str]:
         "No workflow files found; a workflow-reachability check with no workflows asserts nothing."
     )
     for workflow in workflow_files:
-        invoked.update(_WORKFLOW_MAKE.findall(workflow.read_text(encoding="utf-8")))
+        for command in _workflow_run_commands(workflow):
+            invoked.update(_WORKFLOW_MAKE.findall(command))
     return invoked
 
 
