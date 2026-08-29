@@ -897,30 +897,76 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
         return schedule
 
     def _write_schedule_definition(self, connection: Any, schedule: "StoredBatchSchedule") -> None:
-        connection.execute(
-            """
-                INSERT INTO report_batch_schedule_definition (
-                    schedule_id, tenant_id, region, booking_center_code, owner_actor,
-                    enabled, cadence, portfolio_ids_json, requested_output_formats_json,
-                    reporting_currency, options_json, max_batch_size, created_at, updated_at
+        from app.report_batch_orchestrator.schedule_definitions import (
+            DuplicateScheduleDefinition,
+            StaleScheduleRevision,
+        )
+
+        if schedule.revision == 1:
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO report_batch_schedule_definition (
+                        schedule_id, tenant_id, region, booking_center_code, owner_actor,
+                        enabled, cadence, portfolio_ids_json,
+                        requested_output_formats_json, reporting_currency, options_json,
+                        max_batch_size, fingerprint, revision, created_at, updated_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        schedule.schedule_id,
+                        schedule.tenant_id,
+                        schedule.region,
+                        schedule.booking_center_code,
+                        schedule.owner_actor,
+                        schedule.enabled,
+                        schedule.cadence,
+                        Jsonb(schedule.portfolio_ids),
+                        Jsonb(schedule.requested_output_formats),
+                        schedule.reporting_currency,
+                        Jsonb(schedule.options),
+                        schedule.max_batch_size,
+                        schedule.fingerprint,
+                        schedule.revision,
+                        schedule.created_at,
+                        schedule.updated_at,
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (schedule_id) DO UPDATE SET
-                    enabled = EXCLUDED.enabled,
-                    cadence = EXCLUDED.cadence,
-                    portfolio_ids_json = EXCLUDED.portfolio_ids_json,
-                    requested_output_formats_json = EXCLUDED.requested_output_formats_json,
-                    reporting_currency = EXCLUDED.reporting_currency,
-                    options_json = EXCLUDED.options_json,
-                    max_batch_size = EXCLUDED.max_batch_size,
-                    updated_at = EXCLUDED.updated_at
-                """,
+            except UniqueViolation as exc:
+                constraint = getattr(getattr(exc, "diag", None), "constraint_name", "")
+                if constraint != "uq_report_batch_schedule_fingerprint_enabled":
+                    raise
+                with self._connect() as lookup:
+                    row = lookup.execute(
+                        """
+                        SELECT schedule_id FROM report_batch_schedule_definition
+                        WHERE fingerprint = %s AND enabled
+                        """,
+                        (schedule.fingerprint,),
+                    ).fetchone()
+                raise DuplicateScheduleDefinition(
+                    row["schedule_id"] if row else schedule.schedule_id
+                ) from exc
+            return
+        result = connection.execute(
+            """
+            UPDATE report_batch_schedule_definition SET
+                enabled = %s,
+                cadence = %s,
+                portfolio_ids_json = %s,
+                requested_output_formats_json = %s,
+                reporting_currency = %s,
+                options_json = %s,
+                max_batch_size = %s,
+                fingerprint = %s,
+                revision = %s,
+                updated_at = %s
+            WHERE schedule_id = %s AND revision = %s
+            """,
             (
-                schedule.schedule_id,
-                schedule.tenant_id,
-                schedule.region,
-                schedule.booking_center_code,
-                schedule.owner_actor,
                 schedule.enabled,
                 schedule.cadence,
                 Jsonb(schedule.portfolio_ids),
@@ -928,10 +974,15 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 schedule.reporting_currency,
                 Jsonb(schedule.options),
                 schedule.max_batch_size,
-                schedule.created_at,
+                schedule.fingerprint,
+                schedule.revision,
                 schedule.updated_at,
+                schedule.schedule_id,
+                schedule.revision - 1,
             ),
         )
+        if result.rowcount != 1:
+            raise StaleScheduleRevision(schedule.schedule_id)
 
     def get_schedule_definition(self, schedule_id: str) -> "StoredBatchSchedule | None":
         with self._connect() as connection:
@@ -1206,6 +1257,7 @@ def _schedule_definition_from_row(row: Any) -> "StoredBatchSchedule":
         reporting_currency=row["reporting_currency"],
         options=dict(row["options_json"]),
         max_batch_size=row["max_batch_size"],
+        revision=row["revision"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

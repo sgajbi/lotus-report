@@ -662,6 +662,8 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
     assert [record.action for record in audit] == ["created", "disabled", "enabled"]
 
     ledger.save_schedule_definition(
-        schedule.model_copy(update={"enabled": False, "updated_at": now})
+        schedule.model_copy(update={"enabled": False, "updated_at": now, "revision": 2})
     )
-    assert ledger.get_schedule_definition("rbsc_pg_roundtrip").enabled is False
+    stored = ledger.get_schedule_definition("rbsc_pg_roundtrip")
+    assert stored.enabled is False
+    assert stored.revision == 2

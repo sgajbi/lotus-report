@@ -37,6 +37,8 @@ Deliberate boundaries:
 from __future__ import annotations
 
 import calendar
+import hashlib
+import json
 from datetime import date, datetime
 from typing import Any, Literal, Protocol
 from uuid import uuid4
@@ -196,6 +198,52 @@ class BatchScheduleDefinitionUpdateRequest(BaseModel):
     )
 
 
+def definition_fingerprint(
+    *,
+    tenant_id: str,
+    region: str,
+    booking_center_code: str | None,
+    cadence: ScheduleCadence,
+    portfolio_ids: list[str],
+    requested_output_formats: list[str],
+    reporting_currency: str | None,
+    options: dict[str, Any],
+    max_batch_size: int,
+) -> str:
+    """Stable identity of one logical enabled definition within one execution scope.
+
+    Backed by a partial unique index on enabled rows, this is what makes identical
+    concurrent creates converge on one schedule at the database rather than by a
+    read-then-insert race.
+    """
+
+    payload = {
+        "tenant_id": tenant_id,
+        "region": region,
+        "booking_center_code": booking_center_code,
+        "cadence": cadence,
+        "portfolio_ids": portfolio_ids,
+        "requested_output_formats": requested_output_formats,
+        "reporting_currency": reporting_currency,
+        "options": options,
+        "max_batch_size": max_batch_size,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+class DuplicateScheduleDefinition(Exception):
+    """Raised by a store when an enabled definition with this fingerprint exists."""
+
+    def __init__(self, existing_schedule_id: str) -> None:
+        super().__init__(existing_schedule_id)
+        self.existing_schedule_id = existing_schedule_id
+
+
+class StaleScheduleRevision(Exception):
+    """Raised by a store when an update's expected revision no longer matches."""
+
+
 class StoredBatchSchedule(BaseModel):
     """A durable schedule definition with its governance identity."""
 
@@ -217,8 +265,30 @@ class StoredBatchSchedule(BaseModel):
     )
     options: dict[str, Any] = Field(..., description="Governed report-ordering options.")
     max_batch_size: int = Field(..., description="Per-batch portfolio bound.")
+    revision: int = Field(
+        1,
+        ge=1,
+        description=(
+            "Optimistic-concurrency revision; each effective update increments it, and "
+            "a stale concurrent update is refused instead of silently overwriting."
+        ),
+    )
     created_at: datetime = Field(..., description="Creation instant (UTC).")
     updated_at: datetime | None = Field(None, description="Last modification instant (UTC).")
+
+    @property
+    def fingerprint(self) -> str:
+        return definition_fingerprint(
+            tenant_id=self.tenant_id,
+            region=self.region,
+            booking_center_code=self.booking_center_code,
+            cadence=self.cadence,
+            portfolio_ids=self.portfolio_ids,
+            requested_output_formats=self.requested_output_formats,
+            reporting_currency=self.reporting_currency,
+            options=self.options,
+            max_batch_size=self.max_batch_size,
+        )
 
 
 class BatchScheduleAuditRecord(BaseModel):
@@ -312,18 +382,22 @@ class ScheduleDefinitionService:
     ) -> StoredBatchSchedule:
         _require_scoped_caller(caller_context)
         normalized_portfolios = list(dict.fromkeys(request.portfolio_ids))
+        target_fingerprint = definition_fingerprint(
+            tenant_id=str(caller_context.tenant_id),
+            region=str(caller_context.region),
+            booking_center_code=caller_context.booking_center_code,
+            cadence=request.cadence,
+            portfolio_ids=normalized_portfolios,
+            requested_output_formats=request.requested_output_formats,
+            reporting_currency=request.reporting_currency,
+            options=request.options,
+            max_batch_size=request.max_batch_size,
+        )
         for existing in self._store.list_schedule_definitions(str(caller_context.tenant_id)):
-            if (
-                existing.enabled
-                and existing.cadence == request.cadence
-                and existing.portfolio_ids == normalized_portfolios
-                and existing.requested_output_formats == request.requested_output_formats
-                and existing.reporting_currency == request.reporting_currency
-                and existing.options == request.options
-                and existing.max_batch_size == request.max_batch_size
-            ):
+            if existing.enabled and existing.fingerprint == target_fingerprint:
                 # An identical retry converges on the schedule it already created;
-                # the original create's audit record remains the single truth.
+                # the fingerprint carries region and booking centre, so the same
+                # content in a different execution scope is a distinct schedule.
                 return existing
         schedule = StoredBatchSchedule(
             schedule_id=f"rbsc_{uuid4().hex}",
@@ -343,18 +417,28 @@ class ScheduleDefinitionService:
         )
         _validate_ordering(schedule)
         _validate_portfolio_bound(schedule)
-        return self._store.save_schedule_definition_with_audit(
-            schedule,
-            BatchScheduleAuditRecord(
-                audit_id=f"rbsa_{uuid4().hex}",
-                schedule_id=schedule.schedule_id,
-                action="created",
-                actor=caller_context.triggered_by,
-                correlation_id=caller_context.correlation_id,
-                changes={"definition": schedule.model_dump(mode="json")},
-                created_at=now,
-            ),
-        )
+        try:
+            return self._store.save_schedule_definition_with_audit(
+                schedule,
+                BatchScheduleAuditRecord(
+                    audit_id=f"rbsa_{uuid4().hex}",
+                    schedule_id=schedule.schedule_id,
+                    action="created",
+                    actor=caller_context.triggered_by,
+                    correlation_id=caller_context.correlation_id,
+                    changes={"definition": schedule.model_dump(mode="json")},
+                    created_at=now,
+                ),
+            )
+        except DuplicateScheduleDefinition as exc:
+            # A racing identical create won the unique index; converge on it.
+            winner = self._store.get_schedule_definition(exc.existing_schedule_id)
+            if winner is not None and winner.tenant_id == caller_context.tenant_id:
+                return winner
+            raise ScheduleDefinitionError(
+                "batch_schedule_conflict",
+                "The schedule could not be created; retry the request.",
+            ) from exc
 
     def get_schedule(
         self,
@@ -419,25 +503,33 @@ class ScheduleDefinitionService:
             # An identical retry converges on the stored definition without a
             # rewrite: no updated_at churn, no audit noise.
             return existing
-        updated = existing.model_copy(update={**updates, "updated_at": now})
+        updated = existing.model_copy(
+            update={**updates, "updated_at": now, "revision": existing.revision + 1}
+        )
         _validate_ordering(updated)
         _validate_portfolio_bound(updated)
         if set(updates) == {"enabled"}:
             action: ScheduleAuditAction = "enabled" if updates["enabled"] else "disabled"
         else:
             action = "updated"
-        return self._store.save_schedule_definition_with_audit(
-            updated,
-            BatchScheduleAuditRecord(
-                audit_id=f"rbsa_{uuid4().hex}",
-                schedule_id=updated.schedule_id,
-                action=action,
-                actor=caller_context.triggered_by,
-                correlation_id=caller_context.correlation_id,
-                changes=changes,
-                created_at=now,
-            ),
-        )
+        try:
+            return self._store.save_schedule_definition_with_audit(
+                updated,
+                BatchScheduleAuditRecord(
+                    audit_id=f"rbsa_{uuid4().hex}",
+                    schedule_id=updated.schedule_id,
+                    action=action,
+                    actor=caller_context.triggered_by,
+                    correlation_id=caller_context.correlation_id,
+                    changes=changes,
+                    created_at=now,
+                ),
+            )
+        except StaleScheduleRevision as exc:
+            raise ScheduleDefinitionError(
+                "batch_schedule_update_conflict",
+                "The schedule changed concurrently; reload it and retry the update.",
+            ) from exc
 
     def due_definitions_for_scheduler(
         self,

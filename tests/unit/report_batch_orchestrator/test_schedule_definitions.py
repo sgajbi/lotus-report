@@ -457,3 +457,122 @@ def test_stored_definitions_fold_into_the_scheduler_pass_itself() -> None:
     assert captured["scope"] == ("tenant-sg", "APAC", "SG", date(2026, 9, 30))
     assert [entry.schedule_id for entry in result.materialized] == ["rbsc_daemon"]
     assert captured["request"].options["batch_schedule_id"] == "rbsc_daemon"
+
+
+def test_the_same_definition_in_another_region_is_a_distinct_schedule(tmp_path: Path) -> None:
+    """The create-convergence fingerprint carries execution scope: identical content
+    created from another region or booking centre is a different schedule, not an
+    echo of the first one."""
+
+    service = _service(tmp_path)
+    apac = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    emea_caller = ReportCallerContext(
+        triggered_by="advisor-456",
+        caller_application="lotus-gateway",
+        tenant_id="tenant-sg",
+        region="EMEA",
+        booking_center_code="UK",
+        role="advisor",
+        correlation_id="corr-schedule-2",
+        trace_id="trace-schedule-2",
+    )
+    emea = service.create_schedule(request=_create_request(), caller_context=emea_caller, now=NOW)
+
+    assert emea.schedule_id != apac.schedule_id
+    assert emea.region == "EMEA"
+
+
+def test_a_racing_identical_create_converges_on_the_database_winner(tmp_path: Path) -> None:
+    """Two overlapping identical creates cannot both pass the read: the partial
+    unique index on enabled fingerprints makes the second insert converge on the
+    first schedule instead of persisting a duplicate."""
+
+    ledger = ReportBatchLedger(tmp_path / "schedules.sqlite3")
+    service = ScheduleDefinitionService(ledger)
+    first = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+
+    # Simulate the race: bypass the service-level read-echo so the insert itself
+    # hits the unique index, exactly as a concurrent request would.
+    original_list = ledger.list_schedule_definitions
+    ledger.list_schedule_definitions = lambda tenant_id: []
+    try:
+        racer = service.create_schedule(
+            request=_create_request(), caller_context=_caller(), now=NOW
+        )
+    finally:
+        ledger.list_schedule_definitions = original_list
+
+    assert racer.schedule_id == first.schedule_id
+    assert len(ledger.list_schedule_definitions("tenant-sg")) == 1
+
+
+def test_a_stale_concurrent_update_is_refused_not_overwritten(tmp_path: Path) -> None:
+    """Lost-update protection: an update whose loaded revision is no longer current
+    is refused with a typed conflict instead of silently rewriting every column."""
+
+    from app.report_batch_orchestrator.schedule_definitions import StaleScheduleRevision
+
+    ledger = ReportBatchLedger(tmp_path / "schedules.sqlite3")
+    service = ScheduleDefinitionService(ledger)
+    schedule = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+
+    # A concurrent writer lands first.
+    service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(reporting_currency="SGD"),
+        caller_context=_caller(),
+        now=NOW,
+    )
+
+    # The stale writer replays against the old revision at the storage layer.
+    stale = schedule.model_copy(update={"max_batch_size": 7, "revision": 2})
+    with pytest.raises(StaleScheduleRevision):
+        ledger.save_schedule_definition(stale.model_copy(update={"revision": 99}))
+
+    # And through the service the conflict surfaces as a typed refusal when the
+    # store reports staleness.
+    class _StaleStore:
+        def __getattr__(self, name):
+            return getattr(ledger, name)
+
+        def save_schedule_definition_with_audit(self, schedule, record):
+            raise StaleScheduleRevision(schedule.schedule_id)
+
+    stale_service = ScheduleDefinitionService(_StaleStore())
+    with pytest.raises(ScheduleDefinitionError) as excinfo:
+        stale_service.update_schedule(
+            schedule_id=schedule.schedule_id,
+            request=BatchScheduleDefinitionUpdateRequest(max_batch_size=9),
+            caller_context=_caller(),
+            now=NOW,
+        )
+    assert excinfo.value.code == "batch_schedule_update_conflict"
+
+    current = service.get_schedule(schedule_id=schedule.schedule_id, caller_context=_caller())
+    assert current.reporting_currency == "SGD"
+    assert current.max_batch_size == _create_request().max_batch_size
+
+
+def test_cycle_identity_survives_a_cadence_change() -> None:
+    """A monthly schedule switched to quarterly after September 30 materialized
+    still resolves September 30; the cycle key must converge, not duplicate."""
+
+    from app.report_batch_orchestrator.scheduler import (
+        stored_schedule_cycle_idempotency_key,
+    )
+
+    before = stored_schedule_cycle_idempotency_key(
+        schedule_id="rbsc_x", as_of_date=date(2026, 9, 30)
+    )
+    after = stored_schedule_cycle_idempotency_key(
+        schedule_id="rbsc_x", as_of_date=date(2026, 9, 30)
+    )
+    other_cycle = stored_schedule_cycle_idempotency_key(
+        schedule_id="rbsc_x", as_of_date=date(2026, 10, 31)
+    )
+    other_schedule = stored_schedule_cycle_idempotency_key(
+        schedule_id="rbsc_y", as_of_date=date(2026, 9, 30)
+    )
+
+    assert before == after
+    assert len({before, other_cycle, other_schedule}) == 3

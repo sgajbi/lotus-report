@@ -582,12 +582,23 @@ class ReportBatchScheduler:
                 options=_batch_options(schedule, cycle),
                 max_batch_size=schedule.max_batch_size,
             )
-            idempotency_key = scheduled_batch_idempotency_key(
-                caller_context=caller_context,
-                selector_mode=request.selector_mode,
-                cycle=cycle,
-                selector_identity=_selector_identity(schedule, portfolio_ids),
-            )
+            if schedule.stable_cycle_identity:
+                # The key must survive cadence changes too: a monthly schedule
+                # switched to quarterly after September 30 materialized still
+                # resolves the same as-of date, and hashing frequency or period
+                # bounds would mint a second batch for it. Schedule id plus as-of
+                # date is the whole identity of a stored schedule's cycle.
+                idempotency_key = stored_schedule_cycle_idempotency_key(
+                    schedule_id=schedule.schedule_id,
+                    as_of_date=cycle.as_of_date,
+                )
+            else:
+                idempotency_key = scheduled_batch_idempotency_key(
+                    caller_context=caller_context,
+                    selector_mode=request.selector_mode,
+                    cycle=cycle,
+                    selector_identity=_selector_identity(schedule, portfolio_ids),
+                )
             try:
                 batch = self._batch_ledger.create_batch(
                     request=request,
@@ -797,11 +808,22 @@ def _batch_options(schedule: BatchScheduleDefinition, cycle: Any) -> dict[str, A
     return options
 
 
+def stored_schedule_cycle_idempotency_key(*, schedule_id: str, as_of_date: date) -> str:
+    """One idempotency identity per stored schedule and as-of date.
+
+    Deliberately independent of content, frequency, and period bounds: content
+    updates apply from the next cycle, and a cadence change that re-selects an
+    already-materialized as-of date converges instead of duplicating the pack.
+    """
+
+    digest = _stable_short_hash(
+        {"schedule_id": schedule_id, "as_of_date": as_of_date.isoformat()},
+        length=32,
+    )
+    return f"scheduled-batch-{digest}"
+
+
 def _selector_identity(schedule: BatchScheduleDefinition, portfolio_ids: list[str]) -> str:
-    if schedule.stable_cycle_identity:
-        # One idempotency identity per schedule and cycle: content changes between
-        # runs must not mint a second batch for a period that already materialized.
-        return _stable_short_hash({"schedule_id": schedule.schedule_id}, length=32)
     return _stable_short_hash(
         {
             "schedule_id": schedule.schedule_id,
