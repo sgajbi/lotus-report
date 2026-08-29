@@ -144,3 +144,53 @@ def test_run_isolated_ci_cleans_up_after_child_process_error(monkeypatch) -> Non
         )
 
     assert lifecycle == ["create", "drop"]
+
+
+def test_provision_isolated_database_creates_then_always_drops(monkeypatch) -> None:
+    """The session-scoped integration fixture rides on this contract (issue #179)."""
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        run_isolated_ci,
+        "_create_database",
+        lambda database: events.append(f"create:{database.database_name}"),
+    )
+    monkeypatch.setattr(
+        run_isolated_ci,
+        "_drop_database",
+        lambda database: events.append(f"drop:{database.database_name}"),
+    )
+
+    with run_isolated_ci.provision_isolated_database(
+        "postgresql://lotus_report:pw@localhost:5439/lotus_report"
+    ) as database:
+        assert database.database_name != "lotus_report"
+        assert database.database_name.startswith("lotus_report_ci_")
+        assert events == [f"create:{database.database_name}"]
+
+    assert events == [
+        f"create:{database.database_name}",
+        f"drop:{database.database_name}",
+    ]
+
+
+def test_provision_isolated_database_drops_even_when_the_body_raises(monkeypatch) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(
+        run_isolated_ci,
+        "_create_database",
+        lambda database: events.append("create"),
+    )
+    monkeypatch.setattr(
+        run_isolated_ci,
+        "_drop_database",
+        lambda database: events.append("drop"),
+    )
+
+    with pytest.raises(RuntimeError):
+        with run_isolated_ci.provision_isolated_database(
+            "postgresql://lotus_report:pw@localhost:5439/lotus_report"
+        ):
+            raise RuntimeError("session failed")
+
+    assert events == ["create", "drop"]
