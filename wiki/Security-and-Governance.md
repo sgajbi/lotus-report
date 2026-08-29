@@ -67,7 +67,7 @@ Where admission is applied:
 | batch and item status reads | `load_admitted_batch`, then a tenant-scoped archive-status join |
 | item replay | `admit_batch` inside the replay service, before the item is loaded |
 | `:run-once` | `admit_batch` at the top of the worker's `run_once`, before status checks, lease recovery or dispatch |
-| background runtime pass | `tenant_id` is a required keyword on `list_runnable_batch_ids`, applied as a SQL predicate |
+| background runtime pass | `tenant_ids` (the worker's explicit authorized set) is a required keyword on `list_runnable_batch_ids`, applied as a SQL `IN` predicate - an empty set selects nothing; each batch then advances under a caller context derived from its own persisted tenant, region, and booking centre, validated against the set |
 | execution bridge | the item's linked report job is re-checked against the batch tenant before any render or archive work |
 
 That last row matters and is easy to miss: an item-to-report-job link written before dispatch was
