@@ -177,7 +177,11 @@ def _recipe_invoked_targets(block: str) -> list[str]:
         if not line.startswith("	"):
             continue
         command = line.lstrip("	").lstrip()
-        while command[:1] in {"@", "-", "+"}:
+        if command[:1] == "-":
+            # Make's `-` prefix ignores a failing recursive invocation; a gate whose
+            # failure is ignored is not enforcement.
+            continue
+        while command[:1] in {"@", "+"}:
             command = command[1:].lstrip()
         if command.startswith("#"):
             continue
@@ -197,11 +201,11 @@ def _workflow_run_commands(workflow_path: Path) -> list[str]:
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     commands: list[str] = []
     for job in (workflow.get("jobs") or {}).values():
-        if "if" in job:
-            # A conditioned job is conditional execution, and conditional is not enforced.
+        if "if" in job or job.get("continue-on-error") is True:
+            # Conditional execution and tolerated failure are both not enforcement.
             continue
         for step in job.get("steps") or []:
-            if "if" in step:
+            if "if" in step or step.get("continue-on-error") is True:
                 continue
             run = step.get("run")
             if isinstance(run, str):
