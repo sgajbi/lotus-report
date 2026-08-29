@@ -19,8 +19,15 @@ run at all. A dispatcher that fails is visible; a suppressed push trigger is not
 is also keyed per commit rather than per branch, so a later merge cannot cancel an earlier commit's
 in-flight gate and leave it with a run that is neither pass nor fail.
 
+The dispatch tag is consumed, not kept. At the end of every governed run, the
+`reclaim-dispatch-tag` job deletes the exact `main-releasability-<sha>` tag the run validated,
+after proving the tag still points at that SHA. Cleanup can never change the gate's verdict
+(`continue-on-error` at job and step level; any guard failure warns and retains the tag), so a
+missing tag means a consumed run, never a suppressed one.
+
 **Auditing a merge:** use `gh run list --commit <full-sha>`. Listing by `--branch main` misses the
-run, because the dispatch ref is a tag rather than `main`.
+run, because the dispatch ref is a tag rather than `main` - and tag presence is not durable
+evidence, because consumed tags are reclaimed.
 
 ## Local command mapping
 
