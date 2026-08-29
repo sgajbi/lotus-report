@@ -767,3 +767,122 @@ def test_a_failing_stored_schedule_does_not_abort_the_pass() -> None:
 
     assert "rbsc_broken" in result.skipped_schedule_ids
     assert [entry.schedule_id for entry in result.materialized] == ["rbsc_healthy"]
+
+
+def test_scheduler_downtime_backfills_every_missed_period(tmp_path: Path) -> None:
+    """A monthly schedule whose daemon restarts on September 1 owes July 31 AND
+    August 31 - the latest boundary alone would silently swallow July's pack."""
+
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    from app.report_batch_orchestrator.schedule_definitions import due_as_of_dates
+
+    service = _service(tmp_path)
+    schedule = service.create_schedule(
+        request=_create_request(cadence="monthly_end"),
+        caller_context=_caller(),
+        now=_datetime(2026, 6, 10, 9, 0, tzinfo=_UTC),
+    )
+
+    due = service.due_definitions_for_scheduler(
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        today=date(2026, 9, 1),
+    )
+    assert [definition.as_of_date for definition in due] == [
+        date(2026, 6, 30),
+        date(2026, 7, 31),
+        date(2026, 8, 31),
+    ]
+    assert all(d.schedule_id == schedule.schedule_id for d in due)
+
+    # The backfill window is bounded and ascending; truncation keeps the most
+    # recent periods.
+    bounded = due_as_of_dates(
+        "monthly_end",
+        today=date(2026, 9, 1),
+        created_on=date(2024, 1, 1),
+        limit=3,
+    )
+    assert bounded == [date(2026, 6, 30), date(2026, 7, 31), date(2026, 8, 31)]
+
+
+def test_partial_candidate_resolution_refuses_the_stored_cycle() -> None:
+    """A transient upstream miss must not shrink the pack: the stable cycle key
+    would permanently claim the period for a subset."""
+
+    import asyncio
+
+    from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
+    from app.report_batch_orchestrator.scheduler import (
+        BatchSchedulerConfig,
+        ReportBatchScheduler,
+    )
+
+    class _LedgerSpy:
+        def __init__(self):
+            self.created = []
+
+        def create_batch(self, *, request, caller_context, idempotency_key):
+            self.created.append(idempotency_key)
+            raise AssertionError("a partial cycle must never reach the ledger")
+
+    class _FlakyPortfolios:
+        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+            if portfolio_id == "PB_DOWN":
+                return 503, {}
+            return 200, {"portfolio_id": portfolio_id, "status": "active"}
+
+    class _StoredSource:
+        def due_definitions_for_scheduler(self, **kwargs):
+            return [
+                stored_schedule_to_definition(
+                    StoredBatchSchedule(
+                        schedule_id="rbsc_partial",
+                        tenant_id="tenant-sg",
+                        region="APAC",
+                        booking_center_code="SG",
+                        owner_actor="advisor-123",
+                        enabled=True,
+                        cadence="quarter_end",
+                        portfolio_ids=["PB_OK", "PB_DOWN"],
+                        requested_output_formats=["pdf"],
+                        reporting_currency="USD",
+                        options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+                        max_batch_size=10,
+                        cadence_effective_on=NOW.date(),
+                        created_at=NOW,
+                        updated_at=None,
+                    ),
+                    as_of_date=date(2026, 9, 30),
+                )
+            ]
+
+    ledger = _LedgerSpy()
+    scheduler = ReportBatchScheduler(
+        batch_ledger=ledger,
+        portfolio_source=_FlakyPortfolios(),
+        stored_schedule_source=_StoredSource(),
+    )
+    config = BatchSchedulerConfig(
+        scheduler_id="partial-test",
+        interval_seconds=60.0,
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="scheduler",
+        schedules=(),
+    )
+    result = asyncio.run(
+        scheduler.run_due_schedules(
+            config=config,
+            caller_context=_caller(),
+            evaluation_date=date(2026, 9, 30),
+        )
+    )
+
+    assert result.skipped_schedule_ids == ("rbsc_partial",)
+    assert result.materialized == ()
+    assert ledger.created == []

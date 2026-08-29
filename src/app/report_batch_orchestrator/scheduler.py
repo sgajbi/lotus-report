@@ -572,6 +572,23 @@ class ReportBatchScheduler:
             if not candidates:
                 skipped.append(schedule.schedule_id)
                 continue
+            if schedule.stable_cycle_identity and len(candidates) != len(schedule.portfolio_ids):
+                # A transient upstream miss must not shrink the pack: the stable
+                # cycle key would permanently claim this period for a subset, and
+                # the dropped portfolio's report would never exist. Refuse the
+                # cycle now; the next pass retries with the key unconsumed.
+                _LOGGER.warning(
+                    "stored_schedule_partial_resolution",
+                    extra={
+                        "extra_fields": {
+                            "schedule_id": schedule.schedule_id,
+                            "requested_count": len(schedule.portfolio_ids),
+                            "resolved_count": len(candidates),
+                        }
+                    },
+                )
+                skipped.append(schedule.schedule_id)
+                continue
 
             cycle = materialize_cycle(_cycle_request(schedule))
             portfolio_ids = [candidate.portfolio_id for candidate in candidates]

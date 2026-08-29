@@ -39,7 +39,7 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
@@ -106,6 +106,39 @@ def _previous_period_end(cadence: ScheduleCadence, day: date) -> date | None:
     if cadence == "quarter_end":
         return quarter_end(before)
     return month_end(before)
+
+
+# How many missed periods a pass will submit for one schedule. Idempotency makes
+# re-submission converge, so the bound exists to keep pass cost proportionate -
+# and a truncation is logged by the caller, never silent.
+STORED_SCHEDULE_BACKFILL_LIMIT = 12
+
+
+def due_as_of_dates(
+    cadence: ScheduleCadence,
+    *,
+    today: date,
+    created_on: date,
+    limit: int = STORED_SCHEDULE_BACKFILL_LIMIT,
+) -> list[date]:
+    """Every period end owed between the cadence's effective date and today.
+
+    Scheduler downtime across multiple boundaries must not swallow the earlier
+    packs: a monthly schedule whose daemon restarts on September 1 owes July 31
+    AND August 31. Ascending order; at most `limit` most-recent periods, so one
+    ancient schedule cannot flood a pass.
+    """
+
+    owed: list[date] = []
+    cursor = due_as_of_date(cadence, today=today, created_on=created_on)
+    while cursor is not None and len(owed) < limit:
+        owed.append(cursor)
+        cursor = due_as_of_date(
+            cadence,
+            today=cursor - timedelta(days=1),
+            created_on=created_on,
+        )
+    return sorted(owed)
 
 
 def due_as_of_date(cadence: ScheduleCadence, *, today: date, created_on: date) -> date | None:
@@ -591,14 +624,12 @@ class ScheduleDefinitionService:
                 # configured booking centre onto every batch, so a schedule bound
                 # elsewhere - or bound nowhere - must not run under this identity.
                 continue
-            as_of = due_as_of_date(
+            for as_of in due_as_of_dates(
                 schedule.cadence,
                 today=today,
                 created_on=schedule.cadence_effective_on,
-            )
-            if as_of is None:
-                continue
-            definitions.append(stored_schedule_to_definition(schedule, as_of_date=as_of))
+            ):
+                definitions.append(stored_schedule_to_definition(schedule, as_of_date=as_of))
         return definitions
 
 
