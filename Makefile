@@ -80,7 +80,7 @@ security-audit:
 # reporting_render/package_builder.py are the current ceilings, not aspirations).
 SOURCE_FILE_MAX_LINES ?= 4508
 MAX_CYCLOMATIC_COMPLEXITY ?= 34
-MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 11
+MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 13
 
 complexity-gate:
 	python scripts/python_complexity_inventory.py --limit 20 --max-cc $(MAX_CYCLOMATIC_COMPLEXITY) --max-high-complexity $(MAX_HIGH_COMPLEXITY_FUNCTIONS)

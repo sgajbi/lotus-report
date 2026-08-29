@@ -50,22 +50,37 @@ def _normalize_path(path: str) -> str:
     return path.replace("\\", "/")
 
 
+def _entry_findings(path: str, entry: Mapping[str, Any]) -> "list[ComplexityFinding]":
+    """One entry plus everything nested inside it.
+
+    Radon nests class methods under each class entry's `methods` list (and inner
+    functions under `closures`); reading only the top level would leave every
+    class method invisible to the gate.
+    """
+
+    findings = [
+        ComplexityFinding(
+            path=path,
+            name=str(entry["name"]),
+            kind=str(entry["type"]),
+            rank=str(entry["rank"]),
+            complexity=int(entry["complexity"]),
+            line=int(entry["lineno"]),
+            end_line=int(entry.get("endline") or entry["lineno"]),
+        )
+    ]
+    for nested_key in ("methods", "closures"):
+        for nested in entry.get(nested_key) or []:
+            findings.extend(_entry_findings(path, nested))
+    return findings
+
+
 def parse_complexity_payload(payload: Mapping[str, Any]) -> list[ComplexityFinding]:
     findings: list[ComplexityFinding] = []
     for raw_path, entries in payload.items():
         path = _normalize_path(raw_path)
         for entry in entries:
-            findings.append(
-                ComplexityFinding(
-                    path=path,
-                    name=str(entry["name"]),
-                    kind=str(entry["type"]),
-                    rank=str(entry["rank"]),
-                    complexity=int(entry["complexity"]),
-                    line=int(entry["lineno"]),
-                    end_line=int(entry.get("endline") or entry["lineno"]),
-                )
-            )
+            findings.extend(_entry_findings(path, entry))
     return sorted(findings, key=lambda item: (-item.complexity, item.path, item.line, item.name))
 
 
