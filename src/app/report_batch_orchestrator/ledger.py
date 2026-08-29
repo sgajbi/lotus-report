@@ -1104,12 +1104,27 @@ class ReportBatchLedger:
         return [str(row["batch_id"]) for row in rows]
 
     def save_schedule_definition(self, schedule: "StoredBatchSchedule") -> "StoredBatchSchedule":
-        from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
-
-        assert isinstance(schedule, StoredBatchSchedule)
         with self._lock, self._connect() as connection:
-            connection.execute(
-                """
+            self._write_schedule_definition(connection, schedule)
+        return schedule
+
+    def save_schedule_definition_with_audit(
+        self,
+        schedule: "StoredBatchSchedule",
+        record: "BatchScheduleAuditRecord",
+    ) -> "StoredBatchSchedule":
+        """Definition and audit event in one transaction - a schedule must never
+        exist without the audit record that explains it."""
+        with self._lock, self._connect() as connection:
+            self._write_schedule_definition(connection, schedule)
+            self._write_schedule_audit(connection, record)
+        return schedule
+
+    def _write_schedule_definition(
+        self, connection: sqlite3.Connection, schedule: "StoredBatchSchedule"
+    ) -> None:
+        connection.execute(
+            """
                 INSERT INTO report_batch_schedule_definition (
                     schedule_id, tenant_id, region, booking_center_code, owner_actor,
                     enabled, cadence, portfolio_ids_json, requested_output_formats_json,
@@ -1126,24 +1141,23 @@ class ReportBatchLedger:
                     max_batch_size = excluded.max_batch_size,
                     updated_at = excluded.updated_at
                 """,
-                (
-                    schedule.schedule_id,
-                    schedule.tenant_id,
-                    schedule.region,
-                    schedule.booking_center_code,
-                    schedule.owner_actor,
-                    1 if schedule.enabled else 0,
-                    schedule.cadence,
-                    json.dumps(schedule.portfolio_ids),
-                    json.dumps(schedule.requested_output_formats),
-                    schedule.reporting_currency,
-                    json.dumps(schedule.options),
-                    schedule.max_batch_size,
-                    schedule.created_at.isoformat(),
-                    schedule.updated_at.isoformat() if schedule.updated_at else None,
-                ),
-            )
-        return schedule
+            (
+                schedule.schedule_id,
+                schedule.tenant_id,
+                schedule.region,
+                schedule.booking_center_code,
+                schedule.owner_actor,
+                1 if schedule.enabled else 0,
+                schedule.cadence,
+                json.dumps(schedule.portfolio_ids),
+                json.dumps(schedule.requested_output_formats),
+                schedule.reporting_currency,
+                json.dumps(schedule.options),
+                schedule.max_batch_size,
+                schedule.created_at.isoformat(),
+                schedule.updated_at.isoformat() if schedule.updated_at else None,
+            ),
+        )
 
     def get_schedule_definition(self, schedule_id: str) -> "StoredBatchSchedule | None":
         with self._connect() as connection:
@@ -1170,29 +1184,31 @@ class ReportBatchLedger:
     def append_schedule_audit(
         self, record: "BatchScheduleAuditRecord"
     ) -> "BatchScheduleAuditRecord":
-        from app.report_batch_orchestrator.schedule_definitions import BatchScheduleAuditRecord
-
-        assert isinstance(record, BatchScheduleAuditRecord)
         with self._lock, self._connect() as connection:
-            connection.execute(
-                """
+            self._write_schedule_audit(connection, record)
+        return record
+
+    def _write_schedule_audit(
+        self, connection: sqlite3.Connection, record: "BatchScheduleAuditRecord"
+    ) -> None:
+        connection.execute(
+            """
                 INSERT INTO report_batch_schedule_audit (
                     audit_id, schedule_id, action, actor, correlation_id,
                     changes_json, created_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    record.audit_id,
-                    record.schedule_id,
-                    record.action,
-                    record.actor,
-                    record.correlation_id,
-                    json.dumps(record.changes),
-                    record.created_at.isoformat(),
-                ),
-            )
-        return record
+            (
+                record.audit_id,
+                record.schedule_id,
+                record.action,
+                record.actor,
+                record.correlation_id,
+                json.dumps(record.changes),
+                record.created_at.isoformat(),
+            ),
+        )
 
     def list_schedule_audit(self, schedule_id: str) -> "list[BatchScheduleAuditRecord]":
         with self._connect() as connection:
