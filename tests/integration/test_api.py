@@ -319,14 +319,24 @@ def test_integration_capabilities_records_bounded_supportability_metric():
 
     assert capabilities_response.status_code == 200
     assert metrics_response.status_code == 200
-    metrics_text = metrics_response.text
-    assert "lotus_report_evidence_surface_supportability_total" in metrics_text
-    assert 'freshness_bucket="current"' in metrics_text
-    assert 'reason="evidence_surface_ready"' in metrics_text
-    assert 'state="ready"' in metrics_text
-    assert "portfolio_id" not in metrics_text
-    assert "client_id" not in metrics_text
-    assert "tenant_id" not in metrics_text
+    # The boundedness invariant belongs to the supportability metric itself, so the
+    # identifier assertions are scoped to its sample lines. Asserting over the whole
+    # exposition was order-dependent: once another test exercises a portfolio route,
+    # the HTTP instrumentator's handler label legitimately carries the route template
+    # "/reports/portfolios/{portfolio_id}/..." - a bounded template, not a leak.
+    supportability_lines = [
+        line
+        for line in metrics_response.text.splitlines()
+        if line.startswith("lotus_report_evidence_surface_supportability_total")
+    ]
+    assert supportability_lines
+    supportability_text = "\n".join(supportability_lines)
+    assert 'freshness_bucket="current"' in supportability_text
+    assert 'reason="evidence_surface_ready"' in supportability_text
+    assert 'state="ready"' in supportability_text
+    assert "portfolio_id" not in supportability_text
+    assert "client_id" not in supportability_text
+    assert "tenant_id" not in supportability_text
 
 
 def test_integration_capabilities_camel_case_params_do_not_override_context():
