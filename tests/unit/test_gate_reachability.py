@@ -178,22 +178,15 @@ def _workflow_run_commands(workflow_path: Path) -> list[str]:
     return commands
 
 
-def _workflow_invoked_targets() -> set[str]:
+def _workflow_invoked_targets(workflow_path: Path) -> set[str]:
     invoked: set[str] = set()
-    workflow_files = [WORKFLOWS_DIR / name for name in BLOCKING_WORKFLOWS]
-    missing = [path.name for path in workflow_files if not path.exists()]
-    assert not missing, (
-        f"Blocking workflows are missing: {missing}. If a governed lane was renamed, update "
-        "BLOCKING_WORKFLOWS - with the old name gone this check would silently assert nothing."
-    )
-    for workflow in workflow_files:
-        for command in _workflow_run_commands(workflow):
-            for line in command.splitlines():
-                stripped = line.lstrip()
-                if stripped.startswith("#"):
-                    # A shell-commented line inside a live run block never executes.
-                    continue
-                invoked.update(_WORKFLOW_MAKE.findall(stripped))
+    for command in _workflow_run_commands(workflow_path):
+        for line in command.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                # A shell-commented line inside a live run block never executes.
+                continue
+            invoked.update(_WORKFLOW_MAKE.findall(stripped))
     return invoked
 
 
@@ -218,12 +211,12 @@ def _makefile_blocks() -> dict[str, str]:
     return blocks
 
 
-def _workflow_reachable_targets() -> set[str]:
-    """Targets some workflow executes: directly, via prerequisites, or via $(MAKE) recipes."""
+def _workflow_reachable_targets(workflow_path: Path) -> set[str]:
+    """Targets one workflow executes: directly, via prerequisites, or via $(MAKE) recipes."""
 
     blocks = _makefile_blocks()
     reachable: set[str] = set()
-    frontier = list(_workflow_invoked_targets())
+    frontier = list(_workflow_invoked_targets(workflow_path))
     while frontier:
         target = frontier.pop()
         if target in reachable:
@@ -250,15 +243,21 @@ def test_every_declared_gate_is_executed_by_some_workflow() -> None:
     """
 
     declared = _declared_gate_targets()
-    workflow_reachable = _workflow_reachable_targets()
 
-    assert workflow_reachable, (
-        "No make targets are invoked by any workflow; this check would assert nothing."
-    )
-
-    dead = sorted(name for name in declared if name not in workflow_reachable)
-    assert dead == [], (
-        "These gate targets are declared in the Makefile, but no workflow executes them directly "
-        f"or transitively, so they never run in CI whatever the `check`/`ci` lanes say: {dead}. "
-        "Wire each into a workflow lane (or a target a workflow runs), or delete it. See #187."
-    )
+    for workflow_name in BLOCKING_WORKFLOWS:
+        workflow_path = WORKFLOWS_DIR / workflow_name
+        assert workflow_path.exists(), (
+            f"Blocking workflow {workflow_name} is missing. If a governed lane was renamed, "
+            "update BLOCKING_WORKFLOWS - with the old name gone this check asserts nothing."
+        )
+        reachable = _workflow_reachable_targets(workflow_path)
+        assert reachable, (
+            f"{workflow_name} invokes no make targets; this check would assert nothing."
+        )
+        dead = sorted(name for name in declared if name not in reachable)
+        assert dead == [], (
+            f"These gate targets are declared in the Makefile, but {workflow_name} does not "
+            f"execute them directly or transitively: {dead}. Both governed lanes must run every "
+            "gate - one lane alone allows either unvalidated merges or an unvalidated exact "
+            "merged revision. See #187."
+        )
