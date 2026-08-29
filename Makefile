@@ -76,6 +76,10 @@ security-audit:
 
 check: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate test
 
+# Direct `make ci` documents a caller-owned isolated database (README, repository
+# context); mark it so the integration-test session trusts the given URL instead of
+# provisioning a nested database or demanding CREATEDB (issue #179).
+ci: export REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED = true
 ci: lint typecheck openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
 
 ci-local:
