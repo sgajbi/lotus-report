@@ -8,7 +8,8 @@ import secrets
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import psycopg
@@ -103,6 +104,27 @@ def _drop_database(database: IsolatedCiDatabase) -> None:
             cursor.execute(
                 sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(database.database_name))
             )
+
+
+@contextmanager
+def provision_isolated_database(source_conninfo: str) -> Iterator[IsolatedCiDatabase]:
+    """Create a helper-owned database for the caller's lifetime, dropping it afterwards.
+
+    The database name is derived from the source name plus a random token, so it can
+    never be the product database the local worker containers write to - the same
+    isolation `make ci-local` uses, packaged for the integration-test session
+    (issue #179).
+    """
+
+    database = build_isolated_ci_database(
+        source_conninfo,
+        token=secrets.token_hex(_TOKEN_LENGTH // 2),
+    )
+    _create_database(database)
+    try:
+        yield database
+    finally:
+        _drop_database(database)
 
 
 def run_isolated_ci(

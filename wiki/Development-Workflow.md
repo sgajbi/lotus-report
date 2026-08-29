@@ -33,3 +33,18 @@
   closure manifests, not as a local-only backlog
 - include evidence, expected direction, acceptance criteria, duplicate-search proof, and validation
   proof in issue-discovery findings
+
+## Running tests while the local product stack is up
+
+Every way of running the integration suite is safe alongside `docker compose up`:
+
+- `pytest tests/integration` (and `make test-integration`, `make ci-local`) never touch the
+  product database. When `REPORT_JOB_LEDGER_DATABASE_URL` names a PostgreSQL server, the test
+  session provisions an ephemeral `lotus_report_ci_<token>` database on that server, points the
+  suite at it, and drops it at session end (`tests/integration/conftest.py`). The batch worker,
+  job worker, and scheduler containers write only to `lotus_report`, so they can neither corrupt a
+  test run nor be corrupted by one.
+- Cleanup is symmetric: dropping the ephemeral test database cannot remove the product runtime,
+  and `docker compose down` on the product stack cannot remove a test database mid-run beyond
+  taking the whole server down with it.
+- With `REPORT_JOB_LEDGER_DATABASE_URL` unset, the PostgreSQL-backed integration tests skip.
