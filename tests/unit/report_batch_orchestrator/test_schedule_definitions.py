@@ -768,6 +768,26 @@ def test_a_failing_stored_schedule_does_not_abort_the_pass() -> None:
     assert "rbsc_broken" in result.skipped_schedule_ids
     assert [entry.schedule_id for entry in result.materialized] == ["rbsc_healthy"]
 
+    # Infrastructure faults are not properties of one schedule: they propagate
+    # and fail the pass loudly instead of masquerading as ordinary skips.
+    class _InfraDownLedger:
+        def create_batch(self, *, request, caller_context, idempotency_key):
+            raise RuntimeError("postgres unavailable")
+
+    infra_scheduler = ReportBatchScheduler(
+        batch_ledger=_InfraDownLedger(),
+        portfolio_source=_Portfolios(),
+        stored_schedule_source=_StoredSource(),
+    )
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            infra_scheduler.run_due_schedules(
+                config=config,
+                caller_context=_caller(),
+                evaluation_date=date(2026, 9, 30),
+            )
+        )
+
 
 def test_scheduler_downtime_backfills_every_missed_period(tmp_path: Path) -> None:
     """A monthly schedule whose daemon restarts on September 1 owes July 31 AND
