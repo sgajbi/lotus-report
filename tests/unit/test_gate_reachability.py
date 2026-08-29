@@ -166,7 +166,12 @@ def _workflow_run_commands(workflow_path: Path) -> list[str]:
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     commands: list[str] = []
     for job in (workflow.get("jobs") or {}).values():
+        if "if" in job:
+            # A conditioned job is conditional execution, and conditional is not enforced.
+            continue
         for step in job.get("steps") or []:
+            if "if" in step:
+                continue
             run = step.get("run")
             if isinstance(run, str):
                 commands.append(run)
