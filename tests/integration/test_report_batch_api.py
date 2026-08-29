@@ -306,10 +306,11 @@ class _PortfolioSource:
 
 
 class _SchedulerForApi:
-    def __init__(self, ledger):
+    def __init__(self, ledger, stored_schedule_source=None):
         self._scheduler = ReportBatchScheduler(
             batch_ledger=ledger,
             portfolio_source=_PortfolioSource(),
+            stored_schedule_source=stored_schedule_source,
         )
 
     async def run_due_schedules(self, **kwargs):
@@ -1907,11 +1908,12 @@ def test_run_due_materializes_a_stored_schedule_with_lineage(tmp_path):
     from app.routers.report_batches import schedule_definition_service_dependency
 
     client, ledger = _client(tmp_path)
+    definition_service = ScheduleDefinitionService(ledger)
     app.dependency_overrides[get_report_batch_scheduler_config] = _scheduler_config
-    app.dependency_overrides[get_report_batch_scheduler] = lambda: _SchedulerForApi(ledger)
-    app.dependency_overrides[schedule_definition_service_dependency] = lambda: (
-        ScheduleDefinitionService(ledger)
+    app.dependency_overrides[get_report_batch_scheduler] = lambda: _SchedulerForApi(
+        ledger, stored_schedule_source=definition_service
     )
+    app.dependency_overrides[schedule_definition_service_dependency] = lambda: definition_service
     try:
         created = client.post(
             "/reports/batch-schedules",
@@ -1949,6 +1951,29 @@ def test_run_due_materializes_a_stored_schedule_with_lineage(tmp_path):
         ]
         assert len(rerun_entries) == 1
         assert rerun_entries[0]["batch_id"] == stored_runs[0]["batch_id"]
+
+        # Patching content after the period materialized must not mint a second
+        # batch for the same cycle: stored schedules carry a stable cycle identity,
+        # and the change applies from the next period.
+        client.patch(
+            f"/reports/batch-schedules/{schedule_id}",
+            headers=_headers(),
+            json={"reporting_currency": "SGD"},
+        )
+        patched_rerun = client.post(
+            "/reports/batch-schedules:run-due",
+            json={"pass_sequence": 15, "evaluation_date": next_run},
+            headers=_headers("stored-schedule-patched-rerun"),
+        )
+        assert patched_rerun.status_code == 200
+        # One cycle, one batch: the already-materialized period is reported as
+        # skipped and nothing new is minted; the new content applies next period.
+        assert [
+            entry
+            for entry in patched_rerun.json()["materialized"]
+            if entry["schedule_id"] == schedule_id
+        ] == []
+        assert schedule_id in patched_rerun.json()["skipped_schedule_ids"]
 
         before_due = client.post(
             "/reports/batch-schedules:run-due",

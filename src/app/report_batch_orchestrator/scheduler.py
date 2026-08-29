@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.config import Settings, settings
 from app.report_batch_orchestrator.contracts import BatchFrequency, BatchSelectorMode
+from app.report_batch_orchestrator.ledger import BatchIdempotencyConflictError
 from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     BatchCycleRequest,
@@ -44,6 +45,17 @@ class BatchScheduleManifestEntry(BaseModel):
 class BatchScheduleDefinition(BaseModel):
     schedule_id: str = Field(..., min_length=1)
     enabled: bool = True
+    stable_cycle_identity: bool = Field(
+        False,
+        description=(
+            "When true, the scheduled-batch idempotency identity is the schedule id "
+            "alone, so one cycle yields exactly one batch across content updates. "
+            "Stored definitions set this: patching a schedule after its period "
+            "already materialized must converge on the existing batch, with the new "
+            "content applying from the next cycle. Configuration schedules keep the "
+            "content-hash identity."
+        ),
+    )
     selector_mode: BatchSelectorMode = "explicit_portfolio_list"
     frequency: BatchFrequency
     as_of_date: date
@@ -500,25 +512,52 @@ def batch_scheduler_caller_context(
     )
 
 
+class StoredScheduleSource(Protocol):
+    """Provider of due stored schedule definitions for one scheduler scope."""
+
+    def due_definitions_for_scheduler(
+        self,
+        *,
+        tenant_id: str,
+        region: str,
+        booking_center_code: str | None,
+        today: date,
+    ) -> list[BatchScheduleDefinition]: ...
+
+
 class ReportBatchScheduler:
     def __init__(
         self,
         *,
         batch_ledger: BatchScheduleLedger,
         portfolio_source: CorePortfolioSource,
+        stored_schedule_source: StoredScheduleSource | None = None,
     ) -> None:
         self._batch_ledger = batch_ledger
         self._portfolio_source = portfolio_source
+        self._stored_schedule_source = stored_schedule_source
 
     async def run_due_schedules(
         self,
         *,
         config: BatchSchedulerConfig,
         caller_context: ReportCallerContext,
+        evaluation_date: date | None = None,
     ) -> BatchSchedulerRunResult:
         materialized: list[BatchSchedulerMaterialization] = []
         skipped: list[str] = []
         enabled_schedules = [schedule for schedule in config.schedules if schedule.enabled]
+        if self._stored_schedule_source is not None:
+            # Stored definitions join every pass - the daemon loop included, not just
+            # the operator-triggered HTTP route - under the scheduler's full scope.
+            enabled_schedules.extend(
+                self._stored_schedule_source.due_definitions_for_scheduler(
+                    tenant_id=config.tenant_id,
+                    region=config.region,
+                    booking_center_code=config.booking_center_code,
+                    today=evaluation_date or date.today(),
+                )
+            )
 
         for schedule in enabled_schedules:
             candidates = await self._resolve_candidates(
@@ -549,11 +588,20 @@ class ReportBatchScheduler:
                 cycle=cycle,
                 selector_identity=_selector_identity(schedule, portfolio_ids),
             )
-            batch = self._batch_ledger.create_batch(
-                request=request,
-                caller_context=caller_context,
-                idempotency_key=idempotency_key,
-            )
+            try:
+                batch = self._batch_ledger.create_batch(
+                    request=request,
+                    caller_context=caller_context,
+                    idempotency_key=idempotency_key,
+                )
+            except BatchIdempotencyConflictError:
+                if not schedule.stable_cycle_identity:
+                    raise
+                # This cycle already materialized under the schedule's earlier
+                # content. One cycle yields one batch: the updated definition
+                # applies from the next period, and this pass mints nothing.
+                skipped.append(schedule.schedule_id)
+                continue
             materialized.append(_materialization(schedule, batch, idempotency_key))
 
         return BatchSchedulerRunResult(
@@ -750,6 +798,10 @@ def _batch_options(schedule: BatchScheduleDefinition, cycle: Any) -> dict[str, A
 
 
 def _selector_identity(schedule: BatchScheduleDefinition, portfolio_ids: list[str]) -> str:
+    if schedule.stable_cycle_identity:
+        # One idempotency identity per schedule and cycle: content changes between
+        # runs must not mint a second batch for a period that already materialized.
+        return _stable_short_hash({"schedule_id": schedule.schedule_id}, length=32)
     return _stable_short_hash(
         {
             "schedule_id": schedule.schedule_id,

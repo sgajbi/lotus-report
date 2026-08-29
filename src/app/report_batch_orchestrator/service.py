@@ -71,6 +71,7 @@ def get_report_batch_runtime() -> ReportBatchRuntime:
 def get_report_batch_scheduler() -> ReportBatchScheduler:
     return ReportBatchScheduler(
         batch_ledger=get_report_batch_ledger(),
+        stored_schedule_source=get_schedule_definition_service(),
         portfolio_source=CoreQueryClient(
             base_url=settings.core_query_base_url,
             timeout_seconds=settings.upstream_timeout_seconds,

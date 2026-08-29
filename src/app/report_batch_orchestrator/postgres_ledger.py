@@ -880,12 +880,25 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
         return [str(row["batch_id"]) for row in rows]
 
     def save_schedule_definition(self, schedule: "StoredBatchSchedule") -> "StoredBatchSchedule":
-        from app.report_batch_orchestrator.schedule_definitions import StoredBatchSchedule
-
-        assert isinstance(schedule, StoredBatchSchedule)
         with self._connect() as connection:
-            connection.execute(
-                """
+            self._write_schedule_definition(connection, schedule)
+        return schedule
+
+    def save_schedule_definition_with_audit(
+        self,
+        schedule: "StoredBatchSchedule",
+        record: "BatchScheduleAuditRecord",
+    ) -> "StoredBatchSchedule":
+        """Definition and audit event in one transaction - a schedule must never
+        exist without the audit record that explains it."""
+        with self._connect() as connection:
+            self._write_schedule_definition(connection, schedule)
+            self._write_schedule_audit(connection, record)
+        return schedule
+
+    def _write_schedule_definition(self, connection: Any, schedule: "StoredBatchSchedule") -> None:
+        connection.execute(
+            """
                 INSERT INTO report_batch_schedule_definition (
                     schedule_id, tenant_id, region, booking_center_code, owner_actor,
                     enabled, cadence, portfolio_ids_json, requested_output_formats_json,
@@ -902,24 +915,23 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                     max_batch_size = EXCLUDED.max_batch_size,
                     updated_at = EXCLUDED.updated_at
                 """,
-                (
-                    schedule.schedule_id,
-                    schedule.tenant_id,
-                    schedule.region,
-                    schedule.booking_center_code,
-                    schedule.owner_actor,
-                    schedule.enabled,
-                    schedule.cadence,
-                    Jsonb(schedule.portfolio_ids),
-                    Jsonb(schedule.requested_output_formats),
-                    schedule.reporting_currency,
-                    Jsonb(schedule.options),
-                    schedule.max_batch_size,
-                    schedule.created_at,
-                    schedule.updated_at,
-                ),
-            )
-        return schedule
+            (
+                schedule.schedule_id,
+                schedule.tenant_id,
+                schedule.region,
+                schedule.booking_center_code,
+                schedule.owner_actor,
+                schedule.enabled,
+                schedule.cadence,
+                Jsonb(schedule.portfolio_ids),
+                Jsonb(schedule.requested_output_formats),
+                schedule.reporting_currency,
+                Jsonb(schedule.options),
+                schedule.max_batch_size,
+                schedule.created_at,
+                schedule.updated_at,
+            ),
+        )
 
     def get_schedule_definition(self, schedule_id: str) -> "StoredBatchSchedule | None":
         with self._connect() as connection:
@@ -946,29 +958,29 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
     def append_schedule_audit(
         self, record: "BatchScheduleAuditRecord"
     ) -> "BatchScheduleAuditRecord":
-        from app.report_batch_orchestrator.schedule_definitions import BatchScheduleAuditRecord
-
-        assert isinstance(record, BatchScheduleAuditRecord)
         with self._connect() as connection:
-            connection.execute(
-                """
+            self._write_schedule_audit(connection, record)
+        return record
+
+    def _write_schedule_audit(self, connection: Any, record: "BatchScheduleAuditRecord") -> None:
+        connection.execute(
+            """
                 INSERT INTO report_batch_schedule_audit (
                     audit_id, schedule_id, action, actor, correlation_id,
                     changes_json, created_at
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (
-                    record.audit_id,
-                    record.schedule_id,
-                    record.action,
-                    record.actor,
-                    record.correlation_id,
-                    Jsonb(record.changes),
-                    record.created_at,
-                ),
-            )
-        return record
+            (
+                record.audit_id,
+                record.schedule_id,
+                record.action,
+                record.actor,
+                record.correlation_id,
+                Jsonb(record.changes),
+                record.created_at,
+            ),
+        )
 
     def list_schedule_audit(self, schedule_id: str) -> "list[BatchScheduleAuditRecord]":
         with self._connect() as connection:

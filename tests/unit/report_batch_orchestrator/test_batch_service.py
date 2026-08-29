@@ -162,9 +162,17 @@ def test_get_report_batch_scheduler_constructs_configured_portfolio_source(monke
     scheduler = batch_service.get_report_batch_scheduler()
 
     assert isinstance(scheduler, _DependencyCapture)
-    assert scheduler.kwargs == {
-        "batch_ledger": batch_ledger,
-        "portfolio_source": captured["portfolio_source"],
+    from app.report_batch_orchestrator.schedule_definitions import ScheduleDefinitionService
+
+    assert scheduler.kwargs["batch_ledger"] is batch_ledger
+    assert scheduler.kwargs["portfolio_source"] is captured["portfolio_source"]
+    # The daemon and the HTTP route share one scheduler construction, so stored
+    # definitions materialize on every pass - not only operator-triggered ones.
+    assert isinstance(scheduler.kwargs["stored_schedule_source"], ScheduleDefinitionService)
+    assert set(scheduler.kwargs) == {
+        "batch_ledger",
+        "portfolio_source",
+        "stored_schedule_source",
     }
     assert captured["portfolio_source"].kwargs == {
         "base_url": "https://core-query.local",

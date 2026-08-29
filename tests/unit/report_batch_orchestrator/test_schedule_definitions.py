@@ -246,7 +246,10 @@ def test_due_definitions_bridge_into_the_scheduler_shape(tmp_path: Path) -> None
     )
 
     at_quarter_end = service.due_definitions_for_scheduler(
-        tenant_id="tenant-sg", today=date(2026, 9, 30)
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        today=date(2026, 9, 30),
     )
     assert [definition.schedule_id for definition in at_quarter_end] == [schedule.schedule_id]
     definition = at_quarter_end[0]
@@ -256,13 +259,33 @@ def test_due_definitions_bridge_into_the_scheduler_shape(tmp_path: Path) -> None
     assert definition.portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
 
     before_due = service.due_definitions_for_scheduler(
-        tenant_id="tenant-sg", today=date(2026, 8, 30)
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        today=date(2026, 8, 30),
     )
     assert before_due == []
     foreign_tenant = service.due_definitions_for_scheduler(
-        tenant_id="tenant-uk", today=date(2026, 9, 30)
+        tenant_id="tenant-uk",
+        region="APAC",
+        booking_center_code="SG",
+        today=date(2026, 9, 30),
     )
     assert foreign_tenant == []
+    foreign_region = service.due_definitions_for_scheduler(
+        tenant_id="tenant-sg",
+        region="EMEA",
+        booking_center_code="SG",
+        today=date(2026, 9, 30),
+    )
+    assert foreign_region == []
+    foreign_booking_center = service.due_definitions_for_scheduler(
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="HK",
+        today=date(2026, 9, 30),
+    )
+    assert foreign_booking_center == []
 
 
 def test_stored_schedule_to_definition_validates_through_the_scheduler_model(
@@ -278,3 +301,159 @@ def test_stored_schedule_to_definition_validates_through_the_scheduler_model(
     assert definition.frequency == "monthly"
     assert definition.requested_output_formats == ["pdf"]
     assert definition.max_batch_size == schedule.max_batch_size
+
+
+def test_create_rejects_more_portfolios_than_max_batch_size(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    with pytest.raises(ScheduleDefinitionError) as excinfo:
+        service.create_schedule(
+            request=_create_request(portfolio_ids=["PB_1", "PB_2"], max_batch_size=1),
+            caller_context=_caller(),
+            now=NOW,
+        )
+    assert excinfo.value.code == "schedule_exceeds_max_batch_size"
+
+
+def test_update_rejects_shrinking_the_bound_below_the_portfolio_count(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    schedule = service.create_schedule(
+        request=_create_request(portfolio_ids=["PB_1", "PB_2"], max_batch_size=5),
+        caller_context=_caller(),
+        now=NOW,
+    )
+    with pytest.raises(ScheduleDefinitionError) as excinfo:
+        service.update_schedule(
+            schedule_id=schedule.schedule_id,
+            request=BatchScheduleDefinitionUpdateRequest(max_batch_size=1),
+            caller_context=_caller(),
+            now=NOW,
+        )
+    assert excinfo.value.code == "schedule_exceeds_max_batch_size"
+
+
+def test_an_explicit_null_clears_the_reporting_currency(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    schedule = service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    assert schedule.reporting_currency == "USD"
+
+    cleared = service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest.model_validate({"reporting_currency": None}),
+        caller_context=_caller(),
+        now=NOW,
+    )
+    assert cleared.reporting_currency is None
+
+    omitted = service.update_schedule(
+        schedule_id=schedule.schedule_id,
+        request=BatchScheduleDefinitionUpdateRequest(),
+        caller_context=_caller(),
+        now=NOW,
+    )
+    assert omitted.reporting_currency is None
+    audit = service.list_audit(schedule_id=schedule.schedule_id, caller_context=_caller())
+    assert [record.action for record in audit] == ["created", "updated"]
+
+
+def test_definition_and_audit_commit_atomically(tmp_path: Path) -> None:
+    """A schedule must never exist without the audit record that explains it."""
+
+    ledger = ReportBatchLedger(tmp_path / "schedules.sqlite3")
+    service = ScheduleDefinitionService(ledger)
+
+    def _fail(connection, record):
+        raise RuntimeError("audit write failed")
+
+    original = ledger._write_schedule_audit
+    ledger._write_schedule_audit = _fail
+    try:
+        with pytest.raises(RuntimeError):
+            service.create_schedule(request=_create_request(), caller_context=_caller(), now=NOW)
+    finally:
+        ledger._write_schedule_audit = original
+
+    assert ledger.list_schedule_definitions("tenant-sg") == []
+
+
+def test_stored_definitions_fold_into_the_scheduler_pass_itself() -> None:
+    """The daemon loop and the HTTP route share one materialization path: the
+    scheduler folds due stored definitions on every pass (review finding on #197 -
+    HTTP-only folding left API-created schedules dead in the deployed daemon)."""
+
+    import asyncio
+
+    from app.report_batch_orchestrator.scheduler import (
+        BatchSchedulerConfig,
+        ReportBatchScheduler,
+    )
+
+    captured: dict = {}
+
+    class _LedgerSpy:
+        def create_batch(self, *, request, caller_context, idempotency_key):
+            captured["request"] = request
+            captured["idempotency_key"] = idempotency_key
+
+            class _Batch:
+                batch_id = "rbch_daemon"
+                status = "materialized"
+                item_count = len(request.portfolio_ids)
+
+            return _Batch()
+
+    class _Portfolios:
+        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+            return 200, {"portfolio_id": portfolio_id, "status": "active"}
+
+    class _StoredSource:
+        def due_definitions_for_scheduler(self, *, tenant_id, region, booking_center_code, today):
+            captured["scope"] = (tenant_id, region, booking_center_code, today)
+            return [stored_schedule_to_definition(_stored_schedule(), as_of_date=date(2026, 9, 30))]
+
+    def _stored_schedule():
+        from app.report_batch_orchestrator.schedule_definitions import (
+            StoredBatchSchedule,
+        )
+
+        return StoredBatchSchedule(
+            schedule_id="rbsc_daemon",
+            tenant_id="tenant-sg",
+            region="APAC",
+            booking_center_code="SG",
+            owner_actor="advisor-123",
+            enabled=True,
+            cadence="quarter_end",
+            portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+            requested_output_formats=["pdf"],
+            reporting_currency="USD",
+            options={"sections": ["OVERVIEW", "PERFORMANCE"]},
+            max_batch_size=10,
+            created_at=NOW,
+            updated_at=None,
+        )
+
+    scheduler = ReportBatchScheduler(
+        batch_ledger=_LedgerSpy(),
+        portfolio_source=_Portfolios(),
+        stored_schedule_source=_StoredSource(),
+    )
+    config = BatchSchedulerConfig(
+        scheduler_id="daemon-test",
+        interval_seconds=60.0,
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="scheduler",
+        schedules=(),
+    )
+    result = asyncio.run(
+        scheduler.run_due_schedules(
+            config=config,
+            caller_context=_caller(),
+            evaluation_date=date(2026, 9, 30),
+        )
+    )
+
+    assert captured["scope"] == ("tenant-sg", "APAC", "SG", date(2026, 9, 30))
+    assert [entry.schedule_id for entry in result.materialized] == ["rbsc_daemon"]
+    assert captured["request"].options["batch_schedule_id"] == "rbsc_daemon"

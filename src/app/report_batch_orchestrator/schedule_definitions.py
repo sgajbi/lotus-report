@@ -20,6 +20,14 @@ Deliberate boundaries:
 - A schedule becomes due only for period ends on or after its creation date:
   creating a quarter-end pack in February must not retroactively materialize the
   December pack.
+- Portfolio-scope truth is owned upstream of this module. Report cannot verify a
+  portfolio's authoritative tenant today: lotus-core's discovery has no tenant
+  concept (issue #177, blocked on lotus-core#798), and manual batch orders carry
+  the same trust model - their candidate scope is validated by the Gateway's
+  trusted-scope contract before the request reaches Report. Schedule creation
+  sits behind the same front door, so portfolio-ownership admission belongs to
+  the Gateway proxy step of issue #167 and to the #177 boundary work, not to a
+  local check that would have nothing truthful to compare against.
 - Recurrence needs no run-tracking state. The scheduler's deterministic
   cycle-identity idempotency key already makes repeated run-due calls for the
   same period converge on the same batch, so "has this cycle run?" is answered
@@ -232,6 +240,12 @@ class ScheduleDefinitionStore(Protocol):
 
     def save_schedule_definition(self, schedule: StoredBatchSchedule) -> StoredBatchSchedule: ...
 
+    def save_schedule_definition_with_audit(
+        self,
+        schedule: StoredBatchSchedule,
+        record: BatchScheduleAuditRecord,
+    ) -> StoredBatchSchedule: ...
+
     def get_schedule_definition(self, schedule_id: str) -> StoredBatchSchedule | None: ...
 
     def list_schedule_definitions(self, tenant_id: str) -> list[StoredBatchSchedule]: ...
@@ -259,6 +273,15 @@ def _require_scoped_caller(caller_context: ReportCallerContext) -> None:
         raise ScheduleDefinitionError(
             "schedule_scope_unresolved",
             "Schedule definition requires a caller context with tenant and region.",
+        )
+
+
+def _validate_portfolio_bound(schedule: StoredBatchSchedule) -> None:
+    if len(schedule.portfolio_ids) > schedule.max_batch_size:
+        raise ScheduleDefinitionError(
+            "schedule_exceeds_max_batch_size",
+            "The schedule lists more portfolios than max_batch_size allows; it would "
+            "fail with batch_size_exceeded on every due date.",
         )
 
 
@@ -319,19 +342,19 @@ class ScheduleDefinitionService:
             updated_at=None,
         )
         _validate_ordering(schedule)
-        saved = self._store.save_schedule_definition(schedule)
-        self._store.append_schedule_audit(
+        _validate_portfolio_bound(schedule)
+        return self._store.save_schedule_definition_with_audit(
+            schedule,
             BatchScheduleAuditRecord(
                 audit_id=f"rbsa_{uuid4().hex}",
-                schedule_id=saved.schedule_id,
+                schedule_id=schedule.schedule_id,
                 action="created",
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
-                changes={"definition": saved.model_dump(mode="json")},
+                changes={"definition": schedule.model_dump(mode="json")},
                 created_at=now,
-            )
+            ),
         )
-        return saved
 
     def get_schedule(
         self,
@@ -379,7 +402,12 @@ class ScheduleDefinitionService:
         changes: dict[str, Any] = {}
         for field in _MUTABLE_FIELDS:
             value = getattr(request, field)
-            if value is None:
+            if field == "reporting_currency":
+                # None is a meaningful value here (portfolio-default currency), so
+                # only an omitted field is skipped - an explicit null clears it.
+                if field not in request.model_fields_set:
+                    continue
+            elif value is None:
                 continue
             if field == "portfolio_ids":
                 value = list(dict.fromkeys(value))
@@ -393,40 +421,51 @@ class ScheduleDefinitionService:
             return existing
         updated = existing.model_copy(update={**updates, "updated_at": now})
         _validate_ordering(updated)
-        saved = self._store.save_schedule_definition(updated)
+        _validate_portfolio_bound(updated)
         if set(updates) == {"enabled"}:
             action: ScheduleAuditAction = "enabled" if updates["enabled"] else "disabled"
         else:
             action = "updated"
-        self._store.append_schedule_audit(
+        return self._store.save_schedule_definition_with_audit(
+            updated,
             BatchScheduleAuditRecord(
                 audit_id=f"rbsa_{uuid4().hex}",
-                schedule_id=saved.schedule_id,
+                schedule_id=updated.schedule_id,
                 action=action,
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
                 changes=changes,
                 created_at=now,
-            )
+            ),
         )
-        return saved
 
     def due_definitions_for_scheduler(
         self,
         *,
         tenant_id: str,
+        region: str,
+        booking_center_code: str | None,
         today: date,
     ) -> list[BatchScheduleDefinition]:
-        """Enabled stored schedules of this tenant that are due, as scheduler definitions.
+        """Enabled stored schedules due under this scheduler's full scope.
 
-        The scheduler process runs under one configured tenant identity; a stored
-        schedule materializes only through a scheduler of its own tenant, so the
-        stored tenant and the execution identity can never diverge silently.
+        The scheduler process runs under one configured identity; a stored schedule
+        materializes only through a scheduler whose tenant AND region match its
+        binding (and booking centre when both sides carry one), so an EMEA-created
+        definition can never run as an APAC batch under APAC identity.
         """
 
         definitions: list[BatchScheduleDefinition] = []
         for schedule in self._store.list_schedule_definitions(tenant_id):
             if not schedule.enabled:
+                continue
+            if schedule.region != region:
+                continue
+            if (
+                schedule.booking_center_code is not None
+                and booking_center_code is not None
+                and schedule.booking_center_code != booking_center_code
+            ):
                 continue
             as_of = due_as_of_date(
                 schedule.cadence,
@@ -455,6 +494,7 @@ def stored_schedule_to_definition(
     return BatchScheduleDefinition(
         schedule_id=schedule.schedule_id,
         enabled=schedule.enabled,
+        stable_cycle_identity=True,
         selector_mode="explicit_portfolio_list",
         frequency=SCHEDULE_CADENCE_FREQUENCY[schedule.cadence],
         as_of_date=as_of_date,

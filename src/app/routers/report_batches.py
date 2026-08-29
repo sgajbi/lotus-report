@@ -1,4 +1,3 @@
-from dataclasses import replace
 from datetime import UTC, date, datetime
 from time import perf_counter
 from typing import Annotated, Any, Protocol
@@ -154,6 +153,7 @@ class ReportBatchSchedulerPort(Protocol):
         *,
         config: BatchSchedulerConfig,
         caller_context: ReportCallerContext,
+        evaluation_date: date | None = None,
     ) -> Any: ...
 
 
@@ -627,7 +627,6 @@ async def run_due_report_batch_schedules(
     request: BatchSchedulerRunRequest,
     scheduler: ReportBatchSchedulerPort = Depends(get_report_batch_scheduler),
     config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
-    definition_service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
     _operator_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchSchedulerRunResponse:
     started_at = perf_counter()
@@ -635,23 +634,13 @@ async def run_due_report_batch_schedules(
         config,
         pass_sequence=request.pass_sequence,
     )
-    # Stored definitions ride the same scheduler loop as configured schedules: same
-    # candidate resolution, cycle materialization, deterministic idempotency, and
-    # batch_schedule_id lineage. A stored schedule materializes only through a
-    # scheduler of its own tenant.
-    stored_definitions = definition_service.due_definitions_for_scheduler(
-        tenant_id=config.tenant_id,
-        today=request.evaluation_date or date.today(),
-    )
-    if stored_definitions:
-        config = replace(
-            config,
-            schedules=tuple(config.schedules) + tuple(stored_definitions),
-        )
     try:
+        # Stored definitions are folded in by the scheduler itself, so the daemon
+        # loop and this operator route share one materialization path.
         result = await scheduler.run_due_schedules(
             config=config,
             caller_context=scheduler_context,
+            evaluation_date=request.evaluation_date,
         )
     except BatchScheduleConfigError as exc:
         raise _scheduler_config_error(exc) from exc
