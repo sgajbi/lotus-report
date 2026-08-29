@@ -1435,6 +1435,11 @@ def _batch_from_rows(
         selector_mode=batch_row["selector_mode"],
         tenant_id=str(batch_row["tenant_id"]),
         region=str(batch_row["region"]),
+        booking_center_code=(
+            str(batch_row["booking_center_code"])
+            if batch_row["booking_center_code"] is not None
+            else None
+        ),
         materialized_portfolio_ids=_json_list(batch_row["materialized_portfolio_ids_json"]),
         as_of_date=batch_row["as_of_date"],
         requested_output_formats=_json_list(batch_row["requested_output_formats_json"]),
