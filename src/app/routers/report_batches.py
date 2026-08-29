@@ -829,11 +829,27 @@ async def replay_report_batch_item(
                     "detail"
                 ],
             ) from exc
+        # The metric label must stay bounded: only governed sentinel messages pass
+        # through; anything else - including exception text carrying interpolated
+        # identifiers - collapses to one constant (issue #186).
+        message = str(exc)
         _record_failed_batch_item_replay_metric(
-            failure_category=str(exc) or "batch_item_replay_failed",
+            failure_category=(
+                message
+                if message in GOVERNED_REPLAY_NOT_FOUND_CATEGORIES
+                else "batch_item_replay_failed"
+            ),
             started_at=started_at,
         )
         raise _not_found_error(exc) from exc
+
+
+GOVERNED_REPLAY_NOT_FOUND_CATEGORIES = frozenset(
+    {
+        "report_batch_not_found",
+        "report_batch_item_not_found",
+    }
+)
 
 
 def _record_failed_batch_item_replay_metric(

@@ -8,6 +8,7 @@ from app.report_batch_orchestrator.models import (
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.replay import (
+    DANGLING_LINK_CATEGORY,
     REPLAY_BRANCH_IDEMPOTENT,
     REPLAY_BRANCH_NEW,
     ReportBatchItemReplayService,
@@ -18,6 +19,7 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobLedger,
+    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
 
@@ -705,3 +707,140 @@ def test_replay_branch_predicate_is_the_only_eligibility_rule():
     assert branch_for(_item(status="failed_terminal", retry_eligible=False, **linked)) is None
     # An unlinked item has nothing to replay from, whatever its status.
     assert branch_for(_item(status="waiting_on_report_job", report_job_id=None)) is None
+
+
+class _DanglingLinkJobLedger:
+    """Every lookup raises ReportJobNotFoundError - the linked job was purged."""
+
+    def __init__(self) -> None:
+        self.lookups = 0
+        self.created_jobs = 0
+
+    def get_job(self, job_id: str):
+        self.lookups += 1
+        raise ReportJobNotFoundError(f"report job {job_id} was not found")
+
+    def create_portfolio_review_job(self, **kwargs):
+        self.created_jobs += 1
+        raise AssertionError("A dangling-linked item must never derive a new job.")
+
+
+class _UnavailableJobLedger:
+    """Every lookup raises like an outage - the ledger itself is unreachable."""
+
+    def get_job(self, job_id: str):
+        raise RuntimeError("report job ledger unavailable")
+
+    def create_portfolio_review_job(self, **kwargs):
+        raise AssertionError("An unavailable ledger must never create jobs.")
+
+
+def test_a_succeeded_item_with_a_dangling_link_still_gets_the_replay_contract(tmp_path):
+    """Issue #186 criterion 4a: terminal item + purged linked job -> 409, not 404.
+
+    The item is succeeded, so replay would never act; the refusal is decided by the
+    item's own state and must not depend on the report ledger resolving the link.
+    """
+
+    item = _item(report_job_id="rjob_purged", status="succeeded", retry_eligible=False)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(item)
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_DanglingLinkJobLedger(),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Replay of purged-link item."),
+            caller_context=_caller(),
+            idempotency_key="succeeded-dangling-link",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+    assert batch_ledger.quarantines == []
+    assert batch_ledger.item.status == "succeeded"
+
+
+def test_a_terminal_item_survives_a_report_ledger_outage_with_the_same_409(tmp_path):
+    """Issue #186 criterion 4c: whether a completed item can be refused must not
+    depend on report-ledger availability."""
+
+    item = _item(report_job_id="rjob_any", status="succeeded", retry_eligible=False)
+    batch_ledger = _ReplayLedgerRecordingQuarantine(item)
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_UnavailableJobLedger(),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Replay during ledger outage."),
+            caller_context=_caller(),
+            idempotency_key="succeeded-ledger-outage",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+    assert batch_ledger.quarantines == []
+
+
+def test_an_actionable_item_with_a_dangling_link_is_quarantined_as_such(tmp_path):
+    """Issue #186 criterion 4b: replay would have acted, but the link is dangling.
+
+    The chosen outcome: quarantine under the governed dangling-link category, then the
+    ordinary 409. The item can never be replayed through the API (every retry re-hits
+    the missing job), so leaving it actionable would be a permanent silent trap.
+    """
+
+    item = _item(report_job_id="rjob_purged", status="waiting_on_report_job")
+    batch_ledger = _ReplayLedgerRecordingQuarantine(item)
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_DanglingLinkJobLedger(),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError) as excinfo:
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Replay of dangling-linked item."),
+            caller_context=_caller(),
+            idempotency_key="waiting-dangling-link",
+        )
+
+    assert str(excinfo.value) == "report_batch_item_cannot_be_replayed"
+    assert batch_ledger.quarantines == [
+        {
+            "batch_item_id": "rbit_replay",
+            "error_category": DANGLING_LINK_CATEGORY,
+            "retryable": False,
+        }
+    ]
+
+
+def test_a_ledger_outage_on_an_actionable_item_propagates_and_never_quarantines(tmp_path):
+    """An outage is not a dangling link: the item is not corrupt, the ledger is down.
+
+    Quarantining here would permanently fail healthy work because of a transient
+    infrastructure failure; the outage propagates loudly instead."""
+
+    item = _item(report_job_id="rjob_any", status="waiting_on_report_job")
+    batch_ledger = _ReplayLedgerRecordingQuarantine(item)
+    service = ReportBatchItemReplayService(
+        batch_ledger=batch_ledger,
+        report_job_ledger=_UnavailableJobLedger(),
+    )
+
+    with pytest.raises(RuntimeError):
+        service.replay_item(
+            batch_id="rbch_replay",
+            batch_item_id="rbit_replay",
+            command=BatchItemReplayRequest(reason="Replay during ledger outage."),
+            caller_context=_caller(),
+            idempotency_key="waiting-ledger-outage",
+        )
+
+    assert batch_ledger.quarantines == []

@@ -16,6 +16,7 @@ from app.report_batch_orchestrator.tenant_admission import admit_batch
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
+    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
@@ -30,6 +31,10 @@ from app.reporting_render.replay_service import (
     append_source_event_once,
     assert_replay_eligible,
 )
+
+# A batch item whose report_job_id no longer resolves. The column carries no foreign
+# key, so a purge, ledger restore, or manual cleanup can leave the link dangling.
+DANGLING_LINK_CATEGORY = "batch_item_link_dangling"
 
 # The two branches replay_item can take. _replay_branch_for is the single predicate: branch
 # selection, the source-job loader, and the foreign-link quarantine all derive from it, so a
@@ -255,14 +260,51 @@ class ReportBatchItemReplayService:
         report_job_id = item.report_job_id
         if report_job_id is None:
             return
-        job = self._report_job_ledger.get_job(report_job_id)
+        if branch is None:
+            # Replay would not act on this item whatever the link points at, so the
+            # refusal is decided by the item's own state alone. It must not depend on
+            # the report ledger resolving: a purged link or a ledger outage would turn
+            # the stable 409 into a not-found (issue #186). The foreign-link
+            # observation below is kept, but strictly best-effort.
+            self._observe_terminal_item_link(batch=batch, item=item, report_job_id=report_job_id)
+            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
+
+        try:
+            job = self._report_job_ledger.get_job(report_job_id)
+        except ReportJobNotFoundError:
+            # Replay would have acted, but the link is dangling (the column has no
+            # foreign key, so a purge or ledger restore can orphan it). Every retry
+            # re-hits the missing job, so leaving the item actionable would be a
+            # permanent silent trap: quarantine under the governed category, then the
+            # ordinary refusal. A ledger *outage* is not this case - any other error
+            # propagates loudly and mutates nothing.
+            self._logger.error(
+                "batch_item_link_dangling",
+                extra={
+                    "extra_fields": {
+                        "batch_id": batch.batch_id,
+                        "batch_item_id": item.batch_item_id,
+                        "report_job_id": report_job_id,
+                        "item_status": item.status,
+                        "failure_category": DANGLING_LINK_CATEGORY,
+                        "command": "batch_item_replay",
+                        "quarantined": True,
+                    }
+                },
+            )
+            self._batch_ledger.mark_item_failed(
+                batch_item_id=item.batch_item_id,
+                error_category=DANGLING_LINK_CATEGORY,
+                error_summary=(
+                    "Linked report job no longer exists; replay refused and the item "
+                    "quarantined as a dangling link for operator review."
+                ),
+                retryable=False,
+            )
+            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed") from None
         if job.tenant_id == batch.tenant_id:
             return
 
-        # Observe unconditionally: the corrupt link is a fact regardless of what the caller
-        # asked for, and a terminal item carrying one is the *stronger* signal - the dispatch
-        # that wrote the link already happened, so a report exists against another tenant's
-        # job. Recording only the states we also mutate would hide exactly those.
         self._logger.error(
             "batch_item_tenant_mismatch",
             extra={
@@ -273,13 +315,10 @@ class ReportBatchItemReplayService:
                     "item_status": item.status,
                     "failure_category": TENANT_MISMATCH_CATEGORY,
                     "command": "batch_item_replay",
-                    "quarantined": branch is not None,
+                    "quarantined": True,
                 }
             },
         )
-        if branch is None:
-            # Replay would not have acted on this item, so the refusal must not either.
-            raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
         self._batch_ledger.mark_item_failed(
             batch_item_id=item.batch_item_id,
             error_category=TENANT_MISMATCH_CATEGORY,
@@ -290,6 +329,56 @@ class ReportBatchItemReplayService:
             retryable=False,
         )
         raise InvalidReportJobTransitionError("report_batch_item_cannot_be_replayed")
+
+    def _observe_terminal_item_link(
+        self,
+        *,
+        batch: ReportBatchRecord,
+        item: ReportBatchItemRecord,
+        report_job_id: str,
+    ) -> None:
+        """Best-effort observation of a terminal item's link; never raises.
+
+        A terminal item carrying a foreign link is the *stronger* tenant-mismatch
+        signal - the dispatch that wrote the link already happened, so a report
+        exists against another tenant's job. Recording only the states replay also
+        mutates would hide exactly those. But observation must never gate the
+        refusal: whatever the lookup does - missing job, unreachable ledger - the
+        caller still gets the item-state 409.
+        """
+        try:
+            job = self._report_job_ledger.get_job(report_job_id)
+        except Exception:
+            self._logger.warning(
+                "batch_item_link_unresolvable",
+                extra={
+                    "extra_fields": {
+                        "batch_id": batch.batch_id,
+                        "batch_item_id": item.batch_item_id,
+                        "report_job_id": report_job_id,
+                        "item_status": item.status,
+                        "command": "batch_item_replay",
+                        "quarantined": False,
+                    }
+                },
+            )
+            return
+        if job.tenant_id == batch.tenant_id:
+            return
+        self._logger.error(
+            "batch_item_tenant_mismatch",
+            extra={
+                "extra_fields": {
+                    "batch_id": batch.batch_id,
+                    "batch_item_id": item.batch_item_id,
+                    "report_job_id": report_job_id,
+                    "item_status": item.status,
+                    "failure_category": TENANT_MISMATCH_CATEGORY,
+                    "command": "batch_item_replay",
+                    "quarantined": False,
+                }
+            },
+        )
 
     def _source_job_for_item(self, item: ReportBatchItemRecord) -> ReportJobLedgerRecord:
         if self._replay_branch_for(item) != REPLAY_BRANCH_NEW or not item.report_job_id:
