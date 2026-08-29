@@ -424,3 +424,39 @@ def test_selector_validation_rejects_invalid_materialization_cases(
         )
 
     assert exc_info.value.code == expected_code
+
+
+def test_runnable_scan_round_robins_across_tenants(tmp_path):
+    """Issue #178 review: one backlogged tenant must not monopolize the bounded
+    scan window. Every tenant's oldest batch outranks any tenant's second-oldest."""
+
+    ledger = ReportBatchLedger(tmp_path / "fairness.sqlite3")
+
+    def _create(tenant: str, index: int):
+        caller = _caller().model_copy(
+            update={"tenant_id": tenant, "correlation_id": f"corr-{tenant}-{index}"}
+        )
+        request = _explicit_request(f"PB_{index}")
+        request = request.model_copy(
+            update={
+                "source_candidates": [
+                    candidate.model_copy(update={"tenant_id": tenant})
+                    for candidate in request.source_candidates
+                ]
+            }
+        )
+        return ledger.create_batch(
+            request=request,
+            caller_context=caller,
+            idempotency_key=f"fair-{tenant}-{index}",
+        )
+
+    backlogged = [_create("tenant-busy", index) for index in range(3)]
+    quiet = _create("tenant-quiet", 9)
+
+    scanned = ledger.list_runnable_batch_ids(tenant_ids=["tenant-busy", "tenant-quiet"], limit=2)
+
+    # A pure created_at order would return the busy tenant's two oldest and
+    # starve the quiet tenant; round-robin returns each tenant's oldest first.
+    assert backlogged[0].batch_id in scanned
+    assert quiet.batch_id in scanned
