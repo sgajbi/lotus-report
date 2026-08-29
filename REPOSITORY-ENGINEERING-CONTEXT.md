@@ -107,8 +107,13 @@ Current repository posture:
    single-portfolio batch operation. Batch and item status now compose the linked Report job state
    and expose its source-owned archive document id only after that exact job is archived; delayed,
    failed, missing, and inconsistent links fail closed, while correction/replacement resolution
-   remains owned by Archive metadata. Schedule CRUD, Workbench scheduler-management, and
-   entitlement-certified public scheduler runtime remain future scope,
+   remains owned by Archive metadata. Stored recurring schedule definitions are a governed API
+   surface (POST/GET/PATCH /reports/batch-schedules[/{schedule_id}]): tenant/region/booking-centre
+   fenced, explicit portfolio lists, month-end/quarter-end cadence with a per-cadence effective
+   date, optimistic-revision updates, fingerprint-unique enabled definitions, one stable
+   idempotency identity per schedule and as-of date, bounded missed-period backfill, per-schedule
+   failure containment in the daemon pass, and an insertion-ordered audit trail. Workbench
+   scheduler-management and entitlement-certified public scheduler runtime remain future scope,
 15. RFC-0105 implementation has started with observability structure cleanup, cross-service trace
    propagation, first-wave report metrics, rerender/regenerate controls, and failed-work replay for
    failed retry-eligible report jobs and implementation-backed batch items. Runtime correlation,
