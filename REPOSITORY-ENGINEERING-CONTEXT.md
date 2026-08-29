@@ -402,6 +402,14 @@ Important validation expectations:
    proves which revision it validated. Audit a merge by
    `gh run list --commit <full-sha>`; `--branch main` misses the synthetic dispatch ref.
    The token rule and the dispatcher are both required: either alone is a single point of failure.
+15. Consumed dispatch tags are reclaimed, not retained. At the end of every governed
+   `main-releasability` run, the `reclaim-dispatch-tag` job deletes the exact
+   `main-releasability-<sha>` tag the run consumed - after proving the tag still points at the
+   validated SHA. Cleanup is `continue-on-error` at job and step level and can never change the
+   gate's verdict; any guard failure warns and retains the tag. Do not expect old dispatch tags
+   to remain queryable: audit merges by `gh run list --commit <full-sha>`, never by tag presence.
+   Workflow changes must preserve this cleanup invariant
+   (`tests/unit/test_reclaim_main_releasability_tag.py` pins the job shape).
 
 ## Codebase Review And Issue Discovery
 
