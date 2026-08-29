@@ -133,6 +133,21 @@ BLOCKING_WORKFLOWS = ("pr-merge-gate.yml", "main-releasability.yml")
 # merely mentions a target (an echo argument, a quoted string) is not counted as execution.
 _WORKFLOW_MAKE = re.compile(r"(?:^|&&|\|\||;)\s*make\s+([a-z][a-z0-9-]*)")
 
+_QUOTED_TEXT = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def _strip_noncommand_text(command: str) -> str:
+    """Drop quoted spans and inline comments - text the shell prints or ignores.
+
+    `echo "manual fallback; make gate"` and `echo ok # ; make gate` must not count
+    as invocations. A genuine invocation nested inside quotes (`sh -c "make gate"`)
+    is also excluded by this rule; the governed lanes invoke make directly, and an
+    invocation hidden in a subshell string is indistinguishable from prose here.
+    """
+    without_quotes = _QUOTED_TEXT.sub("", command)
+    return without_quotes.split("#", 1)[0]
+
+
 # `$(MAKE) <target>` at command position in a recipe line - same discipline as the
 # workflow matcher: a commented-out recursive make, or one quoted inside an echo,
 # is not an invocation.
@@ -150,7 +165,7 @@ def _recipe_invoked_targets(block: str) -> list[str]:
             command = command[1:].lstrip()
         if command.startswith("#"):
             continue
-        invoked.extend(_RECIPE_MAKE.findall(command))
+        invoked.extend(_RECIPE_MAKE.findall(_strip_noncommand_text(command)))
     return invoked
 
 
@@ -186,7 +201,7 @@ def _workflow_invoked_targets(workflow_path: Path) -> set[str]:
             if stripped.startswith("#"):
                 # A shell-commented line inside a live run block never executes.
                 continue
-            invoked.update(_WORKFLOW_MAKE.findall(stripped))
+            invoked.update(_WORKFLOW_MAKE.findall(_strip_noncommand_text(stripped)))
     return invoked
 
 
