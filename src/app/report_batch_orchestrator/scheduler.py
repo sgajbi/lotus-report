@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol
@@ -27,6 +28,8 @@ from app.report_ordering_catalogue.validation import (
 )
 from app.reporting_jobs.ledger import canonical_json
 from app.reporting_jobs.models import ReportCallerContext
+
+_LOGGER = logging.getLogger("report_batch_scheduler")
 
 
 class BatchScheduleConfigError(ValueError):
@@ -611,6 +614,24 @@ class ReportBatchScheduler:
                 # This cycle already materialized under the schedule's earlier
                 # content. One cycle yields one batch: the updated definition
                 # applies from the next period, and this pass mints nothing.
+                skipped.append(schedule.schedule_id)
+                continue
+            except Exception:
+                if not schedule.stable_cycle_identity:
+                    raise
+                # One advisor's stale stored schedule - a portfolio gone inactive,
+                # a transient upstream failure - must not abort the whole pass and
+                # starve every other schedule. Configured schedules keep raising:
+                # their failures are deployment defects an operator must see.
+                _LOGGER.exception(
+                    "stored_schedule_materialization_failed",
+                    extra={
+                        "extra_fields": {
+                            "schedule_id": schedule.schedule_id,
+                            "tenant_id": config.tenant_id,
+                        }
+                    },
+                )
                 skipped.append(schedule.schedule_id)
                 continue
             materialized.append(_materialization(schedule, batch, idempotency_key))
