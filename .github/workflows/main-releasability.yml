@@ -97,6 +97,7 @@ jobs:
       - name: Migration Contract Smoke
         env:
           REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
+          REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED: "true"
         run: make migration-smoke
       - name: Security Audit
         run: make security-audit
@@ -153,6 +154,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
           REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
+          REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED: "true"
         run: make test-suite-coverage TEST_SUITE=${{ matrix.suite }} TEST_PATH=${{ matrix.path }}
       - name: Upload coverage data
         uses: actions/upload-artifact@v7

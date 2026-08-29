@@ -828,3 +828,22 @@ def test_report_job_ledger_service_returns_postgres_ledger() -> None:
         assert isinstance(ledger, PostgresReportJobLedger)
     finally:
         get_report_job_ledger.cache_clear()
+
+
+def test_isolated_session_rebinds_every_configuration_surface():
+    """Issue #179 review: patching os.environ alone left the cached settings object
+    and the lru-cached connection provider on the product DSN. All three surfaces
+    must agree on the session's helper-owned database."""
+
+    if os.environ.get("REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED"):
+        pytest.skip("caller owns the database; the session did not provision one")
+    source = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
+    if not source:
+        pytest.skip("REPORT_JOB_LEDGER_DATABASE_URL is required for the isolation proof")
+
+    from app.config import settings
+
+    assert "_ci_" in source, "the session fixture must have swapped the environment URL"
+    assert settings.report_job_ledger_database_url == source, (
+        "the cached settings object must carry the session database, not the import-time DSN"
+    )
