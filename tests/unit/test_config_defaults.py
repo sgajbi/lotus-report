@@ -30,7 +30,11 @@ def test_settings_default_to_canonical_service_identities(monkeypatch) -> None:
     assert settings.batch_worker_id == "lotus-report-batch-worker-1"
     assert settings.batch_worker_interval_seconds == 5.0
     assert settings.batch_worker_max_batches_per_pass == 5
-    assert settings.batch_worker_tenant_id == "tenant-sg"
+    # Issue #178: the worker's authority is never defaulted - an empty value
+    # fails startup in batch_worker_config_from_settings rather than silently
+    # inheriting one hardcoded tenant.
+    assert settings.batch_worker_tenant_id == ""
+    assert settings.batch_worker_tenant_ids == ""
     assert settings.batch_worker_region == "APAC"
     assert settings.batch_worker_booking_center_code == "SG"
     assert settings.batch_worker_role == "system"

@@ -73,6 +73,7 @@ services:
     environment:
       <<: *lotus-report-service-environment
       REPORT_BATCH_WORKER_ID: lotus-report-batch-worker-local
+      REPORT_BATCH_WORKER_TENANT_IDS: tenant-sg
       REPORT_BATCH_WORKER_INTERVAL_SECONDS: "5"
       REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS: "25"
       REPORT_BATCH_WORKER_MAX_ACTIVE_BATCHES: "1000"

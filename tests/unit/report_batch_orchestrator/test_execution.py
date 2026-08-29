@@ -681,7 +681,7 @@ async def test_quarantined_cross_tenant_item_is_never_retried(tmp_path) -> None:
     after_retry = batch_ledger.get_batch_item(batch.batch_id, item.batch_item_id)
     assert after_retry.status == "failed_terminal"
 
-    runnable = batch_ledger.list_runnable_batch_ids(tenant_id=batch.tenant_id, limit=10)
+    runnable = batch_ledger.list_runnable_batch_ids(tenant_ids=[batch.tenant_id], limit=10)
     assert batch.batch_id not in runnable
 
 
@@ -797,7 +797,7 @@ async def test_a_missing_linked_job_does_not_stall_the_rest_of_the_pass(tmp_path
     assert quarantined.status == "failed_terminal"
     assert quarantined.retry_eligible is False
     assert batch.batch_id not in batch_ledger.list_runnable_batch_ids(
-        tenant_id=batch.tenant_id,
+        tenant_ids=[batch.tenant_id],
         limit=10,
     )
 

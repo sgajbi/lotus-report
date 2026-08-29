@@ -204,7 +204,7 @@ def test_relink_failed_item_for_replay_is_idempotent_and_enforces_retry_ceiling(
 def test_runnable_batch_scan_and_empty_status_refresh_are_bounded(tmp_path) -> None:
     ledger = ReportBatchLedger(tmp_path / "batch.sqlite3")
 
-    assert ledger.list_runnable_batch_ids(tenant_id="tenant-sg", limit=0) == []
+    assert ledger.list_runnable_batch_ids(tenant_ids=["tenant-sg"], limit=0) == []
     with ledger._connect() as connection:
         ledger._refresh_batch_status(connection, "rbch_without_items", now=None)
 

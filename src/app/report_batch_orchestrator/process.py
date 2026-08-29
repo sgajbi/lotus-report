@@ -33,6 +33,7 @@ class BatchRuntimeProcess(Protocol):
         self,
         *,
         caller_context: ReportCallerContext,
+        authorized_tenant_ids: tuple[str, ...],
         worker_id: str,
         max_batches: int = 5,
         dispatch_policy: BatchDispatchPolicy | None = None,
@@ -45,11 +46,32 @@ class BatchWorkerProcessConfig:
     worker_id: str
     interval_seconds: float
     max_batches_per_pass: int
-    caller_context_tenant_id: str
+    authorized_tenant_ids: tuple[str, ...]
     caller_context_region: str
     caller_context_booking_center_code: str | None
     caller_context_role: str
     dispatch_policy: BatchDispatchPolicy
+
+
+def _authorized_tenant_ids(source: Settings) -> tuple[str, ...]:
+    """The worker's explicit authorized tenant set - never defaulted, never empty.
+
+    REPORT_BATCH_WORKER_TENANT_IDS is a comma-separated set; the legacy singular
+    REPORT_BATCH_WORKER_TENANT_ID remains supported as a one-member set. An empty
+    or unset value fails startup: a background worker with no declared authority
+    must not inherit one tenant by accident, and there is deliberately no
+    all-tenants mode.
+    """
+
+    raw = source.batch_worker_tenant_ids or source.batch_worker_tenant_id
+    tenant_ids = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
+    if not tenant_ids:
+        raise RuntimeError(
+            "REPORT_BATCH_WORKER_TENANT_IDS (or the legacy "
+            "REPORT_BATCH_WORKER_TENANT_ID) must name at least one authorized "
+            "tenant; the batch worker refuses to start without an explicit set."
+        )
+    return tenant_ids
 
 
 def batch_worker_config_from_settings(source: Settings = settings) -> BatchWorkerProcessConfig:
@@ -57,7 +79,7 @@ def batch_worker_config_from_settings(source: Settings = settings) -> BatchWorke
         worker_id=source.batch_worker_id,
         interval_seconds=source.batch_worker_interval_seconds,
         max_batches_per_pass=source.batch_worker_max_batches_per_pass,
-        caller_context_tenant_id=source.batch_worker_tenant_id,
+        authorized_tenant_ids=_authorized_tenant_ids(source),
         caller_context_region=source.batch_worker_region,
         caller_context_booking_center_code=source.batch_worker_booking_center_code,
         caller_context_role=source.batch_worker_role,
@@ -78,10 +100,13 @@ def batch_worker_caller_context(
     pass_sequence: int,
 ) -> ReportCallerContext:
     suffix = uuid4().hex
+    # The pass-level tenant is a placeholder from the authorized set: every
+    # mutation runs under a per-batch context derived from the batch's own
+    # tenant inside the runtime pass, validated against the same set.
     return ReportCallerContext(
         triggered_by=config.worker_id,
         caller_application="lotus-report-batch-worker",
-        tenant_id=config.caller_context_tenant_id,
+        tenant_id=config.authorized_tenant_ids[0],
         region=config.caller_context_region,
         booking_center_code=config.caller_context_booking_center_code,
         role=config.caller_context_role,
@@ -120,6 +145,7 @@ class BatchWorkerProcess:
             try:
                 result = await self._runtime.run_pass(
                     caller_context=context,
+                    authorized_tenant_ids=self._config.authorized_tenant_ids,
                     worker_id=self._config.worker_id,
                     max_batches=self._config.max_batches_per_pass,
                     dispatch_policy=self._config.dispatch_policy,

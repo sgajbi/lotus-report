@@ -113,7 +113,8 @@ class Settings(BaseSettings):
         ge=1,
         alias="REPORT_BATCH_WORKER_MAX_BATCHES_PER_PASS",
     )
-    batch_worker_tenant_id: str = Field("tenant-sg", alias="REPORT_BATCH_WORKER_TENANT_ID")
+    batch_worker_tenant_id: str = Field("", alias="REPORT_BATCH_WORKER_TENANT_ID")
+    batch_worker_tenant_ids: str = Field("", alias="REPORT_BATCH_WORKER_TENANT_IDS")
     batch_worker_region: str = Field("APAC", alias="REPORT_BATCH_WORKER_REGION")
     batch_worker_booking_center_code: str | None = Field(
         "SG",

@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -1037,28 +1038,30 @@ class ReportBatchLedger:
     def list_runnable_batch_ids(
         self,
         *,
-        tenant_id: str,
+        tenant_ids: Sequence[str],
         limit: int = 10,
         now: datetime | None = None,
     ) -> list[str]:
-        """List runnable batches for one tenant only.
+        """List runnable batches for the authorized tenant set only.
 
-        tenant_id is required rather than optional so a background caller cannot
-        accidentally scan every tenant by omitting it.
+        tenant_ids is required rather than optional so a background caller cannot
+        accidentally scan every tenant by omitting it, and an empty set selects
+        nothing - there is no unscoped mode.
         """
 
-        if limit < 1:
+        if limit < 1 or not tenant_ids:
             return []
 
         scan_at = now or utc_now()
+        placeholders = ", ".join("?" for _ in tenant_ids)
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT DISTINCT report_batch.batch_id, report_batch.created_at
                 FROM report_batch
                 JOIN report_batch_item
                   ON report_batch_item.batch_id = report_batch.batch_id
-                WHERE report_batch.tenant_id = ?
+                WHERE report_batch.tenant_id IN ({placeholders})
                   AND report_batch.status IN ('materialized', 'running')
                   AND (
                     report_batch_item.status IN (
@@ -1084,7 +1087,7 @@ class ReportBatchLedger:
                 ORDER BY report_batch.created_at, report_batch.batch_id
                 LIMIT ?
                 """,
-                (tenant_id, _dt_to_text(scan_at), _dt_to_text(scan_at), limit),
+                (*tenant_ids, _dt_to_text(scan_at), _dt_to_text(scan_at), limit),
             ).fetchall()
         return [str(row["batch_id"]) for row in rows]
 
