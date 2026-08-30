@@ -434,6 +434,32 @@ class ReportJobLedger:
             idempotency_key=idempotency_key,
         )
 
+    def create_replay_derived_job(
+        self,
+        *,
+        source_job_id: str,
+        request: PortfolioReviewJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        """Create the replay's derived job with the one-replacement guard.
+
+        The guard runs inside the same lock/transaction as the idempotency
+        resolution: an existing record for THIS key returns idempotently, but
+        a novel key is refused while any prior replay of the source is in
+        flight or has succeeded - a failed source must never gain a second
+        replacement document.
+        """
+
+        return self._create_report_job(
+            report_type="portfolio_review",
+            accepted_message="Portfolio review report job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+            replay_source_job_id=source_job_id,
+        )
+
     def submit_portfolio_review_job(
         self,
         *,
@@ -504,6 +530,7 @@ class ReportJobLedger:
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
         enqueue: bool = False,
+        replay_source_job_id: str | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -538,6 +565,26 @@ class ReportJobLedger:
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record
+
+                if replay_source_job_id is not None:
+                    live = connection.execute(
+                        """
+                        SELECT 1
+                        FROM report_job_relationship rel
+                        JOIN report_job derived
+                          ON derived.report_job_id = rel.derived_report_job_id
+                        WHERE rel.source_report_job_id = ?
+                          AND rel.relationship_type = 'failed_work_replay'
+                          AND derived.status NOT IN ('failed', 'cancelled')
+                        LIMIT 1
+                        """,
+                        (replay_source_job_id,),
+                    ).fetchone()
+                    if live:
+                        # A replacement already exists (in flight or archived).
+                        # Only its own idempotency key may converge on it - a
+                        # novel key must not mint a second client document.
+                        raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
 
                 now = utc_now()
                 request_id = f"rrq_{uuid4().hex}"

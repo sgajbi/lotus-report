@@ -330,6 +330,80 @@ def test_postgres_report_job_relationship_is_idempotent_and_queryable_from_both_
     assert ledger.list_job_relationships(derived.job_id) == [updated]
 
 
+def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
+    """The one-replacement guard runs inside the PostgreSQL creation
+    transaction: a novel replay key is refused while a live or successful
+    replacement exists, the same key still converges idempotently, and a
+    failed replacement does not block another attempt."""
+
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    source = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"replay-guard-source-{unique_suffix}",
+    )
+    ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="render_execution_failed",
+        failure_message="Render unavailable.",
+        retry_eligible=True,
+    )
+
+    first = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"replay-guard-first-{unique_suffix}",
+    )
+    ledger.upsert_job_relationship(
+        source_job=source,
+        derived_job=first,
+        relationship_type="failed_work_replay",
+        actor="operations-control",
+        reason="First replacement.",
+    )
+
+    # A live replacement (accepted) blocks any novel key...
+    with pytest.raises(InvalidReportJobTransitionError):
+        ledger.create_replay_derived_job(
+            source_job_id=source.job_id,
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=f"replay-guard-second-{unique_suffix}",
+        )
+    # ...while the original key still converges on the existing job.
+    same = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"replay-guard-first-{unique_suffix}",
+    )
+    assert same.job_id == first.job_id
+
+    # A FAILED replacement releases the guard for a fresh attempt.
+    ledger.mark_failed(
+        job_id=first.job_id,
+        actor=first.triggered_by,
+        correlation_id=first.correlation_id,
+        trace_id=first.trace_id,
+        failure_category="render_execution_failed",
+        failure_message="Replacement render failed too.",
+        retry_eligible=True,
+    )
+    third = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"replay-guard-third-{unique_suffix}",
+    )
+    assert third.job_id not in {source.job_id, first.job_id}
+
+
 def test_postgres_report_job_ledger_marks_collecting_data_data_ready_and_failed() -> None:
     ledger = _ledger()
     unique_suffix = uuid4().hex

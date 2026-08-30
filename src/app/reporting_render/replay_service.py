@@ -47,9 +47,10 @@ class ReportReplayResult:
 class ReplayLedger(Protocol):
     def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
 
-    def create_portfolio_review_job(
+    def create_replay_derived_job(
         self,
         *,
+        source_job_id: str,
         request: PortfolioReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
@@ -196,7 +197,8 @@ class PortfolioReviewReplayService:
         # The resolver durably mutates the source job when it adopts a
         # committed document, so every pure validation runs before it.
         await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
-        replayed = self._ledger.create_portfolio_review_job(
+        replayed = self._ledger.create_replay_derived_job(
+            source_job_id=source_job.job_id,
             request=portfolio_review_request_from_job(source_job),
             caller_context=caller_context,
             idempotency_key=replay_key,
