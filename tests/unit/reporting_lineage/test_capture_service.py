@@ -578,6 +578,166 @@ async def test_capture_service_preserves_reviewed_proposal_narrative_package(mon
     assert snapshot.lineage_summary["proposal_narrative_source_hash"] == "sha256:narrative"
 
 
+class _DummyAiClient:
+    def __init__(self, **_kwargs):
+        pass
+
+    async def get_accepted_workflow_output(self, run_id, *, tenant_id):
+        return 200, {
+            "schema_id": "lotus-ai.workflow_pack_run.accepted_output.advisor_brief.v1",
+            "run_id": run_id,
+            "pack_id": "advisor_brief.pack",
+            "pack_version": "v1",
+            "task_id": "task_1",
+            "request_id": "req_77",
+            "tenant_id": tenant_id,
+            "workflow_authority_owner": "lotus-performance",
+            "review": {"reviewed_by": "advisor-lead-7", "reviewed_at": "2026-04-21T10:00:00Z"},
+            "advisor_brief_status": "complete",
+            "coverage_state": "full",
+            "grounded_summary": "Reviewed summary.",
+            "talking_points": [],
+            "risks_and_exceptions": [],
+            "context": {
+                "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+                "period": "YTD",
+                "as_of_date": "2026-04-22",
+                "reporting_currency": "USD",
+                "benchmark": None,
+            },
+            "source_refs": ["performance:workspace-summary"],
+            "evidence_types": ["metric_evidence"],
+            "content_hash": "0b" * 32,
+            "content_hash_algorithm": "sha256",
+            "notes": [],
+        }
+
+
+class _RejectedAiClient(_DummyAiClient):
+    async def get_accepted_workflow_output(self, run_id, *, tenant_id):
+        return 409, {"detail": "refused", "metadata": {"reason_code": "run_not_accepted"}}
+
+
+class _DownAiClient(_DummyAiClient):
+    async def get_accepted_workflow_output(self, run_id, *, tenant_id):
+        return 503, {"detail": "unavailable"}
+
+
+def _patch_portfolio_review_upstreams(monkeypatch, *, ai_client_cls):
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _HappyReportingReadService,
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.AiClient", ai_client_cls)
+
+
+def _advisor_commentary_request():
+    return _request(
+        options={
+            "sections": ["OVERVIEW", "PERFORMANCE", "ADVISOR_COMMENTARY"],
+            "advisor_brief_run_id": "run_accept_1",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_capture_service_composes_advisor_commentary_from_accepted_brief(
+    monkeypatch, tmp_path
+):
+    _patch_portfolio_review_upstreams(monkeypatch, ai_client_cls=_DummyAiClient)
+    ledger = ReportJobLedger(tmp_path / "jobs-advisor.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-advisor.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_advisor_commentary_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-advisor-included",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    package = snapshot.snapshot_payload["advisor_commentary_package"]
+    assert package["status"] == "included"
+    assert package["run_id"] == "run_accept_1"
+    assert package["review"]["reviewed_by"] == "advisor-lead-7"
+    assert "reviewed by advisor-lead-7" in package["disclosure_text"]
+    # The lotus-ai read is durable upstream-call evidence like every other
+    # source read.
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    ai_calls = [call for call in calls if call.service_name == "lotus-ai"]
+    assert len(ai_calls) == 1
+    assert ai_calls[0].endpoint == "/platform/workflow-packs/runs/{run_id}/accepted-output"
+    # Lineage carries the brief audit identity (issue #166 acceptance 4).
+    assert snapshot.lineage_summary["advisor_commentary_status"] == "included"
+    assert snapshot.lineage_summary["advisor_brief_run_id"] == "run_accept_1"
+    assert snapshot.lineage_summary["advisor_brief_request_id"] == "req_77"
+    assert snapshot.lineage_summary["advisor_brief_reviewed_by"] == "advisor-lead-7"
+    assert snapshot.lineage_summary["advisor_brief_content_hash"] == "0b" * 32
+
+
+@pytest.mark.asyncio
+async def test_capture_service_closes_advisor_commentary_section_with_reason(monkeypatch, tmp_path):
+    _patch_portfolio_review_upstreams(monkeypatch, ai_client_cls=_RejectedAiClient)
+    ledger = ReportJobLedger(tmp_path / "jobs-advisor-closed.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-advisor-closed.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_advisor_commentary_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-advisor-closed",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    # The section closes; the report job proceeds.
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    package = snapshot.snapshot_payload["advisor_commentary_package"]
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_not_reviewed"
+    assert snapshot.lineage_summary["advisor_commentary_reason_code"] == (
+        "advisor_brief_not_reviewed"
+    )
+    events = [
+        event
+        for event in ledger.list_status_events(job.job_id)
+        if event.event_type == "job_advisor_commentary_unavailable"
+    ]
+    assert len(events) == 1
+    assert events[0].event_payload["reason_code"] == "advisor_brief_not_reviewed"
+    assert events[0].event_payload["advisor_brief_run_id"] == "run_accept_1"
+
+
+@pytest.mark.asyncio
+async def test_capture_service_fails_retryable_when_advisor_source_unavailable(
+    monkeypatch, tmp_path
+):
+    _patch_portfolio_review_upstreams(monkeypatch, ai_client_cls=_DownAiClient)
+    ledger = ReportJobLedger(tmp_path / "jobs-advisor-down.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-advisor-down.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_advisor_commentary_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-advisor-down",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    # Retrying can succeed, so the CAPTURE fails retryable instead of the
+    # pack silently shipping without a section the caller ordered.
+    assert record.status == "failed"
+    assert record.failure_category == "upstream_data_failed"
+    assert record.retry_eligible is True
+
+
 @pytest.mark.asyncio
 async def test_capture_service_records_outcome_review_snapshot_and_manage_lineage(tmp_path):
     ledger, store, job = _create_outcome_job(tmp_path, suffix="outcome-success")

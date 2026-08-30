@@ -509,6 +509,152 @@ def _seed_data_ready_job(tmp_path):
     return ledger, store, ready
 
 
+def _advisor_commentary_package(**overrides) -> dict:
+    package = {
+        "status": "included",
+        "schema_id": "lotus-ai.workflow_pack_run.accepted_output.advisor_brief.v1",
+        "run_id": "run_accept_1",
+        "pack_id": "advisor_brief.pack",
+        "pack_version": "v1",
+        "task_id": "task_1",
+        "request_id": "req_77",
+        "workflow_authority_owner": "lotus-performance",
+        "review": {"reviewed_by": "advisor-lead-7", "reviewed_at": "2026-04-21T10:00:00Z"},
+        "advisor_brief_status": "complete",
+        "coverage_state": "full",
+        "grounded_summary": "Reviewed summary of portfolio performance.",
+        "talking_points": [
+            {
+                "headline": "Equity allocation drove returns",
+                "detail": "Overweight global equities contributed 1.2%.",
+                "tone": "positive",
+                "evidence_refs": ["performance:contribution:equities"],
+            }
+        ],
+        "risks_and_exceptions": [],
+        "context": {
+            "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "period": "YTD",
+            "as_of_date": "2026-04-22",
+            "reporting_currency": "USD",
+            "benchmark": None,
+        },
+        "source_refs": ["performance:workspace-summary"],
+        "evidence_types": ["metric_evidence"],
+        "content_hash": "0c" * 32,
+        "content_hash_algorithm": "sha256",
+        "notes": [],
+        "disclosure_text": (
+            "Commentary generated with AI assistance and reviewed by advisor-lead-7 "
+            "on 2026-04-21T10:00:00Z; run run_accept_1."
+        ),
+    }
+    package.update(overrides)
+    return package
+
+
+def test_portfolio_review_render_package_includes_advisor_commentary(tmp_path):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {
+            "identity": {"client_name": "Alex Tan"},
+            "mandate_profile": {"risk_exposure": "balanced"},
+        },
+        "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+        "advisor_commentary_package": _advisor_commentary_package(),
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    commentary = package["report_data"]["advisor_commentary"]
+    assert commentary["status"] == "included"
+    assert commentary["run_id"] == "run_accept_1"
+    assert commentary["review"]["reviewed_by"] == "advisor-lead-7"
+    assert commentary["talking_points"][0]["headline"] == "Equity allocation drove returns"
+    assert "reviewed by advisor-lead-7" in commentary["disclosure_text"]
+    assert "run_accept_1" in package["lineage_refs"]
+    assert "0c" * 32 in package["lineage_refs"]
+
+
+def test_portfolio_review_render_package_reports_closed_advisor_commentary(tmp_path):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {
+            "identity": {"client_name": "Alex Tan"},
+            "mandate_profile": {"risk_exposure": "balanced"},
+        },
+        "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+        "advisor_commentary_package": {
+            "status": "unavailable",
+            "reason_code": "advisor_brief_not_reviewed",
+            "advisor_brief_run_id": "run_pending",
+        },
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    commentary = package["report_data"]["advisor_commentary"]
+    assert commentary["status"] == "unavailable"
+    assert commentary["reason_code"] == "advisor_brief_not_reviewed"
+    assert "run_pending" not in package["lineage_refs"]
+
+    absent = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot={
+            "readiness": {"status": "ready"},
+            "reportingCurrency": "USD",
+            "clientProfile": {
+                "identity": {"client_name": "Alex Tan"},
+                "mandate_profile": {"risk_exposure": "balanced"},
+            },
+            "overview": {"total_market_value": 15234567.89, "currency": "USD"},
+        },
+        render_job_id="rdr_test_pdf",
+    )
+    assert absent["report_data"]["advisor_commentary"] == {"status": "not_supplied"}
+
+
+def test_advisor_commentary_archive_summary_keeps_audit_identity():
+    from app.reporting_render.service import _advisor_commentary_archive_summary
+
+    summary = _advisor_commentary_archive_summary(
+        {"advisor_commentary_package": _advisor_commentary_package()}
+    )
+    assert summary == {
+        "run_id": "run_accept_1",
+        "request_id": "req_77",
+        "reviewed_by": "advisor-lead-7",
+        "reviewed_at": "2026-04-21T10:00:00Z",
+        "content_hash": "0c" * 32,
+        "schema_id": "lotus-ai.workflow_pack_run.accepted_output.advisor_brief.v1",
+        "included_in_render": True,
+    }
+    assert (
+        _advisor_commentary_archive_summary(
+            {
+                "advisor_commentary_package": {
+                    "status": "unavailable",
+                    "reason_code": "advisor_brief_not_found",
+                }
+            }
+        )
+        is None
+    )
+    assert _advisor_commentary_archive_summary({}) is None
+
+
 def test_portfolio_review_render_package_includes_reviewed_advisory_narrative(tmp_path):
     ledger, _store, ready = _seed_data_ready_job(tmp_path)
     snapshot_payload = {

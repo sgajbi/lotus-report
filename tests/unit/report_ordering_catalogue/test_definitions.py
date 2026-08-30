@@ -27,6 +27,7 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
     assert [section.section_id for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS] == [
         "CLIENT_PROFILE",
         "OVERVIEW",
+        "ADVISOR_COMMENTARY",
         "ALLOCATION",
         "PERFORMANCE",
         "RISK_ANALYTICS",
@@ -34,11 +35,29 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
         "HOLDINGS",
         "TRANSACTIONS",
     ]
-    assert [section.display_order for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS] == list(
-        range(10, 90, 10)
-    )
+    assert [section.display_order for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS] == [
+        10,
+        20,
+        25,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+    ]
     assert PORTFOLIO_REVIEW_SECTION_DEFINITIONS[0].selection_posture == "required"
-    assert all(section.default_selected for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS)
+    # ADVISOR_COMMENTARY is the one opt-in section: reviewed AI-assisted
+    # narrative enters the pack only when the caller names an accepted brief.
+    by_id = {section.section_id: section for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS}
+    assert by_id["ADVISOR_COMMENTARY"].default_selected is False
+    assert by_id["ADVISOR_COMMENTARY"].selection_posture == "optional"
+    assert by_id["ADVISOR_COMMENTARY"].dependency_field_ids == ("advisor_brief_run_id",)
+    assert all(
+        section.default_selected
+        for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS
+        if section.section_id != "ADVISOR_COMMENTARY"
+    )
 
 
 def test_only_portfolio_review_is_directly_orderable() -> None:

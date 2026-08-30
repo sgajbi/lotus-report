@@ -1054,6 +1054,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert [section["section_id"] for section in response["client_sections"]] == [
         "client_profile",
         "executive_summary",
+        "advisor_commentary",
         "asset_allocation",
         "performance_review",
         "risk_review",
@@ -1061,6 +1062,12 @@ async def test_review_composes_core_query_performance_and_risk():
         "holdings_appendix",
         "transactions_appendix",
     ]
+    commentary_section = next(
+        section
+        for section in response["client_sections"]
+        if section["section_id"] == "advisor_commentary"
+    )
+    assert commentary_section["status"] == "omitted_by_request"
     section_statuses = {
         section["section_id"]: section["status"] for section in response["client_sections"]
     }

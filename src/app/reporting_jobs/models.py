@@ -329,6 +329,23 @@ class PortfolioReviewJobRequest(BaseModel):
             "package; it does not approve, rewrite, or infer advisory narrative facts."
         ),
     )
+
+    @model_validator(mode="after")
+    def _advisor_commentary_requires_run_id(self) -> "PortfolioReviewJobRequest":
+        sections = self.options.get("sections")
+        section_requested = isinstance(sections, list) and any(
+            isinstance(item, str) and item.upper() == "ADVISOR_COMMENTARY" for item in sections
+        )
+        run_id = self.options.get("advisor_brief_run_id")
+        has_run_id = isinstance(run_id, str) and bool(run_id.strip())
+        if section_requested and not has_run_id:
+            raise ValueError(
+                "options.advisor_brief_run_id is required when the ADVISOR_COMMENTARY "
+                "section is requested: the section is sourced only from an accepted "
+                "Advisor Brief run and lotus-report never chooses one implicitly."
+            )
+        return self
+
     proposal_memo_package: ProposalMemoReportPackage | None = Field(
         default=None,
         description=(

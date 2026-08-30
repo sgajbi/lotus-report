@@ -95,8 +95,8 @@ class ReportConfigurationField(CatalogueModel):
     field_id: str = Field(description="Stable configuration field identifier.")
     business_label: str = Field(description="Business label shown to product users.")
     description: str = Field(description="Business meaning of the report configuration.")
-    input_type: Literal["business_date", "currency", "benchmark", "multi_select"]
-    requirement: Literal["required", "optional"]
+    input_type: Literal["business_date", "currency", "benchmark", "multi_select", "text"]
+    requirement: Literal["required", "optional", "conditional"]
     defaulting_policy: str = Field(description="Stable policy used when no value is supplied.")
     value_source: Literal[
         "caller",

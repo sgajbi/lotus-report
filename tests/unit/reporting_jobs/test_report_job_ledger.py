@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 
+import pydantic
 import pytest
 
 from app.reporting_jobs.ledger import (
@@ -1105,3 +1106,43 @@ def test_report_job_ledger_records_relationships_from_source_and_derived(tmp_pat
     assert updated.relationship_id == relationship.relationship_id
     assert updated.derived_status == "failed"
     assert updated.derived_failure_category == "render_execution_failed"
+
+
+def test_advisor_commentary_order_requires_accepted_brief_run_id() -> None:
+    """An order that selects ADVISOR_COMMENTARY must name the accepted brief
+    run at the acceptance boundary - lotus-report never chooses one
+    implicitly (issue #166)."""
+
+    base = {
+        "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+        "as_of_date": "2026-04-22",
+        "requested_output_formats": ["pdf"],
+    }
+    with pytest.raises(pydantic.ValidationError, match="advisor_brief_run_id"):
+        PortfolioReviewJobRequest.model_validate(
+            {**base, "options": {"sections": ["OVERVIEW", "ADVISOR_COMMENTARY"]}}
+        )
+    with pytest.raises(pydantic.ValidationError, match="advisor_brief_run_id"):
+        PortfolioReviewJobRequest.model_validate(
+            {
+                **base,
+                "options": {
+                    "sections": ["advisor_commentary"],
+                    "advisor_brief_run_id": "   ",
+                },
+            }
+        )
+    accepted = PortfolioReviewJobRequest.model_validate(
+        {
+            **base,
+            "options": {
+                "sections": ["OVERVIEW", "ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        }
+    )
+    assert accepted.options["advisor_brief_run_id"] == "run_accept_1"
+    without_section = PortfolioReviewJobRequest.model_validate(
+        {**base, "options": {"sections": ["OVERVIEW"]}}
+    )
+    assert "advisor_brief_run_id" not in without_section.options
