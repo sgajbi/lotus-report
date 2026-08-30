@@ -1117,6 +1117,7 @@ class ReportJobLedger:
         actor: str,
         correlation_id: str,
         trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
     ) -> None:
         with self._lock:
             with self._connect() as connection:
@@ -1126,6 +1127,19 @@ class ReportJobLedger:
                 ).fetchone()
                 if not existing:
                     raise ReportJobNotFoundError("report_job_not_found")
+                if (
+                    skip_if_idempotency_key_exists
+                    and event_idempotency_key
+                    and connection.execute(
+                        "SELECT 1 FROM report_status_event "
+                        "WHERE report_job_id = ? AND event_idempotency_key = ?",
+                        (job_id, event_idempotency_key),
+                    ).fetchone()
+                ):
+                    # The duplicate check runs inside the same lock as the
+                    # insert, so concurrent same-key retries converge on one
+                    # event (the index on the key is non-unique by design).
+                    return
                 current_status: ReportJobStatus = existing["status"]
                 self._append_status_event(
                     connection=connection,
