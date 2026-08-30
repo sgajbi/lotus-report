@@ -624,6 +624,12 @@ class _DownAiClient(_DummyAiClient):
         return 503, {"detail": "unavailable"}
 
 
+def _advisor_commentary_resolution_count(outcome: str, reason: str) -> float:
+    from app.reporting_metrics import _ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL
+
+    return _ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL.labels(outcome=outcome, reason=reason)._value.get()
+
+
 def _patch_portfolio_review_upstreams(monkeypatch, *, ai_client_cls):
     monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
     monkeypatch.setattr(
@@ -681,6 +687,7 @@ async def test_capture_service_composes_advisor_commentary_from_accepted_brief(
     assert snapshot.lineage_summary["advisor_brief_request_id"] == "req_77"
     assert snapshot.lineage_summary["advisor_brief_reviewed_by"] == "advisor-lead-7"
     assert snapshot.lineage_summary["advisor_brief_content_hash"] == "0b" * 32
+    assert _advisor_commentary_resolution_count("included", "none") >= 1.0
 
 
 @pytest.mark.asyncio
@@ -750,6 +757,7 @@ async def test_capture_service_closes_advisor_commentary_section_with_reason(mon
     assert len(events) == 1
     assert events[0].event_payload["reason_code"] == "advisor_brief_not_reviewed"
     assert events[0].event_payload["advisor_brief_run_id"] == "run_accept_1"
+    assert _advisor_commentary_resolution_count("unavailable", "advisor_brief_not_reviewed") >= 1.0
 
 
 @pytest.mark.asyncio

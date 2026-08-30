@@ -38,7 +38,10 @@ from app.reporting_lineage.store import (
     ReportInputSnapshotNotFoundError,
     canonical_json_dumps,
 )
-from app.reporting_metrics import record_report_operation
+from app.reporting_metrics import (
+    record_advisor_commentary_resolution,
+    record_report_operation,
+)
 from app.services.reporting_read_service import ReportingReadService
 
 
@@ -810,9 +813,16 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot_payload: dict[str, Any],
     ) -> None:
         package = snapshot_payload.get("advisor_commentary_package")
-        if not isinstance(package, dict) or package.get("status") != "unavailable":
+        if not isinstance(package, dict):
+            return
+        status_value = str(package.get("status") or "")
+        if status_value == "included":
+            record_advisor_commentary_resolution(outcome="included", reason_code=None)
+            return
+        if status_value != "unavailable":
             return
         reason_code = str(package.get("reason_code") or "advisor_brief_not_found")
+        record_advisor_commentary_resolution(outcome="unavailable", reason_code=reason_code)
         self._job_ledger.append_job_event(
             job_id=job.job_id,
             event_type="job_advisor_commentary_unavailable",

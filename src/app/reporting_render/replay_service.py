@@ -28,7 +28,10 @@ from app.reporting_lineage.store import (
     ReportInputSnapshotNotFoundError,
     ReportInputSnapshotRecord,
 )
-from app.reporting_metrics import record_report_operation
+from app.reporting_metrics import (
+    record_replay_fingerprint_comparison,
+    record_report_operation,
+)
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 
 
@@ -293,6 +296,7 @@ class PortfolioReviewReplayService:
             # own failure posture tells that story.
             return
         outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
+        record_replay_fingerprint_comparison(outcome=outcome, reason=reason)
         self._ledger.append_job_event(
             job_id=replayed.job_id,
             event_type="job_replay_fingerprint_compared",
