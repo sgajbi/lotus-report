@@ -688,6 +688,72 @@ async def test_replay_records_incomparable_on_runtime_version_change(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_replay_records_incomparable_for_metadataless_render_after_archive_failure(
+    tmp_path,
+):
+    """A valid render response may omit every optional metadata field; if the
+    archive leg then fails, the durable job_completed event - not the absent
+    metadata - proves the render finished, and the comparison records
+    incomparable rather than staying silent."""
+
+    class _MetadatalessRenderClient(_RecordingRenderClient):
+        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+            status_code, response = await super().submit_render_package(
+                payload, correlation_id, trace_id
+            )
+            for key in (
+                "artifact_sha256",
+                "bounded_determinism_fingerprint",
+                "runtime_engine",
+                "runtime_engine_version",
+            ):
+                response.pop(key, None)
+            return status_code, response
+
+    class _FailingArchiveClient:
+        async def archive_document(self, payload, **kwargs):
+            return 503, {"detail": "archive unavailable"}
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_MetadatalessRenderClient(),
+        archive_client=_FailingArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    replay_service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=_RefusingCapture(),
+        render_service=render_service,
+        snapshot_store=store,
+    )
+
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Metadataless render, archive fails."),
+        caller_context=_caller(),
+        idempotency_key="recover-metadataless",
+    )
+
+    assert result.replayed_job.status == "failed"
+    assert result.replayed_job.render_bounded_determinism_fingerprint is None
+    events = [
+        event
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ]
+    assert len(events) == 1
+    assert events[0].event_payload["outcome"] == "incomparable"
+    assert events[0].event_payload["reason"] == "replayed_fingerprint_missing"
+
+
+@pytest.mark.asyncio
 async def test_replay_records_comparison_when_archive_leg_fails_after_render(tmp_path):
     """The replayed render can complete (fingerprint persisted) and the
     archive leg still fail the job; the comparison judges the render, so it

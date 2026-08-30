@@ -275,18 +275,22 @@ class PortfolioReviewReplayService:
 
         if source_job.failure_category != "render_artifact_unrecoverable":
             return
-        if not any(
-            (
-                replayed.render_artifact_sha256,
-                replayed.render_bounded_determinism_fingerprint,
-                replayed.render_runtime_engine,
-            )
-        ):
-            # No completion evidence means the replayed render itself never
-            # finished; the job's own failure posture tells that story. Any
-            # completion evidence - even on a job later failed by its archive
-            # leg, where the ledger preserves render fields - records an
-            # outcome, because the render this comparison judges did happen.
+        rendered = replayed.status in {
+            "completed",
+            "completed_with_warnings",
+            "archiving",
+            "archived",
+        } or any(
+            event.event_type == "job_completed"
+            for event in self._ledger.list_status_events(replayed.job_id)
+        )
+        if not rendered:
+            # Durable completion truth: the render either left the job in a
+            # rendered state or appended its job_completed lifecycle event
+            # (which survives a later archive-leg failure). Optional response
+            # metadata proves nothing - a valid render response may omit all
+            # of it. A render that never completed stays silent; the job's
+            # own failure posture tells that story.
             return
         outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
         self._ledger.append_job_event(
