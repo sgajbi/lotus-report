@@ -184,6 +184,11 @@ def test_worker_cli_maps_bounded_runtime_arguments(
     invocations = []
     monkeypatch.setattr("sys.argv", arguments)
     monkeypatch.setattr(process_module, "setup_logging", lambda: invocations.append("logging"))
+    monkeypatch.setattr(
+        process_module,
+        "start_worker_metrics_server",
+        lambda: invocations.append("metrics"),
+    )
 
     async def _run(*, max_iterations):
         invocations.append(max_iterations)
@@ -192,7 +197,7 @@ def test_worker_cli_maps_bounded_runtime_arguments(
 
     process_module.main()
 
-    assert invocations == ["logging", expected_iterations]
+    assert invocations == ["logging", "metrics", expected_iterations]
 
 
 def test_worker_metrics_server_starts_on_governed_port(monkeypatch):
