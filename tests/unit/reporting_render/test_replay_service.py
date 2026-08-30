@@ -6,6 +6,7 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
     ReportJobLedger,
+    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
@@ -382,31 +383,74 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
     assert cloned.snapshot_payload == source_snapshot.snapshot_payload
     assert cloned.lineage_summary["cloned_from_report_job_id"] == failed_source.job_id
     assert cloned.lineage_summary["cloned_from_snapshot_id"] == source_snapshot.snapshot_id
+    # No upstream calls were made for the cloned snapshot, so its per-snapshot
+    # call counters are zero and point at the source snapshot's evidence -
+    # the lineage endpoint joins calls by snapshot id and must not contradict.
+    assert cloned.lineage_summary["call_count"] == 0
+    assert cloned.lineage_summary["upstream_evidence"] == "cloned_from_source_snapshot"
+    assert (
+        cloned.lineage_summary["source_call_count"]
+        == (source_snapshot.lineage_summary["call_count"])
+    )
+    assert (
+        cloned.lineage_summary["source_services"]
+        == (source_snapshot.lineage_summary["source_services"])
+    )
 
 
 @pytest.mark.asyncio
-async def test_artifactless_replay_falls_back_to_capture_when_snapshot_missing(tmp_path):
-    """If the retained snapshot is unexpectedly gone, the replay must still
-    recover by recapturing upstream data instead of stranding the job."""
+async def test_artifactless_replay_fails_closed_when_snapshot_missing(tmp_path):
+    """The render_artifact_unrecoverable posture promises recovery from the
+    retained snapshot. If that snapshot is gone, recollecting current upstream
+    state could silently produce different report evidence under a
+    failed-work-replay relationship - the replay must refuse instead, before
+    any replayed job is created."""
 
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     failed_source = _artifactless_failed_source(ledger)
     capture = _RecapturingCapture(ledger, store)
-    replay_service, _render_client, archive_client = _recovery_services(
+    replay_service, render_client, archive_client = _recovery_services(
         ledger, store, capture, snapshot_store=store
     )
 
-    result = await replay_service.replay_job(
-        job_id=failed_source.job_id,
-        command=ReportJobReplayRequest(reason="Recover without retained snapshot."),
-        caller_context=_caller(),
-        idempotency_key="recover-artifactless-fallback",
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Recover without retained snapshot."),
+            caller_context=_caller(),
+            idempotency_key="recover-artifactless-missing",
+        )
+
+    assert capture.called is False
+    assert render_client.render_job_ids == []
+    assert archive_client.payloads == []
+
+
+@pytest.mark.asyncio
+async def test_replay_refuses_cross_tenant_and_cross_region_callers(tmp_path):
+    """Tenant and region are segregation boundaries: a caller must not be able
+    to materialize another tenant's report evidence into a document under its
+    own context, and the refusal must look exactly like an unknown job id."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    replay_service, _render_client, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
     )
 
-    assert capture.called is True
-    assert result.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    for update in ({"tenant_id": "tenant-other"}, {"region": "EMEA"}):
+        foreign_caller = _caller().model_copy(update=update)
+        with pytest.raises(ReportJobNotFoundError):
+            await replay_service.replay_job(
+                job_id=failed_source.job_id,
+                command=ReportJobReplayRequest(reason="Cross-boundary replay."),
+                caller_context=foreign_caller,
+                idempotency_key="recover-cross-tenant",
+            )
+    assert archive_client.payloads == []
 
 
 def test_replay_rejects_non_portfolio_review_report_types(tmp_path):

@@ -7,6 +7,7 @@ from typing import Protocol
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
+    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
@@ -152,7 +153,16 @@ class PortfolioReviewReplayService:
         idempotency_key: str | None,
     ) -> ReportReplayResult:
         source_job = self._ledger.get_job(job_id)
+        # Tenant and region are segregation boundaries: a caller must never be
+        # able to materialize another tenant's report evidence into a document
+        # under its own context. Mismatches answer exactly like an unknown id.
+        if (
+            source_job.tenant_id != caller_context.tenant_id
+            or source_job.region != caller_context.region
+        ):
+            raise ReportJobNotFoundError("report_job_not_found")
         assert_replay_eligible(source_job)
+        source_snapshot = self._require_retained_snapshot(source_job)
         replay_key = replay_idempotency_key(
             source_job_id=source_job.job_id,
             idempotency_key=idempotency_key,
@@ -181,6 +191,7 @@ class PortfolioReviewReplayService:
                 trace_id=caller_context.trace_id,
             )
             replayed = await self._collect_replay_inputs(
+                source_snapshot=source_snapshot,
                 source_job=source_job,
                 replayed=replayed,
                 caller_context=caller_context,
@@ -223,43 +234,54 @@ class PortfolioReviewReplayService:
             idempotency_key=idempotency_key or "",
         )
 
+    def _require_retained_snapshot(
+        self, source_job: ReportJobLedgerRecord
+    ) -> ReportInputSnapshotRecord | None:
+        # The render_artifact_unrecoverable posture promises recovery from the
+        # retained snapshot. If that snapshot no longer exists, recollecting
+        # current upstream state would silently produce a document with
+        # different evidence under a failed-work-replay relationship, so the
+        # replay is refused instead - before any replayed job is created.
+        if (
+            source_job.failure_category != "render_artifact_unrecoverable"
+            or self._snapshot_store is None
+        ):
+            return None
+        try:
+            return self._snapshot_store.get_snapshot_by_job(source_job.job_id)
+        except ReportInputSnapshotNotFoundError as exc:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed") from exc
+
     async def _collect_replay_inputs(
         self,
         *,
+        source_snapshot: ReportInputSnapshotRecord | None,
         source_job: ReportJobLedgerRecord,
         replayed: ReportJobLedgerRecord,
         caller_context: ReportCallerContext,
     ) -> ReportJobLedgerRecord:
-        if (
-            source_job.failure_category == "render_artifact_unrecoverable"
-            and self._snapshot_store is not None
-        ):
-            cloned = self._clone_retained_snapshot(
+        if source_snapshot is not None:
+            return self._clone_retained_snapshot(
+                source_snapshot=source_snapshot,
                 source_job=source_job,
                 replayed=replayed,
                 caller_context=caller_context,
             )
-            if cloned is not None:
-                return cloned
         return await self._capture_service.capture_for_job(replayed)
 
     def _clone_retained_snapshot(
         self,
         *,
+        source_snapshot: ReportInputSnapshotRecord,
         source_job: ReportJobLedgerRecord,
         replayed: ReportJobLedgerRecord,
         caller_context: ReportCallerContext,
-    ) -> ReportJobLedgerRecord | None:
+    ) -> ReportJobLedgerRecord:
         # An artifactless-replay failure happened after a successful capture,
-        # so the source snapshot is the validated as-of truth for this report.
-        # Reusing it keeps the recovery deterministic even when upstream state
-        # has moved on; if the snapshot is unexpectedly gone, fall back to a
-        # fresh capture rather than stranding the replay.
+        # so the source snapshot is the validated as-of truth for this report
+        # and reusing it keeps the recovery deterministic even when upstream
+        # state has moved on.
         assert self._snapshot_store is not None
-        try:
-            source_snapshot = self._snapshot_store.get_snapshot_by_job(source_job.job_id)
-        except ReportInputSnapshotNotFoundError:
-            return None
         job = self._ledger.mark_collecting_data(
             job_id=replayed.job_id,
             actor=caller_context.triggered_by,
@@ -280,11 +302,10 @@ class PortfolioReviewReplayService:
                     snapshot_storage_ref=source_snapshot.snapshot_storage_ref,
                     supportability_status=source_snapshot.supportability_status,
                     completeness_status=source_snapshot.completeness_status,
-                    lineage_summary={
-                        **source_snapshot.lineage_summary,
-                        "cloned_from_report_job_id": source_job.job_id,
-                        "cloned_from_snapshot_id": source_snapshot.snapshot_id,
-                    },
+                    lineage_summary=_cloned_lineage_summary(
+                        source_snapshot=source_snapshot,
+                        source_job_id=source_job.job_id,
+                    ),
                     captured_at=datetime.now(UTC),
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,
@@ -313,6 +334,34 @@ class PortfolioReviewReplayService:
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
         )
+
+
+def _cloned_lineage_summary(
+    *,
+    source_snapshot: ReportInputSnapshotRecord,
+    source_job_id: str,
+) -> dict[str, object]:
+    """Lineage for a cloned snapshot: no upstream calls were made for this
+    job, so every per-snapshot call counter must be zero (the lineage read
+    joins calls by snapshot id and would otherwise contradict the summary).
+    The data's service provenance and captured posture stay, and the source
+    snapshot id names where the original call evidence lives."""
+
+    summary = dict(source_snapshot.lineage_summary)
+    summary.update(
+        {
+            "call_count": 0,
+            "partial_call_count": 0,
+            "unavailable_call_count": 0,
+            "not_supported_call_count": 0,
+            "redacted_call_count": 0,
+            "upstream_evidence": "cloned_from_source_snapshot",
+            "source_call_count": source_snapshot.lineage_summary.get("call_count", 0),
+            "cloned_from_report_job_id": source_job_id,
+            "cloned_from_snapshot_id": source_snapshot.snapshot_id,
+        }
+    )
+    return summary
 
 
 def get_portfolio_review_replay_service() -> PortfolioReviewReplayService:
