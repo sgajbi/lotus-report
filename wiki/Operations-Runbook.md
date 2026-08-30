@@ -421,9 +421,11 @@ Observability floor for this wave:
   before escalation), and watch
   `lotus_report_advisor_commentary_resolutions_total{outcome="unavailable"}` by reason for
   systemic ordering problems - section closures never fail the report job, so this counter is
-  the only aggregate signal. Both series are recorded in the job-worker process - scrape the
-  worker's own metrics endpoint (`REPORT_JOB_WORKER_METRICS_PORT`, default 8301) alongside the
-  API's `/metrics`, or these alerts stay silently zero
+  the only aggregate signal. Scrape BOTH processes - the API's
+  `/metrics` and the worker's own endpoint (`REPORT_JOB_WORKER_METRICS_PORT`, default 8301):
+  the fingerprint comparison series lives in the API process (the replay command executes
+  there), while advisor-commentary resolutions for the canonical async flow live in the worker,
+  so a single-target scrape leaves one alert or the other silently zero
 - readiness remains database-aware through `/health/ready`
 - PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
   unit-test adapter
