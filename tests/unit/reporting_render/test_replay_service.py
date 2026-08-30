@@ -1129,6 +1129,98 @@ async def test_fresh_replay_key_cannot_mint_second_replacement(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_archive_stage_failed_replacement_blocks_until_resolved(tmp_path):
+    """A replacement that failed on the ARCHIVE stage carries its own
+    unresolved ambiguity (its arch_{render_job_id} may have committed), so
+    it keeps blocking novel keys on the ORIGINAL source. The recovery chain
+    is to replay the REPLACEMENT, whose resolver adopts the committed
+    document - after which the original stays blocked by a successful
+    replacement, and exactly one client document exists."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    class _CommitsButAnswers500ArchiveClient:
+        def __init__(self) -> None:
+            self.committed: list[str] = []
+
+        async def archive_document(self, payload, **kwargs):
+            self.committed.append(payload["metadata"]["archive_request_id"])
+            return 500, {"detail": "response lost after commit"}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+
+    ambiguous_archive = _CommitsButAnswers500ArchiveClient()
+    replay_a_render = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(),
+        archive_client=ambiguous_archive,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    replay_a = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=_RefusingCapture(),
+        render_service=replay_a_render,
+        snapshot_store=store,
+        archive_resolver=_NotCommittedArchiveResolver(),
+    )
+    first = await replay_a.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="First replacement."),
+        caller_context=_caller(),
+        idempotency_key="ambiguous-first",
+    )
+    replacement = first.replayed_job
+    assert replacement.status == "failed"
+    assert replacement.failure_category == "archive_execution_failed"
+    assert len(ambiguous_archive.committed) == 1
+
+    # The original source must refuse novel keys while the replacement's
+    # archive outcome is unresolved.
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_a.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Second replacement attempt."),
+            caller_context=_caller(),
+            idempotency_key="ambiguous-second",
+        )
+
+    # Resolve the REPLACEMENT: its committed document is adopted.
+    resolver = _CommittedArchiveResolver(document_id="doc_from_replacement")
+    resolving_replay, _rc, resolving_archive = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=resolver,
+    )
+    with pytest.raises(InvalidReportJobTransitionError):
+        await resolving_replay.replay_job(
+            job_id=replacement.job_id,
+            command=ReportJobReplayRequest(reason="Resolve replacement archive."),
+            caller_context=_caller(),
+            idempotency_key="resolve-replacement",
+        )
+    resolved = ledger.get_job(replacement.job_id)
+    assert resolved.status == "archived"
+    assert resolved.archive_document_id == "doc_from_replacement"
+    assert resolver.lookups == [f"arch_{replacement.render_job_id}"]
+
+    # The original now has a SUCCESSFUL replacement - still blocked, and no
+    # new archive write ever happened during recovery.
+    with pytest.raises(InvalidReportJobTransitionError):
+        await resolving_replay.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Third attempt."),
+            caller_context=_caller(),
+            idempotency_key="ambiguous-third",
+        )
+    assert resolving_archive.payloads == []
+
+
+@pytest.mark.asyncio
 async def test_fresh_replay_key_allowed_after_failed_replacement(tmp_path):
     """A replacement that itself FAILED does not block another recovery
     attempt - the guard refuses only live or successful replacements."""
