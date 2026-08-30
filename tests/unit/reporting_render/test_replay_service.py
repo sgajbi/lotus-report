@@ -279,19 +279,33 @@ class _RecapturingCapture:
 class _RecordingRenderClient:
     """Returns rendered-with-artifact and records every submitted render_job_id."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        fingerprint: str = "typst-0.14.2:aaaa1111",
+        runtime_version: str = "0.14.2",
+        artifact_base64: str | None = "JVBERi0xLjQKJQ==",
+    ) -> None:
         self.render_job_ids: list[str] = []
+        self._fingerprint = fingerprint
+        self._runtime_version = runtime_version
+        self._artifact_base64 = artifact_base64
 
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         self.render_job_ids.append(payload["render_job_id"])
-        return 201, {
+        response = {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
             "template_id": "portfolio-review",
             "template_version": "v1",
             "artifact_sha256": "sha256:recovered-artifact",
-            "artifact_base64": "JVBERi0xLjQKJQ==",
+            "bounded_determinism_fingerprint": self._fingerprint,
+            "runtime_engine": "typst",
+            "runtime_engine_version": self._runtime_version,
         }
+        if self._artifact_base64 is not None:
+            response["artifact_base64"] = self._artifact_base64
+        return 201, response
 
 
 class _RecordingArchiveClient:
@@ -320,10 +334,10 @@ def _artifactless_failed_source(ledger: ReportJobLedger):
     )
 
 
-def _recovery_services(ledger, store, capture_service, *, snapshot_store):
+def _recovery_services(ledger, store, capture_service, *, snapshot_store, render_client=None):
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
-    render_client = _RecordingRenderClient()
+    render_client = render_client or _RecordingRenderClient()
     archive_client = _RecordingArchiveClient()
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=render_client,
@@ -551,6 +565,136 @@ async def test_chained_replay_preserves_root_evidence_pointers(tmp_path):
     assert cloned.lineage_summary["cloned_from_report_job_id"] == "rjob_root"
     assert cloned.lineage_summary["source_call_count"] == 4
     assert cloned.lineage_summary["call_count"] == 0
+
+
+async def _fail_source_through_artifactless_render(ledger, store, *, fingerprint: str):
+    """Drive the source job through the REAL trap: render completes (with a
+    fingerprint) but the replayed response carries no artifact bytes, so the
+    archive leg fails it as render_artifact_unrecoverable - proving the
+    render evidence survives the failure transition."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-artifactless-render",
+    )
+    _create_snapshot_for(store, source)
+    source = ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    source = ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(fingerprint=fingerprint, artifact_base64=None),
+        archive_client=_RecordingArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    failed = await render_service.render_for_job(source)
+    assert failed.status == "failed"
+    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert failed.render_bounded_determinism_fingerprint == fingerprint
+    return failed
+
+
+async def _replay_and_read_comparison(ledger, store, failed_source, *, render_client):
+    replay_service, _rc, _ac = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store, render_client=render_client
+    )
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Fingerprint check."),
+        caller_context=_caller(),
+        idempotency_key="recover-fingerprint",
+    )
+    events = [
+        event
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ]
+    assert len(events) == 1
+    return result, events[0]
+
+
+@pytest.mark.asyncio
+async def test_replay_records_matched_fingerprint_comparison(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    result, event = await _replay_and_read_comparison(
+        ledger,
+        store,
+        failed,
+        render_client=_RecordingRenderClient(fingerprint="typst-0.14.2:aaaa1111"),
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "matched"
+    assert event.event_payload["source_report_job_id"] == failed.job_id
+
+
+@pytest.mark.asyncio
+async def test_replay_records_divergent_fingerprint_without_failing(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    result, event = await _replay_and_read_comparison(
+        ledger,
+        store,
+        failed,
+        render_client=_RecordingRenderClient(fingerprint="typst-0.14.2:bbbb2222"),
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "diverged"
+    assert event.event_payload["reason"] == "same_runtime_fingerprint_mismatch"
+    assert event.event_payload["source_fingerprint"] == "typst-0.14.2:aaaa1111"
+    assert event.event_payload["replayed_fingerprint"] == "typst-0.14.2:bbbb2222"
+
+
+@pytest.mark.asyncio
+async def test_replay_records_incomparable_on_runtime_version_change(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    result, event = await _replay_and_read_comparison(
+        ledger,
+        store,
+        failed,
+        render_client=_RecordingRenderClient(
+            fingerprint="typst-0.15.0:cccc3333", runtime_version="0.15.0"
+        ),
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "incomparable"
+    assert event.event_payload["reason"] == "runtime_engine_differs"
+
+
+@pytest.mark.asyncio
+async def test_replay_records_incomparable_when_source_fingerprint_missing(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    result, event = await _replay_and_read_comparison(
+        ledger, store, failed_source, render_client=_RecordingRenderClient()
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "incomparable"
+    assert event.event_payload["reason"] == "source_fingerprint_missing"
 
 
 class _PurgedSourceSnapshotStore:

@@ -192,6 +192,11 @@ class PortfolioReviewReplayService:
             )
         if replayed.status == "data_ready" and "pdf" in replayed.requested_output_formats:
             replayed = await self._render_service.render_for_job(replayed)
+            self._record_fingerprint_comparison(
+                source_job=source_job,
+                replayed=replayed,
+                caller_context=caller_context,
+            )
         if replayed.status in {
             "data_ready",
             "completed",
@@ -243,6 +248,56 @@ class PortfolioReviewReplayService:
             message=f"Report replay requested as {replayed.job_id}: {reason}",
             event_payload={"replayed_job_id": replayed.job_id},
             event_idempotency_key=replay_key,
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
+        )
+
+    def _record_fingerprint_comparison(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        replayed: ReportJobLedgerRecord,
+        caller_context: ReportCallerContext,
+    ) -> None:
+        """Observational determinism check (issue #202): a replay of a lost
+        artifact SHOULD reproduce the source's bounded-determinism
+        fingerprint when both renders ran the same governed runtime.
+        Divergence is recorded, never failed - measured caveats (crossed
+        runtimes look identical by version alone; typst#6783 can swap font
+        sections) mean the event is a lead for operators, not a verdict."""
+
+        if source_job.failure_category != "render_artifact_unrecoverable":
+            return
+        if replayed.render_bounded_determinism_fingerprint is None:
+            # The replayed render did not complete; there is no comparison to
+            # record and the job's own failure posture already tells the story.
+            return
+        outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
+        if any(
+            event.event_type == "job_replay_fingerprint_compared"
+            for event in self._ledger.list_status_events(replayed.job_id)
+        ):
+            return
+        self._ledger.append_job_event(
+            job_id=replayed.job_id,
+            event_type="job_replay_fingerprint_compared",
+            message=(
+                f"Replay fingerprint comparison against {source_job.job_id}: {outcome}"
+                + (f" ({reason})." if reason else ".")
+            ),
+            event_payload={
+                "outcome": outcome,
+                "reason": reason,
+                "source_report_job_id": source_job.job_id,
+                "source_fingerprint": source_job.render_bounded_determinism_fingerprint,
+                "replayed_fingerprint": replayed.render_bounded_determinism_fingerprint,
+                "source_runtime_engine": source_job.render_runtime_engine,
+                "source_runtime_engine_version": source_job.render_runtime_engine_version,
+                "replayed_runtime_engine": replayed.render_runtime_engine,
+                "replayed_runtime_engine_version": replayed.render_runtime_engine_version,
+            },
+            event_idempotency_key=f"job_replay_fingerprint_compared:{replayed.job_id}",
             actor=caller_context.triggered_by,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
@@ -374,6 +429,26 @@ class PortfolioReviewReplayService:
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
         )
+
+
+def _fingerprint_outcome(
+    *,
+    source_job: ReportJobLedgerRecord,
+    replayed: ReportJobLedgerRecord,
+) -> tuple[str, str | None]:
+    if source_job.render_bounded_determinism_fingerprint is None:
+        return "incomparable", "source_fingerprint_missing"
+    if (
+        source_job.render_runtime_engine != replayed.render_runtime_engine
+        or source_job.render_runtime_engine_version != replayed.render_runtime_engine_version
+    ):
+        return "incomparable", "runtime_engine_differs"
+    if (
+        source_job.render_bounded_determinism_fingerprint
+        == replayed.render_bounded_determinism_fingerprint
+    ):
+        return "matched", None
+    return "diverged", "same_runtime_fingerprint_mismatch"
 
 
 def _cloned_lineage_summary(

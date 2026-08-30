@@ -21,6 +21,7 @@ _REQUIRED_PAYLOAD_FIELDS_BY_EVENT_TYPE: dict[str, frozenset[str]] = {
     "job_regenerate_archived": frozenset({"regenerated_job_id", "archive_document_id"}),
     "job_replay_requested": frozenset({"replayed_job_id"}),
     "job_replay_snapshot_cloned": frozenset({"source_snapshot_id", "cloned_snapshot_id"}),
+    "job_replay_fingerprint_compared": frozenset({"outcome", "source_report_job_id"}),
     "job_advisor_commentary_unavailable": frozenset({"reason_code"}),
     "job_replay_completed": frozenset({"replayed_job_id", "replayed_status"}),
     "batch_item_replay_requested": frozenset({"batch_item_id", "replayed_job_id"}),
