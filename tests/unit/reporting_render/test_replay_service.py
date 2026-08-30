@@ -211,39 +211,55 @@ def test_report_replay_service_factory_wires_runtime_dependencies(monkeypatch):
     assert service._render_service is render_service
 
 
-class _SnapshotCloningCapture:
-    """Captures a fresh snapshot for the replayed job, as the real capture does."""
+_SNAPSHOT_PAYLOAD: dict = {
+    "readiness": {"status": "ready"},
+    "reportingCurrency": "USD",
+    "reviewPeriod": {"label": "YTD"},
+    "clientProfile": {
+        "identity": {"client_name": "Alex Tan"},
+        "mandate_profile": {"risk_exposure": "balanced"},
+    },
+    "overview": {"total_market_value": 100.0, "currency": "USD"},
+}
+
+
+def _create_snapshot_for(store: ReportInputSnapshotStore, job) -> None:
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload=_SNAPSHOT_PAYLOAD,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+
+
+class _RefusingCapture:
+    """Fails the test if the replay recollects data instead of cloning."""
+
+    async def capture_for_job(self, job):
+        raise AssertionError("replay must clone the retained snapshot, not recapture")
+
+
+class _RecapturingCapture:
+    """Snapshot-creating capture used to prove the fallback path."""
 
     def __init__(self, ledger: ReportJobLedger, store: ReportInputSnapshotStore) -> None:
         self._ledger = ledger
         self._store = store
+        self.called = False
 
     async def capture_for_job(self, job):
-        self._store.create_snapshot(
-            ReportInputSnapshotCreateRequest(
-                report_job_id=job.job_id,
-                report_type=job.report_type,
-                report_data_contract_version="v1",
-                portfolio_scope=job.portfolio_scope,
-                as_of_date=job.as_of_date,
-                snapshot_payload={
-                    "readiness": {"status": "ready"},
-                    "reportingCurrency": "USD",
-                    "reviewPeriod": {"label": "YTD"},
-                    "clientProfile": {
-                        "identity": {"client_name": "Alex Tan"},
-                        "mandate_profile": {"risk_exposure": "balanced"},
-                    },
-                    "overview": {"total_market_value": 100.0, "currency": "USD"},
-                },
-                supportability_status="complete",
-                completeness_status="complete",
-                upstream_calls=[],
-                captured_at=datetime.now(UTC),
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
-        )
+        self.called = True
+        _create_snapshot_for(self._store, job)
         return self._ledger.mark_data_ready(
             job_id=job.job_id,
             actor=job.triggered_by,
@@ -279,27 +295,13 @@ class _RecordingArchiveClient:
         return 201, {"document_id": f"doc_recovered_{len(self.payloads)}"}
 
 
-@pytest.mark.asyncio
-async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tmp_path):
-    """The timeout-after-successful-render proof: a job failed with
-    render_artifact_unrecoverable is replay-eligible, and the replay regenerates
-    the document from a fresh snapshot under a FRESH render job id - so the
-    recovery never re-hits the artifactless terminal render job, and the
-    replayed report is archived under new identities without duplicating the
-    original (which never reached archive)."""
-
-    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
-
-    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
-    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
-
+def _artifactless_failed_source(ledger: ReportJobLedger):
     source = ledger.create_portfolio_review_job(
         request=_request(output_formats=["pdf"]),
         caller_context=_caller(),
         idempotency_key="source-artifactless",
     )
-    source_render_job_id = f"rdr_{source.job_id}_pdf"
-    failed_source = ledger.mark_failed(
+    return ledger.mark_failed(
         job_id=source.job_id,
         actor=source.triggered_by,
         correlation_id=source.correlation_id,
@@ -308,7 +310,10 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
         failure_message="Artifact only existed in the original render response.",
         retry_eligible=True,
     )
-    assert_replay_eligible(failed_source)
+
+
+def _recovery_services(ledger, store, capture_service, *, snapshot_store):
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     render_client = _RecordingRenderClient()
     archive_client = _RecordingArchiveClient()
@@ -320,25 +325,91 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
     )
     replay_service = PortfolioReviewReplayService(
         ledger=ledger,
-        capture_service=_SnapshotCloningCapture(ledger, store),
+        capture_service=capture_service,
         render_service=render_service,
+        snapshot_store=snapshot_store,
+    )
+    return replay_service, render_client, archive_client
+
+
+@pytest.mark.asyncio
+async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tmp_path):
+    """The timeout-after-successful-render proof: a job failed with
+    render_artifact_unrecoverable is replay-eligible, the replay CLONES the
+    retained snapshot (upstream data is never recollected), renders under a
+    FRESH render job id - so it can never re-hit the artifactless terminal
+    render job - and archives exactly one document without duplicating the
+    original (which never reached archive)."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    assert_replay_eligible(failed_source)
+
+    replay_service, render_client, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
     )
 
     result = await replay_service.replay_job(
-        job_id=source.job_id,
+        job_id=failed_source.job_id,
         command=ReportJobReplayRequest(reason="Recover artifactless render."),
         caller_context=_caller(),
         idempotency_key="recover-artifactless",
     )
 
     replayed = result.replayed_job
-    assert replayed.job_id != source.job_id
+    assert replayed.job_id != failed_source.job_id
     assert replayed.status == "archived"
     assert replayed.archive_document_id == "doc_recovered_1"
     # The recovery rendered under a fresh identity - it can never replay the
     # artifactless terminal render job of the source.
     assert render_client.render_job_ids == [f"rdr_{replayed.job_id}_pdf"]
-    assert source_render_job_id not in render_client.render_job_ids
+    assert f"rdr_{failed_source.job_id}_pdf" not in render_client.render_job_ids
     # Exactly one archived document: the failed original never reached archive,
     # so recovery does not duplicate a client document.
     assert len(archive_client.payloads) == 1
+    # The replay reused the retained snapshot verbatim, with explicit clone
+    # lineage - the report evidence cannot drift from the original capture.
+    source_snapshot = store.get_snapshot_by_job(failed_source.job_id)
+    cloned = store.get_snapshot_by_job(replayed.job_id)
+    assert cloned.snapshot_payload == source_snapshot.snapshot_payload
+    assert cloned.lineage_summary["cloned_from_report_job_id"] == failed_source.job_id
+    assert cloned.lineage_summary["cloned_from_snapshot_id"] == source_snapshot.snapshot_id
+
+
+@pytest.mark.asyncio
+async def test_artifactless_replay_falls_back_to_capture_when_snapshot_missing(tmp_path):
+    """If the retained snapshot is unexpectedly gone, the replay must still
+    recover by recapturing upstream data instead of stranding the job."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    capture = _RecapturingCapture(ledger, store)
+    replay_service, _render_client, archive_client = _recovery_services(
+        ledger, store, capture, snapshot_store=store
+    )
+
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Recover without retained snapshot."),
+        caller_context=_caller(),
+        idempotency_key="recover-artifactless-fallback",
+    )
+
+    assert capture.called is True
+    assert result.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+
+def test_replay_rejects_non_portfolio_review_report_types(tmp_path):
+    """The replay command recreates a portfolio-review order, so replaying any
+    other report type would silently morph it - eligibility must refuse."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    for report_type in ("proof_pack", "outcome_review", "rebalance_wave"):
+        morphed = failed_source.model_copy(update={"report_type": report_type})
+        with pytest.raises(InvalidReportJobTransitionError):
+            assert_replay_eligible(morphed)

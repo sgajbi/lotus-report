@@ -105,3 +105,23 @@ def test_report_status_event_upgrade_fixture_represents_pre_contract_schema() ->
     assert "event-pre-contract-v0" in sql
     for column in REPORT_STATUS_EVENT_CONTRACT_COLUMNS:
         assert column not in sql
+
+
+def test_backfill_migration_recovers_stranded_artifactless_failures() -> None:
+    """Migration 013 must convert rows that already failed under the old
+    archive_validation_failed posture (matched by the exact message only that
+    code path wrote) into the retry-eligible render_artifact_unrecoverable
+    category, for both report jobs and rerender attempts - and must stay free
+    of semicolons inside string literals because the migration runner splits
+    statements on ';'."""
+
+    sql = (
+        MIGRATIONS_DIR / "013_report_failure_category_render_artifact_unrecoverable.sql"
+    ).read_text(encoding="utf-8")
+    old_message = "Rendered artifact payload was not available for archive handoff."
+    for table in ("report_job", "report_rerender_attempt"):
+        assert f"UPDATE {table}" in sql
+    assert sql.count(f"AND failure_message = '{old_message}'") == 2
+    assert sql.count("retry_eligible = TRUE") == 2
+    for statement in sql.split(";"):
+        assert statement.count("'") % 2 == 0, "semicolon inside a string literal"
