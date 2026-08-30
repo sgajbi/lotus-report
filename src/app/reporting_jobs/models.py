@@ -2013,6 +2013,30 @@ class ReportJobLineageDiagnostics(BaseModel):
         description="Aggregated completeness posture from the durable snapshot summary.",
         examples=["complete"],
     )
+    upstream_evidence: str = Field(
+        "captured",
+        description=(
+            "Where the snapshot's upstream evidence lives: 'captured' when this snapshot has "
+            "its own upstream-call rows, 'cloned_from_source_snapshot' when a replay cloned a "
+            "retained snapshot and the call evidence belongs to the named source snapshot."
+        ),
+        examples=["captured", "cloned_from_source_snapshot"],
+    )
+    evidence_source_snapshot_id: str | None = Field(
+        default=None,
+        description="Snapshot that holds the original upstream-call evidence for cloned lineage.",
+        examples=["rsnap_8c0c8f6fc2d947b89cb451d9f4f5d9bf"],
+    )
+    evidence_source_report_job_id: str | None = Field(
+        default=None,
+        description="Report job that captured the original evidence for cloned lineage.",
+        examples=["rjob_83ca965c50334c40a17d2b8cc94873a5"],
+    )
+    source_upstream_call_count: int | None = Field(
+        default=None,
+        description="Upstream-call row count on the evidence source snapshot for cloned lineage.",
+        examples=[3],
+    )
     failure_categories: list[str] = Field(
         ...,
         description="Distinct non-empty upstream failure categories excluding normal `none` rows.",

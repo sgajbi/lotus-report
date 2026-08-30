@@ -1651,6 +1651,59 @@ def test_report_job_diagnostics_reports_missing_snapshot_without_payload_leak(tm
         _clear_overrides()
 
 
+def test_report_job_diagnostics_surfaces_cloned_snapshot_evidence_pointers(tmp_path):
+    """A replay-cloned snapshot has zero upstream-call rows of its own; the
+    diagnostics must say the evidence is cloned and name the source snapshot
+    instead of presenting a bare zero-call summary that reads as missing
+    evidence."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    handle = client.post(
+        "/reports/portfolio-reviews",
+        json=_payload(),
+        headers=_headers("portfolio-review-cloned-lineage"),
+    ).json()
+    job = ledger.get_job(handle["report_job_id"])
+    lineage_store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=job.job_id,
+            report_type=job.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=job.portfolio_scope,
+            as_of_date=job.as_of_date,
+            snapshot_payload={"readiness": {"status": "ready"}},
+            snapshot_storage_ref=None,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={
+                "source_services": ["lotus-core", "lotus-performance"],
+                "call_count": 0,
+                "upstream_evidence": "cloned_from_source_snapshot",
+                "source_call_count": 4,
+                "cloned_from_report_job_id": "rjob_source",
+                "cloned_from_snapshot_id": "rsnap_source",
+            },
+            captured_at=datetime.now(UTC),
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+    )
+
+    response = client.get(
+        f"/reports/jobs/{job.job_id}/diagnostics",
+        headers=_headers("portfolio-review-cloned-lineage"),
+    )
+
+    assert response.status_code == 200
+    lineage = response.json()["lineage"]
+    assert lineage["upstream_call_count"] == 0
+    assert lineage["source_services"] == ["lotus-core", "lotus-performance"]
+    assert lineage["upstream_evidence"] == "cloned_from_source_snapshot"
+    assert lineage["evidence_source_snapshot_id"] == "rsnap_source"
+    assert lineage["evidence_source_report_job_id"] == "rjob_source"
+    assert lineage["source_upstream_call_count"] == 4
+
+
 def test_report_job_diagnostics_reports_failed_retryable_job_flags(tmp_path):
     client, ledger, _lineage_store = _client(tmp_path)
     try:

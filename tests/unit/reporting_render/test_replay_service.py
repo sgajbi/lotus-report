@@ -21,6 +21,7 @@ from app.reporting_render.replay_service import (
     PortfolioReviewReplayService,
     assert_replay_eligible,
     get_portfolio_review_replay_service,
+    portfolio_review_request_from_job,
     replay_idempotency_key,
 )
 
@@ -441,7 +442,11 @@ async def test_replay_refuses_cross_tenant_and_cross_region_callers(tmp_path):
         ledger, store, _RefusingCapture(), snapshot_store=store
     )
 
-    for update in ({"tenant_id": "tenant-other"}, {"region": "EMEA"}):
+    for update in (
+        {"tenant_id": "tenant-other"},
+        {"region": "EMEA"},
+        {"booking_center_code": "HK"},
+    ):
         foreign_caller = _caller().model_copy(update=update)
         with pytest.raises(ReportJobNotFoundError):
             await replay_service.replay_job(
@@ -451,6 +456,51 @@ async def test_replay_refuses_cross_tenant_and_cross_region_callers(tmp_path):
                 idempotency_key="recover-cross-tenant",
             )
     assert archive_client.payloads == []
+
+
+@pytest.mark.asyncio
+async def test_replay_resumes_clone_after_crash_between_collecting_and_data_ready(tmp_path):
+    """A crash after the durable collecting_data transition but before
+    data_ready must not strand the recovery: retrying the replay with the
+    same idempotency key resumes the clone and completes the document."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+
+    # Simulate the crashed first attempt: the derived job exists under the
+    # replay idempotency key and durably reached collecting_data, but the
+    # snapshot clone and data_ready never happened.
+    crash_key = replay_idempotency_key(
+        source_job_id=failed_source.job_id, idempotency_key="recover-after-crash"
+    )
+    stuck = ledger.create_portfolio_review_job(
+        request=portfolio_review_request_from_job(failed_source),
+        caller_context=_caller(),
+        idempotency_key=crash_key,
+    )
+    stuck = ledger.mark_collecting_data(
+        job_id=stuck.job_id,
+        actor=stuck.triggered_by,
+        correlation_id=stuck.correlation_id,
+        trace_id=stuck.trace_id,
+    )
+    assert stuck.status == "collecting_data"
+
+    replay_service, _render_client, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Retry after crash."),
+        caller_context=_caller(),
+        idempotency_key="recover-after-crash",
+    )
+
+    assert result.replayed_job.job_id == stuck.job_id
+    assert result.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
 
 
 def test_replay_rejects_non_portfolio_review_report_types(tmp_path):

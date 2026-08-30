@@ -390,7 +390,11 @@ Observability floor for this wave:
   original call evidence. If the retained snapshot no longer exists, the replay refuses
   (fail-closed 409) rather than silently recollecting drifted upstream state - recover such jobs
   with a fresh report order. The replay command serves portfolio-review jobs only and refuses
-  cross-tenant or cross-region callers with the same not-found answer as an unknown job id; other
+  cross-tenant, cross-region, and mismatched booking-centre callers with the same not-found
+  answer as an unknown job id. The replayed job's lineage diagnostics label the evidence
+  `cloned_from_source_snapshot` and name the source snapshot holding the original upstream-call
+  rows, and a crash-interrupted replay resumes from `collecting_data` when retried with the same
+  idempotency key. Other
   report families recover by resubmitting their own order, which rebuilds the same document from
   the retained job request. Migration 013 backfills jobs that were
   stranded under the pre-fix `archive_validation_failed` posture so they become replayable after
