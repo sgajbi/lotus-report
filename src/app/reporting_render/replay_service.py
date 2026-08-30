@@ -275,9 +275,17 @@ class PortfolioReviewReplayService:
 
         if source_job.failure_category != "render_artifact_unrecoverable":
             return
-        if replayed.render_bounded_determinism_fingerprint is None:
-            # The replayed render did not complete; there is no comparison to
-            # record and the job's own failure posture already tells the story.
+        if replayed.status not in {
+            "completed",
+            "completed_with_warnings",
+            "archiving",
+            "archived",
+        }:
+            # The replayed render did not complete; the job's own failure
+            # posture already tells the story. A COMPLETED render whose
+            # response omitted the optional fingerprint still records an
+            # incomparable outcome below - silence would be indistinguishable
+            # from a failed render.
             return
         outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
         self._ledger.append_job_event(
@@ -433,6 +441,8 @@ def _fingerprint_outcome(
     source_job: ReportJobLedgerRecord,
     replayed: ReportJobLedgerRecord,
 ) -> tuple[str, str | None]:
+    if replayed.render_bounded_determinism_fingerprint is None:
+        return "incomparable", "replayed_fingerprint_missing"
     if source_job.render_bounded_determinism_fingerprint is None:
         return "incomparable", "source_fingerprint_missing"
     if not all(
