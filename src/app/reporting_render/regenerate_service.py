@@ -218,6 +218,12 @@ def get_portfolio_review_regenerate_service() -> PortfolioReviewRegenerateServic
 
 
 def _assert_regenerate_eligible(job: ReportJobLedgerRecord) -> None:
+    # Regeneration recreates a portfolio-review order; regenerating any other
+    # report type would archive a portfolio-review document recorded as the
+    # REPLACEMENT for a different report family's archived document. Other
+    # families regenerate by resubmitting their own order.
+    if job.report_type != "portfolio_review":
+        raise InvalidReportJobTransitionError("report_job_cannot_be_regenerated")
     if (
         job.status != "archived"
         or "pdf" not in job.requested_output_formats

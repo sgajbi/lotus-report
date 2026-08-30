@@ -1180,6 +1180,34 @@ async def test_clone_event_not_duplicated_when_resuming_after_event_commit(tmp_p
     assert len(clone_events) == 1
 
 
+def test_regenerate_rejects_non_portfolio_review_report_types(tmp_path):
+    """Regenerate recreates a portfolio-review order; an archived job of any
+    other family must be refused, or its replacement document would morph
+    report types (same class as the replay guard)."""
+
+    from app.reporting_render.regenerate_service import _assert_regenerate_eligible
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-regenerate-guard",
+    )
+    archived_like = job.model_copy(
+        update={
+            "status": "archived",
+            "render_job_id": f"rdr_{job.job_id}_pdf",
+            "archive_document_id": "doc_original",
+        }
+    )
+    _assert_regenerate_eligible(archived_like)
+    for report_type in ("proof_pack", "outcome_review", "rebalance_wave"):
+        with pytest.raises(InvalidReportJobTransitionError):
+            _assert_regenerate_eligible(
+                archived_like.model_copy(update={"report_type": report_type})
+            )
+
+
 def test_replay_rejects_non_portfolio_review_report_types(tmp_path):
     """The replay command recreates a portfolio-review order, so replaying any
     other report type would silently morph it - eligibility must refuse."""
