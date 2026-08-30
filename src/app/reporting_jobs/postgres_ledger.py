@@ -371,7 +371,16 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                           ON derived.report_job_id = rel.derived_report_job_id
                         WHERE rel.source_report_job_id = %s
                           AND rel.relationship_type = 'failed_work_replay'
-                          AND derived.status NOT IN ('failed', 'cancelled')
+                          AND NOT (
+                              derived.status = 'cancelled'
+                              OR (
+                                  derived.status = 'failed'
+                                  AND derived.failure_category NOT IN (
+                                      'archive_storage_failed',
+                                      'archive_execution_failed'
+                                  )
+                              )
+                          )
                         LIMIT 1
                         """,
                         (replay_source_job_id,),
