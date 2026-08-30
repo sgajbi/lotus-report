@@ -638,7 +638,12 @@ class ReportingReadPortfolioReviewInputProvider:
         if advisor_commentary_requested(job.options):
             snapshot_payload = dict(snapshot_payload)
             snapshot_payload["advisor_commentary_package"] = await self._resolve_advisor_commentary(
-                job=job, recorder=recorder
+                job=job,
+                recorder=recorder,
+                effective_reporting_currency=_optional_str(
+                    snapshot_payload.get("reportingCurrency")
+                )
+                or job.reporting_currency,
             )
         return PortfolioReviewInputCapture(
             snapshot_payload=snapshot_payload,
@@ -650,6 +655,7 @@ class ReportingReadPortfolioReviewInputProvider:
         *,
         job: ReportJobLedgerRecord,
         recorder: _UpstreamRecorder,
+        effective_reporting_currency: str | None,
     ) -> dict[str, Any]:
         run_id = requested_advisor_brief_run_id(job.options)
         if run_id is None:
@@ -679,7 +685,7 @@ class ReportingReadPortfolioReviewInputProvider:
                 tenant_id=job.tenant_id,
                 portfolio_id=_first_portfolio_id(job),
                 as_of_date=job.as_of_date.isoformat(),
-                reporting_currency=job.reporting_currency,
+                reporting_currency=effective_reporting_currency,
             )
         except AdvisorCommentarySourceUnavailableError as exc:
             raise PortfolioReviewInputCaptureError(

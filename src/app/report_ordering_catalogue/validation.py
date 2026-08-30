@@ -40,7 +40,7 @@ def validate_report_ordering_submission(
             "The selected ordering mode is not available for this report family.",
         )
     _validate_output_formats(definition, requested_output_formats)
-    _validate_options(definition, ordering_mode_id, options)
+    _validate_options(definition, ordering_mode_id, options, requested_output_formats)
 
 
 def _definition(
@@ -81,6 +81,7 @@ def _validate_options(
     definition: ReportFamilyDefinition,
     ordering_mode_id: str,
     options: Mapping[str, Any],
+    requested_output_formats: Sequence[str],
 ) -> None:
     configuration_fields = {field.field_id: field for field in definition.configuration_fields}
     allowed_keys = (
@@ -106,6 +107,11 @@ def _validate_options(
             duplicate_code="duplicate_report_section",
             label="report section",
         )
+    _validate_section_dependencies(
+        definition=definition,
+        options=options,
+        output_formats=requested_output_formats,
+    )
     if "allocation_dimensions" in options:
         field = configuration_fields["allocation_dimensions"]
         _validate_string_selection(
@@ -125,6 +131,50 @@ def _validate_options(
     for field_id in ("batch_manifest_source", "batch_manifest_version", "batch_manifest_hash"):
         if field_id in options:
             _validate_nonempty_string(options[field_id], "batch manifest provenance")
+
+
+def _validate_section_dependencies(
+    *,
+    definition: ReportFamilyDefinition,
+    options: Mapping[str, Any],
+    output_formats: Sequence[str],
+) -> None:
+    """Selecting a section makes each of its `conditional` configuration
+    fields required - acceptance must refuse what dispatch would refuse, or a
+    durably accepted batch strands its items at materialization."""
+
+    raw_sections = options.get("sections")
+    selected = (
+        {item.upper() for item in raw_sections if isinstance(item, str)}
+        if isinstance(raw_sections, list)
+        else set()
+    )
+    if not selected:
+        return
+    configuration_fields = {field.field_id: field for field in definition.configuration_fields}
+    for section in definition.sections:
+        if section.section_id not in selected:
+            continue
+        for dependency_id in section.dependency_field_ids:
+            field = configuration_fields.get(dependency_id)
+            if field is None or field.requirement != "conditional":
+                continue
+            value = options.get(dependency_id)
+            if not isinstance(value, str) or not value.strip():
+                raise ReportOrderingSubmissionError(
+                    "missing_conditional_report_field",
+                    f"The {section.business_label} section requires the "
+                    f"{field.business_label} field.",
+                )
+    # Temporary gate mirroring PortfolioReviewJobRequest: the render template
+    # does not render ADVISOR_COMMENTARY yet, and a PDF silently omitting an
+    # ordered section would be misleading (lotus-report#166 coordination).
+    if "ADVISOR_COMMENTARY" in selected and "pdf" in set(output_formats):
+        raise ReportOrderingSubmissionError(
+            "report_section_output_format_unsupported",
+            "The Advisor commentary section is currently available in json output "
+            "only; the governed PDF template does not yet render it.",
+        )
 
 
 def _validate_string_selection(

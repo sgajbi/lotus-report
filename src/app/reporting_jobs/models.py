@@ -344,6 +344,17 @@ class PortfolioReviewJobRequest(BaseModel):
                 "section is requested: the section is sourced only from an accepted "
                 "Advisor Brief run and lotus-report never chooses one implicitly."
             )
+        # Temporary gate until the lotus-render template renders the section
+        # (coordinated on lotus-report#166): a PDF that silently omitted an
+        # ordered section would be a misleading client document, so PDF orders
+        # refuse the section explicitly instead.
+        if section_requested and "pdf" in self.requested_output_formats:
+            raise ValueError(
+                "The ADVISOR_COMMENTARY section is currently composed in the json "
+                "system package only; the governed PDF template does not yet render "
+                "it, and a PDF that silently omitted an ordered section would be "
+                "misleading. Order json output, or omit the section from PDF orders."
+            )
         return self
 
     proposal_memo_package: ProposalMemoReportPackage | None = Field(

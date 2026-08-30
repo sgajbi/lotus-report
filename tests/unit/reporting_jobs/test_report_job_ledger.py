@@ -1135,6 +1135,7 @@ def test_advisor_commentary_order_requires_accepted_brief_run_id() -> None:
     accepted = PortfolioReviewJobRequest.model_validate(
         {
             **base,
+            "requested_output_formats": ["json"],
             "options": {
                 "sections": ["OVERVIEW", "ADVISOR_COMMENTARY"],
                 "advisor_brief_run_id": "run_accept_1",
@@ -1146,3 +1147,27 @@ def test_advisor_commentary_order_requires_accepted_brief_run_id() -> None:
         {**base, "options": {"sections": ["OVERVIEW"]}}
     )
     assert "advisor_brief_run_id" not in without_section.options
+    # Temporary render gate: PDF orders refuse the section until the render
+    # template exists - a PDF silently omitting an ordered section would be
+    # a misleading client document.
+    with pytest.raises(pydantic.ValidationError, match="json"):
+        PortfolioReviewJobRequest.model_validate(
+            {
+                **base,
+                "options": {
+                    "sections": ["ADVISOR_COMMENTARY"],
+                    "advisor_brief_run_id": "run_accept_1",
+                },
+            }
+        )
+    json_order = PortfolioReviewJobRequest.model_validate(
+        {
+            **base,
+            "requested_output_formats": ["json"],
+            "options": {
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        }
+    )
+    assert json_order.requested_output_formats == ["json"]

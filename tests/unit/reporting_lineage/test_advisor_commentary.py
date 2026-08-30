@@ -40,7 +40,7 @@ def _accepted_payload(**overrides) -> dict:
             {
                 "headline": "Concentration in technology",
                 "detail": "Top sector weight exceeds policy guidance.",
-                "tone": "caution",
+                "tone": "warning",
                 "evidence_refs": ["risk:concentration:sector"],
             }
         ],
@@ -103,7 +103,7 @@ async def test_accepted_run_composes_included_package_with_disclosure():
     }
     assert package["grounded_summary"].startswith("The portfolio outperformed")
     assert package["talking_points"][0]["headline"] == "Equity allocation drove returns"
-    assert package["risks_and_exceptions"][0]["tone"] == "caution"
+    assert package["risks_and_exceptions"][0]["tone"] == "warning"
     assert package["content_hash"] == "0a" * 32
     assert package["content_hash_algorithm"] == "sha256"
     assert "reviewed by advisor-lead-7" in package["disclosure_text"]
@@ -177,6 +177,61 @@ async def test_missing_review_identity_or_hash_blocks_disclosure():
         package = await _resolve(client)
         assert package["status"] == "unavailable"
         assert package["reason_code"] == "ai_disclosure_policy_unavailable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+async def test_authorization_failures_fail_capture_not_the_section(status_code):
+    """A refused lotus-report caller is an environment-wide deployment fault;
+    closing the section would mask it as a missing brief on every order."""
+
+    client = _StubClient(status_code, {"detail": "caller refused"})
+    with pytest.raises(AdvisorCommentarySourceUnavailableError, match="access-control"):
+        await _resolve(client)
+
+
+@pytest.mark.asyncio
+async def test_wrong_schema_or_run_identity_closes_the_section():
+    """A 200 body carrying a different schema or run identity must never be
+    archived under this contract's provenance."""
+
+    wrong_schema = _StubClient(200, _accepted_payload(schema_id="other.schema.v9"))
+    package = await _resolve(wrong_schema)
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_not_found"
+    assert "schema_id" in package["detail"]
+
+    missing_schema = _StubClient(200, _accepted_payload(schema_id=None))
+    package = await _resolve(missing_schema)
+    assert package["status"] == "unavailable"
+    assert "missing" in package["detail"]
+
+    wrong_run = _StubClient(200, _accepted_payload(run_id="run_other"))
+    package = await _resolve(wrong_run)
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_not_found"
+    assert "run_other" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_tone_is_normalized_to_the_closed_set():
+    """lotus-ai guarantees {positive, neutral, warning}; the composition
+    boundary re-asserts it so the render template can map tones to design
+    tokens against exact literals."""
+
+    payload = _accepted_payload(
+        talking_points=[
+            {"headline": "H", "detail": "D", "tone": "warning", "evidence_refs": []},
+            {"headline": "H2", "detail": "D2", "tone": "exuberant", "evidence_refs": []},
+            {"headline": "H3", "detail": "D3", "tone": "", "evidence_refs": []},
+        ]
+    )
+    package = await _resolve(_StubClient(200, payload))
+    assert [item["tone"] for item in package["talking_points"]] == [
+        "warning",
+        "neutral",
+        "neutral",
+    ]
 
 
 @pytest.mark.asyncio

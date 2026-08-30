@@ -4,6 +4,7 @@ x-lotus-report-service-environment: &lotus-report-service-environment
   RISK_BASE_URL: http://host.docker.internal:8130
   LOTUS_RENDER_BASE_URL: http://host.docker.internal:8310
   LOTUS_ARCHIVE_BASE_URL: http://host.docker.internal:8150
+  LOTUS_AI_BASE_URL: http://host.docker.internal:8140
   REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
 
 services:

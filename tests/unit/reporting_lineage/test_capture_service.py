@@ -424,6 +424,7 @@ class _HappyReportingReadService:
             "portfolio_id": portfolio_id,
             "as_of_date": request_payload["as_of_date"],
             "contract_version": "v1",
+            "reportingCurrency": request_payload.get("reporting_currency") or "USD",
         }
 
 
@@ -680,6 +681,42 @@ async def test_capture_service_composes_advisor_commentary_from_accepted_brief(
     assert snapshot.lineage_summary["advisor_brief_request_id"] == "req_77"
     assert snapshot.lineage_summary["advisor_brief_reviewed_by"] == "advisor-lead-7"
     assert snapshot.lineage_summary["advisor_brief_content_hash"] == "0b" * 32
+
+
+@pytest.mark.asyncio
+async def test_advisor_commentary_checks_the_effective_snapshot_currency(monkeypatch, tmp_path):
+    """When the order omits reporting_currency the snapshot still renders in
+    an effective currency derived from the portfolio; a brief asserting a
+    different currency must mismatch against THAT, not slip past a None."""
+
+    class _SgdBriefAiClient(_DummyAiClient):
+        async def get_accepted_workflow_output(self, run_id, *, tenant_id):
+            status_code, payload = await super().get_accepted_workflow_output(
+                run_id, tenant_id=tenant_id
+            )
+            payload["context"]["reporting_currency"] = "SGD"
+            return status_code, payload
+
+    _patch_portfolio_review_upstreams(monkeypatch, ai_client_cls=_SgdBriefAiClient)
+    ledger = ReportJobLedger(tmp_path / "jobs-advisor-currency.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-advisor-currency.sqlite3")
+    request = _advisor_commentary_request().model_copy(update={"reporting_currency": None})
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="idem-advisor-currency",
+    )
+    assert job.reporting_currency is None
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    package = snapshot.snapshot_payload["advisor_commentary_package"]
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_context_mismatch"
+    assert "SGD" in package["detail"]
 
 
 @pytest.mark.asyncio

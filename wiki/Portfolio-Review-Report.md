@@ -294,7 +294,14 @@ projection, issue #166). Ordering rules:
 
 - Request it via `options.sections` including `ADVISOR_COMMENTARY` **and**
   `options.advisor_brief_run_id` naming the accepted run. An order that selects the section
-  without the run id is rejected at acceptance - lotus-report never chooses a brief implicitly.
+  without the run id is rejected at acceptance (single orders and batches alike) - lotus-report
+  never chooses a brief implicitly.
+- **Temporary render gate**: PDF orders refuse the section explicitly until the lotus-render
+  template renders it - a PDF that silently omitted an ordered section would be a misleading
+  client document. Order `json` output for the section until then.
+- A lotus-ai 401/403 (the `lotus-report` caller missing or inactive in the lotus-ai
+  access-control registry) fails the capture retryable and is an environment fault to fix in
+  lotus-ai, not a section posture.
 - At capture time the accepted output is resolved by run id from lotus-ai (recorded as durable
   upstream-call lineage like every other source read). The exact reviewed narrative is composed
   unmodified - lotus-report never regenerates, edits, or re-reviews AI content.
