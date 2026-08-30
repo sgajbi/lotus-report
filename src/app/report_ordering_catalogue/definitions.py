@@ -85,6 +85,23 @@ PORTFOLIO_REVIEW_SECTION_DEFINITIONS = (
         default_selected=True,
     ),
     ReportSectionDefinition(
+        section_id="ADVISOR_COMMENTARY",
+        response_section_id="advisor_commentary",
+        response_title="Advisor Commentary",
+        business_label="Advisor commentary",
+        description=(
+            "Reviewed advisor narrative from an accepted Performance Advisor Brief, with the "
+            "accepting reviewer, run identity, and AI-assistance disclosure. Requires the "
+            "accepted brief run id; the section is truthfully omitted when the named run is "
+            "not accepted or its context does not match the report."
+        ),
+        response_key="advisorCommentary",
+        display_order=25,
+        selection_posture="optional",
+        default_selected=False,
+        dependency_field_ids=("advisor_brief_run_id",),
+    ),
+    ReportSectionDefinition(
         section_id="ALLOCATION",
         response_section_id="asset_allocation",
         response_title="Asset Allocation And Portfolio Construction",
@@ -163,6 +180,19 @@ _PORTFOLIO_REVIEW_FIELDS = (
         description="Business date used for holdings, activity, performance, and risk evidence.",
         input_type="business_date",
         requirement="required",
+        defaulting_policy="caller_required",
+        value_source="caller",
+    ),
+    ReportConfigurationFieldDefinition(
+        field_id="advisor_brief_run_id",
+        business_label="Accepted Advisor Brief run",
+        description=(
+            "Identity of the accepted Performance Advisor Brief run whose reviewed narrative "
+            "the Advisor commentary section reproduces. Required when that section is "
+            "selected; lotus-report never chooses a brief implicitly."
+        ),
+        input_type="text",
+        requirement="conditional",
         defaulting_policy="caller_required",
         value_source="caller",
     ),

@@ -45,6 +45,7 @@ def _build_render_package(
     trust_metadata = _as_dict(evidence.get("trust_metadata"))
     reviewed_narrative = _reviewed_advisory_narrative(snapshot)
     advisor_memo = _advisor_proposal_memo(snapshot)
+    advisor_commentary = _advisor_commentary(snapshot)
     currency = (
         _optional_str(snapshot.get("reportingCurrency"))
         or _optional_str(overview.get("currency"))
@@ -107,6 +108,7 @@ def _build_render_package(
         ),
         "reviewed_advisory_narrative": reviewed_narrative,
         "advisor_proposal_memo": advisor_memo,
+        "advisor_commentary": advisor_commentary,
     }
     lineage_refs = [job.job_id]
     disclosure_refs = ["portfolio-review.standard-disclosures.v1"]
@@ -116,6 +118,13 @@ def _build_render_package(
     if advisor_memo["status"] == "included":
         lineage_refs.extend(_advisor_memo_lineage_refs(advisor_memo))
         disclosure_refs.extend(_advisor_memo_disclosure_refs(advisor_memo))
+    if advisor_commentary["status"] == "included":
+        lineage_refs.extend(
+            [
+                str(advisor_commentary.get("run_id") or "not_available"),
+                str(advisor_commentary.get("content_hash") or "not_available"),
+            ]
+        )
     return _render_package_envelope(
         job=job,
         snapshot=snapshot,
@@ -1120,6 +1129,18 @@ def _reviewed_advisory_narrative(snapshot: dict[str, Any]) -> dict[str, Any]:
         "execution_boundary": _as_dict(package.get("execution_boundary")),
         "ai_lineage": _as_dict(package.get("ai_lineage")),
     }
+
+
+def _advisor_commentary(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """The accepted Advisor Brief commentary section, resolved and bounded at
+    capture time by the report's own advisor-commentary resolution (issue
+    #166). The package is report-authored, so it passes through verbatim; a
+    snapshot without one renders the not_supplied posture."""
+
+    package = _as_dict(snapshot.get("advisor_commentary_package"))
+    if not package:
+        return {"status": "not_supplied"}
+    return package
 
 
 def _advisor_proposal_memo(snapshot: dict[str, Any]) -> dict[str, Any]:

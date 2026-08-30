@@ -13,11 +13,19 @@ from app.application_errors import (
     ReportingUpstreamError,
     ReportingValidationError,
 )
+from app.clients.ai_client import AiClient
 from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.reporting_jobs.models import ReportJobLedgerRecord
+from app.reporting_lineage.advisor_commentary import (
+    AcceptedOutputClient,
+    AdvisorCommentarySourceUnavailableError,
+    advisor_commentary_requested,
+    requested_advisor_brief_run_id,
+    resolve_advisor_commentary_package,
+)
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
@@ -35,6 +43,21 @@ from app.services.reporting_read_service import ReportingReadService
 
 
 class ReportJobCaptureLedger(Protocol):
+    def append_job_event(
+        self,
+        *,
+        job_id: str,
+        event_type: str,
+        message: str,
+        event_payload: dict[str, object] | None = None,
+        event_idempotency_key: str | None = None,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+    ) -> None: ...
+
+    def list_status_events(self, job_id: str) -> list[Any]: ...
+
     def mark_collecting_data(
         self,
         *,
@@ -480,6 +503,49 @@ class _RecordingPerformanceClient(PerformanceClient):
         return status_code, response_payload
 
 
+class _RecordingAiClient:
+    """Records the accepted-output read as durable upstream-call evidence.
+
+    Wraps any AcceptedOutputClient (production AiClient or an injected test
+    double) so the lotus-ai read is always part of the snapshot's lineage.
+    """
+
+    def __init__(self, inner: AcceptedOutputClient, recorder: _UpstreamRecorder):
+        self._inner = inner
+        self._recorder = recorder
+
+    async def get_accepted_workflow_output(
+        self, run_id: str, *, tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
+        started_at = perf_counter()
+        endpoint = "/platform/workflow-packs/runs/{run_id}/accepted-output"
+        request_payload = {"run_id": run_id}
+        try:
+            status_code, response_payload = await self._inner.get_accepted_workflow_output(
+                run_id, tenant_id=tenant_id
+            )
+        except Exception as exc:
+            self._recorder.append_failure(
+                service_name="lotus-ai",
+                endpoint=endpoint,
+                method="GET",
+                request_payload=request_payload,
+                started_at=started_at,
+                exc=exc,
+            )
+            raise
+        self._recorder.append_success(
+            service_name="lotus-ai",
+            endpoint=endpoint,
+            method="GET",
+            request_payload=request_payload,
+            status_code=status_code,
+            response_payload=response_payload,
+            started_at=started_at,
+        )
+        return status_code, response_payload
+
+
 class _RecordingRiskClient(RiskClient):
     def __init__(self, inner: RiskClient, recorder: _UpstreamRecorder):
         self._inner = inner
@@ -512,8 +578,14 @@ class _RecordingRiskClient(RiskClient):
 
 
 class ReportingReadPortfolioReviewInputProvider:
-    def __init__(self, *, read_service: ReportingReadService | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        read_service: ReportingReadService | None = None,
+        ai_client: AcceptedOutputClient | None = None,
+    ) -> None:
         self._read_service = read_service
+        self._ai_client = ai_client
 
     async def collect_for_job(
         self,
@@ -563,10 +635,57 @@ class ReportingReadPortfolioReviewInputProvider:
                 original_error=exc,
                 upstream_calls=recorder.calls,
             ) from exc
+        if advisor_commentary_requested(job.options):
+            snapshot_payload = dict(snapshot_payload)
+            snapshot_payload["advisor_commentary_package"] = await self._resolve_advisor_commentary(
+                job=job, recorder=recorder
+            )
         return PortfolioReviewInputCapture(
             snapshot_payload=snapshot_payload,
             upstream_calls=recorder.calls,
         )
+
+    async def _resolve_advisor_commentary(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        recorder: _UpstreamRecorder,
+    ) -> dict[str, Any]:
+        run_id = requested_advisor_brief_run_id(job.options)
+        if run_id is None:
+            # Acceptance validation requires the run id with the section; a
+            # ledger row without one is a malformed legacy order and the
+            # section closes rather than choosing a brief implicitly.
+            return {
+                "status": "unavailable",
+                "reason_code": "advisor_brief_not_found",
+                "advisor_brief_run_id": None,
+                "detail": "The order named the section without an accepted brief run id.",
+            }
+        ai_client = _RecordingAiClient(
+            self._ai_client
+            or AiClient(
+                base_url=settings.ai_base_url,
+                timeout_seconds=settings.upstream_timeout_seconds,
+                max_retries=settings.upstream_max_retries,
+                retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+            ),
+            recorder,
+        )
+        try:
+            return await resolve_advisor_commentary_package(
+                client=ai_client,
+                run_id=run_id,
+                tenant_id=job.tenant_id,
+                portfolio_id=_first_portfolio_id(job),
+                as_of_date=job.as_of_date.isoformat(),
+                reporting_currency=job.reporting_currency,
+            )
+        except AdvisorCommentarySourceUnavailableError as exc:
+            raise PortfolioReviewInputCaptureError(
+                original_error=exc,
+                upstream_calls=recorder.calls,
+            ) from exc
 
 
 class PortfolioReviewSnapshotCaptureService:
@@ -661,12 +780,13 @@ class PortfolioReviewSnapshotCaptureService:
             lineage_summary=_lineage_summary(
                 upstream_calls,
                 proposal_narrative_package=_proposal_narrative_package(job),
+                advisor_commentary_package=snapshot_payload.get("advisor_commentary_package"),
             ),
             captured_at=_utc_now(),
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
-        return self._complete_capture(
+        completed = self._complete_capture(
             job=job,
             started_at=started_at,
             snapshot_request=snapshot_request,
@@ -674,6 +794,41 @@ class PortfolioReviewSnapshotCaptureService:
             failure_category=failure_category if failure_message else None,
             failure_message=failure_message,
             retry_eligible=retry_eligible,
+        )
+        self._record_advisor_commentary_closure(job=job, snapshot_payload=snapshot_payload)
+        return completed
+
+    def _record_advisor_commentary_closure(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        snapshot_payload: dict[str, Any],
+    ) -> None:
+        package = snapshot_payload.get("advisor_commentary_package")
+        if not isinstance(package, dict) or package.get("status") != "unavailable":
+            return
+        reason_code = str(package.get("reason_code") or "advisor_brief_not_found")
+        already_recorded = any(
+            event.event_type == "job_advisor_commentary_unavailable"
+            for event in self._job_ledger.list_status_events(job.job_id)
+        )
+        if already_recorded:
+            return
+        self._job_ledger.append_job_event(
+            job_id=job.job_id,
+            event_type="job_advisor_commentary_unavailable",
+            message=(
+                "The requested ADVISOR_COMMENTARY section was closed with reason "
+                f"{reason_code}; the report renders without it."
+            ),
+            event_payload={
+                "reason_code": reason_code,
+                "advisor_brief_run_id": package.get("advisor_brief_run_id"),
+            },
+            event_idempotency_key=f"job_advisor_commentary_unavailable:{job.job_id}",
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
         )
 
     def _capture_proof_pack_snapshot(
@@ -1276,6 +1431,7 @@ def _lineage_summary(
     calls: list[_RecordedUpstreamCall],
     *,
     proposal_narrative_package: dict[str, Any] | None = None,
+    advisor_commentary_package: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = {
         "source_services": sorted({call.service_name for call in calls}),
@@ -1312,6 +1468,24 @@ def _lineage_summary(
                 "proposal_narrative_source_hash": source_lineage.get("source_narrative_hash"),
             }
         )
+    if isinstance(advisor_commentary_package, dict):
+        summary["advisor_commentary_status"] = advisor_commentary_package.get("status")
+        if advisor_commentary_package.get("status") == "included":
+            commentary_review = advisor_commentary_package.get("review")
+            commentary_review = commentary_review if isinstance(commentary_review, dict) else {}
+            summary.update(
+                {
+                    "advisor_brief_run_id": advisor_commentary_package.get("run_id"),
+                    "advisor_brief_request_id": advisor_commentary_package.get("request_id"),
+                    "advisor_brief_reviewed_by": commentary_review.get("reviewed_by"),
+                    "advisor_brief_reviewed_at": commentary_review.get("reviewed_at"),
+                    "advisor_brief_content_hash": advisor_commentary_package.get("content_hash"),
+                }
+            )
+        else:
+            summary["advisor_commentary_reason_code"] = advisor_commentary_package.get(
+                "reason_code"
+            )
     return summary
 
 

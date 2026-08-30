@@ -57,13 +57,15 @@ async def test_catalogue_maps_business_configuration_from_ready_sources() -> Non
     assert portfolio_review.client_release_posture == (
         "advisor_review_required_distribution_not_supported"
     )
-    assert [section.business_label for section in portfolio_review.sections[:3]] == [
+    assert [section.business_label for section in portfolio_review.sections[:4]] == [
         "Client and mandate profile",
         "Portfolio overview",
+        "Advisor commentary",
         "Allocation and portfolio construction",
     ]
     assert {field.field_id for field in portfolio_review.configuration_fields} == {
         "as_of_date",
+        "advisor_brief_run_id",
         "reporting_currency",
         "benchmark_code",
         "allocation_dimensions",

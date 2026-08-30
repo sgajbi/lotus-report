@@ -380,6 +380,7 @@ Cross-app upstream defaults in local runtime:
 - `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
 - `RISK_BASE_URL=http://risk.dev.lotus`
 - `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
+- `LOTUS_AI_BASE_URL=http://ai.dev.lotus`
 - `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
 - `REPORT_POSTGRES_POOL_MIN_SIZE=1`
 - `REPORT_POSTGRES_POOL_MAX_SIZE=10`

@@ -451,6 +451,9 @@ def _build_archive_payload(
     advisor_memo = _advisor_proposal_memo_archive_summary(snapshot_payload)
     if advisor_memo is not None:
         metadata["advisor_proposal_memo"] = advisor_memo
+    advisor_commentary = _advisor_commentary_archive_summary(snapshot_payload)
+    if advisor_commentary is not None:
+        metadata["advisor_commentary"] = advisor_commentary
     if supersedes_render_job_id:
         metadata["supersedes_render_job_id"] = supersedes_render_job_id
     if supersedes_archive_document_id:
@@ -458,6 +461,27 @@ def _build_archive_payload(
     if archive_consequence:
         metadata["archive_consequence"] = archive_consequence
     return {"metadata": metadata, "content_base64": content_base64}
+
+
+def _advisor_commentary_archive_summary(
+    snapshot_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Archive metadata keeps the accepted brief's audit identity for a
+    rendered ADVISOR_COMMENTARY section (issue #166 acceptance 4)."""
+
+    package = _as_dict(snapshot_payload.get("advisor_commentary_package"))
+    if not package or package.get("status") != "included":
+        return None
+    review = _as_dict(package.get("review"))
+    return {
+        "run_id": _optional_str(package.get("run_id")) or "not_available",
+        "request_id": _optional_str(package.get("request_id")) or "not_available",
+        "reviewed_by": _optional_str(review.get("reviewed_by")) or "not_available",
+        "reviewed_at": _optional_str(review.get("reviewed_at")) or "not_available",
+        "content_hash": _optional_str(package.get("content_hash")) or "not_available",
+        "schema_id": _optional_str(package.get("schema_id")) or "not_available",
+        "included_in_render": True,
+    }
 
 
 def _advisor_proposal_memo_archive_summary(

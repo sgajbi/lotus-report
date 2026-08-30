@@ -285,3 +285,34 @@ When extending the report:
 5. update `docs/supported-features.md` only after implementation exists,
 6. update this wiki page only for durable operator or product truth,
 7. keep advisor-only, client-ready, and AI-assisted material clearly separated.
+
+## Advisor commentary section (ADVISOR_COMMENTARY)
+
+The portfolio review report can carry a governed narrative section sourced exclusively from an
+**accepted Performance Advisor Brief** (lotus-ai `advisor_brief.pack@v1` accepted-output
+projection, issue #166). Ordering rules:
+
+- Request it via `options.sections` including `ADVISOR_COMMENTARY` **and**
+  `options.advisor_brief_run_id` naming the accepted run. An order that selects the section
+  without the run id is rejected at acceptance - lotus-report never chooses a brief implicitly.
+- At capture time the accepted output is resolved by run id from lotus-ai (recorded as durable
+  upstream-call lineage like every other source read). The exact reviewed narrative is composed
+  unmodified - lotus-report never regenerates, edits, or re-reviews AI content.
+- The section **fails closed without failing the report** on definitive postures, with one
+  bounded reason recorded on the job (`job_advisor_commentary_unavailable` event, snapshot
+  package, and lineage summary): `advisor_brief_not_reviewed` (run not completed/accepted, or
+  superseded), `advisor_brief_not_found` (unknown run or unretrievable output),
+  `advisor_brief_context_mismatch` (the brief asserts a portfolio, as-of date, or reporting
+  currency that differs from the report's; nulls mean "not asserted" and never conflict), and
+  `ai_disclosure_policy_unavailable` (accepting reviewer identity or content hash missing, so
+  the mandated disclosure line cannot be rendered truthfully).
+- Transport-level lotus-ai unavailability fails the capture with the standard retryable
+  posture instead - retrying can succeed, so the pack does not silently ship without a section
+  the caller ordered.
+- When included, the render package and JSON output carry the summary, talking points, risks
+  and exceptions, the review identity, the pinned `content_hash`, and the AI-assistance
+  disclosure line; archive metadata keeps the run id, request id, reviewer, review time, and
+  content hash.
+- lotus-report calls lotus-ai as registered caller `lotus-report` (`X-Caller-App`); that
+  caller must be registered and active in the lotus-ai access-control registry for the
+  environment.
