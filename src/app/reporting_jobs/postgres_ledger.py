@@ -334,9 +334,40 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 replay_source_status: str | None = None
                 replay_source_failure_category: str | None = None
                 if replay_source_job_id is not None:
-                    # Serialize concurrent replay creators on the source row:
-                    # the second novel-key transaction blocks here until the
-                    # first commits, then sees its relationship below.
+                    root_row = connection.execute(
+                        """
+                        WITH RECURSIVE ancestors(job_id) AS (
+                            SELECT %s
+                            UNION
+                            SELECT rel.source_report_job_id
+                            FROM report_job_relationship rel
+                            JOIN ancestors ON rel.derived_report_job_id = ancestors.job_id
+                            WHERE rel.relationship_type = 'failed_work_replay'
+                        )
+                        SELECT a.job_id
+                        FROM ancestors a
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM report_job_relationship rel
+                            WHERE rel.derived_report_job_id = a.job_id
+                              AND rel.relationship_type = 'failed_work_replay'
+                        )
+                        LIMIT 1
+                        """,
+                        (replay_source_job_id,),
+                    ).fetchone()
+                    lineage_root_id = root_row["job_id"] if root_row else replay_source_job_id
+                    if lineage_root_id != replay_source_job_id:
+                        # Serialize every creator in this lineage on the ROOT
+                        # row (root first, then source - one consistent lock
+                        # order), so replacements on different branches cannot
+                        # race each other into duplicate documents.
+                        connection.execute(
+                            "SELECT 1 FROM report_job WHERE report_job_id = %s FOR UPDATE",
+                            (lineage_root_id,),
+                        ).fetchone()
+                    # Then the source row itself: the second novel-key
+                    # transaction blocks here until the first commits, then
+                    # sees its relationship below.
                     source_row = connection.execute(
                         "SELECT status, failure_category, retry_eligible, "
                         "archive_document_id FROM report_job "
@@ -377,17 +408,23 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     replay_source_failure_category = source_row["failure_category"]
                     live = connection.execute(
                         """
+                        WITH RECURSIVE lineage(job_id) AS (
+                            SELECT %s
+                            UNION
+                            SELECT rel.derived_report_job_id
+                            FROM report_job_relationship rel
+                            JOIN lineage ON rel.source_report_job_id = lineage.job_id
+                            WHERE rel.relationship_type = 'failed_work_replay'
+                        )
                         SELECT 1
-                        FROM report_job_relationship rel
-                        JOIN report_job derived
-                          ON derived.report_job_id = rel.derived_report_job_id
-                        WHERE rel.source_report_job_id = %s
-                          AND rel.relationship_type = 'failed_work_replay'
+                        FROM lineage
+                        JOIN report_job member ON member.report_job_id = lineage.job_id
+                        WHERE lineage.job_id != %s
                           AND NOT (
-                              derived.status = 'cancelled'
+                              member.status = 'cancelled'
                               OR (
-                                  derived.status = 'failed'
-                                  AND derived.failure_category NOT IN (
+                                  member.status = 'failed'
+                                  AND member.failure_category NOT IN (
                                       'archive_storage_failed',
                                       'archive_execution_failed'
                                   )
@@ -395,7 +432,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                           )
                         LIMIT 1
                         """,
-                        (replay_source_job_id,),
+                        (lineage_root_id, replay_source_job_id),
                     ).fetchone()
                     if live:
                         # A replacement already exists (in flight or archived).

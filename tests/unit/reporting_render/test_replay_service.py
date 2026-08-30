@@ -1597,6 +1597,107 @@ async def test_clone_event_not_duplicated_when_resuming_after_event_commit(tmp_p
     assert len(clone_events) == 1
 
 
+@pytest.mark.asyncio
+async def test_lineage_guard_blocks_original_after_grandchild_succeeds(tmp_path):
+    """O -> A (render-failed) -> B (succeeded): a novel replay of O must be
+    refused - B is O's replacement through A, and the guard walks the full
+    lineage, not just direct children. Replaying A is likewise refused (its
+    descendant B succeeded). Exactly one replacement document exists."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    original = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, original)
+
+    failing_replay, _rc1, _ac1 = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        render_client=_FailingRenderClient(),
+    )
+    a_result = await failing_replay.replay_job(
+        job_id=original.job_id,
+        command=ReportJobReplayRequest(reason="Replacement A."),
+        caller_context=_caller(),
+        idempotency_key="lineage-a",
+    )
+    replacement_a = a_result.replayed_job
+    assert replacement_a.status == "failed"
+    assert replacement_a.failure_category == "render_execution_failed"
+
+    healthy_replay, _rc2, archive_client = _recovery_services(
+        ledger, store, _RecapturingCapture(ledger, store), snapshot_store=store
+    )
+    b_result = await healthy_replay.replay_job(
+        job_id=replacement_a.job_id,
+        command=ReportJobReplayRequest(reason="Replacement B."),
+        caller_context=_caller(),
+        idempotency_key="lineage-b",
+    )
+    assert b_result.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+    # O's guard must see B through A.
+    with pytest.raises(InvalidReportJobTransitionError):
+        await healthy_replay.replay_job(
+            job_id=original.job_id,
+            command=ReportJobReplayRequest(reason="Replacement C."),
+            caller_context=_caller(),
+            idempotency_key="lineage-c",
+        )
+    # A's guard must see its own successful descendant B.
+    with pytest.raises(InvalidReportJobTransitionError):
+        await healthy_replay.replay_job(
+            job_id=replacement_a.job_id,
+            command=ReportJobReplayRequest(reason="Replacement B2."),
+            caller_context=_caller(),
+            idempotency_key="lineage-b2",
+        )
+    assert len(archive_client.payloads) == 1
+
+
+def test_lineage_guard_blocks_replaying_child_of_adopted_root(tmp_path):
+    """If the lineage ROOT was adopted (archived), a render-failed child must
+    not be replayable - the original work already has its document."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    original = _artifactless_failed_source(ledger)
+    child = ledger.create_replay_derived_job(
+        source_job_id=original.job_id,
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="adopted-root-child",
+        reason="Replacement A.",
+    )
+    child = ledger.mark_failed(
+        job_id=child.job_id,
+        actor=child.triggered_by,
+        correlation_id=child.correlation_id,
+        trace_id=child.trace_id,
+        failure_category="render_execution_failed",
+        failure_message="Render unavailable.",
+        retry_eligible=True,
+    )
+    ledger.mark_archived(
+        job_id=original.job_id,
+        actor=original.triggered_by,
+        correlation_id=original.correlation_id,
+        trace_id=original.trace_id,
+        archive_request_id=f"arch_rdr_{original.job_id}_pdf",
+        archive_document_id="doc_adopted_root",
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        ledger.create_replay_derived_job(
+            source_job_id=child.job_id,
+            request=_request(output_formats=["pdf"]),
+            caller_context=_caller(),
+            idempotency_key="adopted-root-grandchild",
+            reason="Replacement B.",
+        )
+
+
 def test_guarded_creation_revalidates_source_eligibility(tmp_path):
     """A stale observer (its resolver saw 404 before a concurrent adoption
     archived the source) must be refused at the guarded creation itself -
