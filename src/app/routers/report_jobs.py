@@ -421,6 +421,38 @@ def _lineage_to_diagnostics(
             if call.failure_category and call.failure_category != "none"
         }
     )
+    summary = snapshot.lineage_summary
+    upstream_evidence = str(summary.get("upstream_evidence") or "captured")
+    if upstream_evidence == "cloned_from_source_snapshot":
+        # A replay-cloned snapshot has no upstream-call rows of its own; the
+        # summary carries the data's true service provenance and names the
+        # snapshot holding the original call evidence. Surfacing only the
+        # zero row count would read as missing evidence.
+        summary_services = summary.get("source_services")
+        if isinstance(summary_services, list):
+            source_services = sorted(str(item) for item in summary_services if item)
+        source_call_count = summary.get("source_call_count")
+        return ReportJobLineageDiagnostics(
+            upstream_call_count=len(upstream_calls),
+            source_services=source_services,
+            supportability_status=snapshot.supportability_status,
+            completeness_status=snapshot.completeness_status,
+            failure_categories=failure_categories,
+            upstream_evidence=upstream_evidence,
+            evidence_source_snapshot_id=(
+                str(summary.get("cloned_from_snapshot_id"))
+                if summary.get("cloned_from_snapshot_id")
+                else None
+            ),
+            evidence_source_report_job_id=(
+                str(summary.get("cloned_from_report_job_id"))
+                if summary.get("cloned_from_report_job_id")
+                else None
+            ),
+            source_upstream_call_count=(
+                int(source_call_count) if isinstance(source_call_count, int) else None
+            ),
+        )
     return ReportJobLineageDiagnostics(
         upstream_call_count=len(upstream_calls),
         source_services=source_services,

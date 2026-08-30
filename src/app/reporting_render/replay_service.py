@@ -159,6 +159,10 @@ class PortfolioReviewReplayService:
         if (
             source_job.tenant_id != caller_context.tenant_id
             or source_job.region != caller_context.region
+            or (
+                source_job.booking_center_code is not None
+                and caller_context.booking_center_code != source_job.booking_center_code
+            )
         ):
             raise ReportJobNotFoundError("report_job_not_found")
         assert_replay_eligible(source_job)
@@ -179,17 +183,15 @@ class PortfolioReviewReplayService:
             reason=command.reason,
             actor=caller_context.triggered_by,
         )
-        if replayed.status == "accepted":
-            self._ledger.append_job_event(
-                job_id=source_job.job_id,
-                event_type="job_replay_requested",
-                message=f"Report replay requested as {replayed.job_id}: {command.reason}",
-                event_payload={"replayed_job_id": replayed.job_id},
-                event_idempotency_key=replay_key,
-                actor=caller_context.triggered_by,
-                correlation_id=caller_context.correlation_id,
-                trace_id=caller_context.trace_id,
-            )
+        if replayed.status in {"accepted", "collecting_data"}:
+            if replayed.status == "accepted":
+                self._append_replay_requested_event(
+                    source_job=source_job,
+                    replayed=replayed,
+                    reason=command.reason,
+                    replay_key=replay_key,
+                    caller_context=caller_context,
+                )
             replayed = await self._collect_replay_inputs(
                 source_snapshot=source_snapshot,
                 source_job=source_job,
@@ -232,6 +234,26 @@ class PortfolioReviewReplayService:
             source_job=source_job,
             replayed_job=replayed,
             idempotency_key=idempotency_key or "",
+        )
+
+    def _append_replay_requested_event(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        replayed: ReportJobLedgerRecord,
+        reason: str,
+        replay_key: str,
+        caller_context: ReportCallerContext,
+    ) -> None:
+        self._ledger.append_job_event(
+            job_id=source_job.job_id,
+            event_type="job_replay_requested",
+            message=f"Report replay requested as {replayed.job_id}: {reason}",
+            event_payload={"replayed_job_id": replayed.job_id},
+            event_idempotency_key=replay_key,
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
         )
 
     def _require_retained_snapshot(
@@ -282,12 +304,15 @@ class PortfolioReviewReplayService:
         # and reusing it keeps the recovery deterministic even when upstream
         # state has moved on.
         assert self._snapshot_store is not None
-        job = self._ledger.mark_collecting_data(
-            job_id=replayed.job_id,
-            actor=caller_context.triggered_by,
-            correlation_id=caller_context.correlation_id,
-            trace_id=caller_context.trace_id,
-        )
+        if replayed.status == "collecting_data":
+            job = replayed
+        else:
+            job = self._ledger.mark_collecting_data(
+                job_id=replayed.job_id,
+                actor=caller_context.triggered_by,
+                correlation_id=caller_context.correlation_id,
+                trace_id=caller_context.trace_id,
+            )
         try:
             cloned_snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
         except ReportInputSnapshotNotFoundError:
