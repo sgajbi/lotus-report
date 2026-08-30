@@ -344,6 +344,23 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     ).fetchone()
                     if not source_row:
                         raise ReportJobNotFoundError("report_job_not_found")
+                    # The initial idempotency lookup ran before this lock; a
+                    # concurrent SAME-key request may have committed while we
+                    # waited. Re-check so same-key retries converge on that
+                    # job instead of tripping the live-relationship refusal.
+                    existing = connection.execute(
+                        """
+                        SELECT report_request_id, request_hash
+                        FROM report_request
+                        WHERE idempotency_key = %s
+                        """,
+                        (normalized_key,),
+                    ).fetchone()
+                    if existing:
+                        record = self._existing_or_conflict(connection, existing, request_hash)
+                        if enqueue:
+                            self._ensure_work_item(connection, record=record)
+                        return record
                     replay_source_status = source_row["status"]
                     replay_source_failure_category = source_row["failure_category"]
                     live = connection.execute(

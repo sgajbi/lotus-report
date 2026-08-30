@@ -388,6 +388,19 @@ def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
     )
     assert same.job_id == first.job_id
 
+    # The post-lock idempotency recheck: the SAME key converges on the
+    # existing replacement even when presented while the guard would refuse a
+    # novel key (the concurrent same-key race resolves to convergence, never
+    # to a 409).
+    converged = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"replay-guard-first-{unique_suffix}",
+        reason="First replacement.",
+    )
+    assert converged.job_id == first.job_id
+
     # A FAILED replacement releases the guard for a fresh attempt.
     ledger.mark_failed(
         job_id=first.job_id,
