@@ -688,6 +688,33 @@ async def test_replay_records_incomparable_on_runtime_version_change(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_replay_records_incomparable_when_replayed_fingerprint_missing(tmp_path):
+    """A successful replay render whose response omits the optional
+    fingerprint still records an incomparable outcome - silence would be
+    indistinguishable from a failed render."""
+
+    class _NoFingerprintRenderClient(_RecordingRenderClient):
+        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+            status_code, response = await super().submit_render_package(
+                payload, correlation_id, trace_id
+            )
+            response.pop("bounded_determinism_fingerprint", None)
+            return status_code, response
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    result, event = await _replay_and_read_comparison(
+        ledger, store, failed, render_client=_NoFingerprintRenderClient()
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "incomparable"
+    assert event.event_payload["reason"] == "replayed_fingerprint_missing"
+
+
+@pytest.mark.asyncio
 async def test_replay_records_incomparable_when_runtime_identity_missing(tmp_path):
     """Absent runtime metadata must not compare equal as None == None: a
     match claim requires proof both renders ran the same governed runtime."""
