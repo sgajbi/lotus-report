@@ -401,7 +401,14 @@ Observability floor for this wave:
   report families recover by resubmitting their own order, which rebuilds the same document from
   the retained job request. Migration 013 backfills jobs that were
   stranded under the pre-fix `archive_validation_failed` posture so they become replayable after
-  upgrade. Note the regenerated PDF is content-identical but not byte-identical to the lost
+  upgrade. Each such replay records a `job_replay_fingerprint_compared` event on the replayed job
+  (surfaced as a `replay_fingerprint_diverged` / `replay_fingerprint_incomparable` diagnostic
+  flag): matched means the regenerated document reproduced the lost render's
+  `bounded_determinism_fingerprint`; diverged on the same engine version warrants investigation,
+  but rule out crossed runtimes first (the fingerprint is stable only within the governed Linux
+  container runtime - identical engine versions on different host classes legitimately differ)
+  and note the open typst#6783 font-section-order bug can produce false divergence until
+  lotus-render finishes removing embedded SVG text. Note the regenerated PDF is content-identical but not byte-identical to the lost
   original (PDF metadata differs per render), so `render_artifact_sha256` values from the failed
   job must not be compared against the replayed document - `bounded_determinism_fingerprint` is
   the cross-render stable identity

@@ -1425,6 +1425,14 @@ async def get_report_job_diagnostics(
     if record.render_job_id and not record.archive_document_id:
         diagnostic_flags.append("archive_not_completed")
 
+    for event in events:
+        if event.event_type != "job_replay_fingerprint_compared":
+            continue
+        outcome = str(event.event_payload.get("outcome") or "")
+        if outcome in {"diverged", "incomparable"}:
+            flag = f"replay_fingerprint_{outcome}"
+            if flag not in diagnostic_flags:
+                diagnostic_flags.append(flag)
     return ReportJobDiagnosticsResponse(
         report_job_id=record.job_id,
         status=status_response,
