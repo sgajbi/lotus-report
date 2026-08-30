@@ -1698,6 +1698,96 @@ def test_lineage_guard_blocks_replaying_child_of_adopted_root(tmp_path):
         )
 
 
+@pytest.mark.asyncio
+async def test_resolved_archive_ancestor_does_not_strand_the_chain(tmp_path):
+    """O fails archive-stage, the confirmed 404 permits replacement A (which
+    proves O's ambiguity was resolved), then A fails at RENDER. Replaying A
+    must succeed - O's archive failure is released by A's existence - and
+    once B archives, novel replays of O and A are refused. Exactly one
+    document across the whole chain."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    class _Failing500ArchiveClient:
+        async def archive_document(self, payload, **kwargs):
+            return 500, {"detail": "archive fault"}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    original = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="resolved-ancestor-original",
+    )
+    _create_snapshot_for(store, original)
+    original = ledger.mark_collecting_data(
+        job_id=original.job_id,
+        actor=original.triggered_by,
+        correlation_id=original.correlation_id,
+        trace_id=original.trace_id,
+    )
+    original = ledger.mark_data_ready(
+        job_id=original.job_id,
+        actor=original.triggered_by,
+        correlation_id=original.correlation_id,
+        trace_id=original.trace_id,
+    )
+    failing_archive_render = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(),
+        archive_client=_Failing500ArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    original = await failing_archive_render.render_for_job(original)
+    assert original.failure_category == "archive_execution_failed"
+
+    # Confirmed 404 permits replacement A; A fails at render.
+    a_replay, _rc, _ac = _recovery_services(
+        ledger,
+        store,
+        _RecapturingCapture(ledger, store),
+        snapshot_store=store,
+        render_client=_FailingRenderClient(),
+    )
+    a_result = await a_replay.replay_job(
+        job_id=original.job_id,
+        command=ReportJobReplayRequest(reason="Replacement A."),
+        caller_context=_caller(),
+        idempotency_key="resolved-ancestor-a",
+    )
+    replacement_a = a_result.replayed_job
+    assert replacement_a.status == "failed"
+    assert replacement_a.failure_category == "render_execution_failed"
+
+    # Replaying A must NOT be stranded by O's already-resolved archive
+    # failure.
+    b_replay, _rc2, archive_client = _recovery_services(
+        ledger, store, _RecapturingCapture(ledger, store), snapshot_store=store
+    )
+    b_result = await b_replay.replay_job(
+        job_id=replacement_a.job_id,
+        command=ReportJobReplayRequest(reason="Replacement B."),
+        caller_context=_caller(),
+        idempotency_key="resolved-ancestor-b",
+    )
+    assert b_result.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+    # With B succeeded, novel replays of O and A are refused.
+    for job_id, key in (
+        (original.job_id, "resolved-ancestor-c"),
+        (replacement_a.job_id, "resolved-ancestor-b2"),
+    ):
+        with pytest.raises(InvalidReportJobTransitionError):
+            await b_replay.replay_job(
+                job_id=job_id,
+                command=ReportJobReplayRequest(reason="Extra replacement."),
+                caller_context=_caller(),
+                idempotency_key=key,
+            )
+    assert len(archive_client.payloads) == 1
+
+
 def test_guarded_creation_revalidates_source_eligibility(tmp_path):
     """A stale observer (its resolver saw 404 before a concurrent adoption
     archived the source) must be refused at the guarded creation itself -

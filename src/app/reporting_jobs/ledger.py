@@ -630,9 +630,18 @@ class ReportJobLedger:
                               member.status = 'cancelled'
                               OR (
                                   member.status = 'failed'
-                                  AND member.failure_category NOT IN (
-                                      'archive_storage_failed',
-                                      'archive_execution_failed'
+                                  AND (
+                                      member.failure_category NOT IN (
+                                          'archive_storage_failed',
+                                          'archive_execution_failed'
+                                      )
+                                      OR EXISTS (
+                                          SELECT 1 FROM report_job_relationship child
+                                          WHERE child.source_report_job_id
+                                                = member.report_job_id
+                                            AND child.relationship_type
+                                                = 'failed_work_replay'
+                                      )
                                   )
                               )
                           )
