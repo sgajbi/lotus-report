@@ -378,6 +378,13 @@ Observability floor for this wave:
 - report-to-render submission now forwards the report job correlation and trace identifiers to
   `lotus-render`; archive handoff already forwards both identifiers to `lotus-archive`
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
+- a job failed with `render_artifact_unrecoverable` means the render completed previously but its
+  artifact was only available in the original response (lotus-render returns terminal truth on
+  replay without re-rendering and does not persist artifact bytes). This is the
+  timeout-after-successful-render posture and it is **retry-eligible by design**: the RFC-0105
+  failed-work replay regenerates the document deterministically from the retained snapshot under a
+  fresh render job id, so recovery never re-hits the artifactless terminal render job and never
+  duplicates an archived client document (the failed original never reached archive)
 - readiness remains database-aware through `/health/ready`
 - PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
   unit-test adapter

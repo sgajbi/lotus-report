@@ -25,6 +25,7 @@ ReportFailureCategory = Literal[
     "render_validation_failed",
     "render_conflict",
     "render_execution_failed",
+    "render_artifact_unrecoverable",
     "archive_validation_failed",
     "archive_conflict",
     "archive_storage_failed",

@@ -2350,8 +2350,11 @@ def test_report_job_rerender_records_missing_artifact_archive_validation_failure
         assert response.status_code == 202
         body = response.json()
         assert body["status"] == "failed"
-        assert body["failure_category"] == "archive_validation_failed"
-        assert body["retry_eligible"] is False
+        # A "rendered" response without bytes is a replay of a completed render,
+        # not an archive defect: it stays retry-eligible because a new rerender
+        # attempt regenerates the artifact from the retained snapshot.
+        assert body["failure_category"] == "render_artifact_unrecoverable"
+        assert body["retry_eligible"] is True
         assert body["archive"] is None
         assert len(archive_client.payloads) == 0
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"

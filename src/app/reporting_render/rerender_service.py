@@ -226,14 +226,21 @@ class PortfolioReviewRerenderService:
     ) -> ReportRerenderAttemptRecord:
         artifact_base64 = _optional_str(render_response.get("artifact_base64"))
         if artifact_base64 is None:
+            # Same recoverable posture as the primary orchestration: a replayed
+            # "rendered" response carries no bytes, and a new rerender attempt
+            # (fresh idempotency key, fresh render job id) regenerates them.
             return self._ledger.mark_rerender_failed(
                 rerender_attempt_id=attempt.rerender_attempt_id,
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
                 trace_id=caller_context.trace_id,
-                failure_category="archive_validation_failed",
-                failure_message="Rendered artifact payload was not available for archive handoff.",
-                retry_eligible=False,
+                failure_category="render_artifact_unrecoverable",
+                failure_message=(
+                    "The render completed previously but its artifact was only "
+                    "available in the original response; request a new rerender "
+                    "attempt to regenerate it from the retained snapshot."
+                ),
+                retry_eligible=True,
             )
 
         archive_request_id = f"arch_{attempt.render_job_id}"
