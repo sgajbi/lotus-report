@@ -385,9 +385,14 @@ Observability floor for this wave:
   failed-work replay clones the retained input snapshot to the new job (upstream data is not
   recollected, and the clone lineage names the source snapshot), renders under a fresh render job
   id - so recovery never re-hits the artifactless terminal render job - and never duplicates an
-  archived client document (the failed original never reached archive). The replay command serves
-  portfolio-review jobs only; other report families recover by resubmitting their own order, which
-  rebuilds the same document from the retained job request. Migration 013 backfills jobs that were
+  archived client document (the failed original never reached archive). The cloned snapshot's
+  lineage records zero upstream calls of its own and names the source snapshot that holds the
+  original call evidence. If the retained snapshot no longer exists, the replay refuses
+  (fail-closed 409) rather than silently recollecting drifted upstream state - recover such jobs
+  with a fresh report order. The replay command serves portfolio-review jobs only and refuses
+  cross-tenant or cross-region callers with the same not-found answer as an unknown job id; other
+  report families recover by resubmitting their own order, which rebuilds the same document from
+  the retained job request. Migration 013 backfills jobs that were
   stranded under the pre-fix `archive_validation_failed` posture so they become replayable after
   upgrade. Note the regenerated PDF is content-identical but not byte-identical to the lost
   original (PDF metadata differs per render), so `render_artifact_sha256` values from the failed
