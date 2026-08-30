@@ -528,7 +528,13 @@ def _advisor_commentary_package(**overrides) -> dict:
                 "headline": "Equity allocation drove returns",
                 "detail": "Overweight global equities contributed 1.2%.",
                 "tone": "positive",
-                "evidence_refs": ["performance:contribution:equities"],
+                "evidence_refs": [
+                    {
+                        "metric_label": "Equity Contribution",
+                        "metric_value": "1.2%",
+                        "source_ref": "performance:contribution:equities",
+                    }
+                ],
             }
         ],
         "risks_and_exceptions": [],
