@@ -319,7 +319,9 @@ projection, issue #166). Ordering rules:
 - When included, the render package and JSON output carry the summary, talking points, risks
   and exceptions, the review identity, the pinned `content_hash`, and the AI-assistance
   disclosure line; archive metadata keeps the run id, request id, reviewer, review time, and
-  content hash.
+  content hash. Each narrative item's `evidence_refs` carries lotus-ai's typed grounding shape
+  (`{metric_label, metric_value, source_ref}`, all required - lotus-ai#189); incomplete or
+  differently shaped entries are dropped rather than composed as partial grounding.
 - lotus-report calls lotus-ai as registered caller `lotus-report` (`X-Caller-App`); that
   caller must be registered and active in the lotus-ai access-control registry for the
   environment.

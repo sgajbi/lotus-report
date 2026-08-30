@@ -273,10 +273,37 @@ def _narrative_items(value: Any) -> list[dict[str, Any]]:
                 "headline": _clean_str(item.get("headline")) or "",
                 "detail": _clean_str(item.get("detail")) or "",
                 "tone": tone if tone in NARRATIVE_TONES else "neutral",
-                "evidence_refs": _string_list(item.get("evidence_refs")),
+                "evidence_refs": _evidence_refs(item.get("evidence_refs")),
             }
         )
     return items
+
+
+def _evidence_refs(value: Any) -> list[dict[str, str]]:
+    """Grounding refs as lotus-ai's AdvisorBriefAcceptedEvidenceRef shape
+    (lotus-ai#189): {metric_label, metric_value, source_ref}, all required.
+    The source projector fails closed on any other shape, so report drops
+    non-conforming entries rather than inventing partial grounding."""
+
+    if not isinstance(value, list):
+        return []
+    refs: list[dict[str, str]] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            continue
+        metric_label = _clean_str(entry.get("metric_label"))
+        metric_value = _clean_str(entry.get("metric_value"))
+        source_ref = _clean_str(entry.get("source_ref"))
+        if not metric_label or not metric_value or not source_ref:
+            continue
+        refs.append(
+            {
+                "metric_label": metric_label,
+                "metric_value": metric_value,
+                "source_ref": source_ref,
+            }
+        )
+    return refs
 
 
 def _string_list(value: Any) -> list[str]:

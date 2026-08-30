@@ -33,7 +33,13 @@ def _accepted_payload(**overrides) -> dict:
                 "headline": "Equity allocation drove returns",
                 "detail": "Overweight global equities contributed 1.2%.",
                 "tone": "positive",
-                "evidence_refs": ["performance:contribution:equities"],
+                "evidence_refs": [
+                    {
+                        "metric_label": "Equity Contribution",
+                        "metric_value": "1.2%",
+                        "source_ref": "performance:contribution:equities",
+                    }
+                ],
             }
         ],
         "risks_and_exceptions": [
@@ -41,7 +47,13 @@ def _accepted_payload(**overrides) -> dict:
                 "headline": "Concentration in technology",
                 "detail": "Top sector weight exceeds policy guidance.",
                 "tone": "warning",
-                "evidence_refs": ["risk:concentration:sector"],
+                "evidence_refs": [
+                    {
+                        "metric_label": "Top Sector Weight",
+                        "metric_value": "34%",
+                        "source_ref": "risk:concentration:sector",
+                    }
+                ],
             }
         ],
         "context": {
@@ -211,6 +223,43 @@ async def test_wrong_schema_or_run_identity_closes_the_section():
     assert package["status"] == "unavailable"
     assert package["reason_code"] == "advisor_brief_not_found"
     assert "run_other" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_evidence_refs_keep_only_complete_typed_grounding():
+    """lotus-ai#189 projects grounding as AdvisorBriefAcceptedEvidenceRef
+    dicts ({metric_label, metric_value, source_ref}, all required). Report
+    keeps complete refs verbatim and drops any other shape rather than
+    inventing partial grounding - including the legacy string shape that
+    never carried real data."""
+
+    payload = _accepted_payload(
+        talking_points=[
+            {
+                "headline": "H",
+                "detail": "D",
+                "tone": "positive",
+                "evidence_refs": [
+                    {
+                        "metric_label": "Active Return",
+                        "metric_value": "-6.68%",
+                        "source_ref": "lotus-gateway:performance-summary:YTD",
+                    },
+                    {"metric_label": "Missing value", "source_ref": "x"},
+                    "legacy-string-ref",
+                    {"metric_label": " ", "metric_value": "1", "source_ref": "y"},
+                ],
+            }
+        ]
+    )
+    package = await _resolve(_StubClient(200, payload))
+    assert package["talking_points"][0]["evidence_refs"] == [
+        {
+            "metric_label": "Active Return",
+            "metric_value": "-6.68%",
+            "source_ref": "lotus-gateway:performance-summary:YTD",
+        }
+    ]
 
 
 @pytest.mark.asyncio
