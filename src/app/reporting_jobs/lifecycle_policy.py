@@ -8,7 +8,11 @@ REPORT_JOB_TRANSITION_ALLOWED_FROM: dict[ReportJobStatus, frozenset[ReportJobSta
     "rendering": frozenset({"data_ready"}),
     "completed": frozenset({"data_ready", "rendering"}),
     "archiving": frozenset({"completed"}),
-    "archived": frozenset({"completed", "archiving"}),
+    # "failed" is admitted for exactly one flow: replay's archive-ambiguity
+    # resolution, where the archive lookup proves the original
+    # arch_{render_job_id} request committed and the failure classification
+    # was a transport artifact - the truthful terminal state is archived.
+    "archived": frozenset({"completed", "archiving", "failed"}),
     "failed": frozenset(
         {
             "accepted",

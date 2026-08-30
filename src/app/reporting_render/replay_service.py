@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from app.clients.archive_client import ArchiveClient
+from app.config import settings
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -78,6 +80,17 @@ class ReplayLedger(Protocol):
         trace_id: str,
     ) -> ReportJobLedgerRecord: ...
 
+    def mark_archived(
+        self,
+        *,
+        job_id: str,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        archive_request_id: str,
+        archive_document_id: str,
+    ) -> ReportJobLedgerRecord: ...
+
     def mark_data_ready(
         self,
         *,
@@ -122,6 +135,21 @@ class ReplayCaptureService(Protocol):
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
 
 
+class ReplayArchiveResolver(Protocol):
+    async def get_document_by_request_id(
+        self,
+        archive_request_id: str,
+        *,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, object]]: ...
+
+
 class ReplaySnapshotStore(Protocol):
     def get_snapshot_by_job(self, report_job_id: str) -> ReportInputSnapshotRecord: ...
 
@@ -142,11 +170,13 @@ class PortfolioReviewReplayService:
         capture_service: ReplayCaptureService,
         render_service: ReplayRenderService,
         snapshot_store: ReplaySnapshotStore | None = None,
+        archive_resolver: ReplayArchiveResolver | None = None,
     ) -> None:
         self._ledger = ledger
         self._capture_service = capture_service
         self._render_service = render_service
         self._snapshot_store = snapshot_store
+        self._archive_resolver = archive_resolver
 
     async def replay_job(
         self,
@@ -159,6 +189,7 @@ class PortfolioReviewReplayService:
         source_job = self._ledger.get_job(job_id)
         assert_job_visible(source_job, caller_context)
         assert_replay_eligible(source_job)
+        await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
         replay_key = replay_idempotency_key(
             source_job_id=source_job.job_id,
             idempotency_key=idempotency_key,
@@ -325,6 +356,76 @@ class PortfolioReviewReplayService:
             # HTTP retries of a terminal replay must not inflate the outcome
             # totals or any derived divergence rate.
             record_replay_fingerprint_comparison(outcome=outcome, reason=reason)
+
+    async def _resolve_archive_ambiguity(
+        self,
+        *,
+        source_job: ReportJobLedgerRecord,
+        caller_context: ReportCallerContext,
+    ) -> None:
+        """A retryable archive-stage failure is ambiguous: archive may have
+        committed the document before the response was lost. Replaying would
+        mint a fresh arch_{render_job_id} that archive idempotency cannot
+        converge with the committed one - a duplicate client document. So the
+        original request id is resolved first: a committed document is
+        ADOPTED (the source job becomes archived - the truthful terminal
+        state) and the replay refuses as unnecessary; an unresolvable lookup
+        refuses fail-closed rather than risking the duplicate; only a
+        confirmed 404 lets the replay proceed.
+        """
+
+        if source_job.failure_category not in {
+            "archive_storage_failed",
+            "archive_execution_failed",
+        }:
+            return
+        if self._archive_resolver is None or not source_job.render_job_id:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        archive_request_id = f"arch_{source_job.render_job_id}"
+        try:
+            status_code, payload = await self._archive_resolver.get_document_by_request_id(
+                archive_request_id,
+                actor_id=caller_context.triggered_by,
+                tenant_id=caller_context.tenant_id,
+                region=caller_context.region,
+                correlation_id=caller_context.correlation_id,
+                trace_id=caller_context.trace_id,
+                booking_center_code=caller_context.booking_center_code,
+                role=caller_context.role,
+            )
+        except Exception as exc:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed") from exc
+        if status_code == 404:
+            return
+        document_id = str(payload.get("document_id") or "") if status_code == 200 else ""
+        if status_code != 200 or not document_id:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        resolved = self._ledger.mark_archived(
+            job_id=source_job.job_id,
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
+            archive_request_id=archive_request_id,
+            archive_document_id=document_id,
+        )
+        self._ledger.append_job_event(
+            job_id=resolved.job_id,
+            event_type="job_replay_archive_resolved",
+            message=(
+                f"Archive lookup resolved {archive_request_id} to committed document "
+                f"{document_id}; the failure was a transport artifact and no replay is needed."
+            ),
+            event_payload={
+                "archive_document_id": document_id,
+                "archive_request_id": archive_request_id,
+            },
+            event_idempotency_key=f"job_replay_archive_resolved:{resolved.job_id}",
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
+            skip_if_idempotency_key_exists=True,
+        )
+        raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
 
     def _require_retained_snapshot(
         self, source_job: ReportJobLedgerRecord
@@ -534,6 +635,12 @@ def get_portfolio_review_replay_service() -> PortfolioReviewReplayService:
         capture_service=get_portfolio_review_snapshot_capture_service(),
         render_service=get_portfolio_review_render_orchestration_service(),
         snapshot_store=get_report_input_snapshot_store(),
+        archive_resolver=ArchiveClient(
+            base_url=settings.archive_base_url,
+            timeout_seconds=settings.upstream_timeout_seconds,
+            max_retries=settings.upstream_max_retries,
+            retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+        ),
     )
 
 
