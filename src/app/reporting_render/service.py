@@ -264,14 +264,26 @@ class PortfolioReviewRenderOrchestrationService:
         started_at = perf_counter()
         artifact_base64 = _optional_str(render_response.get("artifact_base64"))
         if artifact_base64 is None:
+            # A "rendered" response without artifact bytes is a replay of a render
+            # that already completed: lotus-render returns terminal truth without
+            # re-rendering, and it does not persist artifact bytes (render#120).
+            # This is the timeout-after-successful-render path, and it is
+            # recoverable - the retained snapshot regenerates the document
+            # deterministically under a fresh render job id via the RFC-0105
+            # replay, so the failure must stay retry-eligible and must not blame
+            # archive validation for a transport loss.
             failed_job = self._job_ledger.mark_failed(
                 job_id=job.job_id,
                 actor=job.triggered_by,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
-                failure_category="archive_validation_failed",
-                failure_message="Rendered artifact payload was not available for archive handoff.",
-                retry_eligible=False,
+                failure_category="render_artifact_unrecoverable",
+                failure_message=(
+                    "The render completed previously but its artifact was only "
+                    "available in the original response; replay the job to "
+                    "re-render deterministically from the retained snapshot."
+                ),
+                retry_eligible=True,
             )
             record_report_operation(
                 operation="archive_handoff",

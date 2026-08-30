@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from app.reporting_jobs.ledger import (
@@ -9,6 +11,10 @@ from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
     ReportJobReplayRequest,
+)
+from app.reporting_lineage.store import (
+    ReportInputSnapshotCreateRequest,
+    ReportInputSnapshotStore,
 )
 from app.reporting_render.replay_service import (
     PortfolioReviewReplayService,
@@ -203,3 +209,136 @@ def test_report_replay_service_factory_wires_runtime_dependencies(monkeypatch):
     assert service._ledger is ledger
     assert service._capture_service is capture_service
     assert service._render_service is render_service
+
+
+class _SnapshotCloningCapture:
+    """Captures a fresh snapshot for the replayed job, as the real capture does."""
+
+    def __init__(self, ledger: ReportJobLedger, store: ReportInputSnapshotStore) -> None:
+        self._ledger = ledger
+        self._store = store
+
+    async def capture_for_job(self, job):
+        self._store.create_snapshot(
+            ReportInputSnapshotCreateRequest(
+                report_job_id=job.job_id,
+                report_type=job.report_type,
+                report_data_contract_version="v1",
+                portfolio_scope=job.portfolio_scope,
+                as_of_date=job.as_of_date,
+                snapshot_payload={
+                    "readiness": {"status": "ready"},
+                    "reportingCurrency": "USD",
+                    "reviewPeriod": {"label": "YTD"},
+                    "clientProfile": {
+                        "identity": {"client_name": "Alex Tan"},
+                        "mandate_profile": {"risk_exposure": "balanced"},
+                    },
+                    "overview": {"total_market_value": 100.0, "currency": "USD"},
+                },
+                supportability_status="complete",
+                completeness_status="complete",
+                upstream_calls=[],
+                captured_at=datetime.now(UTC),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        return self._ledger.mark_data_ready(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+
+
+class _RecordingRenderClient:
+    """Returns rendered-with-artifact and records every submitted render_job_id."""
+
+    def __init__(self) -> None:
+        self.render_job_ids: list[str] = []
+
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        self.render_job_ids.append(payload["render_job_id"])
+        return 201, {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:recovered-artifact",
+            "artifact_base64": "JVBERi0xLjQKJQ==",
+        }
+
+
+class _RecordingArchiveClient:
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    async def archive_document(self, payload, **kwargs):
+        self.payloads.append(payload)
+        return 201, {"document_id": f"doc_recovered_{len(self.payloads)}"}
+
+
+@pytest.mark.asyncio
+async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tmp_path):
+    """The timeout-after-successful-render proof: a job failed with
+    render_artifact_unrecoverable is replay-eligible, and the replay regenerates
+    the document from a fresh snapshot under a FRESH render job id - so the
+    recovery never re-hits the artifactless terminal render job, and the
+    replayed report is archived under new identities without duplicating the
+    original (which never reached archive)."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-artifactless",
+    )
+    source_render_job_id = f"rdr_{source.job_id}_pdf"
+    failed_source = ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="render_artifact_unrecoverable",
+        failure_message="Artifact only existed in the original render response.",
+        retry_eligible=True,
+    )
+    assert_replay_eligible(failed_source)
+
+    render_client = _RecordingRenderClient()
+    archive_client = _RecordingArchiveClient()
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    replay_service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=_SnapshotCloningCapture(ledger, store),
+        render_service=render_service,
+    )
+
+    result = await replay_service.replay_job(
+        job_id=source.job_id,
+        command=ReportJobReplayRequest(reason="Recover artifactless render."),
+        caller_context=_caller(),
+        idempotency_key="recover-artifactless",
+    )
+
+    replayed = result.replayed_job
+    assert replayed.job_id != source.job_id
+    assert replayed.status == "archived"
+    assert replayed.archive_document_id == "doc_recovered_1"
+    # The recovery rendered under a fresh identity - it can never replay the
+    # artifactless terminal render job of the source.
+    assert render_client.render_job_ids == [f"rdr_{replayed.job_id}_pdf"]
+    assert source_render_job_id not in render_client.render_job_ids
+    # Exactly one archived document: the failed original never reached archive,
+    # so recovery does not duplicate a client document.
+    assert len(archive_client.payloads) == 1

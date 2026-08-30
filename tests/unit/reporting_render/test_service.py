@@ -949,9 +949,17 @@ async def test_render_orchestration_marks_retryable_execution_failure(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_render_orchestration_marks_missing_artifact_as_archive_validation_failure(
+async def test_render_orchestration_keeps_artifactless_replay_recoverable(
     tmp_path,
 ):
+    """A "rendered" response without artifact bytes is a replay of a render that
+    already completed (lotus-render returns terminal truth without re-rendering
+    and does not persist bytes). That is the timeout-after-successful-render
+    path, and it must stay retry-eligible: the RFC-0105 replay regenerates the
+    document deterministically from the retained snapshot under a fresh render
+    job id. Marking it permanently failed turned a recoverable transport loss
+    into a dead report."""
+
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     service = PortfolioReviewRenderOrchestrationService(
         render_client=_RenderClientSuccessWithoutArtifact(),
@@ -963,8 +971,8 @@ async def test_render_orchestration_marks_missing_artifact_as_archive_validation
     failed = await service.render_for_job(ready)
 
     assert failed.status == "failed"
-    assert failed.failure_category == "archive_validation_failed"
-    assert failed.retry_eligible is False
+    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert failed.retry_eligible is True
     assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
         "accepted",
         "data_ready",
