@@ -1749,10 +1749,13 @@ async def rerender_report_job(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Regenerate archived report job from upstream data",
     description=(
-        "Creates a new report job from an archived PDF source job, recollects upstream domain "
-        "data into a fresh snapshot and lineage bundle, renders a new document, and archives it "
-        "as a replacement for the previous archived document. Use regenerate when source data has "
-        "changed or needs correction; use rerender when only presentation needs correction."
+        "Creates a new report job from an archived portfolio-review PDF source job, recollects "
+        "upstream domain data into a fresh snapshot and lineage bundle, renders a new document, "
+        "and archives it as a replacement for the previous archived document. Regeneration "
+        "serves portfolio-review jobs only - other report families regenerate by resubmitting "
+        "their own order - and answers 409 report_job_cannot_be_regenerated for any other "
+        "family. Use regenerate when source data has changed or needs correction; use rerender "
+        "when only presentation needs correction."
     ),
     openapi_extra={
         "responses": {
@@ -1866,7 +1869,9 @@ async def regenerate_report_job(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Replay failed report job",
     description=(
-        "Creates or reuses a replay-scoped report job for a failed retry-eligible source job. "
+        "Creates or reuses a replay-scoped report job for a failed retry-eligible "
+        "portfolio-review source job; other report families recover by resubmitting their own "
+        "order, and any other family answers 409 report_job_cannot_be_replayed. "
         "Replay is for failed work only; it does not duplicate completed or archived documents. "
         "Use rerender for presentation corrections and regenerate when archived source data must "
         "be refreshed from upstream."
