@@ -137,10 +137,13 @@ def test_archive_execution_failed_backfill_is_category_scoped() -> None:
     sql = (MIGRATIONS_DIR / "014_report_archive_execution_failed_retryable.sql").read_text(
         encoding="utf-8"
     )
-    for table in ("report_job", "report_rerender_attempt"):
-        assert f"UPDATE {table}" in sql
-    assert sql.count("SET retry_eligible = TRUE") == 2
-    assert sql.count("AND retry_eligible = FALSE") == 2
+    assert "UPDATE report_job" in sql
+    # Rerender attempts and other report families have no archive-ambiguity
+    # resolution path, so the backfill must not advertise retryability there.
+    assert "UPDATE report_rerender_attempt" not in sql
+    assert "AND report_type = 'portfolio_review'" in sql
+    assert sql.count("SET retry_eligible = TRUE") == 1
+    assert sql.count("AND retry_eligible = FALSE") == 1
     assert "failure_message" not in sql
     for statement in sql.split(";"):
         assert statement.count("'") % 2 == 0

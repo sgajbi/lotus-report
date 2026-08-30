@@ -1086,6 +1086,48 @@ async def test_failed_replay_render_records_no_fingerprint_comparison(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_missing_idempotency_key_never_reaches_the_resolver(tmp_path):
+    """The 400 for a missing Idempotency-Key must fire before the resolver
+    can durably mutate the source job by adopting a committed document."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-missing-key",
+    )
+    failed = ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="archive_execution_failed",
+        failure_message="Ambiguous archive fault.",
+        retry_eligible=True,
+    )
+    resolver = _CommittedArchiveResolver()
+    replay_service, _rc, _ac = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=resolver,
+    )
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        await replay_service.replay_job(
+            job_id=failed.job_id,
+            command=ReportJobReplayRequest(reason="No key supplied."),
+            caller_context=_caller(),
+            idempotency_key="   ",
+        )
+
+    assert resolver.lookups == []
+    assert ledger.get_job(failed.job_id).status == "failed"
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
     """The retry-after-uncertain-outcome proof for the archive leg: when the
     original arch_{render_job_id} actually committed before the response was

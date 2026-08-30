@@ -280,7 +280,16 @@ class PortfolioReviewRerenderService:
                 archive_document_id=document_id,
             )
 
-        failure_category, retry_eligible = _archive_failure_posture(status_code, archive_response)
+        failure_category, _job_level_retry = _archive_failure_posture(
+            status_code, archive_response, report_type=job.report_type
+        )
+        # A rerender attempt has no archive-ambiguity resolution: a new
+        # attempt mints a fresh render job id and arch_{render_job_id}, so if
+        # the failed attempt's archive call committed before the response was
+        # lost, retrying would duplicate the correction document. Attempts
+        # stay non-retryable until rerender gains the resolution path
+        # (issue filed alongside this change).
+        retry_eligible = False
         return self._ledger.mark_rerender_failed(
             rerender_attempt_id=archiving.rerender_attempt_id,
             actor=caller_context.triggered_by,

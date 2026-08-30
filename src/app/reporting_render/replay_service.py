@@ -189,11 +189,13 @@ class PortfolioReviewReplayService:
         source_job = self._ledger.get_job(job_id)
         assert_job_visible(source_job, caller_context)
         assert_replay_eligible(source_job)
-        await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
         replay_key = replay_idempotency_key(
             source_job_id=source_job.job_id,
             idempotency_key=idempotency_key,
         )
+        # The resolver durably mutates the source job when it adopts a
+        # committed document, so every pure validation runs before it.
+        await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
         replayed = self._ledger.create_portfolio_review_job(
             request=portfolio_review_request_from_job(source_job),
             caller_context=caller_context,

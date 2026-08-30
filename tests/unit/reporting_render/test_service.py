@@ -1183,8 +1183,9 @@ async def test_render_orchestration_maps_archive_service_failure(tmp_path):
 
     assert failed.status == "failed"
     assert failed.failure_category == "archive_execution_failed"
-    # Retryable by design: archive ingest is idempotent by arch_{render_job_id},
-    # so retrying an unclassified archive fault is convergent-safe (issue #211).
+    # Retryable for portfolio review only: its replay resolves the original
+    # archive request id before re-rendering, so retry is duplicate-safe
+    # (issue #211). Families without that resolution path stay non-retryable.
     assert failed.retry_eligible is True
     assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
         "accepted",
@@ -1194,6 +1195,30 @@ async def test_render_orchestration_maps_archive_service_failure(tmp_path):
         "archiving",
         "failed",
     ]
+
+
+def test_archive_failure_posture_is_family_scoped():
+    from app.reporting_render.service import _archive_failure_posture
+
+    for report_type in ("proof_pack", "outcome_review", "rebalance_wave"):
+        category, retryable = _archive_failure_posture(
+            500, {"detail": "fault"}, report_type=report_type
+        )
+        assert category == "archive_execution_failed"
+        assert retryable is False
+        category, retryable = _archive_failure_posture(
+            503, {"detail": "down"}, report_type=report_type
+        )
+        assert category == "archive_storage_failed"
+        assert retryable is False
+    assert _archive_failure_posture(500, {}, report_type="portfolio_review") == (
+        "archive_execution_failed",
+        True,
+    )
+    assert _archive_failure_posture(503, {}, report_type="portfolio_review") == (
+        "archive_storage_failed",
+        True,
+    )
 
 
 def test_build_render_package_uses_fallback_values_for_sparse_snapshot(tmp_path):
@@ -2016,7 +2041,10 @@ def test_render_package_helpers_ignore_malformed_collection_rows(monkeypatch):
     assert _date_text("2026-04-22") == "2026-04-22"
     with pytest.raises(ValueError, match="date value is required"):
         _date_text(None)
-    assert _archive_failure_posture(409, {}) == ("archive_conflict", False)
+    assert _archive_failure_posture(409, {}, report_type="portfolio_review") == (
+        "archive_conflict",
+        False,
+    )
     assert _archive_failure_message({"detail": {}}) == "lotus-archive handoff failed."
 
     class _SentinelClient:
