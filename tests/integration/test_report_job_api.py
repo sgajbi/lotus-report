@@ -1705,6 +1705,45 @@ def test_report_job_diagnostics_surfaces_cloned_snapshot_evidence_pointers(tmp_p
     assert lineage["source_upstream_call_count"] == 4
 
 
+def test_report_job_diagnostics_surfaces_replay_fingerprint_outcome_flags(tmp_path):
+    """Non-matched fingerprint comparisons must be visible as diagnostic
+    flags so operators do not have to query the event history (issue #202)."""
+
+    client, ledger, _lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("fingerprint-flag-job"),
+        ).json()
+        job_id = handle["report_job_id"]
+        job = ledger.get_job(job_id)
+        ledger.append_job_event(
+            job_id=job_id,
+            event_type="job_replay_fingerprint_compared",
+            message="Replay fingerprint comparison against rjob_src: diverged.",
+            event_payload={
+                "outcome": "diverged",
+                "reason": "same_runtime_fingerprint_mismatch",
+                "source_report_job_id": "rjob_src",
+            },
+            event_idempotency_key=f"job_replay_fingerprint_compared:{job_id}",
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+
+        response = client.get(
+            f"/reports/jobs/{job_id}/diagnostics",
+            headers=_headers("fingerprint-flag-job"),
+        )
+
+        assert response.status_code == 200
+        assert "replay_fingerprint_diverged" in response.json()["diagnostic_flags"]
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_diagnostics_reports_failed_retryable_job_flags(tmp_path):
     client, ledger, _lineage_store = _client(tmp_path)
     try:
