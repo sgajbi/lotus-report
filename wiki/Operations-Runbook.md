@@ -377,6 +377,8 @@ Observability floor for this wave:
   durable batch state
 - report-to-render submission now forwards the report job correlation and trace identifiers to
   `lotus-render`; archive handoff already forwards both identifiers to `lotus-archive`
+- the full lifecycle, identity chain, failure-mode table, and recovery commands are consolidated
+  on [End-to-End Report Lifecycle](End-to-End-Report-Lifecycle)
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
 - a job failed with `render_artifact_unrecoverable` means the render completed previously but its
   artifact was only available in the original response (lotus-render returns terminal truth on
