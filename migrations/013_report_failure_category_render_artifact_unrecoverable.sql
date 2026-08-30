@@ -55,3 +55,23 @@ CHECK (
         'operator_intervention_required'
     )
 );
+
+-- Backfill: jobs and rerender attempts that already failed on the artifactless
+-- replay were stored as archive_validation_failed / retry_eligible = false and
+-- would stay unreplayable after upgrade. The old failure message below was
+-- written only by that code path, so the match is exact.
+
+UPDATE report_job
+SET failure_category = 'render_artifact_unrecoverable',
+    retry_eligible = TRUE,
+    failure_message = 'The render completed previously but its artifact was only available in the original response. Replay the job to re-render from the retained snapshot.'
+WHERE status = 'failed'
+  AND failure_category = 'archive_validation_failed'
+  AND failure_message = 'Rendered artifact payload was not available for archive handoff.';
+
+UPDATE report_rerender_attempt
+SET failure_category = 'render_artifact_unrecoverable',
+    retry_eligible = TRUE,
+    failure_message = 'The render completed previously but its artifact was only available in the original response. Request a new rerender attempt to regenerate it from the retained snapshot.'
+WHERE failure_category = 'archive_validation_failed'
+  AND failure_message = 'Rendered artifact payload was not available for archive handoff.';

@@ -237,7 +237,7 @@ class PortfolioReviewRerenderService:
                 failure_category="render_artifact_unrecoverable",
                 failure_message=(
                     "The render completed previously but its artifact was only "
-                    "available in the original response; request a new rerender "
+                    "available in the original response. Request a new rerender "
                     "attempt to regenerate it from the retained snapshot."
                 ),
                 retry_eligible=True,

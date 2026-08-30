@@ -280,8 +280,8 @@ class PortfolioReviewRenderOrchestrationService:
                 failure_category="render_artifact_unrecoverable",
                 failure_message=(
                     "The render completed previously but its artifact was only "
-                    "available in the original response; replay the job to "
-                    "re-render deterministically from the retained snapshot."
+                    "available in the original response. Replay the job to "
+                    "re-render from the retained snapshot."
                 ),
                 retry_eligible=True,
             )
