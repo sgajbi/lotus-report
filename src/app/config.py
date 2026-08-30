@@ -70,6 +70,10 @@ class Settings(BaseSettings):
         min_length=1,
         alias="IDEA_EVIDENCE_INTAKE_LEDGER_PATH",
     )
+    report_job_worker_metrics_port: int = Field(
+        8301,
+        alias="REPORT_JOB_WORKER_METRICS_PORT",
+    )
     report_job_worker_id: str = Field(
         "lotus-report-job-worker-1",
         alias="REPORT_JOB_WORKER_ID",

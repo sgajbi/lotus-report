@@ -419,7 +419,9 @@ Observability floor for this wave:
   before escalation), and watch
   `lotus_report_advisor_commentary_resolutions_total{outcome="unavailable"}` by reason for
   systemic ordering problems - section closures never fail the report job, so this counter is
-  the only aggregate signal
+  the only aggregate signal. Both series are recorded in the job-worker process - scrape the
+  worker's own metrics endpoint (`REPORT_JOB_WORKER_METRICS_PORT`, default 8301) alongside the
+  API's `/metrics`, or these alerts stay silently zero
 - readiness remains database-aware through `/health/ready`
 - PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
   unit-test adapter

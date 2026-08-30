@@ -53,8 +53,11 @@ services:
       <<: *lotus-report-service-environment
       REPORT_JOB_WORKER_ID: lotus-report-job-worker-local
       REPORT_JOB_WORKER_INTERVAL_SECONDS: "1"
+      REPORT_JOB_WORKER_METRICS_PORT: "8301"
       REPORT_JOB_WORKER_MAX_ITEMS_PER_PASS: "10"
       REPORT_JOB_WORKER_LEASE_SECONDS: "300"
+    ports:
+      - "8301:8301"
     depends_on:
       lotus-report-postgres:
         condition: service_healthy
