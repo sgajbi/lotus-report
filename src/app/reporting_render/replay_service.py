@@ -192,6 +192,11 @@ class PortfolioReviewReplayService:
             )
         if replayed.status == "data_ready" and "pdf" in replayed.requested_output_formats:
             replayed = await self._render_service.render_for_job(replayed)
+        if "pdf" in replayed.requested_output_formats:
+            # Runs on fresh renders AND on same-key retries of an already
+            # terminal replay: a crash between the durable render and the
+            # event write must not leave the comparison permanently absent.
+            # The recorder itself is idempotent and fingerprint-guarded.
             self._record_fingerprint_comparison(
                 source_job=source_job,
                 replayed=replayed,

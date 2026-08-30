@@ -177,8 +177,12 @@ async def test_report_replay_records_failed_render_result(tmp_path):
 def test_report_replay_rejects_missing_key_nonretryable_and_archived(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     failed = _failed_job(ledger, retry_eligible=False)
-    archived = _failed_job(ledger)
-    archived_with_doc = archived.model_copy(update={"archive_document_id": "doc_existing"})
+    # Build from a retry-eligible copy: the archive guard must be what fires,
+    # not the retry check (the ledger helper reuses one idempotency key, so a
+    # second create would silently return the first record).
+    archived_with_doc = failed.model_copy(
+        update={"retry_eligible": True, "archive_document_id": "doc_existing"}
+    )
 
     with pytest.raises(MissingIdempotencyKeyError):
         replay_idempotency_key(source_job_id=failed.job_id, idempotency_key=" ")
@@ -695,6 +699,85 @@ async def test_replay_records_incomparable_when_source_fingerprint_missing(tmp_p
     assert result.replayed_job.status == "archived"
     assert event.event_payload["outcome"] == "incomparable"
     assert event.event_payload["reason"] == "source_fingerprint_missing"
+
+
+class _FailingRenderClient:
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        return 503, {"detail": "render unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_json_only_replay_records_no_fingerprint_comparison(tmp_path):
+    """A json-only replay never renders, so no comparison event exists and
+    the recovery completes at data_ready."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["json"]),
+        caller_context=_caller(),
+        idempotency_key="source-json-artifactless",
+    )
+    failed_source = ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="render_artifact_unrecoverable",
+        failure_message="Artifact only existed in the original render response.",
+        retry_eligible=True,
+    )
+    _create_snapshot_for(store, failed_source)
+    replay_service, _rc, _ac = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Recover json output."),
+        caller_context=_caller(),
+        idempotency_key="recover-json",
+    )
+
+    assert result.replayed_job.status == "data_ready"
+    assert [
+        event.event_type
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ] == []
+
+
+@pytest.mark.asyncio
+async def test_failed_replay_render_records_no_fingerprint_comparison(tmp_path):
+    """When the replayed render itself fails there is no fingerprint to
+    compare; the job's own failure posture tells the story and no comparison
+    event is recorded."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    replay_service, _rc, _ac = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        render_client=_FailingRenderClient(),
+    )
+
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Render will fail."),
+        caller_context=_caller(),
+        idempotency_key="recover-render-fails",
+    )
+
+    assert result.replayed_job.status == "failed"
+    assert [
+        event.event_type
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ] == []
 
 
 class _PurgedSourceSnapshotStore:
