@@ -338,7 +338,31 @@ def _artifactless_failed_source(ledger: ReportJobLedger):
     )
 
 
-def _recovery_services(ledger, store, capture_service, *, snapshot_store, render_client=None):
+class _NotCommittedArchiveResolver:
+    """Archive confirms the ambiguous request never committed (404)."""
+
+    async def get_document_by_request_id(self, archive_request_id, **kwargs):
+        return 404, {"error": {"code": "document_not_found"}}
+
+
+class _CommittedArchiveResolver:
+    """Archive holds a committed document under the original request id."""
+
+    def __init__(self, document_id: str = "doc_committed_1") -> None:
+        self.document_id = document_id
+        self.lookups: list[str] = []
+
+    async def get_document_by_request_id(self, archive_request_id, **kwargs):
+        self.lookups.append(archive_request_id)
+        return 200, {
+            "document_id": self.document_id,
+            "archive_request_id": archive_request_id,
+        }
+
+
+def _recovery_services(
+    ledger, store, capture_service, *, snapshot_store, render_client=None, archive_resolver=None
+):
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     render_client = render_client or _RecordingRenderClient()
@@ -354,6 +378,7 @@ def _recovery_services(ledger, store, capture_service, *, snapshot_store, render
         capture_service=capture_service,
         render_service=render_service,
         snapshot_store=snapshot_store,
+        archive_resolver=archive_resolver or _NotCommittedArchiveResolver(),
     )
     return replay_service, render_client, archive_client
 
@@ -781,6 +806,7 @@ async def test_replay_records_incomparable_for_metadataless_render_after_archive
         capture_service=_RefusingCapture(),
         render_service=render_service,
         snapshot_store=store,
+        archive_resolver=_NotCommittedArchiveResolver(),
     )
 
     result = await replay_service.replay_job(
@@ -830,6 +856,7 @@ async def test_replay_records_comparison_when_archive_leg_fails_after_render(tmp
         capture_service=_RefusingCapture(),
         render_service=render_service,
         snapshot_store=store,
+        archive_resolver=_NotCommittedArchiveResolver(),
     )
 
     result = await replay_service.replay_job(
@@ -1056,6 +1083,124 @@ async def test_failed_replay_render_records_no_fingerprint_comparison(tmp_path):
         for event in ledger.list_status_events(result.replayed_job.job_id)
         if event.event_type == "job_replay_fingerprint_compared"
     ] == []
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
+    """The retry-after-uncertain-outcome proof for the archive leg: when the
+    original arch_{render_job_id} actually committed before the response was
+    lost, the replay ADOPTS that document - the source job resolves to
+    archived with the committed id, the replay refuses as unnecessary, and
+    no second document can exist."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    class _Failing500ArchiveClient:
+        async def archive_document(self, payload, **kwargs):
+            return 500, {"detail": "response lost after commit"}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-ambiguous-commit",
+    )
+    _create_snapshot_for(store, source)
+    source = ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    source = ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    failing = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(),
+        archive_client=_Failing500ArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    failed = await failing.render_for_job(source)
+    assert failed.failure_category == "archive_execution_failed"
+    assert failed.retry_eligible is True
+
+    resolver = _CommittedArchiveResolver()
+    replay_service, _rc, archive_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=resolver,
+    )
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed.job_id,
+            command=ReportJobReplayRequest(reason="Resolve ambiguous archive."),
+            caller_context=_caller(),
+            idempotency_key="recover-ambiguous",
+        )
+
+    assert resolver.lookups == [f"arch_{failed.render_job_id}"]
+    resolved = ledger.get_job(failed.job_id)
+    assert resolved.status == "archived"
+    assert resolved.archive_document_id == "doc_committed_1"
+    events = [
+        event.event_type
+        for event in ledger.list_status_events(failed.job_id)
+        if event.event_type == "job_replay_archive_resolved"
+    ]
+    assert events == ["job_replay_archive_resolved"]
+    assert archive_client.payloads == []
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_archive_failure_refuses_when_lookup_unavailable(tmp_path):
+    """If archive cannot answer whether the original request committed, the
+    replay refuses fail-closed rather than risking a duplicate document."""
+
+    class _DownArchiveResolver:
+        async def get_document_by_request_id(self, archive_request_id, **kwargs):
+            return 503, {"detail": "archive unavailable"}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-lookup-down",
+    )
+    failed = ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="archive_storage_failed",
+        failure_message="Archive storage unavailable.",
+        retry_eligible=True,
+    )
+    replay_service, _rc, archive_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=_DownArchiveResolver(),
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed.job_id,
+            command=ReportJobReplayRequest(reason="Lookup down."),
+            caller_context=_caller(),
+            idempotency_key="recover-lookup-down",
+        )
+
+    assert ledger.get_job(failed.job_id).status == "failed"
+    assert archive_client.payloads == []
 
 
 @pytest.mark.asyncio
