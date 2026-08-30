@@ -55,6 +55,7 @@ from app.reporting_jobs.models import (
 )
 from app.reporting_jobs.portfolio_memory_events import build_report_portfolio_memory_events
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.models import (
     ReportInputSnapshotRecord,
     ReportSnapshotLineageResponse,
@@ -1295,19 +1296,22 @@ async def get_report_job_status(
         str | None,
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportJobStatusResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
-        return _record_to_status(ledger.get_job(job_id))
+        record = ledger.get_job(job_id)
+        assert_job_visible(record, caller)
+        return _record_to_status(record)
     except ReportJobNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1375,19 +1379,21 @@ async def get_report_job_diagnostics(
         str | None,
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportJobDiagnosticsResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
         record = ledger.get_job(job_id)
+        assert_job_visible(record, caller)
     except ReportJobNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1495,19 +1501,21 @@ async def get_report_job_portfolio_memory_events(
         str | None,
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportPortfolioMemoryEventsResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
         record = ledger.get_job(job_id)
+        assert_job_visible(record, caller)
     except ReportJobNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1585,19 +1593,20 @@ async def get_report_job_events(
         str | None,
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportJobStatusEventsResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
-        ledger.get_job(job_id)
+        assert_job_visible(ledger.get_job(job_id), caller)
         return ReportJobStatusEventsResponse(
             report_job_id=job_id,
             events=ledger.list_status_events(job_id),
@@ -2032,18 +2041,20 @@ async def cancel_report_job(
         str | None,
         Header(alias="X-Trace-ID", description="Distributed trace identifier."),
     ] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportJobStatusResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=correlation_id,
         trace_id=trace_id,
     )
     try:
+        assert_job_visible(ledger.get_job(job_id), caller)
         return _record_to_status(
             ledger.cancel_job(
                 job_id=job_id,
@@ -2098,24 +2109,27 @@ async def cancel_report_job(
 async def get_report_job_snapshot(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     store: ReportLineageStore = Depends(get_report_lineage_store),
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
     caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportInputSnapshotRecord:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
+        assert_job_visible(ledger.get_job(job_id), caller)
         return store.get_snapshot_by_job(job_id)
-    except ReportInputSnapshotNotFoundError as exc:
+    except (ReportInputSnapshotNotFoundError, ReportJobNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
@@ -2153,24 +2167,27 @@ async def get_report_job_snapshot(
 async def get_report_job_lineage(
     job_id: Annotated[str, Path(description="Opaque report job identifier.")],
     store: ReportLineageStore = Depends(get_report_lineage_store),
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
     caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportSnapshotLineageResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
+        assert_job_visible(ledger.get_job(job_id), caller)
         snapshot = store.get_snapshot_by_job(job_id)
-    except ReportInputSnapshotNotFoundError as exc:
+    except (ReportInputSnapshotNotFoundError, ReportJobNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
@@ -2212,24 +2229,28 @@ async def get_report_job_lineage(
 async def get_snapshot(
     snapshot_id: Annotated[str, Path(description="Opaque durable snapshot identifier.")],
     store: ReportLineageStore = Depends(get_report_lineage_store),
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
     caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportInputSnapshotRecord:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
-        return store.get_snapshot(snapshot_id)
-    except ReportInputSnapshotNotFoundError as exc:
+        snapshot = store.get_snapshot(snapshot_id)
+        assert_job_visible(ledger.get_job(snapshot.report_job_id), caller)
+        return snapshot
+    except (ReportInputSnapshotNotFoundError, ReportJobNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
@@ -2270,24 +2291,27 @@ async def get_snapshot(
 async def get_snapshot_lineage(
     snapshot_id: Annotated[str, Path(description="Opaque durable snapshot identifier.")],
     store: ReportLineageStore = Depends(get_report_lineage_store),
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
     caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
     tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     region: Annotated[str | None, Header(alias="X-Region")] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
 ) -> ReportSnapshotLineageResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
         region=region,
-        booking_center_code=None,
+        booking_center_code=booking_center_code,
         role=None,
         correlation_id=None,
         trace_id=None,
     )
     try:
         snapshot = store.get_snapshot(snapshot_id)
-    except ReportInputSnapshotNotFoundError as exc:
+        assert_job_visible(ledger.get_job(snapshot.report_job_id), caller)
+    except (ReportInputSnapshotNotFoundError, ReportJobNotFoundError) as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={

@@ -883,6 +883,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
                 "X-Caller-Application": "lotus-gateway",
                 "X-Tenant-Id": "tenant-sg",
                 "X-Region": "APAC",
+                "X-Booking-Center-Code": "SG",
                 "X-Correlation-ID": "corr-cancel",
             },
         )
@@ -2078,6 +2079,106 @@ def test_report_job_snapshot_and_lineage_endpoints_are_support_safe(tmp_path):
         )
         assert snapshot_lineage.status_code == 200
         assert snapshot_lineage.json()["snapshot"]["snapshot_id"] == snapshot_id
+    finally:
+        _clear_overrides()
+
+
+def test_job_identity_fence_answers_not_found_on_every_job_scoped_route(tmp_path):
+    """Issue #203: a caller from another tenant, region, or booking centre
+    gets the unknown-id 404 on every job-scoped read and command, with zero
+    side effects - existence is never leaked and state never changes."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    try:
+        handle = client.post(
+            "/reports/portfolio-reviews",
+            json=_payload(),
+            headers=_headers("job-fence-source"),
+        ).json()
+        job_id = handle["report_job_id"]
+        job = ledger.get_job(job_id)
+        lineage_store.create_snapshot(
+            ReportInputSnapshotCreateRequest(
+                report_job_id=job_id,
+                report_type=job.report_type,
+                report_data_contract_version="v1",
+                portfolio_scope=job.portfolio_scope,
+                as_of_date=job.as_of_date,
+                snapshot_payload={"readiness": {"status": "ready"}},
+                snapshot_storage_ref=None,
+                supportability_status="complete",
+                completeness_status="complete",
+                lineage_summary={"source_services": ["lotus-core"], "call_count": 0},
+                captured_at=datetime.now(UTC),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        snapshot_id = lineage_store.get_snapshot_by_job(job_id).snapshot_id
+
+        reads = [
+            ("GET", f"/reports/jobs/{job_id}", "report_job_not_found"),
+            ("GET", f"/reports/jobs/{job_id}/diagnostics", "report_job_not_found"),
+            ("GET", f"/reports/jobs/{job_id}/events", "report_job_not_found"),
+            (
+                "GET",
+                f"/reports/jobs/{job_id}/portfolio-memory-events",
+                "report_job_not_found",
+            ),
+            ("GET", f"/reports/jobs/{job_id}/snapshot", "report_job_not_found"),
+            ("GET", f"/reports/jobs/{job_id}/lineage", "report_job_not_found"),
+            ("GET", f"/reports/snapshots/{snapshot_id}", "report_snapshot_not_found"),
+            (
+                "GET",
+                f"/reports/snapshots/{snapshot_id}/lineage",
+                "report_snapshot_not_found",
+            ),
+        ]
+        commands = [
+            ("POST", f"/reports/jobs/{job_id}/cancel", None, "report_job_not_found"),
+            (
+                "POST",
+                f"/reports/jobs/{job_id}/rerender",
+                {"reason": "cross tenant"},
+                "report_job_not_found",
+            ),
+            (
+                "POST",
+                f"/reports/jobs/{job_id}/regenerate",
+                {"reason": "cross tenant"},
+                "report_job_not_found",
+            ),
+            (
+                "POST",
+                f"/reports/jobs/{job_id}/replay",
+                {"reason": "cross tenant"},
+                "report_job_not_found",
+            ),
+        ]
+        foreign_axes = [
+            {"X-Tenant-Id": "tenant-other"},
+            {"X-Region": "EMEA"},
+            {"X-Booking-Center-Code": "HK"},
+        ]
+        for axis in foreign_axes:
+            foreign_headers = {**_headers(f"fence-{list(axis)[0]}"), **axis}
+            for method, url, code in reads:
+                response = client.request(method, url, headers=foreign_headers)
+                assert response.status_code == 404, (axis, url, response.text)
+                assert response.json()["detail"]["code"] == code, (axis, url)
+            for method, url, body, code in commands:
+                response = client.request(method, url, json=body, headers=foreign_headers)
+                assert response.status_code == 404, (axis, url, response.text)
+                assert response.json()["detail"]["code"] == code, (axis, url)
+
+        # Zero side effects: state unchanged, no attempts, no relationships,
+        # no derived jobs, and the rightful caller still sees the job.
+        unchanged = ledger.get_job(job_id)
+        assert unchanged.status == job.status
+        assert ledger.list_rerender_attempts(job_id) == []
+        assert ledger.list_job_relationships(job_id) == []
+        rightful = client.get(f"/reports/jobs/{job_id}", headers=_headers())
+        assert rightful.status_code == 200
     finally:
         _clear_overrides()
 
