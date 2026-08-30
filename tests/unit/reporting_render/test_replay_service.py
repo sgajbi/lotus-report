@@ -688,6 +688,54 @@ async def test_replay_records_incomparable_on_runtime_version_change(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_replay_records_comparison_when_archive_leg_fails_after_render(tmp_path):
+    """The replayed render can complete (fingerprint persisted) and the
+    archive leg still fail the job; the comparison judges the render, so it
+    must be recorded despite the failed job status."""
+
+    class _FailingArchiveClient:
+        async def archive_document(self, payload, **kwargs):
+            return 503, {"detail": "archive unavailable"}
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(fingerprint="typst-0.14.2:aaaa1111"),
+        archive_client=_FailingArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    replay_service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=_RefusingCapture(),
+        render_service=render_service,
+        snapshot_store=store,
+    )
+
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Archive will fail."),
+        caller_context=_caller(),
+        idempotency_key="recover-archive-fails",
+    )
+
+    assert result.replayed_job.status == "failed"
+    assert result.replayed_job.render_bounded_determinism_fingerprint is not None
+    events = [
+        event
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ]
+    assert len(events) == 1
+    assert events[0].event_payload["outcome"] == "matched"
+
+
+@pytest.mark.asyncio
 async def test_replay_records_incomparable_when_replayed_fingerprint_missing(tmp_path):
     """A successful replay render whose response omits the optional
     fingerprint still records an incomparable outcome - silence would be
