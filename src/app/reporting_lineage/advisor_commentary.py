@@ -25,6 +25,7 @@ ADVISOR_COMMENTARY_SECTION_ID = "ADVISOR_COMMENTARY"
 ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID = (
     "lotus-ai.workflow_pack_run.accepted_output.advisor_brief.v1"
 )
+NARRATIVE_TONES = frozenset({"positive", "neutral", "warning"})
 
 # lotus-ai problem-details reason codes that mean "this run is not (or is no
 # longer) the accepted narrative" - a review-state truth retrying cannot change.
@@ -89,6 +90,10 @@ async def resolve_advisor_commentary_package(
     if status_code != 200:
         return _unavailable(run_id, _map_source_reason(status_code, payload))
 
+    identity_fault = _projection_identity_fault(payload, run_id=run_id)
+    if identity_fault is not None:
+        return _unavailable(run_id, "advisor_brief_not_found", detail=identity_fault)
+
     context = _as_dict_value(payload.get("context"))
     mismatch = _context_mismatch(
         context,
@@ -139,6 +144,14 @@ async def _fetch_accepted_output(
         raise AdvisorCommentarySourceUnavailableError(
             f"lotus-ai accepted-output returned {status_code} for run {run_id}."
         )
+    if status_code in {401, 403}:
+        # The lotus-report caller is missing or inactive in the lotus-ai
+        # registry: an environment-wide deployment fault, not a run posture.
+        # Closing the section would mask it as a missing brief on every order.
+        raise AdvisorCommentarySourceUnavailableError(
+            f"lotus-ai refused the lotus-report caller ({status_code}) for run "
+            f"{run_id}; check the lotus-ai access-control registry."
+        )
     return status_code, payload
 
 
@@ -154,8 +167,8 @@ def _included_package(
 ) -> dict[str, Any]:
     return {
         "status": "included",
-        "schema_id": _text(payload.get("schema_id"), ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID),
-        "run_id": _text(payload.get("run_id"), run_id),
+        "schema_id": ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID,
+        "run_id": run_id,
         "pack_id": _text(payload.get("pack_id")),
         "pack_version": _text(payload.get("pack_version")),
         "task_id": _text(payload.get("task_id")),
@@ -195,6 +208,20 @@ def _unavailable(run_id: str, reason_code: str, *, detail: str | None = None) ->
     if detail:
         package["detail"] = detail
     return package
+
+
+def _projection_identity_fault(payload: dict[str, Any], *, run_id: str) -> str | None:
+    """A 200 body must carry the exact contract identity: composing narrative
+    from a different schema, or for a different run, would archive it under
+    fabricated provenance."""
+
+    schema_id = _clean_str(payload.get("schema_id"))
+    if schema_id != ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID:
+        return f"unexpected accepted-output schema_id {schema_id or 'missing'}"
+    payload_run_id = _clean_str(payload.get("run_id"))
+    if payload_run_id != run_id:
+        return f"accepted-output run_id {payload_run_id or 'missing'} != requested {run_id}"
+    return None
 
 
 def _map_source_reason(status_code: int, payload: dict[str, Any]) -> str:
@@ -240,11 +267,12 @@ def _narrative_items(value: Any) -> list[dict[str, Any]]:
     for item in value:
         if not isinstance(item, dict):
             continue
+        tone = _clean_str(item.get("tone")) or "neutral"
         items.append(
             {
                 "headline": _clean_str(item.get("headline")) or "",
                 "detail": _clean_str(item.get("detail")) or "",
-                "tone": _clean_str(item.get("tone")) or "not_available",
+                "tone": tone if tone in NARRATIVE_TONES else "neutral",
                 "evidence_refs": _string_list(item.get("evidence_refs")),
             }
         )

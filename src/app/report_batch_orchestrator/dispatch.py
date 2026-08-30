@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import pydantic
+
 from app.report_batch_orchestrator.models import (
     BatchDispatchPolicy,
     BatchDispatchResult,
@@ -31,6 +33,15 @@ class BatchLedger(Protocol):
         lease_seconds: int,
         limit: int,
     ) -> list[ReportBatchItemRecord]: ...
+
+    def mark_item_failed(
+        self,
+        *,
+        batch_item_id: str,
+        error_category: str,
+        error_summary: str,
+        retryable: bool,
+    ) -> ReportBatchItemRecord: ...
 
     def mark_item_waiting_on_report_job(
         self,
@@ -101,14 +112,27 @@ class ReportBatchDispatcher:
         for item in leased_items:
             if item.lease_token is None:
                 raise RuntimeError("batch_item_missing_lease_token")
-            record = self._report_job_ledger.create_portfolio_review_job(
-                request=PortfolioReviewJobRequest(
+            try:
+                request = PortfolioReviewJobRequest(
                     portfolio_scope={"portfolio_ids": [item.portfolio_id]},
                     as_of_date=batch.as_of_date,
                     requested_output_formats=batch.requested_output_formats,
                     reporting_currency=batch.reporting_currency,
                     options=batch.options,
-                ),
+                )
+            except pydantic.ValidationError as exc:
+                # A request acceptance would refuse must fail this item
+                # durably, never abort the worker pass and strand the whole
+                # lease set in an expire-and-repeat loop.
+                self._batch_ledger.mark_item_failed(
+                    batch_item_id=item.batch_item_id,
+                    error_category="validation_failed",
+                    error_summary=f"Report job request rejected: {exc.errors()[0]['msg']}"[:500],
+                    retryable=False,
+                )
+                continue
+            record = self._report_job_ledger.create_portfolio_review_job(
+                request=request,
                 caller_context=caller_context,
                 idempotency_key=item.item_idempotency_key,
             )

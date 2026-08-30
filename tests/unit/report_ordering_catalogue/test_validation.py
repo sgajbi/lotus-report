@@ -130,3 +130,48 @@ def test_accepts_bounded_manifest_provenance_for_explicit_batch_only() -> None:
         )
 
     assert exc_info.value.code == "unsupported_report_configuration"
+
+
+def test_advisor_commentary_dependency_enforced_at_ordering_acceptance() -> None:
+    """Acceptance must refuse what dispatch would refuse: a durably accepted
+    batch selecting ADVISOR_COMMENTARY without the run id would strand its
+    items at materialization (issue #166)."""
+
+    with pytest.raises(ReportOrderingSubmissionError) as excinfo:
+        _validate(options={"sections": ["OVERVIEW", "ADVISOR_COMMENTARY"]})
+    assert excinfo.value.code == "missing_conditional_report_field"
+
+    with pytest.raises(ReportOrderingSubmissionError) as excinfo:
+        _validate(
+            options={
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "   ",
+            }
+        )
+    assert excinfo.value.code == "missing_conditional_report_field"
+
+    _validate(
+        options={
+            "sections": ["OVERVIEW", "ADVISOR_COMMENTARY"],
+            "advisor_brief_run_id": "run_accept_1",
+        }
+    )
+
+
+def test_advisor_commentary_refuses_pdf_until_render_template_exists() -> None:
+    """Temporary render gate: a PDF silently omitting an ordered section is a
+    misleading client document, so PDF orders refuse the section explicitly."""
+
+    with pytest.raises(ReportOrderingSubmissionError) as excinfo:
+        _validate(
+            formats=["json", "pdf"],
+            options={
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        )
+    assert excinfo.value.code == "report_section_output_format_unsupported"
+
+    # Benchmark-dependent sections stay orderable without their optional
+    # dependency - only `conditional` fields are required-when-selected.
+    _validate(formats=["json", "pdf"], options={"sections": ["PERFORMANCE"]})

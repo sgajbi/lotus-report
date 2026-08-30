@@ -207,6 +207,43 @@ def test_dispatch_creates_one_report_job_per_leased_batch_item(tmp_path) -> None
     )
 
 
+def test_dispatch_fails_item_durably_when_request_validation_rejects(tmp_path) -> None:
+    """A batch whose options acceptance would now refuse (validation drift,
+    legacy rows) must fail its items durably at materialization - never abort
+    the worker pass and strand the whole lease set in an expire-and-repeat
+    loop."""
+
+    batch_ledger = ReportBatchLedger(tmp_path / "batch-invalid.sqlite3")
+    report_job_ledger = ReportJobLedger(tmp_path / "jobs-invalid.sqlite3")
+    request = _request("PB_SG_GLOBAL_BAL_001", "PB_SG_GLOBAL_BAL_002")
+    # Simulate a legacy/drifted durably-accepted batch: the section without
+    # its accepted-brief run id fails PortfolioReviewJobRequest validation.
+    request = request.model_copy(
+        update={"options": {"sections": ["OVERVIEW", "ADVISOR_COMMENTARY"]}}
+    )
+    batch = batch_ledger.create_batch(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="batch-dispatch-invalid-options",
+    )
+
+    result = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=report_job_ledger,
+        policy=BatchDispatchPolicy(max_active_items=5),
+    ).dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=_caller(),
+        worker_id="worker-a",
+    )
+
+    assert result.leased_count == 2
+    assert result.dispatched_count == 0
+    refreshed = batch_ledger.get_batch(batch.batch_id)
+    assert {item.status for item in refreshed.items} == {"failed_terminal"}
+    assert all(item.last_error_category == "validation_failed" for item in refreshed.items)
+
+
 def test_dispatch_rejects_leased_item_without_lease_token() -> None:
     dispatcher = ReportBatchDispatcher(
         batch_ledger=_LeaseTokenMissingBatchLedger(),
