@@ -411,7 +411,12 @@ Observability floor for this wave:
   lotus-render finishes removing embedded SVG text. Note the regenerated PDF is content-identical but not byte-identical to the lost
   original (PDF metadata differs per render), so `render_artifact_sha256` values from the failed
   job must not be compared against the replayed document - `bounded_determinism_fingerprint` is
-  the cross-render stable identity
+  the cross-render stable identity. Alert on
+  `lotus_report_replay_fingerprint_comparisons_total{outcome="diverged"}` > 0 (crossed-runtime
+  and typst#6783 caveats above apply before escalation), and watch
+  `lotus_report_advisor_commentary_resolutions_total{outcome="unavailable"}` by reason for
+  systemic ordering problems - section closures never fail the report job, so this counter is
+  the only aggregate signal
 - readiness remains database-aware through `/health/ready`
 - PostgreSQL-backed proof is required for batch runtime and recovery behavior; SQLite is only a
   unit-test adapter

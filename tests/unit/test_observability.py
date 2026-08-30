@@ -300,6 +300,8 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
     assert "lotus_report_evidence_surface_supportability_total" in implemented_names
     assert "lotus_report_job_runtime_last_items" in implemented_names
     assert "lotus_report_job_work_lease_events_total" in implemented_names
+    assert "lotus_report_advisor_commentary_resolutions_total" in implemented_names
+    assert "lotus_report_replay_fingerprint_comparisons_total" in implemented_names
     assert "lotus_report_replay_operations_total" in reserved_names
     assert {
         "report_job_submission",
@@ -320,6 +322,31 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         assert "trace_id" not in contract.labels
         assert "portfolio_id" not in contract.labels
         assert "client_name" not in contract.labels
+
+
+def test_lifecycle_outcome_recorders_enforce_bounded_vocabularies():
+    from app.reporting_metrics import (
+        record_advisor_commentary_resolution,
+        record_replay_fingerprint_comparison,
+    )
+
+    # Accepted vocabulary records without error; unknown reasons bound to
+    # "other" rather than growing label cardinality.
+    record_advisor_commentary_resolution(outcome="included", reason_code=None)
+    record_advisor_commentary_resolution(
+        outcome="unavailable", reason_code="advisor_brief_context_mismatch"
+    )
+    record_advisor_commentary_resolution(outcome="unavailable", reason_code="surprise")
+    record_replay_fingerprint_comparison(outcome="matched", reason=None)
+    record_replay_fingerprint_comparison(
+        outcome="diverged", reason="same_runtime_fingerprint_mismatch"
+    )
+    record_replay_fingerprint_comparison(outcome="incomparable", reason="surprise")
+
+    with pytest.raises(ValueError, match="unsupported_advisor_commentary_outcome"):
+        record_advisor_commentary_resolution(outcome="partial", reason_code=None)
+    with pytest.raises(ValueError, match="unsupported_replay_fingerprint_outcome"):
+        record_replay_fingerprint_comparison(outcome="unknown", reason=None)
 
 
 def test_record_report_operation_rejects_unimplemented_reserved_operation():

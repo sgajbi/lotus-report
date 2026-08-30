@@ -22,6 +22,25 @@ METRIC_SUPPORTABILITY_STATE_LABEL = "state"
 METRIC_SUPPORTABILITY_REASON_LABEL = "reason"
 METRIC_FRESHNESS_BUCKET_LABEL = "freshness_bucket"
 REPORT_JOB_WORK_LEASE_OUTCOMES = frozenset({"recovered", "exhausted", "stale_conflict"})
+ADVISOR_COMMENTARY_RESOLUTION_OUTCOMES = frozenset({"included", "unavailable"})
+ADVISOR_COMMENTARY_UNAVAILABLE_REASONS = frozenset(
+    {
+        "advisor_brief_not_reviewed",
+        "advisor_brief_not_found",
+        "advisor_brief_context_mismatch",
+        "ai_disclosure_policy_unavailable",
+    }
+)
+REPLAY_FINGERPRINT_OUTCOMES = frozenset({"matched", "diverged", "incomparable"})
+REPLAY_FINGERPRINT_REASONS = frozenset(
+    {
+        "replayed_fingerprint_missing",
+        "source_fingerprint_missing",
+        "runtime_identity_missing",
+        "runtime_engine_differs",
+        "same_runtime_fingerprint_mismatch",
+    }
+)
 
 REPORTING_METRIC_LABELS = frozenset(
     {
@@ -216,6 +235,30 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "identifiers."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_advisor_commentary_resolutions_total",
+        metric_type="counter",
+        labels=(METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL),
+        implemented=True,
+        description=(
+            "Counts ADVISOR_COMMENTARY section resolutions by bounded outcome (included, "
+            "unavailable) and bounded closure reason. Section closures do not fail the "
+            "report job, so this counter is the operational signal for systemic ordering "
+            "problems such as context mismatches or unreviewed briefs."
+        ),
+    ),
+    ReportingMetricContract(
+        name="lotus_report_replay_fingerprint_comparisons_total",
+        metric_type="counter",
+        labels=(METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL),
+        implemented=True,
+        description=(
+            "Counts replay bounded-determinism fingerprint comparison observations by "
+            "outcome (matched, diverged, incomparable) and bounded reason. A nonzero "
+            "diverged rate on the same governed runtime is the alerting signal for "
+            "silent document-content drift."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -267,6 +310,16 @@ _REPORT_JOB_WORK_LEASE_EVENTS_TOTAL = Counter(
     "lotus_report_job_work_lease_events_total",
     REPORTING_METRIC_CONTRACTS[9].description,
     [METRIC_SCHEDULER_OUTCOME_LABEL],
+)
+_ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL = Counter(
+    "lotus_report_advisor_commentary_resolutions_total",
+    REPORTING_METRIC_CONTRACTS[10].description,
+    [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
+)
+_REPLAY_FINGERPRINT_COMPARISONS_TOTAL = Counter(
+    "lotus_report_replay_fingerprint_comparisons_total",
+    REPORTING_METRIC_CONTRACTS[11].description,
+    [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
 )
 
 
@@ -437,6 +490,34 @@ def record_attention_scan_metrics(events: Iterable[object]) -> None:
             attention_type=attention_type,
             severity=severity,
         ).set(max(0, count))
+
+
+def record_advisor_commentary_resolution(*, outcome: str, reason_code: str | None) -> None:
+    if outcome not in ADVISOR_COMMENTARY_RESOLUTION_OUTCOMES:
+        raise ValueError(f"unsupported_advisor_commentary_outcome:{outcome}")
+    if outcome == "included":
+        reason_label = "none"
+    else:
+        reason_label = (
+            reason_code if reason_code in ADVISOR_COMMENTARY_UNAVAILABLE_REASONS else "other"
+        )
+    _ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL.labels(
+        outcome=outcome,
+        reason=reason_label,
+    ).inc()
+
+
+def record_replay_fingerprint_comparison(*, outcome: str, reason: str | None) -> None:
+    if outcome not in REPLAY_FINGERPRINT_OUTCOMES:
+        raise ValueError(f"unsupported_replay_fingerprint_outcome:{outcome}")
+    if outcome == "matched":
+        reason_label = "none"
+    else:
+        reason_label = reason if reason in REPLAY_FINGERPRINT_REASONS else "other"
+    _REPLAY_FINGERPRINT_COMPARISONS_TOTAL.labels(
+        outcome=outcome,
+        reason=reason_label,
+    ).inc()
 
 
 def record_evidence_surface_supportability(

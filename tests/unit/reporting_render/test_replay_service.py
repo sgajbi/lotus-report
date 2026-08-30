@@ -663,6 +663,14 @@ async def test_replay_records_divergent_fingerprint_without_failing(tmp_path):
     assert result.replayed_job.status == "archived"
     assert event.event_payload["outcome"] == "diverged"
     assert event.event_payload["reason"] == "same_runtime_fingerprint_mismatch"
+    from app.reporting_metrics import _REPLAY_FINGERPRINT_COMPARISONS_TOTAL
+
+    assert (
+        _REPLAY_FINGERPRINT_COMPARISONS_TOTAL.labels(
+            outcome="diverged", reason="same_runtime_fingerprint_mismatch"
+        )._value.get()
+        >= 1.0
+    )
     assert event.event_payload["source_fingerprint"] == "typst-0.14.2:aaaa1111"
     assert event.event_payload["replayed_fingerprint"] == "typst-0.14.2:bbbb2222"
 

@@ -21,6 +21,8 @@ are implemented and proven.
 | `lotus_report_batch_scheduler_last_schedules` | gauge | `outcome` | Latest bounded scheduler pass counts for attempted, materialized, and skipped schedules |
 | `lotus_report_batch_pressure_last_counts` | gauge | `pressure_state` | Latest bounded durable batch pressure counts |
 | `lotus_report_attention_events_last_count` | gauge | `attention_type`, `severity` | Latest source-backed operations attention scan counts for stuck-state and SLA-breach events |
+| `lotus_report_advisor_commentary_resolutions_total` | counter | `outcome`, `reason` | Bounded ADVISOR_COMMENTARY section resolutions (included, unavailable) with bounded closure reasons; section closures never fail the job, so this is the signal for systemic ordering problems |
+| `lotus_report_replay_fingerprint_comparisons_total` | counter | `outcome`, `reason` | Bounded replay fingerprint comparison observations (matched, diverged, incomparable); a nonzero same-runtime diverged rate is the alert for silent document-content drift |
 
 ## Reserved Metrics
 
