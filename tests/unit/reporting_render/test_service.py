@@ -1183,7 +1183,9 @@ async def test_render_orchestration_maps_archive_service_failure(tmp_path):
 
     assert failed.status == "failed"
     assert failed.failure_category == "archive_execution_failed"
-    assert failed.retry_eligible is False
+    # Retryable by design: archive ingest is idempotent by arch_{render_job_id},
+    # so retrying an unclassified archive fault is convergent-safe (issue #211).
+    assert failed.retry_eligible is True
     assert [event.to_status for event in ledger.list_status_events(ready.job_id)] == [
         "accepted",
         "data_ready",

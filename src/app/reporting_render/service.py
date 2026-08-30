@@ -534,7 +534,13 @@ def _archive_failure_posture(status_code: int, payload: dict[str, Any]) -> tuple
         "archive_storage_failed",
     }:
         return "archive_storage_failed", True
-    return "archive_execution_failed", False
+    # Unclassified archive faults (including generic 500s) are retryable:
+    # archive ingestion is idempotent by the deterministic arch_{render_job_id}
+    # request id - an identical retry converges on the existing document after
+    # checksum verification - so retrying cannot duplicate a client document
+    # or corrupt state, and the usual default-deny argument for unknown faults
+    # does not apply to this leg (issue #211).
+    return "archive_execution_failed", True
 
 
 def _archive_failure_message(payload: dict[str, Any]) -> str:

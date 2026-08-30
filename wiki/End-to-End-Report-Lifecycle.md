@@ -66,7 +66,7 @@ and runtime identity - evidence is never destroyed by a failure.
 | **Timeout after successful render** (terminal replay returns no artifact bytes) | `render_artifact_unrecoverable` | **Retryable** | Replay clones the retained snapshot and re-renders under a fresh render job id; content-identical by fingerprint, byte-different by design |
 | Archive validation / conflict | `archive_validation_failed` / `archive_conflict` | Not retryable | Investigate; document never silently duplicated |
 | Archive storage unavailable (503/507 or explicit storage codes) | `archive_storage_failed` | Retryable | Replay (render evidence preserved; comparison still recorded) |
-| Archive other 5xx / unclassified fault | `archive_execution_failed` | Not retryable | Fresh order after investigation (report#211 questions this posture: archive ingest is idempotent by `arch_{render_job_id}`, so retry is convergent-safe by construction) |
+| Archive other 5xx / unclassified fault | `archive_execution_failed` | Retryable | Replay - archive ingest is idempotent by `arch_{render_job_id}`, so retry is convergent-safe by construction (report#211; migration 014 backfills previously stranded rows) |
 | Advisor brief not accepted / not found / context mismatch / disclosure impossible | Section closes, job proceeds | n/a | Reason recorded as job event + snapshot + lineage; document truthfully omits the section |
 | lotus-ai transport failure or 401/403 | `upstream_data_failed` | Retryable | Fix environment (401/403 = caller registry fault), then replay |
 | Duplicate submission | n/a | n/a | Idempotency keys converge at every hop (job, render, archive, replay, events) |

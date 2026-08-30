@@ -380,6 +380,11 @@ Observability floor for this wave:
 - the full lifecycle, identity chain, failure-mode table, and recovery commands are consolidated
   on [End-to-End Report Lifecycle](End-to-End-Report-Lifecycle)
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
+- a job failed with `archive_execution_failed` (an unclassified archive fault such as a generic
+  500) is retry-eligible: archive ingestion is idempotent by the deterministic
+  `arch_{render_job_id}` request id, so the replay converges on exactly one archived document
+  once archive is healthy. Migration 014 backfills rows stranded under the pre-#211
+  non-retryable posture
 - a job failed with `render_artifact_unrecoverable` means the render completed previously but its
   artifact was only available in the original response (lotus-render returns terminal truth on
   replay without re-rendering and does not persist artifact bytes). This is the
