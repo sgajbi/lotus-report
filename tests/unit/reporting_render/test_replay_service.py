@@ -503,6 +503,56 @@ async def test_replay_resumes_clone_after_crash_between_collecting_and_data_read
     assert len(archive_client.payloads) == 1
 
 
+@pytest.mark.asyncio
+async def test_chained_replay_preserves_root_evidence_pointers(tmp_path):
+    """When a replayed job's own artifactless failure is replayed again, the
+    second clone must keep pointing at the ROOT snapshot that holds the
+    upstream-call rows - not at the intermediate clone, which has none."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    intermediate = _artifactless_failed_source(ledger)
+    store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=intermediate.job_id,
+            report_type=intermediate.report_type,
+            report_data_contract_version="v1",
+            portfolio_scope=intermediate.portfolio_scope,
+            as_of_date=intermediate.as_of_date,
+            snapshot_payload=_SNAPSHOT_PAYLOAD,
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={
+                "source_services": ["lotus-core"],
+                "call_count": 0,
+                "upstream_evidence": "cloned_from_source_snapshot",
+                "source_call_count": 4,
+                "cloned_from_report_job_id": "rjob_root",
+                "cloned_from_snapshot_id": "rsnap_root",
+            },
+            captured_at=datetime.now(UTC),
+            correlation_id=intermediate.correlation_id,
+            trace_id=intermediate.trace_id,
+        )
+    )
+    replay_service, _render_client, _archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+
+    result = await replay_service.replay_job(
+        job_id=intermediate.job_id,
+        command=ReportJobReplayRequest(reason="Second recovery in a chain."),
+        caller_context=_caller(),
+        idempotency_key="recover-chained",
+    )
+
+    cloned = store.get_snapshot_by_job(result.replayed_job.job_id)
+    assert cloned.lineage_summary["cloned_from_snapshot_id"] == "rsnap_root"
+    assert cloned.lineage_summary["cloned_from_report_job_id"] == "rjob_root"
+    assert cloned.lineage_summary["source_call_count"] == 4
+    assert cloned.lineage_summary["call_count"] == 0
+
+
 class _PurgedSourceSnapshotStore:
     """Store view where the source job's snapshot has been retention-purged."""
 
