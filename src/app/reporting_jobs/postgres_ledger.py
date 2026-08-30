@@ -338,12 +338,24 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     # the second novel-key transaction blocks here until the
                     # first commits, then sees its relationship below.
                     source_row = connection.execute(
-                        "SELECT status, failure_category FROM report_job "
+                        "SELECT status, failure_category, retry_eligible, "
+                        "archive_document_id FROM report_job "
                         "WHERE report_job_id = %s FOR UPDATE",
                         (replay_source_job_id,),
                     ).fetchone()
                     if not source_row:
                         raise ReportJobNotFoundError("report_job_not_found")
+                    if (
+                        source_row["status"] != "failed"
+                        or not source_row["retry_eligible"]
+                        or source_row["archive_document_id"]
+                    ):
+                        # The service validated eligibility BEFORE this lock; a
+                        # concurrent resolver may have adopted a committed
+                        # document meanwhile (failed -> archived). Stale
+                        # observers must not create a replacement for a source
+                        # that no longer needs one.
+                        raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
                     # The initial idempotency lookup ran before this lock; a
                     # concurrent SAME-key request may have committed while we
                     # waited. Re-check so same-key retries converge on that
