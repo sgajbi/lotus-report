@@ -412,8 +412,11 @@ Observability floor for this wave:
   original (PDF metadata differs per render), so `render_artifact_sha256` values from the failed
   job must not be compared against the replayed document - `bounded_determinism_fingerprint` is
   the cross-render stable identity. Alert on
-  `lotus_report_replay_fingerprint_comparisons_total{outcome="diverged"}` > 0 (crossed-runtime
-  and typst#6783 caveats above apply before escalation), and watch
+  `increase(lotus_report_replay_fingerprint_comparisons_total{outcome="diverged"}[1h]) > 0`
+  (a windowed increase, not the raw counter total - a counter stays nonzero forever after the
+  first divergence, which would leave the alert firing after the incident is resolved and make
+  process restarts determine alert state; crossed-runtime and typst#6783 caveats above apply
+  before escalation), and watch
   `lotus_report_advisor_commentary_resolutions_total{outcome="unavailable"}` by reason for
   systemic ordering problems - section closures never fail the report job, so this counter is
   the only aggregate signal

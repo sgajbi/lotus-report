@@ -648,6 +648,47 @@ async def test_replay_records_matched_fingerprint_comparison(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_terminal_replay_retry_does_not_inflate_fingerprint_metrics(tmp_path):
+    """A same-key retry of a terminal replay re-enters the recorder but the
+    comparison event dedupes - the counter must track durable events, not
+    HTTP retries, or the derived divergence rate inflates."""
+
+    from app.reporting_metrics import _REPLAY_FINGERPRINT_COMPARISONS_TOTAL
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+    replay_service, _rc, _ac = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        render_client=_RecordingRenderClient(fingerprint="typst-0.14.2:aaaa1111"),
+    )
+    counter = _REPLAY_FINGERPRINT_COMPARISONS_TOTAL.labels(outcome="matched", reason="none")
+    before = counter._value.get()
+
+    for _ in range(3):
+        result = await replay_service.replay_job(
+            job_id=failed.job_id,
+            command=ReportJobReplayRequest(reason="Fingerprint check."),
+            caller_context=_caller(),
+            idempotency_key="recover-fingerprint-retry",
+        )
+        assert result.replayed_job.status == "archived"
+
+    assert counter._value.get() == before + 1.0
+    events = [
+        event
+        for event in ledger.list_status_events(result.replayed_job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ]
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
 async def test_replay_records_divergent_fingerprint_without_failing(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")

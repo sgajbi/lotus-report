@@ -65,7 +65,7 @@ class ReplayLedger(Protocol):
         correlation_id: str,
         trace_id: str,
         skip_if_idempotency_key_exists: bool = False,
-    ) -> None: ...
+    ) -> bool: ...
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
 
@@ -115,7 +115,7 @@ class ReplayEventLedger(Protocol):
         actor: str,
         correlation_id: str,
         trace_id: str,
-    ) -> None: ...
+    ) -> bool: ...
 
 
 class ReplayCaptureService(Protocol):
@@ -296,8 +296,7 @@ class PortfolioReviewReplayService:
             # own failure posture tells that story.
             return
         outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
-        record_replay_fingerprint_comparison(outcome=outcome, reason=reason)
-        self._ledger.append_job_event(
+        appended = self._ledger.append_job_event(
             job_id=replayed.job_id,
             event_type="job_replay_fingerprint_compared",
             message=(
@@ -321,6 +320,11 @@ class PortfolioReviewReplayService:
             trace_id=caller_context.trace_id,
             skip_if_idempotency_key_exists=True,
         )
+        if appended:
+            # One increment per durable comparison event: routine same-key
+            # HTTP retries of a terminal replay must not inflate the outcome
+            # totals or any derived divergence rate.
+            record_replay_fingerprint_comparison(outcome=outcome, reason=reason)
 
     def _require_retained_snapshot(
         self, source_job: ReportJobLedgerRecord
