@@ -166,7 +166,6 @@ class PortfolioReviewReplayService:
         ):
             raise ReportJobNotFoundError("report_job_not_found")
         assert_replay_eligible(source_job)
-        source_snapshot = self._require_retained_snapshot(source_job)
         replay_key = replay_idempotency_key(
             source_job_id=source_job.job_id,
             idempotency_key=idempotency_key,
@@ -184,6 +183,10 @@ class PortfolioReviewReplayService:
             actor=caller_context.triggered_by,
         )
         if replayed.status in {"accepted", "collecting_data"}:
+            # The retained snapshot is required only while collection still has
+            # to happen; a same-key retry of an already completed replay stays
+            # idempotent even after the source snapshot is retention-purged.
+            source_snapshot = self._require_retained_snapshot(source_job)
             if replayed.status == "accepted":
                 self._append_replay_requested_event(
                     source_job=source_job,
@@ -336,6 +339,35 @@ class PortfolioReviewReplayService:
                     trace_id=caller_context.trace_id,
                 )
             )
+        already_recorded = any(
+            event.event_type == "job_replay_snapshot_cloned"
+            and event.event_payload.get("cloned_snapshot_id") == cloned_snapshot.snapshot_id
+            for event in self._ledger.list_status_events(job.job_id)
+        )
+        if not already_recorded:
+            self._append_snapshot_cloned_event(
+                job=job,
+                source_job=source_job,
+                source_snapshot=source_snapshot,
+                cloned_snapshot_id=cloned_snapshot.snapshot_id,
+                caller_context=caller_context,
+            )
+        return self._ledger.mark_data_ready(
+            job_id=job.job_id,
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
+        )
+
+    def _append_snapshot_cloned_event(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        source_job: ReportJobLedgerRecord,
+        source_snapshot: ReportInputSnapshotRecord,
+        cloned_snapshot_id: str,
+        caller_context: ReportCallerContext,
+    ) -> None:
         self._ledger.append_job_event(
             job_id=job.job_id,
             event_type="job_replay_snapshot_cloned",
@@ -345,16 +377,10 @@ class PortfolioReviewReplayService:
             ),
             event_payload={
                 "source_snapshot_id": source_snapshot.snapshot_id,
-                "cloned_snapshot_id": cloned_snapshot.snapshot_id,
+                "cloned_snapshot_id": cloned_snapshot_id,
                 "replayed_job_id": job.job_id,
             },
             event_idempotency_key=f"job_replay_snapshot_cloned:{job.job_id}",
-            actor=caller_context.triggered_by,
-            correlation_id=caller_context.correlation_id,
-            trace_id=caller_context.trace_id,
-        )
-        return self._ledger.mark_data_ready(
-            job_id=job.job_id,
             actor=caller_context.triggered_by,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,

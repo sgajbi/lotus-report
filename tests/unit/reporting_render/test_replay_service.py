@@ -503,6 +503,128 @@ async def test_replay_resumes_clone_after_crash_between_collecting_and_data_read
     assert len(archive_client.payloads) == 1
 
 
+class _PurgedSourceSnapshotStore:
+    """Store view where the source job's snapshot has been retention-purged."""
+
+    def __init__(self, inner: ReportInputSnapshotStore, purged_job_id: str) -> None:
+        self._inner = inner
+        self._purged_job_id = purged_job_id
+
+    def get_snapshot_by_job(self, report_job_id: str):
+        if report_job_id == self._purged_job_id:
+            from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
+
+            raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
+        return self._inner.get_snapshot_by_job(report_job_id)
+
+    def create_snapshot(self, request):
+        return self._inner.create_snapshot(request)
+
+
+@pytest.mark.asyncio
+async def test_completed_replay_retry_stays_idempotent_after_snapshot_purge(tmp_path):
+    """A same-key retry of an already completed replay must return the
+    existing derived job even after the source snapshot ages out of
+    retention - the snapshot is required only while collection still has
+    to happen."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    replay_service, _render_client, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+    first = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Recover artifactless render."),
+        caller_context=_caller(),
+        idempotency_key="recover-then-purge",
+    )
+    assert first.replayed_job.status == "archived"
+
+    purged_store = _PurgedSourceSnapshotStore(store, failed_source.job_id)
+    retry_service = PortfolioReviewReplayService(
+        ledger=ledger,
+        capture_service=_RefusingCapture(),
+        render_service=replay_service._render_service,
+        snapshot_store=purged_store,
+    )
+    retried = await retry_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Recover artifactless render."),
+        caller_context=_caller(),
+        idempotency_key="recover-then-purge",
+    )
+
+    assert retried.replayed_job.job_id == first.replayed_job.job_id
+    assert retried.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_clone_event_not_duplicated_when_resuming_after_event_commit(tmp_path):
+    """The event idempotency key is only a non-unique index, so a crash after
+    the clone event committed but before data_ready must not produce a second
+    audit event claiming the snapshot was cloned again."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    source_snapshot = store.get_snapshot_by_job(failed_source.job_id)
+
+    crash_key = replay_idempotency_key(
+        source_job_id=failed_source.job_id, idempotency_key="resume-after-event"
+    )
+    stuck = ledger.create_portfolio_review_job(
+        request=portfolio_review_request_from_job(failed_source),
+        caller_context=_caller(),
+        idempotency_key=crash_key,
+    )
+    stuck = ledger.mark_collecting_data(
+        job_id=stuck.job_id,
+        actor=stuck.triggered_by,
+        correlation_id=stuck.correlation_id,
+        trace_id=stuck.trace_id,
+    )
+    # The crashed attempt persisted the cloned snapshot AND its event.
+    _create_snapshot_for(store, stuck)
+    cloned_snapshot = store.get_snapshot_by_job(stuck.job_id)
+    ledger.append_job_event(
+        job_id=stuck.job_id,
+        event_type="job_replay_snapshot_cloned",
+        message="Replay reused retained input snapshot.",
+        event_payload={
+            "source_snapshot_id": source_snapshot.snapshot_id,
+            "cloned_snapshot_id": cloned_snapshot.snapshot_id,
+            "replayed_job_id": stuck.job_id,
+        },
+        event_idempotency_key=f"job_replay_snapshot_cloned:{stuck.job_id}",
+        actor=stuck.triggered_by,
+        correlation_id=stuck.correlation_id,
+        trace_id=stuck.trace_id,
+    )
+
+    replay_service, _render_client, _archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Retry after crash."),
+        caller_context=_caller(),
+        idempotency_key="resume-after-event",
+    )
+
+    assert result.replayed_job.status == "archived"
+    clone_events = [
+        event
+        for event in ledger.list_status_events(stuck.job_id)
+        if event.event_type == "job_replay_snapshot_cloned"
+    ]
+    assert len(clone_events) == 1
+
+
 def test_replay_rejects_non_portfolio_review_report_types(tmp_path):
     """The replay command recreates a portfolio-review order, so replaying any
     other report type would silently morph it - eligibility must refuse."""
