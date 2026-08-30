@@ -54,6 +54,7 @@ class ReplayLedger(Protocol):
         request: PortfolioReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        reason: str,
     ) -> ReportJobLedgerRecord: ...
 
     def append_job_event(
@@ -197,18 +198,17 @@ class PortfolioReviewReplayService:
         # The resolver durably mutates the source job when it adopts a
         # committed document, so every pure validation runs before it.
         await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
+        # The failed_work_replay relationship is written INSIDE the creation
+        # transaction (with the source row locked on PostgreSQL), so a
+        # concurrent novel-key replay serializes and then sees it - the
+        # one-replacement guarantee holds under concurrency, not just
+        # sequentially.
         replayed = self._ledger.create_replay_derived_job(
             source_job_id=source_job.job_id,
             request=portfolio_review_request_from_job(source_job),
             caller_context=caller_context,
             idempotency_key=replay_key,
-        )
-        _upsert_replay_relationship(
-            self._ledger,
-            source_job=source_job,
-            replayed=replayed,
             reason=command.reason,
-            actor=caller_context.triggered_by,
         )
         if replayed.status in {"accepted", "collecting_data"}:
             # The retained snapshot is required only while collection still has

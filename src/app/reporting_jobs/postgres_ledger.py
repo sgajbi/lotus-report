@@ -204,6 +204,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         request: PortfolioReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        reason: str,
     ) -> ReportJobLedgerRecord:
         """Create the replay's derived job with the one-replacement guard.
 
@@ -221,6 +222,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             caller_context=caller_context,
             idempotency_key=idempotency_key,
             replay_source_job_id=source_job_id,
+            replay_reason=reason,
         )
 
     def submit_portfolio_review_job(
@@ -297,6 +299,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         idempotency_key: str | None,
         enqueue: bool = False,
         replay_source_job_id: str | None = None,
+        replay_reason: str = "Replay of failed report work.",
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -328,7 +331,21 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         self._ensure_work_item(connection, record=record)
                     return record
 
+                replay_source_status: str | None = None
+                replay_source_failure_category: str | None = None
                 if replay_source_job_id is not None:
+                    # Serialize concurrent replay creators on the source row:
+                    # the second novel-key transaction blocks here until the
+                    # first commits, then sees its relationship below.
+                    source_row = connection.execute(
+                        "SELECT status, failure_category FROM report_job "
+                        "WHERE report_job_id = %s FOR UPDATE",
+                        (replay_source_job_id,),
+                    ).fetchone()
+                    if not source_row:
+                        raise ReportJobNotFoundError("report_job_not_found")
+                    replay_source_status = source_row["status"]
+                    replay_source_failure_category = source_row["failure_category"]
                     live = connection.execute(
                         """
                         SELECT 1
@@ -451,6 +468,34 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     created_at=now,
                 )
                 record = self._load_by_request_id(connection, request_id)
+                if replay_source_job_id is not None:
+                    connection.execute(
+                        """
+                        INSERT INTO report_job_relationship (
+                            relationship_id, source_report_job_id, derived_report_job_id,
+                            relationship_type, source_status, derived_status,
+                            source_failure_category, derived_failure_category,
+                            archive_consequence, previous_archive_document_id,
+                            new_archive_document_id, actor, reason, created_at, updated_at
+                        )
+                        VALUES (%s, %s, %s, 'failed_work_replay', %s, %s, %s, NULL,
+                                NULL, NULL, NULL, %s, %s, %s, %s)
+                        ON CONFLICT (source_report_job_id, derived_report_job_id, relationship_type)
+                        DO NOTHING
+                        """,
+                        (
+                            f"rjr_{uuid4().hex}",
+                            replay_source_job_id,
+                            record.job_id,
+                            replay_source_status,
+                            record.status,
+                            replay_source_failure_category,
+                            caller_context.triggered_by,
+                            replay_reason,
+                            now,
+                            now,
+                        ),
+                    )
                 if enqueue:
                     self._ensure_work_item(connection, record=record)
                 return record
