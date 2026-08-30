@@ -70,30 +70,14 @@ def _build_render_package(
         "review_observations": observations,
         "review_period_label": _optional_str(_as_dict(snapshot.get("reviewPeriod")).get("label"))
         or "YTD",
-        "mandate": {
-            "objective": _optional_str(_as_dict(key_figures.get("client_profile")).get("objective"))
-            or _optional_str(_as_dict(snapshot.get("methodology")).get("investment_objective"))
-            or "Objective not available in the governed snapshot.",
-            "risk_exposure": _optional_str(mandate_profile.get("risk_exposure")) or "not_available",
-            "booking_center_code": _optional_str(identity.get("booking_center_code"))
-            or "not_available",
-            "advisor_id": _optional_str(identity.get("advisor_id")) or "not_available",
-        },
-        "portfolio_metrics": {
-            "invested_value": _decimal_text(
-                portfolio_value.get("invested_market_value_reporting_currency")
-            ),
-            "cash_balance": _decimal_text(portfolio_value.get("cash_balance_reporting_currency")),
-            "cash_weight_pct": _percent_text(portfolio_value.get("cash_weight_pct")),
-        },
-        "allocation_summary": {
-            "largest_asset_class_name": _optional_str(allocation.get("name")) or "Not available",
-            "largest_asset_class_weight_pct": _percent_text(allocation.get("weight_pct")),
-            "largest_asset_class_market_value": _decimal_text(
-                allocation.get("market_value_reporting_currency")
-            ),
-            "largest_asset_class_position_count": _optional_int(allocation.get("position_count")),
-        },
+        "mandate": _mandate_section(
+            snapshot=snapshot,
+            key_figures=key_figures,
+            mandate_profile=mandate_profile,
+            identity=identity,
+        ),
+        "portfolio_metrics": _portfolio_metrics_section(portfolio_value),
+        "allocation_summary": _allocation_summary_section(allocation),
         "allocation_breakdowns": _allocation_breakdowns(snapshot),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
@@ -107,75 +91,20 @@ def _build_render_package(
             "annual_history",
             limit=8,
         ),
-        "performance_highlight": {
-            "largest_positive_contributor_name": _holding_name(
-                _as_dict(performance.get("largest_positive_contributor"))
-            )
-            or "Not available",
-            "largest_positive_contribution_pct": _percent_text(
-                _as_dict(performance.get("largest_positive_contributor")).get(
-                    "total_contribution_pct"
-                )
-                or _as_dict(performance.get("largest_positive_contributor")).get(
-                    "ytd_contribution_pct"
-                )
-            ),
-            "benchmark_comparison_status": _optional_str(
-                performance.get("benchmark_comparison_status")
-            )
-            or "not_available",
-        },
+        "performance_highlight": _performance_highlight_section(performance),
         "transaction_period_label": (
             f"From {job.as_of_date.replace(month=1, day=1).strftime('%d.%m.%Y')} "
             f"to {job.as_of_date.strftime('%d.%m.%Y')}"
         ),
-        "risk_summary": {
-            "volatility_pct": _percent_text(
-                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
-                .get("YTD", {})
-                .get("volatility")
-                or risk.get("ytd_volatility_pct")
-            ),
-            "beta": _decimal_text(
-                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
-                .get("YTD", {})
-                .get("beta")
-                or risk.get("ytd_beta")
-            ),
-            "tracking_error_pct": _percent_text(
-                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
-                .get("YTD", {})
-                .get("tracking_error")
-                or risk.get("ytd_tracking_error_pct")
-            ),
-            "information_ratio": _decimal_text(
-                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
-                .get("YTD", {})
-                .get("information_ratio")
-                or risk.get("ytd_information_ratio")
-            ),
-            "value_at_risk_pct": _percent_text(
-                _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary"))
-                .get("YTD", {})
-                .get("value_at_risk")
-            ),
-        },
+        "risk_summary": _risk_summary_section(snapshot, risk),
         "top_holdings": _top_holdings(snapshot),
         "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
-        "governance_summary": {
-            "source_services": [
-                str(item)
-                for item in evidence.get("source_services", [])
-                if isinstance(item, str) and item.strip()
-            ],
-            "completeness_status": _optional_str(trust_metadata.get("completeness_status"))
-            or "unknown",
-            "data_quality_status": _optional_str(trust_metadata.get("data_quality_status"))
-            or "unknown",
-            "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
-            or "unknown",
-        },
+        "governance_summary": _governance_summary_section(
+            snapshot=snapshot,
+            evidence=evidence,
+            trust_metadata=trust_metadata,
+        ),
         "reviewed_advisory_narrative": reviewed_narrative,
         "advisor_proposal_memo": advisor_memo,
     }
@@ -187,22 +116,149 @@ def _build_render_package(
     if advisor_memo["status"] == "included":
         lineage_refs.extend(_advisor_memo_lineage_refs(advisor_memo))
         disclosure_refs.extend(_advisor_memo_disclosure_refs(advisor_memo))
+    return _render_package_envelope(
+        job=job,
+        snapshot=snapshot,
+        render_job_id=render_job_id,
+        report_data_contract_version="portfolio_review.v1",
+        template_id="portfolio-review",
+        report_data=report_data,
+        lineage_refs=_dedupe_strings(lineage_refs),
+        disclosure_refs=_dedupe_strings(disclosure_refs),
+    )
+
+
+def _mandate_section(
+    *,
+    snapshot: dict[str, Any],
+    key_figures: dict[str, Any],
+    mandate_profile: dict[str, Any],
+    identity: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "objective": _optional_str(_as_dict(key_figures.get("client_profile")).get("objective"))
+        or _optional_str(_as_dict(snapshot.get("methodology")).get("investment_objective"))
+        or "Objective not available in the governed snapshot.",
+        "risk_exposure": _optional_str(mandate_profile.get("risk_exposure")) or "not_available",
+        "booking_center_code": _optional_str(identity.get("booking_center_code"))
+        or "not_available",
+        "advisor_id": _optional_str(identity.get("advisor_id")) or "not_available",
+    }
+
+
+def _portfolio_metrics_section(portfolio_value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "invested_value": _decimal_text(
+            portfolio_value.get("invested_market_value_reporting_currency")
+        ),
+        "cash_balance": _decimal_text(portfolio_value.get("cash_balance_reporting_currency")),
+        "cash_weight_pct": _percent_text(portfolio_value.get("cash_weight_pct")),
+    }
+
+
+def _allocation_summary_section(allocation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "largest_asset_class_name": _optional_str(allocation.get("name")) or "Not available",
+        "largest_asset_class_weight_pct": _percent_text(allocation.get("weight_pct")),
+        "largest_asset_class_market_value": _decimal_text(
+            allocation.get("market_value_reporting_currency")
+        ),
+        "largest_asset_class_position_count": _optional_int(allocation.get("position_count")),
+    }
+
+
+def _performance_highlight_section(performance: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "largest_positive_contributor_name": _holding_name(
+            _as_dict(performance.get("largest_positive_contributor"))
+        )
+        or "Not available",
+        "largest_positive_contribution_pct": _percent_text(
+            _as_dict(performance.get("largest_positive_contributor")).get("total_contribution_pct")
+            or _as_dict(performance.get("largest_positive_contributor")).get("ytd_contribution_pct")
+        ),
+        "benchmark_comparison_status": _optional_str(performance.get("benchmark_comparison_status"))
+        or "not_available",
+    }
+
+
+def _ytd_risk_metric(snapshot: dict[str, Any], metric: str) -> Any:
+    return (
+        _as_dict(_as_dict(snapshot.get("riskAnalytics")).get("summary")).get("YTD", {}).get(metric)
+    )
+
+
+def _risk_summary_section(snapshot: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "volatility_pct": _percent_text(
+            _ytd_risk_metric(snapshot, "volatility") or risk.get("ytd_volatility_pct")
+        ),
+        "beta": _decimal_text(_ytd_risk_metric(snapshot, "beta") or risk.get("ytd_beta")),
+        "tracking_error_pct": _percent_text(
+            _ytd_risk_metric(snapshot, "tracking_error") or risk.get("ytd_tracking_error_pct")
+        ),
+        "information_ratio": _decimal_text(
+            _ytd_risk_metric(snapshot, "information_ratio") or risk.get("ytd_information_ratio")
+        ),
+        "value_at_risk_pct": _percent_text(_ytd_risk_metric(snapshot, "value_at_risk")),
+    }
+
+
+def _governance_summary_section(
+    *,
+    snapshot: dict[str, Any],
+    evidence: dict[str, Any],
+    trust_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "source_services": [
+            str(item)
+            for item in evidence.get("source_services", [])
+            if isinstance(item, str) and item.strip()
+        ],
+        "completeness_status": _optional_str(trust_metadata.get("completeness_status"))
+        or "unknown",
+        "data_quality_status": _optional_str(trust_metadata.get("data_quality_status"))
+        or "unknown",
+        "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
+        or "unknown",
+    }
+
+
+def _render_package_envelope(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+    render_job_id: str,
+    report_data_contract_version: str,
+    template_id: str,
+    report_data: dict[str, Any],
+    lineage_refs: list[str],
+    disclosure_refs: list[str],
+) -> dict[str, Any]:
+    """The envelope every render package shares; only the typed content varies.
+
+    One definition instead of four verbatim copies, so an envelope change (a new
+    locale policy, a context field) cannot land in three report families and miss
+    the fourth.
+    """
+
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
         "report_job_id": job.job_id,
         "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
         "report_type": job.report_type,
-        "report_data_contract_version": "portfolio_review.v1",
-        "template_id": "portfolio-review",
+        "report_data_contract_version": report_data_contract_version,
+        "template_id": template_id,
         "template_version": "v1",
         "locale": "en-SG",
         "brand_variant": "private_banking",
         "output_format": "pdf",
         "render_context": {"timezone": "Asia/Singapore"},
         "report_data": report_data,
-        "lineage_refs": _dedupe_strings(lineage_refs),
-        "disclosure_refs": _dedupe_strings(disclosure_refs),
+        "lineage_refs": lineage_refs,
+        "disclosure_refs": disclosure_refs,
         "requested_by": job.triggered_by,
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,
@@ -308,31 +364,21 @@ def _build_proof_pack_render_package(
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }
-    return {
-        "render_package_version": "render_package.v1",
-        "render_job_id": render_job_id,
-        "report_job_id": job.job_id,
-        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
-        "report_type": job.report_type,
-        "report_data_contract_version": "dpm_proof_pack_report_input.v1",
-        "template_id": "proof-pack",
-        "template_version": "v1",
-        "locale": "en-SG",
-        "brand_variant": "private_banking",
-        "output_format": "pdf",
-        "render_context": {"timezone": "Asia/Singapore"},
-        "report_data": report_data,
-        "lineage_refs": _dpm_lineage_refs(
+    return _render_package_envelope(
+        job=job,
+        snapshot=snapshot,
+        render_job_id=render_job_id,
+        report_data_contract_version="dpm_proof_pack_report_input.v1",
+        template_id="proof-pack",
+        report_data=report_data,
+        lineage_refs=_dpm_lineage_refs(
             job.job_id,
             report_data["proof_pack_id"],
             report_data["content_hash"],
             portfolio_memory,
         ),
-        "disclosure_refs": ["proof-pack.standard-disclosures.v1"],
-        "requested_by": job.triggered_by,
-        "correlation_id": job.correlation_id,
-        "trace_id": job.trace_id,
-    }
+        disclosure_refs=["proof-pack.standard-disclosures.v1"],
+    )
 
 
 def _build_outcome_review_render_package(
@@ -408,31 +454,21 @@ def _build_outcome_review_render_package(
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }
-    return {
-        "render_package_version": "render_package.v1",
-        "render_job_id": render_job_id,
-        "report_job_id": job.job_id,
-        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
-        "report_type": job.report_type,
-        "report_data_contract_version": "dpm_outcome_report_input.v1",
-        "template_id": "outcome-review",
-        "template_version": "v1",
-        "locale": "en-SG",
-        "brand_variant": "private_banking",
-        "output_format": "pdf",
-        "render_context": {"timezone": "Asia/Singapore"},
-        "report_data": report_data,
-        "lineage_refs": _dpm_lineage_refs(
+    return _render_package_envelope(
+        job=job,
+        snapshot=snapshot,
+        render_job_id=render_job_id,
+        report_data_contract_version="dpm_outcome_report_input.v1",
+        template_id="outcome-review",
+        report_data=report_data,
+        lineage_refs=_dpm_lineage_refs(
             job.job_id,
             report_data["outcome_review_id"],
             report_data["content_hash"],
             portfolio_memory,
         ),
-        "disclosure_refs": ["outcome-review.standard-disclosures.v1"],
-        "requested_by": job.triggered_by,
-        "correlation_id": job.correlation_id,
-        "trace_id": job.trace_id,
-    }
+        disclosure_refs=["outcome-review.standard-disclosures.v1"],
+    )
 
 
 def _build_wave_render_package(
@@ -509,79 +545,33 @@ def _build_wave_render_package(
         "redaction_policy": _optional_str(snapshot.get("redaction_policy")) or "NO_RAW_PAYLOADS",
         "portfolio_memory": portfolio_memory,
     }
-    return {
-        "render_package_version": "render_package.v1",
-        "render_job_id": render_job_id,
-        "report_job_id": job.job_id,
-        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
-        "report_type": job.report_type,
-        "report_data_contract_version": "dpm_wave_report_input.v1",
-        "template_id": "rebalance-wave",
-        "template_version": "v1",
-        "locale": "en-SG",
-        "brand_variant": "private_banking",
-        "output_format": "pdf",
-        "render_context": {"timezone": "Asia/Singapore"},
-        "report_data": report_data,
-        "lineage_refs": _dpm_lineage_refs(
+    return _render_package_envelope(
+        job=job,
+        snapshot=snapshot,
+        render_job_id=render_job_id,
+        report_data_contract_version="dpm_wave_report_input.v1",
+        template_id="rebalance-wave",
+        report_data=report_data,
+        lineage_refs=_dpm_lineage_refs(
             job.job_id,
             report_data["wave_id"],
             report_data["content_hash"],
             portfolio_memory,
         ),
-        "disclosure_refs": ["rebalance-wave.standard-disclosures.v1"],
-        "requested_by": job.triggered_by,
-        "correlation_id": job.correlation_id,
-        "trace_id": job.trace_id,
-    }
+        disclosure_refs=["rebalance-wave.standard-disclosures.v1"],
+    )
 
 
 def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
     context = _as_dict(snapshot.get("portfolio_memory_context"))
     if not context:
-        return {
-            "status": "not_supplied",
-            "event_count": 0,
-            "content_hash": "not_available",
-            "context_content_hash": "not_available",
-            "support_boundary": "not_available",
-            "event_ref_limit": 0,
-            "event_ref_selection_policy": "not_available",
-            "event_refs_returned": 0,
-            "event_refs_omitted": 0,
-            "event_refs_truncated": False,
-            "event_refs": [],
-            "governance_policy": {},
-        }
+        return _empty_portfolio_memory_context()
 
     raw_event_refs = context.get("event_refs")
     if not isinstance(raw_event_refs, list):
         raw_event_refs = []
     event_refs = [
-        {
-            "event_identity": _optional_str(item.get("event_identity")) or "not_available",
-            "event_type": _optional_str(item.get("event_type")) or "not_available",
-            "source_system": _optional_str(item.get("source_system")) or "not_available",
-            "source_type": _optional_str(item.get("source_type")) or "not_available",
-            "source_id": _optional_str(item.get("source_id")) or "not_available",
-            "content_hash": _optional_str(item.get("content_hash")) or "not_available",
-            "retention_policy": _optional_str(item.get("retention_policy")) or "not_available",
-            "redaction_policy": _optional_str(item.get("redaction_policy")) or "not_available",
-            "audit_policy": _optional_str(item.get("audit_policy")) or "not_available",
-            "access_classification": _optional_str(item.get("access_classification"))
-            or "not_available",
-            "event_time": _optional_str(item.get("event_time")) or "not_available",
-            "event_ref_selection_rank": _optional_int(item.get("event_ref_selection_rank")),
-            "manage_lookup_id": _optional_str(
-                item.get("manage_lookup_id")
-                or item.get("lookup_id")
-                or item.get("event_lookup_id")
-                or item.get("portfolio_memory_event_lookup_id")
-            )
-            or "not_available",
-        }
-        for item in raw_event_refs[:12]
-        if isinstance(item, dict)
+        _portfolio_memory_event_ref(item) for item in raw_event_refs[:12] if isinstance(item, dict)
     ]
     event_ref_limit = _optional_int(context.get("event_ref_limit"))
     event_refs_returned = _optional_int(context.get("event_refs_returned"))
@@ -611,6 +601,48 @@ def _portfolio_memory_context(snapshot: dict[str, Any]) -> dict[str, Any]:
         ),
         "governance_policy": _as_dict(context.get("governance_policy")),
         "event_refs": event_refs,
+    }
+
+
+def _empty_portfolio_memory_context() -> dict[str, Any]:
+    return {
+        "status": "not_supplied",
+        "event_count": 0,
+        "content_hash": "not_available",
+        "context_content_hash": "not_available",
+        "support_boundary": "not_available",
+        "event_ref_limit": 0,
+        "event_ref_selection_policy": "not_available",
+        "event_refs_returned": 0,
+        "event_refs_omitted": 0,
+        "event_refs_truncated": False,
+        "event_refs": [],
+        "governance_policy": {},
+    }
+
+
+def _portfolio_memory_event_ref(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_identity": _optional_str(item.get("event_identity")) or "not_available",
+        "event_type": _optional_str(item.get("event_type")) or "not_available",
+        "source_system": _optional_str(item.get("source_system")) or "not_available",
+        "source_type": _optional_str(item.get("source_type")) or "not_available",
+        "source_id": _optional_str(item.get("source_id")) or "not_available",
+        "content_hash": _optional_str(item.get("content_hash")) or "not_available",
+        "retention_policy": _optional_str(item.get("retention_policy")) or "not_available",
+        "redaction_policy": _optional_str(item.get("redaction_policy")) or "not_available",
+        "audit_policy": _optional_str(item.get("audit_policy")) or "not_available",
+        "access_classification": _optional_str(item.get("access_classification"))
+        or "not_available",
+        "event_time": _optional_str(item.get("event_time")) or "not_available",
+        "event_ref_selection_rank": _optional_int(item.get("event_ref_selection_rank")),
+        "manage_lookup_id": _optional_str(
+            item.get("manage_lookup_id")
+            or item.get("lookup_id")
+            or item.get("event_lookup_id")
+            or item.get("portfolio_memory_event_lookup_id")
+        )
+        or "not_available",
     }
 
 

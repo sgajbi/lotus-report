@@ -76,11 +76,12 @@ security-audit:
 
 # Equality-banked code-health thresholds: each equals today's measurement exactly, so
 # any regression fails and any improvement is banked by lowering the bound in the
-# same commit (reporting_read_service.py at 4508 lines and CC 34 in
-# reporting_render/package_builder.py are the current ceilings, not aspirations).
+# same commit (reporting_read_service.py at 4508 lines and CC 28 in
+# package_builder's outcome-review builder are the current ceilings, not
+# aspirations).
 SOURCE_FILE_MAX_LINES ?= 4508
-MAX_CYCLOMATIC_COMPLEXITY ?= 34
-MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 13
+MAX_CYCLOMATIC_COMPLEXITY ?= 28
+MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 11
 
 complexity-gate:
 	python scripts/python_complexity_inventory.py --limit 20 --max-cc $(MAX_CYCLOMATIC_COMPLEXITY) --max-high-complexity $(MAX_HIGH_COMPLEXITY_FUNCTIONS)
