@@ -901,6 +901,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         actor: str,
         correlation_id: str,
         trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
     ) -> None:
         with self._connect() as connection:
             existing = connection.execute(
@@ -909,6 +910,18 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             ).fetchone()
             if not existing:
                 raise ReportJobNotFoundError("report_job_not_found")
+            if (
+                skip_if_idempotency_key_exists
+                and event_idempotency_key
+                and connection.execute(
+                    "SELECT 1 FROM report_status_event "
+                    "WHERE report_job_id = %s AND event_idempotency_key = %s",
+                    (job_id, event_idempotency_key),
+                ).fetchone()
+            ):
+                # Serialized behind the FOR UPDATE row lock: concurrent
+                # same-key retries converge on one event.
+                return
             current_status: ReportJobStatus = existing["status"]
             self._append_status_event(
                 connection=connection,

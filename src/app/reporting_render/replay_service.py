@@ -61,6 +61,7 @@ class ReplayLedger(Protocol):
         actor: str,
         correlation_id: str,
         trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
     ) -> None: ...
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
@@ -279,11 +280,6 @@ class PortfolioReviewReplayService:
             # record and the job's own failure posture already tells the story.
             return
         outcome, reason = _fingerprint_outcome(source_job=source_job, replayed=replayed)
-        if any(
-            event.event_type == "job_replay_fingerprint_compared"
-            for event in self._ledger.list_status_events(replayed.job_id)
-        ):
-            return
         self._ledger.append_job_event(
             job_id=replayed.job_id,
             event_type="job_replay_fingerprint_compared",
@@ -306,6 +302,7 @@ class PortfolioReviewReplayService:
             actor=caller_context.triggered_by,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
+            skip_if_idempotency_key_exists=True,
         )
 
     def _require_retained_snapshot(
@@ -388,19 +385,13 @@ class PortfolioReviewReplayService:
                     trace_id=caller_context.trace_id,
                 )
             )
-        already_recorded = any(
-            event.event_type == "job_replay_snapshot_cloned"
-            and event.event_payload.get("cloned_snapshot_id") == cloned_snapshot.snapshot_id
-            for event in self._ledger.list_status_events(job.job_id)
+        self._append_snapshot_cloned_event(
+            job=job,
+            source_job=source_job,
+            source_snapshot=source_snapshot,
+            cloned_snapshot_id=cloned_snapshot.snapshot_id,
+            caller_context=caller_context,
         )
-        if not already_recorded:
-            self._append_snapshot_cloned_event(
-                job=job,
-                source_job=source_job,
-                source_snapshot=source_snapshot,
-                cloned_snapshot_id=cloned_snapshot.snapshot_id,
-                caller_context=caller_context,
-            )
         return self._ledger.mark_data_ready(
             job_id=job.job_id,
             actor=caller_context.triggered_by,
@@ -433,6 +424,7 @@ class PortfolioReviewReplayService:
             actor=caller_context.triggered_by,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
+            skip_if_idempotency_key_exists=True,
         )
 
 
@@ -443,6 +435,18 @@ def _fingerprint_outcome(
 ) -> tuple[str, str | None]:
     if source_job.render_bounded_determinism_fingerprint is None:
         return "incomparable", "source_fingerprint_missing"
+    if not all(
+        (
+            source_job.render_runtime_engine,
+            source_job.render_runtime_engine_version,
+            replayed.render_runtime_engine,
+            replayed.render_runtime_engine_version,
+        )
+    ):
+        # Absent runtime identity must not compare equal as None == None: a
+        # match claim requires proof both renders ran the same governed
+        # runtime.
+        return "incomparable", "runtime_identity_missing"
     if (
         source_job.render_runtime_engine != replayed.render_runtime_engine
         or source_job.render_runtime_engine_version != replayed.render_runtime_engine_version

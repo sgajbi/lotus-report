@@ -54,9 +54,8 @@ class ReportJobCaptureLedger(Protocol):
         actor: str,
         correlation_id: str,
         trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
     ) -> None: ...
-
-    def list_status_events(self, job_id: str) -> list[Any]: ...
 
     def mark_collecting_data(
         self,
@@ -814,12 +813,6 @@ class PortfolioReviewSnapshotCaptureService:
         if not isinstance(package, dict) or package.get("status") != "unavailable":
             return
         reason_code = str(package.get("reason_code") or "advisor_brief_not_found")
-        already_recorded = any(
-            event.event_type == "job_advisor_commentary_unavailable"
-            for event in self._job_ledger.list_status_events(job.job_id)
-        )
-        if already_recorded:
-            return
         self._job_ledger.append_job_event(
             job_id=job.job_id,
             event_type="job_advisor_commentary_unavailable",
@@ -835,6 +828,7 @@ class PortfolioReviewSnapshotCaptureService:
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
+            skip_if_idempotency_key_exists=True,
         )
 
     def _capture_proof_pack_snapshot(

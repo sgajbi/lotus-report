@@ -688,6 +688,94 @@ async def test_replay_records_incomparable_on_runtime_version_change(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_replay_records_incomparable_when_runtime_identity_missing(tmp_path):
+    """Absent runtime metadata must not compare equal as None == None: a
+    match claim requires proof both renders ran the same governed runtime."""
+
+    class _NoRuntimeRenderClient(_RecordingRenderClient):
+        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+            status_code, response = await super().submit_render_package(
+                payload, correlation_id, trace_id
+            )
+            response.pop("runtime_engine", None)
+            response.pop("runtime_engine_version", None)
+            return status_code, response
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-no-runtime",
+    )
+    _create_snapshot_for(store, source)
+    source = ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    source = ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    failing_render = PortfolioReviewRenderOrchestrationService(
+        render_client=_NoRuntimeRenderClient(artifact_base64=None),
+        archive_client=_RecordingArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    failed = await failing_render.render_for_job(source)
+    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert failed.render_bounded_determinism_fingerprint is not None
+    assert failed.render_runtime_engine is None
+
+    result, event = await _replay_and_read_comparison(
+        ledger,
+        store,
+        failed,
+        render_client=_NoRuntimeRenderClient(),
+    )
+    assert result.replayed_job.status == "archived"
+    assert event.event_payload["outcome"] == "incomparable"
+    assert event.event_payload["reason"] == "runtime_identity_missing"
+
+
+def test_append_job_event_converges_on_idempotency_key(tmp_path):
+    """The duplicate check runs inside the same lock as the insert, so
+    same-key appends converge on one event without a pre-scan race."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="atomic-event",
+    )
+    for _ in range(3):
+        ledger.append_job_event(
+            job_id=job.job_id,
+            event_type="job_replay_fingerprint_compared",
+            message="Comparison recorded.",
+            event_payload={"outcome": "matched", "source_report_job_id": "rjob_src"},
+            event_idempotency_key=f"job_replay_fingerprint_compared:{job.job_id}",
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            skip_if_idempotency_key_exists=True,
+        )
+    events = [
+        event
+        for event in ledger.list_status_events(job.job_id)
+        if event.event_type == "job_replay_fingerprint_compared"
+    ]
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
 async def test_replay_records_incomparable_when_source_fingerprint_missing(tmp_path):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
