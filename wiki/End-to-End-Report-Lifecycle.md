@@ -64,7 +64,8 @@ and runtime identity - evidence is never destroyed by a failure.
 | Render unavailable / 5xx | `render_execution_failed` | Retryable | Replay |
 | **Timeout after successful render** (terminal replay returns no artifact bytes) | `render_artifact_unrecoverable` | **Retryable** | Replay clones the retained snapshot and re-renders under a fresh render job id; content-identical by fingerprint, byte-different by design |
 | Archive validation / conflict | `archive_validation_failed` / `archive_conflict` | Not retryable | Investigate; document never silently duplicated |
-| Archive unavailable / 5xx | `archive_storage_failed` / `archive_execution_failed` | Retryable | Replay (render evidence preserved; comparison still recorded) |
+| Archive storage unavailable (503/507 or explicit storage codes) | `archive_storage_failed` | Retryable | Replay (render evidence preserved; comparison still recorded) |
+| Archive other 5xx / unclassified fault | `archive_execution_failed` | Not retryable | Fresh order after investigation (report#211 questions this posture: archive ingest is idempotent by `arch_{render_job_id}`, so retry is convergent-safe by construction) |
 | Advisor brief not accepted / not found / context mismatch / disclosure impossible | Section closes, job proceeds | n/a | Reason recorded as job event + snapshot + lineage; document truthfully omits the section |
 | lotus-ai transport failure or 401/403 | `upstream_data_failed` | Retryable | Fix environment (401/403 = caller registry fault), then replay |
 | Duplicate submission | n/a | n/a | Idempotency keys converge at every hop (job, render, archive, replay, events) |
@@ -85,13 +86,13 @@ booking-centre callers with the same not-found answer as an unknown id (see
 
 Two processes record metrics and **both must be scraped**: the API service (`/metrics`, port
 8300 locally) and the job worker (its own exporter on `REPORT_JOB_WORKER_METRICS_PORT`,
-default 8301) - the canonical async capture/render/archive/replay paths execute in the worker.
+default 8301). The canonical async capture/render/archive paths execute in the worker; the replay command executes in the API process.
 
 | Signal | Where |
 | --- | --- |
 | Operation counts + durations per stage | `lotus_report_operations_total` / `..._duration_seconds` (worker + API) |
-| Advisor commentary outcomes by bounded reason | `lotus_report_advisor_commentary_resolutions_total` (worker) |
-| Fingerprint comparison outcomes | `lotus_report_replay_fingerprint_comparisons_total` (worker); alert on windowed `increase(...{outcome="diverged"}[1h]) > 0` |
+| Advisor commentary outcomes by bounded reason | `lotus_report_advisor_commentary_resolutions_total` - worker for the canonical async flow, API process for replay-driven captures: scrape both |
+| Fingerprint comparison outcomes | `lotus_report_replay_fingerprint_comparisons_total` - **API process** (the replay command executes in the API, not the worker); point the windowed `increase(...{outcome="diverged"}[1h]) > 0` alert at the API exporter |
 | Per-job truth | Status events (bounded contract, idempotent appends), diagnostics endpoint with bounded flags (`replay_fingerprint_diverged`, `snapshot_not_captured`, ...) |
 | Evidence | Snapshot + upstream-call lineage endpoints; archive source events carry artifact refs including `advisor_brief_accepted_output` |
 
