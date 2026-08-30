@@ -398,7 +398,24 @@ def _cloned_lineage_summary(
     The data's service provenance and captured posture stay, and the source
     snapshot id names where the original call evidence lives."""
 
-    summary = dict(source_snapshot.lineage_summary)
+    source_summary = source_snapshot.lineage_summary
+    if source_summary.get("upstream_evidence") == "cloned_from_source_snapshot":
+        # Chained recovery: the source snapshot is itself a clone with no call
+        # rows of its own. Keep pointing at the root snapshot that actually
+        # holds the upstream-call evidence, or audit navigation dead-ends at
+        # an intermediate clone.
+        evidence_snapshot_id = str(
+            source_summary.get("cloned_from_snapshot_id") or source_snapshot.snapshot_id
+        )
+        evidence_report_job_id = str(
+            source_summary.get("cloned_from_report_job_id") or source_job_id
+        )
+        source_call_count = source_summary.get("source_call_count", 0)
+    else:
+        evidence_snapshot_id = source_snapshot.snapshot_id
+        evidence_report_job_id = source_job_id
+        source_call_count = source_summary.get("call_count", 0)
+    summary = dict(source_summary)
     summary.update(
         {
             "call_count": 0,
@@ -407,9 +424,9 @@ def _cloned_lineage_summary(
             "not_supported_call_count": 0,
             "redacted_call_count": 0,
             "upstream_evidence": "cloned_from_source_snapshot",
-            "source_call_count": source_snapshot.lineage_summary.get("call_count", 0),
-            "cloned_from_report_job_id": source_job_id,
-            "cloned_from_snapshot_id": source_snapshot.snapshot_id,
+            "source_call_count": source_call_count,
+            "cloned_from_report_job_id": evidence_report_job_id,
+            "cloned_from_snapshot_id": evidence_snapshot_id,
         }
     )
     return summary
