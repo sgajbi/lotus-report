@@ -6,6 +6,8 @@
 
 [Architecture](Architecture)
 
+[End-to-End Report Lifecycle](End-to-End-Report-Lifecycle)
+
 [API Surface](API-Surface)
 
 [Portfolio Review Report](Portfolio-Review-Report)

@@ -4,6 +4,9 @@
 
 ## Start here
 
+- The end-to-end capability in one page:
+  [End-to-End Report Lifecycle](End-to-End-Report-Lifecycle)
+
 - Repo entrypoint: [README.md](https://github.com/sgajbi/lotus-report/blob/main/README.md)
 - Repo context: [REPOSITORY-ENGINEERING-CONTEXT.md](https://github.com/sgajbi/lotus-report/blob/main/REPOSITORY-ENGINEERING-CONTEXT.md)
 - Local ownership guidance:
