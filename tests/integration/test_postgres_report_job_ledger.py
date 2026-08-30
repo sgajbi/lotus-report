@@ -359,6 +359,7 @@ def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
         request=request,
         caller_context=caller_context,
         idempotency_key=f"replay-guard-first-{unique_suffix}",
+        reason="First replacement.",
     )
     ledger.upsert_job_relationship(
         source_job=source,
@@ -375,6 +376,7 @@ def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
             request=request,
             caller_context=caller_context,
             idempotency_key=f"replay-guard-second-{unique_suffix}",
+            reason="Second replacement attempt.",
         )
     # ...while the original key still converges on the existing job.
     same = ledger.create_replay_derived_job(
@@ -382,6 +384,7 @@ def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
         request=request,
         caller_context=caller_context,
         idempotency_key=f"replay-guard-first-{unique_suffix}",
+        reason="First replacement.",
     )
     assert same.job_id == first.job_id
 
@@ -400,6 +403,7 @@ def test_postgres_replay_derived_job_guard_enforces_one_replacement() -> None:
         request=request,
         caller_context=caller_context,
         idempotency_key=f"replay-guard-third-{unique_suffix}",
+        reason="Third replacement after failure.",
     )
     assert third.job_id not in {source.job_id, first.job_id}
 
