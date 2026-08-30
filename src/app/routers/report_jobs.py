@@ -1914,8 +1914,11 @@ async def regenerate_report_job(
             description=(
                 "Returned when the report job is not a failed, retry-eligible portfolio-review "
                 "job without an archived document - including failed jobs of other report "
-                "families, which recover by resubmitting their own order, and jobs whose "
-                "retained snapshot is no longer available."
+                "families, which recover by resubmitting their own order. Also returned for a "
+                "render_artifact_unrecoverable recovery that still has collection to do when "
+                "its retained snapshot has been purged; other failure categories recapture "
+                "upstream data instead, and same-key retries of an already completed replay "
+                "succeed regardless of snapshot retention."
             ),
         ),
     },
