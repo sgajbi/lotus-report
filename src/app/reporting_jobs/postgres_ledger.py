@@ -902,7 +902,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         correlation_id: str,
         trace_id: str,
         skip_if_idempotency_key_exists: bool = False,
-    ) -> None:
+    ) -> bool:
         with self._connect() as connection:
             existing = connection.execute(
                 "SELECT status FROM report_job WHERE report_job_id = %s FOR UPDATE",
@@ -921,7 +921,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             ):
                 # Serialized behind the FOR UPDATE row lock: concurrent
                 # same-key retries converge on one event.
-                return
+                return False
             current_status: ReportJobStatus = existing["status"]
             self._append_status_event(
                 connection=connection,
@@ -937,6 +937,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 trace_id=trace_id,
                 created_at=utc_now(),
             )
+            return True
 
     def create_rerender_attempt(
         self,

@@ -58,7 +58,7 @@ class ReportJobCaptureLedger(Protocol):
         correlation_id: str,
         trace_id: str,
         skip_if_idempotency_key_exists: bool = False,
-    ) -> None: ...
+    ) -> bool: ...
 
     def mark_collecting_data(
         self,
