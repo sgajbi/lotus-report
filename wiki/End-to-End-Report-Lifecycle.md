@@ -42,7 +42,8 @@ and runtime identity - evidence is never destroyed by a failure.
 
 | Identity | Minted by | Determinism |
 | --- | --- | --- |
-| `report_request_id` / idempotency key | Caller (Gateway/Workbench) | Identical retries converge on one job |
+| Idempotency key | Caller (Gateway/Workbench) | Identical retries converge on one job; this is the ONLY identity a caller supplies |
+| `report_request_id` (`rrq_...`) | Report acceptance | Server-minted per request record; never reuse it as an idempotency key - that creates a NEW job instead of converging |
 | `report_job_id` | Report acceptance | Fresh per job |
 | `snapshot_id` + `snapshot_hash` | Capture | One immutable snapshot per job; hash pins content |
 | Upstream call records | Capture recording clients | Request/response hashes, latencies, postures per source read |
@@ -76,7 +77,7 @@ and runtime identity - evidence is never destroyed by a failure.
 | --- | --- | --- |
 | `POST /reports/jobs/{id}/replay` | `failed` + `retry_eligible`, portfolio-review only, no archive document | New job under a replay idempotency key; for `render_artifact_unrecoverable` the retained snapshot is CLONED (upstream never recollected, clone lineage names the source snapshot; refuses fail-closed if the snapshot is purged); crash-resumable; fingerprint comparison recorded once per durable event |
 | `POST /reports/jobs/{id}/rerender` | `archived` | Fresh render attempt from the immutable snapshot, fresh render job id per attempt, supersession recorded |
-| `POST /reports/jobs/{id}/regenerate` | `archived` | New job recollecting CURRENT upstream data; relationship + archive consequence recorded |
+| `POST /reports/jobs/{id}/regenerate` | `archived`, portfolio-review only | New job recollecting CURRENT upstream data; relationship + archive consequence recorded; other families regenerate by resubmitting their own order |
 
 Every job-scoped read and command refuses cross-tenant, cross-region, and mismatched
 booking-centre callers with the same not-found answer as an unknown id (see
