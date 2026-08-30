@@ -1788,7 +1788,11 @@ async def rerender_report_job(
         **_error_response(
             409,
             example_key="report_job_cannot_be_regenerated",
-            description="Returned when the report job is not archived PDF output.",
+            description=(
+                "Returned when the report job is not archived portfolio-review PDF output - "
+                "including archived PDF jobs of other report families, which regenerate by "
+                "resubmitting their own order."
+            ),
         ),
     },
 )
@@ -1907,7 +1911,12 @@ async def regenerate_report_job(
         **_error_response(
             409,
             example_key="report_job_cannot_be_replayed",
-            description="Returned when the report job is not failed and retry eligible.",
+            description=(
+                "Returned when the report job is not a failed, retry-eligible portfolio-review "
+                "job without an archived document - including failed jobs of other report "
+                "families, which recover by resubmitting their own order, and jobs whose "
+                "retained snapshot is no longer available."
+            ),
         ),
     },
 )
