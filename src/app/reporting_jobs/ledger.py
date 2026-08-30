@@ -573,11 +573,21 @@ class ReportJobLedger:
                 replay_source_failure_category: str | None = None
                 if replay_source_job_id is not None:
                     source_row = connection.execute(
-                        "SELECT status, failure_category FROM report_job WHERE report_job_id = ?",
+                        "SELECT status, failure_category, retry_eligible, "
+                        "archive_document_id FROM report_job WHERE report_job_id = ?",
                         (replay_source_job_id,),
                     ).fetchone()
                     if not source_row:
                         raise ReportJobNotFoundError("report_job_not_found")
+                    if (
+                        source_row["status"] != "failed"
+                        or not source_row["retry_eligible"]
+                        or source_row["archive_document_id"]
+                    ):
+                        # The ledger lock serializes calls, not the service's
+                        # resolver-then-create sequence: a concurrent resolver
+                        # may have adopted a committed document meanwhile.
+                        raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
                     replay_source_status = source_row["status"]
                     replay_source_failure_category = source_row["failure_category"]
                     live = connection.execute(

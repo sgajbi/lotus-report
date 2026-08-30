@@ -1597,6 +1597,34 @@ async def test_clone_event_not_duplicated_when_resuming_after_event_commit(tmp_p
     assert len(clone_events) == 1
 
 
+def test_guarded_creation_revalidates_source_eligibility(tmp_path):
+    """A stale observer (its resolver saw 404 before a concurrent adoption
+    archived the source) must be refused at the guarded creation itself -
+    the ledger revalidates failed/retry-eligible/no-document under its own
+    lock, not just at the service layer."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    # Simulate the concurrent adoption completing first.
+    ledger.mark_archived(
+        job_id=failed_source.job_id,
+        actor=failed_source.triggered_by,
+        correlation_id=failed_source.correlation_id,
+        trace_id=failed_source.trace_id,
+        archive_request_id=f"arch_rdr_{failed_source.job_id}_pdf",
+        archive_document_id="doc_adopted_elsewhere",
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        ledger.create_replay_derived_job(
+            source_job_id=failed_source.job_id,
+            request=_request(output_formats=["pdf"]),
+            caller_context=_caller(),
+            idempotency_key="stale-observer-key",
+            reason="Stale observer replacement.",
+        )
+
+
 def test_regenerate_rejects_non_portfolio_review_report_types(tmp_path):
     """Regenerate recreates a portfolio-review order; an archived job of any
     other family must be refused, or its replacement document would morph
