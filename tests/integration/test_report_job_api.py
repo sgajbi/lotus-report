@@ -2581,7 +2581,10 @@ def test_report_job_rerender_records_archive_failure(tmp_path):
         body = response.json()
         assert body["status"] == "failed"
         assert body["failure_category"] == "archive_storage_failed"
-        assert body["retry_eligible"] is True
+        # Rerender attempts have no archive-ambiguity resolution: a new
+        # attempt would mint a fresh arch_{render_job_id} that idempotency
+        # cannot converge, so archive-stage failures stay non-retryable here.
+        assert body["retry_eligible"] is False
         assert body["archive"]["archive_request_id"].startswith("arch_rdr_rrnd_")
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
     finally:

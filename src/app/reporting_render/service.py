@@ -336,7 +336,9 @@ class PortfolioReviewRenderOrchestrationService:
                 duration_seconds=perf_counter() - started_at,
             )
             return archived_job
-        failure_category, retry_eligible = _archive_failure_posture(status_code, response_payload)
+        failure_category, retry_eligible = _archive_failure_posture(
+            status_code, response_payload, report_type=job.report_type
+        )
         failed_job = self._job_ledger.mark_failed(
             job_id=job.job_id,
             actor=job.triggered_by,
@@ -518,7 +520,9 @@ def _date_text(value: object) -> str:
     raise ValueError("date value is required")
 
 
-def _archive_failure_posture(status_code: int, payload: dict[str, Any]) -> tuple[str, bool]:
+def _archive_failure_posture(
+    status_code: int, payload: dict[str, Any], *, report_type: str
+) -> tuple[str, bool]:
     detail = payload.get("detail")
     detail_payload = detail if isinstance(detail, dict) else {}
     code = str(detail_payload.get("code") or "")
@@ -529,18 +533,27 @@ def _archive_failure_posture(status_code: int, payload: dict[str, Any]) -> tuple
         return "archive_validation_failed", False
     if status_code == 409 or code == "archive_conflict":
         return "archive_conflict", False
+    # Retry-eligibility for archive-stage failures is scoped to the one
+    # report family whose recovery path can retry SAFELY: portfolio-review
+    # replay resolves the original arch_{render_job_id} against archive
+    # before re-rendering, so a committed-but-response-lost ingest is adopted
+    # rather than duplicated. Other families (and rerender attempts) have no
+    # resolution path - a fresh order or attempt mints a fresh request id
+    # that archive idempotency cannot converge, so advertising retryable
+    # there would invite duplicate client documents.
+    resolvable = report_type == "portfolio_review"
     if status_code in {503, 507} or code in {
         "archive_storage_unavailable",
         "archive_storage_failed",
     }:
-        return "archive_storage_failed", True
+        return "archive_storage_failed", resolvable
     # Unclassified archive faults (including generic 500s) are retryable:
     # archive ingestion is idempotent by the deterministic arch_{render_job_id}
     # request id - an identical retry converges on the existing document after
     # checksum verification - so retrying cannot duplicate a client document
     # or corrupt state, and the usual default-deny argument for unknown faults
     # does not apply to this leg (issue #211).
-    return "archive_execution_failed", True
+    return "archive_execution_failed", resolvable
 
 
 def _archive_failure_message(payload: dict[str, Any]) -> str:

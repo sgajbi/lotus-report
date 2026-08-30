@@ -288,7 +288,7 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     assert upstream_calls[0].contract_version == "LotusIdeaEvidencePackReportInput.1.0"
 
 
-def test_idea_evidence_materialization_records_retryable_archive_failure(tmp_path) -> None:
+def test_idea_evidence_materialization_records_archive_failure_without_retry(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
@@ -320,7 +320,9 @@ def test_idea_evidence_materialization_records_retryable_archive_failure(tmp_pat
     record = ledger.get_job(response.json()["report_job_id"])
     assert record.status == "failed"
     assert record.failure_category == "archive_storage_failed"
-    assert record.retry_eligible is True
+    # Proof-pack jobs have no replay/resolution path; a fresh order identity
+    # would defeat archive idempotency, so the posture is non-retryable.
+    assert record.retry_eligible is False
     assert record.archive_document_id is None
 
 
