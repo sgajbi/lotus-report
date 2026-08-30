@@ -24,6 +24,17 @@ are implemented and proven.
 | `lotus_report_advisor_commentary_resolutions_total` | counter | `outcome`, `reason` | Bounded ADVISOR_COMMENTARY section resolutions (included, unavailable) with bounded closure reasons; section closures never fail the job, so this is the signal for systemic ordering problems |
 | `lotus_report_replay_fingerprint_comparisons_total` | counter | `outcome`, `reason` | Bounded replay fingerprint comparison observations (matched, diverged, incomparable); a nonzero same-runtime diverged rate is the alert for silent document-content drift |
 
+## Scrape Targets
+
+Report metrics live in two processes and BOTH must be scraped:
+
+- the API service exposes `/metrics` on its HTTP port (8300 in the local compose stack);
+- the dedicated job worker (`python -m app.reporting_jobs.process`) exposes its own Prometheus
+  endpoint on `REPORT_JOB_WORKER_METRICS_PORT` (default 8301). The canonical asynchronous
+  capture, render handoff, archive handoff, replay, fingerprint-comparison, and
+  advisor-commentary paths execute in the worker, so their counters are only visible there -
+  scraping the API process alone leaves every alert on those series silently zero.
+
 ## Reserved Metrics
 
 | Metric | Status | Reason |

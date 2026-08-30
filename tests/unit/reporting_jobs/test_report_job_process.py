@@ -193,3 +193,23 @@ def test_worker_cli_maps_bounded_runtime_arguments(
     process_module.main()
 
     assert invocations == ["logging", expected_iterations]
+
+
+def test_worker_metrics_server_starts_on_governed_port(monkeypatch):
+    """The canonical async lifecycle paths record their counters in THIS
+    process; without the exporter every documented alert on them stays
+    silently zero (PR #208 review)."""
+
+    import app.reporting_jobs.process as process_module
+
+    captured: list[int] = []
+    monkeypatch.setattr("prometheus_client.start_http_server", lambda port: captured.append(port))
+    monkeypatch.setattr(
+        process_module.settings, "report_job_worker_metrics_port", 9309, raising=False
+    )
+
+    process_module.start_worker_metrics_server()
+    assert captured == [9309]
+
+    process_module.start_worker_metrics_server(port=9310)
+    assert captured == [9309, 9310]

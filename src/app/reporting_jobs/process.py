@@ -13,7 +13,10 @@ from app.observability import correlation_id_var, request_id_var, setup_logging,
 from app.reporting_jobs.service import get_report_job_worker
 from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 from app.reporting_jobs.worker import ReportJobWorkerRunResult
-from app.reporting_metrics import record_report_job_worker_metrics
+from app.reporting_metrics import (
+    record_report_job_worker_metrics,
+    validate_reporting_metric_contracts,
+)
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -142,12 +145,28 @@ async def run_report_job_worker_process(
     await process.run(max_iterations=max_iterations)
 
 
+def start_worker_metrics_server(*, port: int | None = None) -> None:
+    """Expose this worker process's Prometheus registry.
+
+    The dedicated job worker runs the canonical asynchronous capture, render,
+    archive, replay, and advisor-commentary paths, so their counters live in
+    THIS process - without an exporter here they are invisible to scraping
+    and every documented alert on them stays silently zero.
+    """
+
+    from prometheus_client import start_http_server
+
+    validate_reporting_metric_contracts()
+    start_http_server(port if port is not None else settings.report_job_worker_metrics_port)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the durable lotus-report job worker.")
     parser.add_argument("--once", action="store_true", help="Run one worker pass and exit.")
     parser.add_argument("--max-iterations", type=int, default=None)
     args = parser.parse_args()
     setup_logging()
+    start_worker_metrics_server()
     max_iterations = 1 if args.once else args.max_iterations
     asyncio.run(run_report_job_worker_process(max_iterations=max_iterations))
 
