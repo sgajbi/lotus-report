@@ -1086,6 +1086,87 @@ async def test_failed_replay_render_records_no_fingerprint_comparison(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_fresh_replay_key_cannot_mint_second_replacement(tmp_path):
+    """A failed source must never gain two replacement documents: after a
+    successful replay, a NOVEL idempotency key is refused (only the original
+    key converges on the existing replacement), and the guard runs inside
+    the same transaction as job creation so concurrent novel keys serialize
+    on it."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+    replay_service, _rc, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+    first = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="First recovery."),
+        caller_context=_caller(),
+        idempotency_key="first-key",
+    )
+    assert first.replayed_job.status == "archived"
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Second recovery, novel key."),
+            caller_context=_caller(),
+            idempotency_key="second-key",
+        )
+
+    # Exactly one replacement document; the same key still converges.
+    assert len(archive_client.payloads) == 1
+    again = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="First recovery."),
+        caller_context=_caller(),
+        idempotency_key="first-key",
+    )
+    assert again.replayed_job.job_id == first.replayed_job.job_id
+    assert len(archive_client.payloads) == 1
+
+
+@pytest.mark.asyncio
+async def test_fresh_replay_key_allowed_after_failed_replacement(tmp_path):
+    """A replacement that itself FAILED does not block another recovery
+    attempt - the guard refuses only live or successful replacements."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = _artifactless_failed_source(ledger)
+    _create_snapshot_for(store, failed_source)
+
+    failing_replay, _rc1, _ac1 = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        render_client=_FailingRenderClient(),
+    )
+    first = await failing_replay.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Replay whose render fails."),
+        caller_context=_caller(),
+        idempotency_key="failing-key",
+    )
+    assert first.replayed_job.status == "failed"
+
+    healthy_replay, _rc2, archive_client = _recovery_services(
+        ledger, store, _RefusingCapture(), snapshot_store=store
+    )
+    second = await healthy_replay.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Recovery after failed replay."),
+        caller_context=_caller(),
+        idempotency_key="healthy-key",
+    )
+    assert second.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+
+@pytest.mark.asyncio
 async def test_missing_idempotency_key_never_reaches_the_resolver(tmp_path):
     """The 400 for a missing Idempotency-Key must fire before the resolver
     can durably mutate the source job by adopting a committed document."""
