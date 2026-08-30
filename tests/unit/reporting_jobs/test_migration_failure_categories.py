@@ -125,3 +125,22 @@ def test_backfill_migration_recovers_stranded_artifactless_failures() -> None:
     assert sql.count("retry_eligible = TRUE") == 2
     for statement in sql.split(";"):
         assert statement.count("'") % 2 == 0, "semicolon inside a string literal"
+
+
+def test_archive_execution_failed_backfill_is_category_scoped() -> None:
+    """Migration 014 converts the rows stranded under the old non-retryable
+    posture. The category has a single producer, so the category-scoped
+    predicate is precise; the retry_eligible = FALSE guard makes re-applies
+    no-ops, and no string literal may contain a semicolon (the runner splits
+    statements on it)."""
+
+    sql = (MIGRATIONS_DIR / "014_report_archive_execution_failed_retryable.sql").read_text(
+        encoding="utf-8"
+    )
+    for table in ("report_job", "report_rerender_attempt"):
+        assert f"UPDATE {table}" in sql
+    assert sql.count("SET retry_eligible = TRUE") == 2
+    assert sql.count("AND retry_eligible = FALSE") == 2
+    assert "failure_message" not in sql
+    for statement in sql.split(";"):
+        assert statement.count("'") % 2 == 0

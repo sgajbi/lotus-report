@@ -1058,6 +1058,63 @@ async def test_failed_replay_render_records_no_fingerprint_comparison(tmp_path):
     ] == []
 
 
+@pytest.mark.asyncio
+async def test_archive_execution_failure_recovers_through_replay(tmp_path):
+    """An unclassified archive fault (generic 500) is retryable by design:
+    archive ingest is idempotent by arch_{render_job_id}, so the replay
+    recovers end-to-end once archive is healthy, with exactly one archived
+    document (issue #211)."""
+
+    class _Failing500ArchiveClient:
+        async def archive_document(self, payload, **kwargs):
+            return 500, {"detail": "unexpected archive fault"}
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-archive-500",
+    )
+    _create_snapshot_for(store, source)
+    source = ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    source = ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    failing_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(),
+        archive_client=_Failing500ArchiveClient(),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    failed = await failing_service.render_for_job(source)
+    assert failed.failure_category == "archive_execution_failed"
+    assert failed.retry_eligible is True
+
+    replay_service, _rc, archive_client = _recovery_services(
+        ledger, store, _RecapturingCapture(ledger, store), snapshot_store=store
+    )
+    result = await replay_service.replay_job(
+        job_id=failed.job_id,
+        command=ReportJobReplayRequest(reason="Archive recovered."),
+        caller_context=_caller(),
+        idempotency_key="recover-archive-500",
+    )
+
+    assert result.replayed_job.status == "archived"
+    assert len(archive_client.payloads) == 1
+
+
 class _PurgedSourceSnapshotStore:
     """Store view where the source job's snapshot has been retention-purged."""
 
