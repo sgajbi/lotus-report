@@ -7,7 +7,6 @@ from typing import Protocol
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
-    ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
@@ -19,6 +18,7 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.service import (
     get_portfolio_review_snapshot_capture_service,
     get_report_input_snapshot_store,
@@ -153,18 +153,7 @@ class PortfolioReviewReplayService:
         idempotency_key: str | None,
     ) -> ReportReplayResult:
         source_job = self._ledger.get_job(job_id)
-        # Tenant and region are segregation boundaries: a caller must never be
-        # able to materialize another tenant's report evidence into a document
-        # under its own context. Mismatches answer exactly like an unknown id.
-        if (
-            source_job.tenant_id != caller_context.tenant_id
-            or source_job.region != caller_context.region
-            or (
-                source_job.booking_center_code is not None
-                and caller_context.booking_center_code != source_job.booking_center_code
-            )
-        ):
-            raise ReportJobNotFoundError("report_job_not_found")
+        assert_job_visible(source_job, caller_context)
         assert_replay_eligible(source_job)
         replay_key = replay_idempotency_key(
             source_job_id=source_job.job_id,

@@ -389,9 +389,12 @@ Observability floor for this wave:
   lineage records zero upstream calls of its own and names the source snapshot that holds the
   original call evidence. If the retained snapshot no longer exists, the replay refuses
   (fail-closed 409) rather than silently recollecting drifted upstream state - recover such jobs
-  with a fresh report order. The replay command serves portfolio-review jobs only and refuses
+  with a fresh report order. The replay command serves portfolio-review jobs only. Every
+  job-scoped read and command route (status, diagnostics, events, portfolio-memory events,
+  snapshot/lineage by job or snapshot id, cancel, rerender, regenerate, replay) refuses
   cross-tenant, cross-region, and mismatched booking-centre callers with the same not-found
-  answer as an unknown job id. The replayed job's lineage diagnostics label the evidence
+  answer as an unknown identifier - existence is never leaked across segregation boundaries,
+  and a job stamped with a booking centre requires the command to carry the same one. The replayed job's lineage diagnostics label the evidence
   `cloned_from_source_snapshot` and name the source snapshot holding the original upstream-call
   rows, and a crash-interrupted replay resumes from `collecting_data` when retried with the same
   idempotency key. Other

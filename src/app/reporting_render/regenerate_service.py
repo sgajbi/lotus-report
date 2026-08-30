@@ -17,6 +17,7 @@ from app.reporting_jobs.models import (
     ReportStatusEvent,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.models import ReportInputSnapshotRecord
 from app.reporting_lineage.service import (
     get_portfolio_review_snapshot_capture_service,
@@ -120,6 +121,7 @@ class PortfolioReviewRegenerateService:
         idempotency_key: str | None,
     ) -> ReportRegenerateResult:
         source_job = self._ledger.get_job(job_id)
+        assert_job_visible(source_job, caller_context)
         _assert_regenerate_eligible(source_job)
         previous_snapshot = _optional_snapshot(self._snapshot_store, source_job.job_id)
         regenerate_key = _regenerate_idempotency_key(

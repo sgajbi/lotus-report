@@ -18,6 +18,7 @@ from app.reporting_jobs.models import (
     ReportRerenderAttemptRecord,
 )
 from app.reporting_jobs.service import get_report_job_ledger
+from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
@@ -140,6 +141,7 @@ class PortfolioReviewRerenderService:
     ) -> ReportRerenderAttemptRecord:
         started_at = perf_counter()
         job = self._ledger.get_job(job_id)
+        assert_job_visible(job, caller_context)
         _assert_rerender_eligible(job)
         try:
             snapshot = self._snapshot_store.get_snapshot_by_job(job_id)
