@@ -190,6 +190,7 @@ def test_report_replay_service_factory_wires_runtime_dependencies(monkeypatch):
     ledger = object()
     capture_service = object()
     render_service = object()
+    snapshot_store = object()
 
     monkeypatch.setattr(
         "app.reporting_render.replay_service.get_report_job_ledger",
@@ -203,12 +204,17 @@ def test_report_replay_service_factory_wires_runtime_dependencies(monkeypatch):
         "app.reporting_render.replay_service.get_portfolio_review_render_orchestration_service",
         lambda: render_service,
     )
+    monkeypatch.setattr(
+        "app.reporting_render.replay_service.get_report_input_snapshot_store",
+        lambda: snapshot_store,
+    )
 
     service = get_portfolio_review_replay_service()
 
     assert service._ledger is ledger
     assert service._capture_service is capture_service
     assert service._render_service is render_service
+    assert service._snapshot_store is snapshot_store
 
 
 _SNAPSHOT_PAYLOAD: dict = {
