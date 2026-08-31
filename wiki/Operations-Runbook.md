@@ -386,7 +386,7 @@ Observability floor for this wave:
   adopted (the source job resolves to archived with a `job_replay_archive_resolved` event and
   the replay answers 409 - re-read the job status), an unanswerable lookup refuses fail-closed,
   and only a confirmed 404 re-renders and archives. Exactly one client document is possible in
-  every branch. Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture; other families and rerender attempts stay non-retryable because no resolution path exists for them yet
+  every branch. Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture; other report families stay non-retryable (no resolution path), while rerender attempts are retry-eligible: a retry resolves the failed attempt's own archive request first, adopting a committed correction or proving a clean 404 before any new attempt (migration 015 backfills previously stranded attempts)
 - a job failed with `render_artifact_unrecoverable` means the render completed previously but its
   artifact was only available in the original response (lotus-render returns terminal truth on
   replay without re-rendering and does not persist artifact bytes). This is the
