@@ -2566,8 +2566,10 @@ def test_report_job_rerender_records_missing_artifact_archive_validation_failure
 def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
     """Issue #215 adoption proof: attempt 1's archive commits but answers
     500; the next rerender request resolves attempt 1's own request id,
-    adopts the committed correction as that attempt's outcome, and creates
-    no new render or archive request."""
+    marks attempt 1 archived (failure posture cleared), records a distinct
+    adoption outcome bound to the incoming idempotency key, and creates no
+    new render or archive request. A same-key retry of the adoption response
+    converges on the same outcome row."""
 
     client, ledger, lineage_store = _client(tmp_path)
     render_client = _RerenderRenderClient()
@@ -2612,8 +2614,37 @@ def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
 
         assert second["status"] == "archived"
         assert second["archive"]["document_id"] == "doc_committed_correction"
-        # The ADOPTED attempt is attempt 1 - same render job id, no new work.
+        # The outcome is a DISTINCT row bound to the incoming key, carrying
+        # the adopted attempt's render identity - no new work performed.
+        assert second["rerender_attempt_id"] != first["rerender_attempt_id"]
+        assert second["idempotency_key"] == "rerender-adopt-2"
         assert second["render"]["render_job_id"] == ambiguous_render_job_id
+        assert archive_client.lookups == [f"arch_{ambiguous_render_job_id}"]
+        assert len(render_client.payloads) == renders_before
+        assert len(archive_client.payloads) == archives_before
+
+        # Attempt 1 itself is resolved: archived, failure posture cleared.
+        resolved_first = next(
+            attempt
+            for attempt in ledger.list_rerender_attempts(job.job_id)
+            if attempt.rerender_attempt_id == first["rerender_attempt_id"]
+        )
+        assert resolved_first.status == "archived"
+        assert resolved_first.archive_document_id == "doc_committed_correction"
+        assert resolved_first.failure_category is None
+        assert resolved_first.failure_message is None
+        assert ledger.list_unresolved_archive_ambiguous_attempts(job.job_id) == []
+
+        # Same-key retry (lost response) converges on the same outcome row
+        # without another archive lookup or any new render/archive work.
+        third = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Retry the correction."},
+            headers=_headers("rerender-adopt-2"),
+        ).json()
+        assert third["rerender_attempt_id"] == second["rerender_attempt_id"]
+        assert third["status"] == "archived"
+        assert third["archive"]["document_id"] == "doc_committed_correction"
         assert archive_client.lookups == [f"arch_{ambiguous_render_job_id}"]
         assert len(render_client.payloads) == renders_before
         assert len(archive_client.payloads) == archives_before
@@ -2705,6 +2736,154 @@ def test_rerender_refuses_when_ambiguity_lookup_unavailable(tmp_path):
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "report_job_cannot_be_rerendered"
         assert len(archive_client.payloads) == archives_before
+    finally:
+        _clear_overrides()
+
+
+def test_rerender_rejects_missing_idempotency_key_before_any_resolution(tmp_path):
+    """Issue #215 (PR #219 review): a rerender command without an
+    Idempotency-Key is rejected before the resolution pass runs, so a
+    rejected command performs no archive lookups and no ledger writes."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        headers = _headers()
+        del headers["Idempotency-Key"]
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Correct the document."},
+            headers=headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "missing_idempotency_key"
+        assert archive_client.lookups == []
+        assert ledger.list_rerender_attempts(job.job_id) == []
+    finally:
+        _clear_overrides()
+
+
+def test_rerender_refuses_when_ambiguity_lookup_raises(tmp_path):
+    """Issue #215: a transport failure during the ambiguity lookup is just
+    as unanswerable as a 5xx - the rerender refuses fail-closed."""
+
+    class _RaisingLookupArchiveClient(_RerenderArchiveClient):
+        async def get_document_by_request_id(self, archive_request_id, **kwargs):
+            self.lookups.append(archive_request_id)
+            raise RuntimeError("archive connection reset")
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RaisingLookupArchiveClient(
+        status_code=500,
+        payload={"detail": "archive fault"},
+    )
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Correct the document."},
+            headers=_headers("rerender-raise-1"),
+        ).json()
+        assert first["status"] == "failed"
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Retry the correction."},
+            headers=_headers("rerender-raise-2"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_rerendered"
+    finally:
+        _clear_overrides()
+
+
+def test_rerender_refuses_when_lookup_answers_200_without_document_id(tmp_path):
+    """Issue #215: a 200 lookup whose payload carries no document id cannot
+    prove what committed - the rerender refuses fail-closed instead of
+    treating a malformed answer as a confirmed 404."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        status_code=500,
+        payload={"detail": "archive fault"},
+    )
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Correct the document."},
+            headers=_headers("rerender-empty-1"),
+        ).json()
+        assert first["status"] == "failed"
+
+        archive_client.lookup = (200, {})
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Retry the correction."},
+            headers=_headers("rerender-empty-2"),
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "report_job_cannot_be_rerendered"
+    finally:
+        _clear_overrides()
+
+
+def test_rerender_archive_validation_failure_stays_non_retryable(tmp_path):
+    """Issue #215: the resolution-first override applies only to ambiguous
+    archive-stage failures. A validation rejection is deterministic - the
+    same payload fails the same way - so the attempt stays non-retryable."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(
+        status_code=422,
+        payload={"detail": {"code": "archive_payload_invalid"}},
+    )
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Correct the document."},
+            headers=_headers("rerender-validation-1"),
+        ).json()
+
+        assert first["status"] == "failed"
+        assert first["failure_category"] == "archive_validation_failed"
+        assert first["retry_eligible"] is False
+        # Not ambiguous: a validation rejection proves nothing committed, so
+        # the resolution scan must not pick it up.
+        assert ledger.list_unresolved_archive_ambiguous_attempts(job.job_id) == []
     finally:
         _clear_overrides()
 

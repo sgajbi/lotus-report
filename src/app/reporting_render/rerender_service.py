@@ -9,6 +9,7 @@ from app.clients.render_client import RenderClient
 from app.config import settings
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
+    MissingIdempotencyKeyError,
     ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
@@ -37,7 +38,22 @@ class RerenderSnapshotStore(Protocol):
 class RerenderLedger(Protocol):
     def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
 
-    def list_rerender_attempts(self, job_id: str) -> list[ReportRerenderAttemptRecord]: ...
+    def list_unresolved_archive_ambiguous_attempts(
+        self, job_id: str
+    ) -> list[ReportRerenderAttemptRecord]: ...
+
+    def record_adopted_rerender_outcome(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+        correlation_id: str,
+        trace_id: str,
+        adopted_attempt: ReportRerenderAttemptRecord,
+        archive_document_id: str,
+    ) -> ReportRerenderAttemptRecord: ...
 
     def create_rerender_attempt(
         self,
@@ -155,6 +171,10 @@ class PortfolioReviewRerenderService:
         idempotency_key: str | None,
     ) -> ReportRerenderAttemptRecord:
         started_at = perf_counter()
+        if not idempotency_key or not idempotency_key.strip():
+            # Validated before the side-effecting resolution pass below, so a
+            # rejected command performs no ledger writes.
+            raise MissingIdempotencyKeyError("missing_idempotency_key")
         job = self._ledger.get_job(job_id)
         assert_job_visible(job, caller_context)
         _assert_rerender_eligible(job)
@@ -163,7 +183,12 @@ class PortfolioReviewRerenderService:
         except ReportInputSnapshotNotFoundError as exc:
             raise ReportJobNotFoundError("report_snapshot_not_found") from exc
 
-        resolved = await self._resolve_ambiguous_attempts(job=job, caller_context=caller_context)
+        resolved = await self._resolve_ambiguous_attempts(
+            job=job,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+            reason=command.reason,
+        )
         if resolved is not None:
             record_report_operation(
                 operation="rerender_from_snapshot",
@@ -247,6 +272,8 @@ class PortfolioReviewRerenderService:
         *,
         job: ReportJobLedgerRecord,
         caller_context: ReportCallerContext,
+        idempotency_key: str,
+        reason: str,
     ) -> ReportRerenderAttemptRecord | None:
         """Resolution-first recovery for attempts (issue #215): an attempt
         that failed on the archive stage is ambiguous - its
@@ -259,12 +286,12 @@ class PortfolioReviewRerenderService:
         confirmed 404s across every ambiguous attempt permit a fresh one.
         """
 
-        for attempt in reversed(self._ledger.list_rerender_attempts(job.job_id)):
-            if attempt.status != "failed" or attempt.failure_category not in {
-                "archive_storage_failed",
-                "archive_execution_failed",
-            }:
-                continue
+        adopted_outcome: ReportRerenderAttemptRecord | None = None
+        # Newest-first (the ledger query orders by updated_at DESC) and
+        # unlimited: the newest committed correction becomes this request's
+        # outcome, and EVERY remaining ambiguity is resolved in the same pass
+        # so none can surface later as a stale adoption.
+        for attempt in self._ledger.list_unresolved_archive_ambiguous_attempts(job.job_id):
             archive_request_id = f"arch_{attempt.render_job_id}"
             try:
                 status_code, payload = await self._archive_client.get_document_by_request_id(
@@ -281,16 +308,28 @@ class PortfolioReviewRerenderService:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered") from exc
             document_id = _optional_str(payload.get("document_id")) if status_code == 200 else None
             if status_code == 200 and document_id:
-                return self._ledger.mark_rerender_archived(
+                self._ledger.mark_rerender_archived(
                     rerender_attempt_id=attempt.rerender_attempt_id,
                     actor=caller_context.triggered_by,
                     correlation_id=caller_context.correlation_id,
                     trace_id=caller_context.trace_id,
                     archive_document_id=document_id,
                 )
+                if adopted_outcome is None:
+                    adopted_outcome = self._ledger.record_adopted_rerender_outcome(
+                        job=job,
+                        idempotency_key=idempotency_key,
+                        actor=caller_context.triggered_by,
+                        reason=reason,
+                        correlation_id=caller_context.correlation_id,
+                        trace_id=caller_context.trace_id,
+                        adopted_attempt=attempt,
+                        archive_document_id=document_id,
+                    )
+                continue
             if status_code != 404:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered")
-        return None
+        return adopted_outcome
 
     async def _archive_rerendered_job(
         self,

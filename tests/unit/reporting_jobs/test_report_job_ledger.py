@@ -9,6 +9,7 @@ from app.reporting_jobs.ledger import (
     MissingIdempotencyKeyError,
     ReportJobLedger,
     ReportJobNotFoundError,
+    _bounded_relationship_reason,
     _dt_from_text,
     _dt_to_text,
     _event_from_row,
@@ -1171,3 +1172,236 @@ def test_advisor_commentary_order_requires_accepted_brief_run_id() -> None:
         }
     )
     assert json_order.requested_output_formats == ["json"]
+
+
+def _failed_archive_attempt(ledger, job, *, index):
+    attempt, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_scan",
+        snapshot_hash="sha256:snapshot-scan",
+        idempotency_key=f"rerender-scan-{index:03d}",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id=f"corr-rerender-scan-{index:03d}",
+        trace_id=f"trace-rerender-scan-{index:03d}",
+    )
+    assert created is True
+    return ledger.mark_rerender_failed(
+        rerender_attempt_id=attempt.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id=f"corr-rerender-scan-{index:03d}",
+        trace_id=f"trace-rerender-scan-{index:03d}",
+        failure_category="archive_storage_failed",
+        failure_message="Archive response lost.",
+        retry_eligible=True,
+    )
+
+
+def test_report_job_ledger_scans_all_unresolved_archive_ambiguous_attempts(tmp_path):
+    """Issue #215 (PR #219 review): the ambiguity scan must see EVERY
+    unresolved archive-stage failure, not the newest page - attempt 26+ is
+    exactly the committed correction a paged scan would let a duplicate slip
+    past - and must order newest-first so the adopted outcome is the latest
+    committed correction."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-scan-job",
+    )
+
+    failed = [_failed_archive_attempt(ledger, job, index=i) for i in range(30)]
+
+    # Noise the scan must exclude: a render-stage failure and a resolved
+    # (archived) attempt.
+    render_failed, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_scan",
+        snapshot_hash="sha256:snapshot-scan",
+        idempotency_key="rerender-scan-render-failed",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id="corr-scan-render-failed",
+        trace_id="trace-scan-render-failed",
+    )
+    assert created is True
+    ledger.mark_rerender_failed(
+        rerender_attempt_id=render_failed.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-scan-render-failed",
+        trace_id="trace-scan-render-failed",
+        failure_category="render_execution_failed",
+        failure_message="lotus-render unavailable.",
+        retry_eligible=True,
+    )
+    resolved, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_scan",
+        snapshot_hash="sha256:snapshot-scan",
+        idempotency_key="rerender-scan-resolved",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id="corr-scan-resolved",
+        trace_id="trace-scan-resolved",
+    )
+    assert created is True
+    ledger.mark_rerender_archived(
+        rerender_attempt_id=resolved.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-scan-resolved",
+        trace_id="trace-scan-resolved",
+        archive_document_id="doc_scan_resolved",
+    )
+
+    scanned = ledger.list_unresolved_archive_ambiguous_attempts(job.job_id)
+
+    assert len(scanned) == 30
+    assert len(scanned) > len(ledger.list_rerender_attempts(job.job_id))
+    assert {attempt.rerender_attempt_id for attempt in scanned} == {
+        attempt.rerender_attempt_id for attempt in failed
+    }
+    timestamps = [(attempt.updated_at, attempt.created_at) for attempt in scanned]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+
+def test_report_job_ledger_mark_rerender_archived_clears_failure_posture(tmp_path):
+    """Issue #215 (PR #219 review): resolving an ambiguous attempt to
+    archived must clear its failure fields - an archived row still carrying
+    archive_storage_failed would poison every later ambiguity scan."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-clear-job",
+    )
+    failed = _failed_archive_attempt(ledger, job, index=0)
+    assert failed.failure_category == "archive_storage_failed"
+    assert failed.retry_eligible is True
+
+    archived = ledger.mark_rerender_archived(
+        rerender_attempt_id=failed.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-rerender-clear",
+        trace_id="trace-rerender-clear",
+        archive_document_id="doc_adopted",
+    )
+
+    assert archived.status == "archived"
+    assert archived.archive_document_id == "doc_adopted"
+    assert archived.failure_category is None
+    assert archived.failure_message is None
+    assert archived.retry_eligible is False
+    assert ledger.list_unresolved_archive_ambiguous_attempts(job.job_id) == []
+
+
+def test_report_job_ledger_adoption_outcome_binds_incoming_key(tmp_path):
+    """Issue #215 (PR #219 review): adopting a committed correction must
+    bind the outcome to the INCOMING idempotency key, so a same-key retry of
+    a lost adoption response converges instead of minting a new attempt."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-adopt-job",
+    )
+    ambiguous = _failed_archive_attempt(ledger, job, index=0)
+
+    outcome = ledger.record_adopted_rerender_outcome(
+        job=job,
+        idempotency_key="rerender-adopt-key",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id="corr-rerender-adopt",
+        trace_id="trace-rerender-adopt",
+        adopted_attempt=ambiguous,
+        archive_document_id="doc_committed",
+    )
+
+    assert outcome.rerender_attempt_id != ambiguous.rerender_attempt_id
+    assert outcome.idempotency_key == "rerender-adopt-key"
+    assert outcome.status == "archived"
+    assert outcome.archive_document_id == "doc_committed"
+    # Truthful provenance: the outcome IS the adopted attempt's render.
+    assert outcome.render_job_id == ambiguous.render_job_id
+    assert outcome.archive_request_id == f"arch_{ambiguous.render_job_id}"
+    assert outcome.retry_eligible is False
+
+    # Same-key convergence through BOTH entry points.
+    repeat = ledger.record_adopted_rerender_outcome(
+        job=job,
+        idempotency_key="rerender-adopt-key",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id="corr-rerender-adopt-2",
+        trace_id="trace-rerender-adopt-2",
+        adopted_attempt=ambiguous,
+        archive_document_id="doc_committed",
+    )
+    assert repeat.rerender_attempt_id == outcome.rerender_attempt_id
+    via_create, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id=ambiguous.snapshot_id,
+        snapshot_hash=ambiguous.snapshot_hash,
+        idempotency_key="rerender-adopt-key",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id="corr-rerender-adopt-3",
+        trace_id="trace-rerender-adopt-3",
+    )
+    assert created is False
+    assert via_create.rerender_attempt_id == outcome.rerender_attempt_id
+
+
+def test_report_job_ledger_rerender_guards_reject_bad_input(tmp_path):
+    """Ledger-level guards behind the service validation: empty idempotency
+    keys are refused by both rerender entry points, and updates to unknown
+    attempts fail loudly instead of writing nothing."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-guard-job",
+    )
+    ambiguous = _failed_archive_attempt(ledger, job, index=0)
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        ledger.create_rerender_attempt(
+            job=job,
+            snapshot_id="rsnap_guard",
+            snapshot_hash="sha256:snapshot-guard",
+            idempotency_key="   ",
+            actor="advisor-123",
+            reason="Template correction.",
+            correlation_id="corr-rerender-guard",
+            trace_id="trace-rerender-guard",
+        )
+    with pytest.raises(MissingIdempotencyKeyError):
+        ledger.record_adopted_rerender_outcome(
+            job=job,
+            idempotency_key="   ",
+            actor="advisor-123",
+            reason="Retry the correction.",
+            correlation_id="corr-rerender-guard",
+            trace_id="trace-rerender-guard",
+            adopted_attempt=ambiguous,
+            archive_document_id="doc_guard",
+        )
+    with pytest.raises(ReportJobNotFoundError):
+        ledger.mark_rerender_failed(
+            rerender_attempt_id="rrnd_does_not_exist",
+            actor="advisor-123",
+            correlation_id="corr-rerender-guard",
+            trace_id="trace-rerender-guard",
+            failure_category="archive_storage_failed",
+            failure_message="Archive response lost.",
+            retry_eligible=True,
+        )
+
+
+def test_bounded_relationship_reason_normalizes_blank_to_not_provided():
+    assert _bounded_relationship_reason("   ") == "not_provided"
+    assert _bounded_relationship_reason("a" * 300) == "a" * 240

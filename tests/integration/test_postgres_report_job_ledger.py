@@ -938,3 +938,144 @@ def test_isolated_session_rebinds_every_configuration_surface():
     assert settings.report_job_ledger_database_url == source, (
         "the cached settings object must carry the session database, not the import-time DSN"
     )
+
+
+def _pg_failed_archive_attempt(ledger, job, *, unique_suffix: str, index: int):
+    attempt, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_pg_scan",
+        snapshot_hash="sha256:snapshot-pg-scan",
+        idempotency_key=f"rerender-pg-{unique_suffix}-{index:03d}",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id=f"corr-rerender-pg-{unique_suffix}-{index:03d}",
+        trace_id=f"trace-rerender-pg-{unique_suffix}-{index:03d}",
+    )
+    assert created is True
+    return ledger.mark_rerender_failed(
+        rerender_attempt_id=attempt.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id=f"corr-rerender-pg-{unique_suffix}-{index:03d}",
+        trace_id=f"trace-rerender-pg-{unique_suffix}-{index:03d}",
+        failure_category="archive_storage_failed",
+        failure_message="Archive response lost.",
+        retry_eligible=True,
+    )
+
+
+def test_postgres_rerender_ambiguity_scan_adoption_and_failure_clearing() -> None:
+    """Issue #215 (PR #219 review), PostgreSQL mirror of the sqlite pins:
+    the ambiguity scan is unlimited and newest-first, adoption outcomes bind
+    the incoming idempotency key and converge on same-key retries, and
+    resolving an attempt to archived clears its failure posture."""
+
+    ledger = _ledger()
+    ledger.check_ready()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"rerender-pg-scan-{unique_suffix}",
+    )
+
+    failed = [
+        _pg_failed_archive_attempt(ledger, job, unique_suffix=unique_suffix, index=i)
+        for i in range(30)
+    ]
+
+    scanned = ledger.list_unresolved_archive_ambiguous_attempts(job.job_id)
+    assert len(scanned) == 30
+    assert len(scanned) > len(ledger.list_rerender_attempts(job.job_id))
+    assert {attempt.rerender_attempt_id for attempt in scanned} == {
+        attempt.rerender_attempt_id for attempt in failed
+    }
+    timestamps = [(attempt.updated_at, attempt.created_at) for attempt in scanned]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+    ambiguous = scanned[0]
+    outcome = ledger.record_adopted_rerender_outcome(
+        job=job,
+        idempotency_key=f"rerender-pg-adopt-{unique_suffix}",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id=f"corr-rerender-pg-adopt-{unique_suffix}",
+        trace_id=f"trace-rerender-pg-adopt-{unique_suffix}",
+        adopted_attempt=ambiguous,
+        archive_document_id="doc_pg_committed",
+    )
+    assert outcome.rerender_attempt_id != ambiguous.rerender_attempt_id
+    assert outcome.status == "archived"
+    assert outcome.render_job_id == ambiguous.render_job_id
+    assert outcome.archive_request_id == f"arch_{ambiguous.render_job_id}"
+    assert outcome.archive_document_id == "doc_pg_committed"
+    assert outcome.retry_eligible is False
+
+    repeat = ledger.record_adopted_rerender_outcome(
+        job=job,
+        idempotency_key=f"rerender-pg-adopt-{unique_suffix}",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id=f"corr-rerender-pg-adopt2-{unique_suffix}",
+        trace_id=f"trace-rerender-pg-adopt2-{unique_suffix}",
+        adopted_attempt=ambiguous,
+        archive_document_id="doc_pg_committed",
+    )
+    assert repeat.rerender_attempt_id == outcome.rerender_attempt_id
+    via_create, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id=ambiguous.snapshot_id,
+        snapshot_hash=ambiguous.snapshot_hash,
+        idempotency_key=f"rerender-pg-adopt-{unique_suffix}",
+        actor="advisor-123",
+        reason="Retry the correction.",
+        correlation_id=f"corr-rerender-pg-adopt3-{unique_suffix}",
+        trace_id=f"trace-rerender-pg-adopt3-{unique_suffix}",
+    )
+    assert created is False
+    assert via_create.rerender_attempt_id == outcome.rerender_attempt_id
+
+    archived = ledger.mark_rerender_archived(
+        rerender_attempt_id=ambiguous.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id=f"corr-rerender-pg-clear-{unique_suffix}",
+        trace_id=f"trace-rerender-pg-clear-{unique_suffix}",
+        archive_document_id="doc_pg_committed",
+    )
+    assert archived.status == "archived"
+    assert archived.failure_category is None
+    assert archived.failure_message is None
+    assert archived.retry_eligible is False
+    assert len(ledger.list_unresolved_archive_ambiguous_attempts(job.job_id)) == 29
+
+
+def test_postgres_rerender_adoption_rejects_missing_idempotency_key() -> None:
+    ledger = _ledger()
+    ledger.check_ready()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"rerender-pg-guard-{unique_suffix}",
+    )
+    ambiguous = _pg_failed_archive_attempt(ledger, job, unique_suffix=unique_suffix, index=0)
+
+    with pytest.raises(MissingIdempotencyKeyError):
+        ledger.record_adopted_rerender_outcome(
+            job=job,
+            idempotency_key="   ",
+            actor="advisor-123",
+            reason="Retry the correction.",
+            correlation_id=f"corr-rerender-pg-guard-{unique_suffix}",
+            trace_id=f"trace-rerender-pg-guard-{unique_suffix}",
+            adopted_attempt=ambiguous,
+            archive_document_id="doc_pg_guard",
+        )
+
+
+def test_postgres_bounded_relationship_reason_normalizes_blank() -> None:
+    from app.reporting_jobs.postgres_ledger import _bounded_relationship_reason
+
+    assert _bounded_relationship_reason("   ") == "not_provided"
+    assert _bounded_relationship_reason("b" * 300) == "b" * 240
