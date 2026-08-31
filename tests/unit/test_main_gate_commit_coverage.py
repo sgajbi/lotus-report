@@ -72,6 +72,7 @@ def test_audit_counts_only_verdict_bearing_runs_and_fails_closed(monkeypatch, ca
 
     assert exit_code == 1
     assert "UNGATED  ddddddddd" in output
+    assert "1 passing, 0 with a failing verdict" in output
     assert "UNKNOWN  ccccccccc" in output
     assert "UNKNOWN  bbbbbbbbb" in output
     assert "1 with no verdict-bearing" in output
@@ -88,7 +89,10 @@ def test_audit_fails_closed_when_gh_is_unavailable(monkeypatch) -> None:
     assert audit.main() == 1
 
 
-def test_audit_passes_when_every_commit_has_a_verdict(monkeypatch) -> None:
+def test_audit_passes_when_every_commit_has_a_verdict(monkeypatch, capsys) -> None:
+    """A failing verdict is information, not a coverage gap: the audit passes
+    but reports the split so coverage and releasability stay distinct claims."""
+
     commits = {"a" * 40: ["success"], "b" * 40: ["failure", "cancelled"]}
     monkeypatch.setattr(
         audit,
@@ -104,6 +108,9 @@ def test_audit_passes_when_every_commit_has_a_verdict(monkeypatch) -> None:
     )
 
     assert audit.main() == 0
+    output = capsys.readouterr().out
+    assert "1 passing, 1 with a failing verdict" in output
+    assert "FAILING  bbbbbbbbb" in output
 
 
 def argparse_namespace(**kwargs):
