@@ -1,0 +1,27 @@
+name: Main Gate Coverage Audit
+
+on:
+  schedule:
+    - cron: "20 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    name: Audit / Every Main Commit Has A Gate Verdict
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Audit main gate coverage (fail closed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          python scripts/audit_main_gate_coverage.py --limit 60 --fail-on-gap
