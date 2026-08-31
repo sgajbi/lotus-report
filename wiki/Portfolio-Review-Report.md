@@ -296,6 +296,16 @@ projection, issue #166). Ordering rules:
   `options.advisor_brief_run_id` naming the accepted run. An order that selects the section
   without the run id is rejected at acceptance (single orders and batches alike) - lotus-report
   never chooses a brief implicitly.
+- **Pre-order availability**: `GET
+  /integration/report-ordering-catalogue/advisor-commentary-availability` answers, per
+  portfolio and context, whether an accepted brief exists BEFORE the order is placed, via the
+  lotus-ai latest-accepted lookup (lotus-ai#183). `ready` returns the accepted run id (the
+  value to submit as `options.advisor_brief_run_id`), reviewer identity, and content hash;
+  `unavailable` distinguishes `advisor_brief_not_reviewed` (no accepted brief for the
+  portfolio) from `advisor_brief_context_mismatch` (accepted briefs exist, none assert the
+  requested date/currency) and `advisor_brief_availability_unknown` (the lookup could not
+  answer - not proof of absence). Ordering surfaces (Gateway/Workbench) compose this into
+  the section's availability state.
 - **Temporary render gate**: PDF orders refuse the section explicitly until the lotus-render
   template renders it - a PDF that silently omitted an ordered section would be a misleading
   client document. Order `json` output for the section until then.

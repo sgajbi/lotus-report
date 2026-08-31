@@ -85,6 +85,7 @@ FORBIDDEN_METRIC_LABELS = frozenset(
 
 IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
     {
+        "advisor_commentary_availability",
         "archive_handoff",
         "batch_scheduler_pass",
         "batch_worker_run",
@@ -114,8 +115,10 @@ REPORTING_OPERATION_STATUSES = frozenset(
         "data_ready",
         "failed",
         "materialized",
+        "ready",
         "skipped",
         "succeeded",
+        "unavailable",
     }
 )
 
