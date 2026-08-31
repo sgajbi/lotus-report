@@ -147,3 +147,20 @@ def test_archive_execution_failed_backfill_is_category_scoped() -> None:
     assert "failure_message" not in sql
     for statement in sql.split(";"):
         assert statement.count("'") % 2 == 0
+
+
+def test_no_migration_comment_contains_a_semicolon() -> None:
+    """The migration runner splits files on ';' with no comment awareness: a
+    semicolon inside a comment splits the following statement mid-sentence
+    and fails the deploy with a syntax error (this bit twice - migration 012
+    and 015). Every comment line across every migration must stay
+    semicolon-free."""
+
+    for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        for line_number, line in enumerate(
+            migration.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if line.lstrip().startswith("--"):
+                assert ";" not in line, (
+                    f"{migration.name}:{line_number} comment contains a semicolon"
+                )

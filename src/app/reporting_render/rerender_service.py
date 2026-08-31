@@ -37,6 +37,8 @@ class RerenderSnapshotStore(Protocol):
 class RerenderLedger(Protocol):
     def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
 
+    def list_rerender_attempts(self, job_id: str) -> list[ReportRerenderAttemptRecord]: ...
+
     def create_rerender_attempt(
         self,
         *,
@@ -103,6 +105,19 @@ class RerenderRenderClient(Protocol):
 
 
 class RerenderArchiveClient(Protocol):
+    async def get_document_by_request_id(
+        self,
+        archive_request_id: str,
+        *,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]: ...
+
     async def archive_document(
         self,
         payload: dict[str, Any],
@@ -147,6 +162,16 @@ class PortfolioReviewRerenderService:
             snapshot = self._snapshot_store.get_snapshot_by_job(job_id)
         except ReportInputSnapshotNotFoundError as exc:
             raise ReportJobNotFoundError("report_snapshot_not_found") from exc
+
+        resolved = await self._resolve_ambiguous_attempts(job=job, caller_context=caller_context)
+        if resolved is not None:
+            record_report_operation(
+                operation="rerender_from_snapshot",
+                status=resolved.status,
+                failure_category=resolved.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return resolved
 
         attempt, created = self._ledger.create_rerender_attempt(
             job=job,
@@ -217,6 +242,56 @@ class PortfolioReviewRerenderService:
         )
         return failed
 
+    async def _resolve_ambiguous_attempts(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        caller_context: ReportCallerContext,
+    ) -> ReportRerenderAttemptRecord | None:
+        """Resolution-first recovery for attempts (issue #215): an attempt
+        that failed on the archive stage is ambiguous - its
+        arch_{render_job_id} may have committed before the response was lost,
+        and a fresh attempt would mint a new request id that archive
+        idempotency cannot converge, duplicating the correction document.
+        Each ambiguous attempt is resolved newest-first: a committed
+        correction is ADOPTED as that attempt's outcome and returned as this
+        request's result; an unanswerable lookup refuses fail-closed; only
+        confirmed 404s across every ambiguous attempt permit a fresh one.
+        """
+
+        for attempt in reversed(self._ledger.list_rerender_attempts(job.job_id)):
+            if attempt.status != "failed" or attempt.failure_category not in {
+                "archive_storage_failed",
+                "archive_execution_failed",
+            }:
+                continue
+            archive_request_id = f"arch_{attempt.render_job_id}"
+            try:
+                status_code, payload = await self._archive_client.get_document_by_request_id(
+                    archive_request_id,
+                    actor_id=caller_context.triggered_by,
+                    tenant_id=caller_context.tenant_id,
+                    region=caller_context.region,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                    booking_center_code=caller_context.booking_center_code,
+                    role=caller_context.role,
+                )
+            except Exception as exc:
+                raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered") from exc
+            document_id = _optional_str(payload.get("document_id")) if status_code == 200 else None
+            if status_code == 200 and document_id:
+                return self._ledger.mark_rerender_archived(
+                    rerender_attempt_id=attempt.rerender_attempt_id,
+                    actor=caller_context.triggered_by,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                    archive_document_id=document_id,
+                )
+            if status_code != 404:
+                raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered")
+        return None
+
     async def _archive_rerendered_job(
         self,
         *,
@@ -280,16 +355,15 @@ class PortfolioReviewRerenderService:
                 archive_document_id=document_id,
             )
 
-        failure_category, _job_level_retry = _archive_failure_posture(
+        failure_category, retry_eligible = _archive_failure_posture(
             status_code, archive_response, report_type=job.report_type
         )
-        # A rerender attempt has no archive-ambiguity resolution: a new
-        # attempt mints a fresh render job id and arch_{render_job_id}, so if
-        # the failed attempt's archive call committed before the response was
-        # lost, retrying would duplicate the correction document. Attempts
-        # stay non-retryable until rerender gains the resolution path
-        # (issue filed alongside this change).
-        retry_eligible = False
+        if failure_category in {"archive_storage_failed", "archive_execution_failed"}:
+            # Retry-eligible for every family: attempt recovery is
+            # resolution-first (this service resolves the failed attempt's
+            # own arch_{render_job_id} before any new attempt), so a retry
+            # adopts a committed correction instead of duplicating it.
+            retry_eligible = True
         return self._ledger.mark_rerender_failed(
             rerender_attempt_id=archiving.rerender_attempt_id,
             actor=caller_context.triggered_by,
