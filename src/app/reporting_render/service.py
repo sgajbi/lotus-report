@@ -537,10 +537,11 @@ def _archive_failure_posture(
     # report family whose recovery path can retry SAFELY: portfolio-review
     # replay resolves the original arch_{render_job_id} against archive
     # before re-rendering, so a committed-but-response-lost ingest is adopted
-    # rather than duplicated. Other families (and rerender attempts) have no
-    # resolution path - a fresh order or attempt mints a fresh request id
-    # that archive idempotency cannot converge, so advertising retryable
-    # there would invite duplicate client documents.
+    # rather than duplicated. Other families have no resolution path - a
+    # fresh order mints a fresh request id that archive idempotency cannot
+    # converge, so advertising retryable there would invite duplicate client
+    # documents. (Rerender attempts gained their own resolution-first
+    # recovery in issue #215 and override this posture at the attempt level.)
     resolvable = report_type == "portfolio_review"
     if status_code in {503, 507} or code in {
         "archive_storage_unavailable",

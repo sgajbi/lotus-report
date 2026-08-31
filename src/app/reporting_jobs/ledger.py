@@ -1301,6 +1301,129 @@ class ReportJobLedger:
                 )
                 return True
 
+    def list_unresolved_archive_ambiguous_attempts(
+        self, job_id: str
+    ) -> list[ReportRerenderAttemptRecord]:
+        """Every attempt whose archive outcome is still ambiguous - no limit,
+        because an unresolved commit outside any page is exactly the row a
+        duplicate correction would slip past."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM report_rerender_attempt
+                WHERE report_job_id = ?
+                  AND status = 'failed'
+                  AND failure_category IN (
+                      'archive_storage_failed', 'archive_execution_failed'
+                  )
+                ORDER BY updated_at DESC, created_at DESC, rerender_attempt_id DESC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [_rerender_attempt_from_row(row) for row in rows]
+
+    def record_adopted_rerender_outcome(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        idempotency_key: str,
+        actor: str,
+        reason: str,
+        correlation_id: str,
+        trace_id: str,
+        adopted_attempt: ReportRerenderAttemptRecord,
+        archive_document_id: str,
+    ) -> ReportRerenderAttemptRecord:
+        """Bind an archive-adoption outcome durably to the INCOMING request
+        key: the row carries the ADOPTED attempt's render identity (truthful
+        provenance - this request's outcome IS that render) and is archived
+        from birth, so a same-key retry of a lost adoption response converges
+        on it instead of minting a fresh correction."""
+
+        if not idempotency_key or not idempotency_key.strip():
+            raise MissingIdempotencyKeyError("missing_idempotency_key")
+        normalized_key = idempotency_key.strip()
+        with self._lock:
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT * FROM report_rerender_attempt
+                    WHERE report_job_id = ? AND idempotency_key = ?
+                    """,
+                    (job.job_id, normalized_key),
+                ).fetchone()
+                if existing:
+                    return _rerender_attempt_from_row(existing)
+                now = utc_now()
+                now_text = _dt_to_text(now)
+                attempt_id = f"rrnd_{uuid4().hex}"
+                connection.execute(
+                    """
+                    INSERT INTO report_rerender_attempt (
+                        rerender_attempt_id, report_job_id, idempotency_key, status,
+                        snapshot_id, snapshot_hash, previous_render_job_id,
+                        previous_archive_document_id, render_job_id, render_output_format,
+                        render_template_id, render_template_version,
+                        archive_request_id, archive_document_id, archive_completed_at,
+                        retry_eligible, requested_by, reason, correlation_id, trace_id,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, 'archived', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0,
+                            ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attempt_id,
+                        job.job_id,
+                        normalized_key,
+                        adopted_attempt.snapshot_id,
+                        adopted_attempt.snapshot_hash,
+                        adopted_attempt.previous_render_job_id,
+                        adopted_attempt.previous_archive_document_id,
+                        adopted_attempt.render_job_id,
+                        "pdf",
+                        "portfolio-review",
+                        "v1",
+                        f"arch_{adopted_attempt.render_job_id}",
+                        archive_document_id,
+                        now_text,
+                        actor,
+                        reason,
+                        correlation_id,
+                        trace_id,
+                        now_text,
+                        now_text,
+                    ),
+                )
+                self._append_status_event(
+                    connection=connection,
+                    job_id=job.job_id,
+                    from_status=job.status,
+                    to_status=job.status,
+                    event_type="job_rerender_archived",
+                    message=(
+                        f"Rerender adopted committed correction {archive_document_id} "
+                        f"from attempt {adopted_attempt.rerender_attempt_id}."
+                    ),
+                    event_payload={
+                        "archive_document_id": archive_document_id,
+                        "rerender_attempt_id": attempt_id,
+                        "adopted_from_attempt_id": adopted_attempt.rerender_attempt_id,
+                    },
+                    event_idempotency_key=normalized_key,
+                    actor=actor,
+                    correlation_id=correlation_id,
+                    trace_id=trace_id,
+                    created_at=now,
+                )
+                row = connection.execute(
+                    "SELECT * FROM report_rerender_attempt WHERE rerender_attempt_id = ?",
+                    (attempt_id,),
+                ).fetchone()
+                assert row is not None
+                return _rerender_attempt_from_row(row)
+
     def create_rerender_attempt(
         self,
         *,
@@ -1447,6 +1570,7 @@ class ReportJobLedger:
                     status="archived",
                     archive_document_id=archive_document_id,
                     archive_completed_at=utc_now(),
+                    clear_failure=True,
                 )
                 self._append_status_event(
                     connection=connection,
@@ -2126,6 +2250,7 @@ class ReportJobLedger:
         failure_category: str | None = None,
         failure_message: str | None = None,
         retry_eligible: bool | None = None,
+        clear_failure: bool = False,
     ) -> ReportRerenderAttemptRecord:
         existing = connection.execute(
             "SELECT * FROM report_rerender_attempt WHERE rerender_attempt_id = ?",
@@ -2150,9 +2275,12 @@ class ReportJobLedger:
                 archive_request_id = COALESCE(?, archive_request_id),
                 archive_document_id = COALESCE(?, archive_document_id),
                 archive_completed_at = COALESCE(?, archive_completed_at),
-                failure_category = COALESCE(?, failure_category),
-                failure_message = COALESCE(?, failure_message),
-                retry_eligible = COALESCE(?, retry_eligible),
+                failure_category = CASE WHEN ? THEN NULL
+                    ELSE COALESCE(?, failure_category) END,
+                failure_message = CASE WHEN ? THEN NULL
+                    ELSE COALESCE(?, failure_message) END,
+                retry_eligible = CASE WHEN ? THEN 0
+                    ELSE COALESCE(?, retry_eligible) END,
                 updated_at = ?
             WHERE rerender_attempt_id = ?
             """,
@@ -2167,8 +2295,11 @@ class ReportJobLedger:
                 archive_request_id,
                 archive_document_id,
                 _dt_to_text(archive_completed_at) if archive_completed_at else None,
+                clear_failure,
                 failure_category,
+                clear_failure,
                 failure_message,
+                clear_failure,
                 1 if retry_eligible else 0 if retry_eligible is not None else None,
                 now_text,
                 rerender_attempt_id,
