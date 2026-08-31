@@ -19,6 +19,16 @@ boundaries, and copy-paste request examples for direct service and support workf
   versioned Report-owned business catalogue for supported report families, ordering modes,
   formats, configuration fields, sections, release posture, and live Render supportability. See
   [Report Ordering](Report-Ordering).
+- `GET /integration/report-ordering-catalogue/advisor-commentary-availability`
+  pre-order availability of the ADVISOR_COMMENTARY section for one portfolio and report
+  context (`portfolio_id` + `X-Tenant-Id`, optional `as_of_date`/`reporting_currency`):
+  `ready` carries the accepted brief run id the order must supply as
+  `options.advisor_brief_run_id`; `unavailable` carries one bounded reason -
+  `advisor_brief_not_reviewed`, `advisor_brief_context_mismatch`, or
+  `advisor_brief_availability_unknown` (the lotus-ai lookup could not answer - deliberately
+  distinct from not_reviewed, because a failed lookup proves nothing). Backed by the
+  lotus-ai latest-accepted lookup (lotus-ai#183); see
+  [Portfolio Review Report](Portfolio-Review-Report).
 
 ## Aggregations
 

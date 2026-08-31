@@ -161,6 +161,57 @@ class ReportFamilyCatalogueItem(CatalogueModel):
     supportability: ReportCatalogueSupportability
 
 
+class AdvisorCommentaryAcceptedBrief(CatalogueModel):
+    """Identity of the accepted brief a ready availability answer points at.
+
+    Carries exactly what the ordering flow needs to place the order
+    (``advisor_brief_run_id``) and what the Workbench shows the advisor
+    (reviewer, time, asserted context); never any narrative content.
+    """
+
+    run_id: str = Field(description="Accepted workflow-pack run the section would compose.")
+    reviewed_by: str = Field(description="Actor recorded on the accepting review transition.")
+    reviewed_at: str = Field(description="Instant of the accepting review transition (UTC).")
+    content_hash: str = Field(
+        description="Canonical hash of the accepted output this availability answer points at.",
+    )
+    period: str | None = Field(
+        default=None, description="Reporting period the accepted brief asserted, when recorded."
+    )
+    as_of_date: str | None = Field(
+        default=None, description="As-of date the accepted brief asserted, when recorded."
+    )
+    reporting_currency: str | None = Field(
+        default=None,
+        description="Reporting currency the accepted brief asserted, when recorded.",
+    )
+
+
+class AdvisorCommentaryAvailabilityResponse(CatalogueModel):
+    """Pre-order availability of the ADVISOR_COMMENTARY section for one
+    portfolio and report context (issue #166 acceptance criterion 2)."""
+
+    source_service: Literal["lotus-report"] = "lotus-report"
+    contract_version: Literal["advisor-commentary-availability.v1"] = (
+        "advisor-commentary-availability.v1"
+    )
+    section_id: Literal["ADVISOR_COMMENTARY"] = "ADVISOR_COMMENTARY"
+    state: Literal["ready", "unavailable"]
+    reason_code: str = Field(
+        description=(
+            "Bounded availability reason: advisor_brief_accepted, "
+            "advisor_brief_not_reviewed, advisor_brief_context_mismatch, or "
+            "advisor_brief_availability_unknown (the lookup could not answer - "
+            "NOT proof that no accepted brief exists)."
+        ),
+    )
+    message: str = Field(description="Business explanation for product surfaces.")
+    accepted_brief: AdvisorCommentaryAcceptedBrief | None = Field(
+        default=None,
+        description="Present exactly when state is ready: the brief the order would compose.",
+    )
+
+
 class ReportOrderingCatalogueResponse(CatalogueModel):
     source_service: Literal["lotus-report"] = "lotus-report"
     contract_version: Literal["report-ordering-catalogue.v1"] = "report-ordering-catalogue.v1"
