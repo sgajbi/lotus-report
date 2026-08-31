@@ -92,6 +92,8 @@ def main() -> int:
     commits = _git("log", f"-{arguments.limit}", "--format=%H %h %s", "origin/main")
     ungated: list[str] = []
     unknown: list[str] = []
+    failing: list[str] = []
+    passing = 0
 
     for entry in commits:
         sha, short, subject = entry.split(" ", 2)
@@ -102,6 +104,10 @@ def main() -> int:
             continue
         verdicts = [conclusion for conclusion in conclusions if conclusion in _VERDICT_CONCLUSIONS]
         if verdicts:
+            if "success" in verdicts:
+                passing += 1
+            else:
+                failing.append(f"{short}  {subject[:70]}")
             continue
         if conclusions:
             # Runs exist but none reached a verdict (cancelled / in progress):
@@ -115,8 +121,16 @@ def main() -> int:
     print(
         f"\naudited {len(commits)} commit(s) on main; "
         f"{len(ungated)} with no verdict-bearing {WORKFLOW} run; "
-        f"{len(unknown)} unverifiable."
+        f"{len(unknown)} unverifiable; "
+        f"{passing} passing, {len(failing)} with a failing verdict."
     )
+    # Coverage is the invariant; the pass/fail split is reported beside it
+    # because they are different claims: a failing verdict is information
+    # (a backfilled historical tree measured against today's environment, or
+    # an intermediate commit that fails its own tests), a missing run is
+    # not. The audit fails only on missing/unverifiable coverage.
+    for entry in failing:
+        print(f"FAILING  {entry}")
     if ungated:
         print(
             "\nBackfill one with:\n"
