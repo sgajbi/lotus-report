@@ -610,6 +610,65 @@ def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
     assert "currency" not in {entry["dimension"] for entry in presentation["dimensions"]}
 
 
+def test_a_report_that_did_not_order_risk_gets_no_risk_panel(tmp_path):
+    """`riskAnalytics` is composed only when RISK_ANALYTICS is requested, so
+    its absence means the caller deselected the section - not that a
+    measurement was attempted and failed.
+
+    The panel used to be drawn regardless, as five "Not available" cells, on
+    reports that never asked for one. In a governed client document that reads
+    as a statement about the portfolio's risk, and it was never true. Render
+    draws nothing for an empty mapping, so the panel simply does not appear.
+    """
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 1000.0, "currency": "USD"},
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    assert package["report_data"]["risk_summary"] == {}
+
+
+def test_an_ordered_risk_section_still_draws_when_the_data_is_unavailable(tmp_path):
+    """The counterpart, and the reason absence alone cannot be the signal: a
+    section the order PROMISED is never silently omitted. When risk was
+    ordered and lotus-risk could not answer, the panel is still drawn and says
+    so, rather than vanishing as though it had not been requested."""
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 1000.0, "currency": "USD"},
+        "riskAnalytics": {
+            "supportability": {
+                "status": "unavailable",
+                "notes": [{"code": "risk_upstream_failure", "severity": "blocking"}],
+            },
+        },
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    risk_summary = package["report_data"]["risk_summary"]
+    assert risk_summary != {}
+    assert risk_summary["volatility_pct"] == "Not available"
+
+
 def test_a_snapshot_without_the_decision_resolves_it_rather_than_guessing(tmp_path):
     """A rerender of a job captured before this key existed presents what that
     order asked for, not what a renderer would have inferred."""
