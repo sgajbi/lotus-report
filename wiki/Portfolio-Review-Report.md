@@ -306,9 +306,12 @@ projection, issue #166). Ordering rules:
   requested date/currency) and `advisor_brief_availability_unknown` (the lookup could not
   answer - not proof of absence). Ordering surfaces (Gateway/Workbench) compose this into
   the section's availability state.
-- **Temporary render gate**: PDF orders refuse the section explicitly until the lotus-render
-  template renders it - a PDF that silently omitted an ordered section would be a misleading
-  client document. Order `json` output for the section until then.
+- **PDF orders are supported.** The lotus-render template draws the section, including the
+  per-claim grounding marker, so a governed PDF shows which AI-drafted claims a reader can
+  check (lotus-render#218/#226). The temporary refusal gate that stood while that was untrue
+  has been removed; it was held for the grounding marker specifically, not merely for a
+  template, because an unverifiable claim that looks verifiable becomes durable evidence once
+  a PDF is archived.
 - A lotus-ai 401/403 (the `lotus-report` caller missing or inactive in the lotus-ai
   access-control registry) fails the capture retryable and is an environment fault to fix in
   lotus-ai, not a section posture.
