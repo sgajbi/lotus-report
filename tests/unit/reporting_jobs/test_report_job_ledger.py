@@ -1148,19 +1148,20 @@ def test_advisor_commentary_order_requires_accepted_brief_run_id() -> None:
         {**base, "options": {"sections": ["OVERVIEW"]}}
     )
     assert "advisor_brief_run_id" not in without_section.options
-    # Temporary render gate: PDF orders refuse the section until the render
-    # template exists - a PDF silently omitting an ordered section would be
-    # a misleading client document.
-    with pytest.raises(pydantic.ValidationError, match="json"):
-        PortfolioReviewJobRequest.model_validate(
-            {
-                **base,
-                "options": {
-                    "sections": ["ADVISOR_COMMENTARY"],
-                    "advisor_brief_run_id": "run_accept_1",
-                },
-            }
-        )
+    # The section is orderable in both output formats. The temporary render
+    # gate that refused PDF is gone: it stood while lotus-render drew the
+    # section without the per-claim grounding marker, and lotus-render#226
+    # draws it.
+    pdf_order = PortfolioReviewJobRequest.model_validate(
+        {
+            **base,
+            "options": {
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        }
+    )
+    assert pdf_order.requested_output_formats == ["pdf"]
     json_order = PortfolioReviewJobRequest.model_validate(
         {
             **base,

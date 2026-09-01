@@ -160,46 +160,52 @@ def test_advisor_commentary_dependency_enforced_at_ordering_acceptance() -> None
     )
 
 
-def test_advisor_commentary_refuses_pdf_until_render_template_exists() -> None:
-    """Temporary render gate. lotus-render#223 merged the template, so the
-    section IS drawn; what is not drawn is the per-claim `grounding` posture,
-    so an ungrounded AI claim renders like a grounded one minus its
-    "Grounded on:" line. A PDF is archived, and an unverifiable claim that
-    looks verifiable becomes durable evidence (lotus-render#218)."""
+def test_advisor_commentary_can_be_ordered_as_pdf_on_both_paths() -> None:
+    """The temporary render gate is gone, and it had to go from BOTH paths.
 
-    with pytest.raises(ReportOrderingSubmissionError) as excinfo:
-        _validate(
-            formats=["json", "pdf"],
-            options={
-                "sections": ["ADVISOR_COMMENTARY"],
-                "advisor_brief_run_id": "run_accept_1",
-            },
-        )
-    assert excinfo.value.code == "report_section_output_format_unsupported"
+    It stood while lotus-render drew the section without the per-claim
+    grounding marker, so an ungrounded AI claim was distinguishable only by
+    contrast with grounded points on the same page - and a PDF is archived, so
+    an unverifiable claim that looks verifiable becomes durable evidence.
+    lotus-render#226 draws it, so the gate has nothing left to hold.
 
-    # Benchmark-dependent sections stay orderable without their optional
-    # dependency - only `conditional` fields are required-when-selected.
-    _validate(formats=["json", "pdf"], options={"sections": ["PERFORMANCE"]})
-
-
-def test_both_pdf_gates_refuse_together() -> None:
-    """The gate exists twice - here and on PortfolioReviewJobRequest - because
-    orders arrive by two paths. They must be removed together: one gate alone
-    means PDF orders are refused on one path and accepted on the other, and
-    the accepted path writes the very document the other is holding back.
-
-    This asserts the pair, so removing one and not the other fails here rather
-    than in a client's archived PDF.
+    Orders arrive by two paths and each carried its own copy of that gate. One
+    removed alone would leave PDF orders refused on one path and accepted on
+    the other, so both are asserted here rather than only the path this file
+    owns.
     """
 
-    with pytest.raises(ReportOrderingSubmissionError):
-        _validate(
-            formats=["json", "pdf"],
-            options={
-                "sections": ["ADVISOR_COMMENTARY"],
-                "advisor_brief_run_id": "run_accept_1",
-            },
-        )
+    _validate(
+        formats=["json", "pdf"],
+        options={
+            "sections": ["ADVISOR_COMMENTARY"],
+            "advisor_brief_run_id": "run_accept_1",
+        },
+    )
+
+    PortfolioReviewJobRequest(
+        portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+        as_of_date="2026-04-22",
+        requested_output_formats=["json", "pdf"],
+        reporting_currency="USD",
+        options={
+            "sections": ["ADVISOR_COMMENTARY"],
+            "advisor_brief_run_id": "run_accept_1",
+        },
+    )
+
+
+def test_a_pdf_order_still_requires_the_accepted_run_it_composes() -> None:
+    """Opening the PDF path does not loosen what the section is sourced from.
+
+    The run id stays required on both paths: the section is composed only from
+    an accepted Advisor Brief run, and lotus-report never chooses one
+    implicitly. Removing an output-format gate must not quietly remove that.
+    """
+
+    with pytest.raises(ReportOrderingSubmissionError) as excinfo:
+        _validate(formats=["json", "pdf"], options={"sections": ["ADVISOR_COMMENTARY"]})
+    assert excinfo.value.code == "missing_conditional_report_field"
 
     with pytest.raises(ValidationError):
         PortfolioReviewJobRequest(
@@ -207,8 +213,5 @@ def test_both_pdf_gates_refuse_together() -> None:
             as_of_date="2026-04-22",
             requested_output_formats=["json", "pdf"],
             reporting_currency="USD",
-            options={
-                "sections": ["ADVISOR_COMMENTARY"],
-                "advisor_brief_run_id": "run_accept_1",
-            },
+            options={"sections": ["ADVISOR_COMMENTARY"]},
         )
