@@ -559,6 +559,82 @@ def _advisor_commentary_package(**overrides) -> dict:
     return package
 
 
+def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
+    """Render must be told which dimensions to present; it previously had to
+    guess from which by_* keys had rows, and guessed wrong for six of the
+    seven single-dimension orders (issue #224)."""
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 1000.0, "currency": "USD"},
+        "allocation": {
+            "bySector": [{"name": "Financials", "weight_pct": 55.0}],
+            "byCurrency": [{"name": "USD", "weight_pct": 100.0}],
+            "byRegion": [],
+        },
+        "allocation_presentation": {
+            "resolved_by": "caller_request",
+            "dimensions": [
+                {"dimension": "sector", "package_key": "by_sector", "posture": "ready"},
+                {"dimension": "region", "package_key": "by_region", "posture": "empty"},
+                {"dimension": "rating", "package_key": "by_rating", "posture": "unavailable"},
+            ],
+        },
+    }
+
+    package = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    presentation = package["report_data"]["allocation_presentation"]
+    assert presentation["resolved_by"] == "caller_request"
+    assert [entry["dimension"] for entry in presentation["dimensions"]] == [
+        "sector",
+        "region",
+        "rating",
+    ]
+    assert [entry["posture"] for entry in presentation["dimensions"]] == [
+        "ready",
+        "empty",
+        "unavailable",
+    ]
+    # All seven breakdowns still ship as evidence: an operator diagnosing
+    # "why no sector" must be able to look at the rows. Presence carries no
+    # presentation meaning - the resolved list does.
+    assert "by_currency" in package["report_data"]["allocation_breakdowns"]
+    assert "currency" not in {entry["dimension"] for entry in presentation["dimensions"]}
+
+
+def test_a_snapshot_without_the_decision_resolves_it_rather_than_guessing(tmp_path):
+    """A rerender of a job captured before this key existed presents what that
+    order asked for, not what a renderer would have inferred."""
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    job = ledger.get_job(ready.job_id)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 1000.0, "currency": "USD"},
+        "allocation": {"byAssetClass": [{"name": "Equity", "weight_pct": 60.0}]},
+    }
+
+    package = _build_render_package(
+        job=job,
+        snapshot=snapshot_payload,
+        render_job_id="rdr_test_pdf",
+    )
+
+    presentation = package["report_data"]["allocation_presentation"]
+    assert presentation["dimensions"], "an older snapshot must still name its dimensions"
+    assert presentation["resolved_by"] in {"caller_request", "report_default_policy"}
+
+
 def test_portfolio_review_render_package_includes_advisor_commentary(tmp_path):
     ledger, _store, ready = _seed_data_ready_job(tmp_path)
     snapshot_payload = {

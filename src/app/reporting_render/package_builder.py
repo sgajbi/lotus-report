@@ -5,6 +5,7 @@ from numbers import Real
 from typing import Any, Sequence
 
 from app.reporting_jobs.models import ReportJobLedgerRecord
+from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 
 
 def _build_render_package(
@@ -80,6 +81,7 @@ def _build_render_package(
         "portfolio_metrics": _portfolio_metrics_section(portfolio_value),
         "allocation_summary": _allocation_summary_section(allocation),
         "allocation_breakdowns": _allocation_breakdowns(snapshot),
+        "allocation_presentation": _allocation_presentation(job=job, snapshot=snapshot),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
         "performance_monthly_history": _performance_history(
@@ -1006,6 +1008,24 @@ def _transactions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         }
         for item in flattened
     ]
+
+
+def _allocation_presentation(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """The document's dimension decision, recorded at capture time.
+
+    A snapshot captured before this key existed is resolved with the same
+    function, so a rerender of an older job presents what that order asked for
+    rather than what a renderer would have guessed (issue #224).
+    """
+
+    recorded = snapshot.get("allocation_presentation")
+    if isinstance(recorded, dict) and isinstance(recorded.get("dimensions"), list):
+        return recorded
+    return resolve_allocation_presentation(options=job.options, snapshot=snapshot)
 
 
 def _allocation_breakdowns(

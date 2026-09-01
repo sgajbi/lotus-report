@@ -26,6 +26,7 @@ from app.reporting_lineage.advisor_commentary import (
     requested_advisor_brief_run_id,
     resolve_advisor_commentary_package,
 )
+from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
@@ -637,6 +638,16 @@ class ReportingReadPortfolioReviewInputProvider:
                 original_error=exc,
                 upstream_calls=recorder.calls,
             ) from exc
+        # The document's allocation-dimension set is a Report decision, so the
+        # RESOLVED selection (caller's request, else default policy) belongs in
+        # the immutable snapshot: without it, "which dimensions did this
+        # document present?" is only answerable by replaying today's defaulting
+        # policy against an old order (issue #224).
+        snapshot_payload = dict(snapshot_payload)
+        snapshot_payload["allocation_presentation"] = resolve_allocation_presentation(
+            options=job.options,
+            snapshot=snapshot_payload,
+        )
         if advisor_commentary_requested(job.options):
             snapshot_payload = dict(snapshot_payload)
             snapshot_payload["advisor_commentary_package"] = await self._resolve_advisor_commentary(
