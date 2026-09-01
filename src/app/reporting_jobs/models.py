@@ -344,16 +344,19 @@ class PortfolioReviewJobRequest(BaseModel):
                 "section is requested: the section is sourced only from an accepted "
                 "Advisor Brief run and lotus-report never chooses one implicitly."
             )
-        # Temporary gate until the lotus-render template renders the section
-        # (coordinated on lotus-report#166): a PDF that silently omitted an
-        # ordered section would be a misleading client document, so PDF orders
-        # refuse the section explicitly instead.
+        # Temporary gate. THE SIBLING COPY IS in
+        # app/report_ordering_catalogue/validation.py - remove both together,
+        # or PDF orders are refused on one path and accepted on the other.
+        # Their shared rationale is recorded there in full; in short, the
+        # render template draws the section but not the per-claim `grounding`
+        # posture, so a PDF cannot show a reader which AI claims are checkable
+        # (lotus-render#218).
         if section_requested and "pdf" in self.requested_output_formats:
             raise ValueError(
                 "The ADVISOR_COMMENTARY section is currently composed in the json "
-                "system package only; the governed PDF template does not yet render "
-                "it, and a PDF that silently omitted an ordered section would be "
-                "misleading. Order json output, or omit the section from PDF orders."
+                "system package only; the governed PDF template does not yet mark "
+                "which claims are grounded, so a PDF cannot show a reader what is "
+                "checkable. Order json output, or omit the section from PDF orders."
             )
         return self
 

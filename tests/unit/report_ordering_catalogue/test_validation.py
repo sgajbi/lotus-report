@@ -1,9 +1,11 @@
 import pytest
+from pydantic import ValidationError
 
 from app.report_ordering_catalogue.validation import (
     ReportOrderingSubmissionError,
     validate_report_ordering_submission,
 )
+from app.reporting_jobs.models import PortfolioReviewJobRequest
 
 
 def _validate(
@@ -159,8 +161,11 @@ def test_advisor_commentary_dependency_enforced_at_ordering_acceptance() -> None
 
 
 def test_advisor_commentary_refuses_pdf_until_render_template_exists() -> None:
-    """Temporary render gate: a PDF silently omitting an ordered section is a
-    misleading client document, so PDF orders refuse the section explicitly."""
+    """Temporary render gate. lotus-render#223 merged the template, so the
+    section IS drawn; what is not drawn is the per-claim `grounding` posture,
+    so an ungrounded AI claim renders like a grounded one minus its
+    "Grounded on:" line. A PDF is archived, and an unverifiable claim that
+    looks verifiable becomes durable evidence (lotus-render#218)."""
 
     with pytest.raises(ReportOrderingSubmissionError) as excinfo:
         _validate(
@@ -175,3 +180,35 @@ def test_advisor_commentary_refuses_pdf_until_render_template_exists() -> None:
     # Benchmark-dependent sections stay orderable without their optional
     # dependency - only `conditional` fields are required-when-selected.
     _validate(formats=["json", "pdf"], options={"sections": ["PERFORMANCE"]})
+
+
+def test_both_pdf_gates_refuse_together() -> None:
+    """The gate exists twice - here and on PortfolioReviewJobRequest - because
+    orders arrive by two paths. They must be removed together: one gate alone
+    means PDF orders are refused on one path and accepted on the other, and
+    the accepted path writes the very document the other is holding back.
+
+    This asserts the pair, so removing one and not the other fails here rather
+    than in a client's archived PDF.
+    """
+
+    with pytest.raises(ReportOrderingSubmissionError):
+        _validate(
+            formats=["json", "pdf"],
+            options={
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        )
+
+    with pytest.raises(ValidationError):
+        PortfolioReviewJobRequest(
+            portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+            as_of_date="2026-04-22",
+            requested_output_formats=["json", "pdf"],
+            reporting_currency="USD",
+            options={
+                "sections": ["ADVISOR_COMMENTARY"],
+                "advisor_brief_run_id": "run_accept_1",
+            },
+        )
