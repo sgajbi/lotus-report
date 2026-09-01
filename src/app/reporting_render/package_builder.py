@@ -202,6 +202,22 @@ def _ytd_risk_metric(snapshot: dict[str, Any], metric: str) -> Any:
 
 
 def _risk_summary_section(snapshot: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any]:
+    """The risk panel, or nothing at all when the report did not order risk.
+
+    `riskAnalytics` is composed only when RISK_ANALYTICS is among the requested
+    sections, so its absence means the caller deselected the section - not that
+    a measurement failed. Emitting the five keys regardless drew a "Risk
+    profile" panel of "Not available" cells onto reports that never asked for
+    one, which reads as an attempted measurement that came back empty. In a
+    governed client document that is a statement about the portfolio, and it
+    was never true.
+
+    Render already draws nothing for an empty mapping, so an unordered section
+    simply has no panel.
+    """
+
+    if not _as_dict(snapshot.get("riskAnalytics")):
+        return {}
     return {
         "volatility_pct": _percent_text(
             _ytd_risk_metric(snapshot, "volatility") or risk.get("ytd_volatility_pct")
