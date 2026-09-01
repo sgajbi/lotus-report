@@ -315,10 +315,15 @@ projection, issue #166). Ordering rules:
 - At capture time the accepted output is resolved by run id from lotus-ai (recorded as durable
   upstream-call lineage like every other source read). The exact reviewed narrative is composed
   unmodified - lotus-report never regenerates, edits, or re-reviews AI content.
+- The pre-order availability check and the capture resolve these reasons through one shared
+  vocabulary (`app/advisor_brief_source_reasons.py`), so the answer an operator gets before
+  ordering and the reason recorded on the job after cannot disagree about the same fact.
 - The section **fails closed without failing the report** on definitive postures, with one
   bounded reason recorded on the job (`job_advisor_commentary_unavailable` event, snapshot
-  package, and lineage summary): `advisor_brief_not_reviewed` (run not completed/accepted, or
-  superseded), `advisor_brief_not_found` (unknown run or unretrievable output),
+  package, and lineage summary): `advisor_brief_not_reviewed` (run not completed/accepted, superseded, or
+  no accepted brief exists for the portfolio at all - in every case the operator
+  reviews and accepts a brief, and no retry changes the answer),
+  `advisor_brief_not_found` (unknown run or unretrievable output),
   `advisor_brief_not_validated` (the brief exists and was found, but lotus-ai withheld it
   because its deterministic output validation never returned VALIDATED - the operator action is
   to re-run the brief so it acquires a verdict, not to look for a missing run),
@@ -338,7 +343,10 @@ projection, issue #166). Ordering rules:
   opposite: re-run the brief, versus investigate lotus-ai because a guarantee it publishes has
   regressed. The recorded `detail` names the specific field), `advisor_brief_context_mismatch` (the brief asserts a
   portfolio, period, as-of date, reporting currency, or benchmark that differs from the
-  report's; nulls mean "not asserted" and never conflict), and
+  report's; nulls mean "not asserted" and never conflict. lotus-ai's own `no_context_match`
+  refusal - accepted briefs exist, none assert the requested date or currency - records the
+  same reason, because it is the same fact established one step earlier. The operator corrects
+  the report context, and must not be sent to widen a scan bound), and
   `ai_disclosure_policy_unavailable` (accepting reviewer identity, content hash, or grounding
   source refs missing, so the mandated disclosure line cannot be rendered truthfully).
 - Transport-level lotus-ai unavailability fails the capture with the standard retryable
