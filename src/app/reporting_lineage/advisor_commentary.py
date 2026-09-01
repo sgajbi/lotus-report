@@ -54,9 +54,19 @@ _NOT_FOUND_SOURCE_REASONS = frozenset(
 # authority was never established" is an audit-relevant statement that
 # "not found" would erase.
 _NOT_VALIDATED_SOURCE_REASONS = frozenset({"output_not_validated"})
-# The source could not prove which run answers the request - the brief very
-# likely exists and is valid. Retryable, unlike every reason above, and
-# lotus-ai deliberately excludes it from its own not-found set.
+# The source could not PROVE which run answers the request - the brief very
+# likely exists and is valid, and lotus-ai deliberately excludes these from its
+# own not-found set. Distinct from absence, and distinct again from a transport
+# failure: this capture does NOT retry them.
+#
+# Retrying is wrong on both halves. An identical request saturates an identical
+# scan bound, so the retry budget would burn without the answer changing; and
+# raising the capture-retryable error would eventually fail the whole JOB,
+# denying the client a report over one optional section. The condition clears
+# through an operator action - a narrower report context, or a widened bound in
+# lotus-ai - and a later order then succeeds. So the section closes with a
+# posture that says "unproven", the report completes without it, and the job
+# record carries the reason an operator needs.
 _UNPROVEN_SOURCE_REASONS = frozenset({"lookup_scan_saturated", "no_context_match"})
 
 

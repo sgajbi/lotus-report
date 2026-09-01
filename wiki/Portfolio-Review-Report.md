@@ -323,7 +323,10 @@ projection, issue #166). Ordering rules:
   because its deterministic output validation never returned VALIDATED - the operator action is
   to re-run the brief so it acquires a verdict, not to look for a missing run),
   `advisor_brief_source_unproven` (lotus-ai could not prove which run answers the request, for
-  example a saturated candidate scan; the brief likely exists and this is retryable),
+  example a saturated candidate scan; the brief likely exists, and the condition clears through
+  an operator action - a narrower report context, or a widened bound in lotus-ai - so a later
+  order succeeds. This capture does **not** retry it: an identical request saturates an identical
+  bound, and failing the job would deny the client a report over one optional section),
   `advisor_brief_source_refused` (lotus-ai refused for a reason lotus-report does not recognise -
   a reason report cannot interpret is not evidence of a cause it can name, so this never
   masquerades as a known posture), `advisor_brief_context_mismatch` (the brief asserts a
