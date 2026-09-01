@@ -210,12 +210,15 @@ async def test_authorization_failures_fail_capture_not_the_section(status_code):
 @pytest.mark.asyncio
 async def test_wrong_schema_or_run_identity_closes_the_section():
     """A 200 body carrying a different schema or run identity must never be
-    archived under this contract's provenance."""
+    archived under this contract's provenance.
+
+    This is the source violating its contract, not withholding a brief: it
+    answered successfully for something other than what was asked."""
 
     wrong_schema = _StubClient(200, _accepted_payload(schema_id="other.schema.v9"))
     package = await _resolve(wrong_schema)
     assert package["status"] == "unavailable"
-    assert package["reason_code"] == "advisor_brief_not_found"
+    assert package["reason_code"] == "advisor_brief_source_contract_violation"
     assert "schema_id" in package["detail"]
 
     missing_schema = _StubClient(200, _accepted_payload(schema_id=None))
@@ -226,8 +229,40 @@ async def test_wrong_schema_or_run_identity_closes_the_section():
     wrong_run = _StubClient(200, _accepted_payload(run_id="run_other"))
     package = await _resolve(wrong_run)
     assert package["status"] == "unavailable"
-    assert package["reason_code"] == "advisor_brief_not_found"
+    assert package["reason_code"] == "advisor_brief_source_contract_violation"
     assert "run_other" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_withheld_and_contract_violating_briefs_are_told_apart():
+    """The two ways a brief can lack a validation verdict are opposite facts,
+    and the job event carries only the reason code - no detail - so the code
+    itself has to carry the difference.
+
+    A 409 with output_not_validated is lotus-ai working correctly: it ran the
+    validation, the verdict was not VALIDATED, and it withheld the brief. The
+    operator re-runs the brief so it acquires a verdict.
+
+    A 200 whose verdict block is missing or not VALIDATED is lotus-ai
+    publishing what it promised to refuse. Re-running the brief is the wrong
+    instruction there - nothing about this run was the problem, and a
+    guarantee upstream has regressed. Collapsing both into one reason would
+    send an operator to do the wrong thing with no way to tell.
+    """
+
+    withheld = _StubClient(409, {"metadata": {"reason_code": "output_not_validated"}})
+    withheld_package = await _resolve(withheld)
+
+    violated = _StubClient(200, _accepted_payload(output_validation=None))
+    violated_package = await _resolve(violated)
+
+    assert withheld_package["reason_code"] == "advisor_brief_not_validated"
+    assert violated_package["reason_code"] == "advisor_brief_source_contract_violation"
+    assert withheld_package["reason_code"] != violated_package["reason_code"]
+
+    # Both close the section: the document is the same either way.
+    assert withheld_package["status"] == "unavailable"
+    assert violated_package["status"] == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -369,7 +404,7 @@ async def test_a_foreign_tenant_projection_is_refused_even_though_ai_fails_close
     package = await _resolve(client)
 
     assert package["status"] == "unavailable"
-    assert package["reason_code"] == "advisor_brief_not_found"
+    assert package["reason_code"] == "advisor_brief_source_contract_violation"
     assert "tenant" in package["detail"]
 
 
@@ -587,12 +622,16 @@ async def test_a_claim_that_offered_nothing_reports_no_unusable_count():
     ],
 )
 async def test_narrative_without_a_complete_validated_verdict_is_inadmissible(verdict, fragment):
-    """lotus-ai refuses to publish non-VALIDATED output (ai#231) and fails
-    closed on incomplete verdicts, so a 200 always carries a complete
-    VALIDATED block. Report checks anyway: it composes this narrative verbatim
-    into an archived client document, and if the upstream guarantee ever
-    regresses, the first place it becomes durable is a governed PDF - by which
-    point it is evidence rather than a bug."""
+    """On a 200, lotus-ai guarantees a complete VALIDATED block: it refuses
+    non-VALIDATED output with a 409 and fails closed on incomplete evidence
+    (ai#231). So every deviation here is the SOURCE VIOLATING ITS CONTRACT, not
+    a brief it withheld - a distinction that matters because the operator
+    actions are opposite: investigate lotus-ai, versus re-run the brief.
+
+    Report checks anyway because it composes this narrative verbatim into an
+    archived client document: if the upstream guarantee regresses, the first
+    place it becomes durable is a governed PDF, by which point it is evidence
+    rather than a bug."""
 
     payload = _accepted_payload()
     if verdict is None:
@@ -604,7 +643,7 @@ async def test_narrative_without_a_complete_validated_verdict_is_inadmissible(ve
     package = await _resolve(client)
 
     assert package["status"] == "unavailable"
-    assert package["reason_code"] == "advisor_brief_not_validated"
+    assert package["reason_code"] == "advisor_brief_source_contract_violation"
     assert fragment in package["detail"]
 
 

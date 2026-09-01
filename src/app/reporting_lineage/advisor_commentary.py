@@ -76,6 +76,18 @@ _NOT_VALIDATED_SOURCE_REASONS = frozenset({"output_not_validated"})
 # record carries the reason an operator needs.
 _UNPROVEN_SOURCE_REASONS = frozenset({"lookup_scan_saturated", "no_context_match"})
 
+#: lotus-ai answered 200 with a payload that breaks its own published contract -
+#: a projection naming a different run or tenant, or a validation verdict that
+#: is absent or partial when the contract makes it always present and complete.
+#:
+#: Deliberately distinct from `advisor_brief_not_validated`, which is lotus-ai
+#: WITHHOLDING a brief whose validation failed. The two look alike on the page
+#: and are opposite in the operator's hands: withheld means re-run the brief so
+#: it acquires a verdict; contract violation means investigate lotus-ai,
+#: because a guarantee it publishes has regressed. Recording both as the same
+#: reason would send an operator to re-run a brief that was never the problem.
+_SOURCE_CONTRACT_VIOLATION = "advisor_brief_source_contract_violation"
+
 
 class AdvisorCommentarySourceUnavailableError(RuntimeError):
     """Transport-level failure reaching lotus-ai; the capture must retry."""
@@ -133,11 +145,11 @@ async def resolve_advisor_commentary_package(
 
     identity_fault = _projection_identity_fault(payload, run_id=run_id, tenant_id=tenant_id)
     if identity_fault is not None:
-        return _unavailable(run_id, "advisor_brief_not_found", detail=identity_fault)
+        return _unavailable(run_id, _SOURCE_CONTRACT_VIOLATION, detail=identity_fault)
 
     verdict_fault = _validation_verdict_fault(payload)
     if verdict_fault is not None:
-        return _unavailable(run_id, "advisor_brief_not_validated", detail=verdict_fault)
+        return _unavailable(run_id, _SOURCE_CONTRACT_VIOLATION, detail=verdict_fault)
 
     context = _as_dict_value(payload.get("context"))
     mismatch = _context_mismatch(
