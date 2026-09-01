@@ -11,6 +11,11 @@ from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
+from app.services.performance_contribution import (
+    map_contribution_levels,
+    map_position_contributions,
+    security_id_from_position_id,
+)
 from app.services.portfolio_review_advisor import build_advisor_sections
 
 HTTP_BAD_REQUEST = 400
@@ -2417,6 +2422,18 @@ class ReportingReadService:
                 "basis": "NET",
                 "frequency": "daily",
                 "weighting_scheme": self._as_dict(ytd.get("summary")).get("weighting_scheme"),
+                # lotus-performance computes `residual = total_portfolio_return -
+                # sum_of_contributions` and may allocate it back into the rows.
+                # Whether it did decides whether a ranking can be read as summing
+                # to the portfolio return, so the flag is methodology, not
+                # diagnostics: without it a reconciliation line can state the
+                # residual but not what it means (issue #209).
+                "residual_allocation_applied": self._as_dict(ytd.get("smoothing_evidence")).get(
+                    "residual_allocation_applied"
+                ),
+                "residual_allocation_basis": self._as_dict(ytd.get("smoothing_evidence")).get(
+                    "residual_allocation_basis"
+                ),
             },
             "diagnostics": payload.get("diagnostics"),
             "audit": payload.get("audit"),
@@ -2427,53 +2444,14 @@ class ReportingReadService:
         return status_code < HTTP_BAD_REQUEST and "results_by_period" in payload
 
     def _map_position_contributions(self, rows: list[object]) -> list[dict[str, object]]:
-        mapped: list[dict[str, object]] = []
-        for row_payload in rows:
-            row = self._as_dict(row_payload)
-            position_id = self._safe_str(row.get("position_id"))
-            mapped.append(
-                {
-                    "position_id": position_id,
-                    "security_id": self._security_id_from_position_id(position_id),
-                    "total_contribution_pct": row.get("total_contribution"),
-                    "average_weight_pct": row.get("average_weight"),
-                    "total_return_pct": row.get("total_return"),
-                    "local_contribution_pct": row.get("local_contribution"),
-                    "fx_contribution_pct": row.get("fx_contribution"),
-                }
-            )
-        return mapped
+        return map_position_contributions(rows)
 
     def _map_contribution_levels(self, levels: list[object]) -> list[dict[str, object]]:
-        mapped: list[dict[str, object]] = []
-        for level_payload in levels:
-            level = self._as_dict(level_payload)
-            mapped.append(
-                {
-                    "level": self._to_int(level.get("level")),
-                    "name": level.get("name"),
-                    "parent": level.get("parent"),
-                    "rows": [
-                        {
-                            "key": self._as_dict(row.get("key")),
-                            "contribution_pct": row.get("contribution"),
-                            "average_weight_pct": row.get("weight_avg"),
-                            "is_other": row.get("is_other"),
-                            "children_count": row.get("children_count"),
-                        }
-                        for row in [
-                            self._as_dict(item) for item in self._as_list(level.get("rows"))
-                        ]
-                    ],
-                }
-            )
-        return mapped
+        return map_contribution_levels(levels, to_int=self._to_int)
 
     @staticmethod
     def _security_id_from_position_id(position_id: str) -> str:
-        if ":" in position_id:
-            return position_id.rsplit(":", 1)[-1]
-        return position_id
+        return security_id_from_position_id(position_id)
 
     def _enrich_holdings_with_contribution(
         self,

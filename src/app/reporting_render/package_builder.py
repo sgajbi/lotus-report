@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
+from app.reporting_render.contribution_ranking import build_contribution_ranking
 
 
 def _build_render_package(
@@ -95,6 +96,7 @@ def _build_render_package(
             limit=8,
         ),
         "performance_highlight": _performance_highlight_section(performance),
+        "contribution_ranking": build_contribution_ranking(snapshot),
         "transaction_period_label": (
             f"From {job.as_of_date.replace(month=1, day=1).strftime('%d.%m.%Y')} "
             f"to {job.as_of_date.strftime('%d.%m.%Y')}"
