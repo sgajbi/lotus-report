@@ -379,3 +379,56 @@ async def test_a_brief_without_grounding_sources_cannot_carry_its_disclosure():
 
     assert package["status"] == "unavailable"
     assert package["reason_code"] == "ai_disclosure_policy_unavailable"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason,expected",
+    [
+        ("output_not_validated", "advisor_brief_not_validated"),
+        ("lookup_scan_saturated", "advisor_brief_source_unproven"),
+        ("no_context_match", "advisor_brief_source_unproven"),
+        ("no_accepted_run", "advisor_brief_not_found"),
+        ("pack_projection_unsupported", "advisor_brief_not_found"),
+        ("run_superseded", "advisor_brief_not_reviewed"),
+    ],
+)
+async def test_every_source_refusal_maps_to_its_own_posture(reason, expected):
+    """lotus-ai's bounded reasons are mapped exhaustively rather than collapsed.
+
+    `output_not_validated` is the one refusal where the artifact EXISTS and was
+    FOUND and was withheld on authority grounds - the operator action is to
+    re-run the brief so it acquires a verdict, not to hunt for a missing run.
+    `lookup_scan_saturated` is retryable and lotus-ai deliberately excludes it
+    from its own not-found set.
+    """
+
+    client = _StubClient(409, {"metadata": {"reason_code": reason}})
+    package = await _resolve(client)
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == expected
+
+
+@pytest.mark.asyncio
+async def test_an_unrecognised_refusal_never_claims_a_cause_it_cannot_name():
+    """The old fall-through asserted `advisor_brief_not_found` for any code it
+    did not know, sending an operator after a missing run when the brief was
+    withheld for a reason report simply had not mapped. That default is also
+    what let the gap live: an unmapped code looked like a handled one."""
+
+    client = _StubClient(409, {"metadata": {"reason_code": "some_future_reason"}})
+    package = await _resolve(client)
+
+    assert package["reason_code"] == "advisor_brief_source_refused"
+
+
+@pytest.mark.asyncio
+async def test_an_unadorned_404_still_means_absence():
+    """A 404 with no reason code is the one status that means absence on its
+    own, so it must not become the unrecognised-refusal posture."""
+
+    client = _StubClient(404, {})
+    package = await _resolve(client)
+
+    assert package["reason_code"] == "advisor_brief_not_found"
