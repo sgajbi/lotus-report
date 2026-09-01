@@ -101,17 +101,20 @@ def main() -> int:
         print("gh is not available; cannot ask which commits the gate evaluated.")
         return 1 if arguments.fail_on_gap else 0
 
-    commits = _git(
+    # Probe one past the cap: a window holding exactly `limit` commits was fully
+    # examined, so only a (limit + 1)th commit proves the span was truncated.
+    probed = _git(
         "log",
         f"--since={arguments.since_days} days ago",
-        f"-{arguments.limit}",
+        f"-{arguments.limit + 1}",
         "--format=%H %h %s",
         "origin/main",
     )
-    # A prefix of the window is not the window: if the cap was reached, older
+    # A prefix of the window is not the window: if the cap was exceeded, older
     # commits inside the requested span went unexamined and their coverage is
     # unknown, not proven.
-    truncated = len(commits) >= arguments.limit
+    truncated = len(probed) > arguments.limit
+    commits = probed[: arguments.limit]
     ungated: list[str] = []
     unknown: list[str] = []
     failing: list[str] = []
