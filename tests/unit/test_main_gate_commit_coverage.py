@@ -64,7 +64,7 @@ def test_audit_counts_only_verdict_bearing_runs_and_fails_closed(monkeypatch, ca
     monkeypatch.setattr(
         audit.argparse.ArgumentParser,
         "parse_args",
-        lambda self: argparse_namespace(limit=60, fail_on_gap=True),
+        lambda self: argparse_namespace(limit=400, since_days=7, fail_on_gap=True),
     )
 
     exit_code = audit.main()
@@ -83,7 +83,7 @@ def test_audit_fails_closed_when_gh_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(
         audit.argparse.ArgumentParser,
         "parse_args",
-        lambda self: argparse_namespace(limit=60, fail_on_gap=True),
+        lambda self: argparse_namespace(limit=400, since_days=7, fail_on_gap=True),
     )
 
     assert audit.main() == 1
@@ -104,7 +104,7 @@ def test_audit_passes_when_every_commit_has_a_verdict(monkeypatch, capsys) -> No
     monkeypatch.setattr(
         audit.argparse.ArgumentParser,
         "parse_args",
-        lambda self: argparse_namespace(limit=60, fail_on_gap=True),
+        lambda self: argparse_namespace(limit=400, since_days=7, fail_on_gap=True),
     )
 
     assert audit.main() == 0
