@@ -63,7 +63,7 @@ def build_contribution_ranking(snapshot: dict[str, Any]) -> dict[str, Any]:
         # to infer it from an empty list - which is why posture is authoritative.
         return {"posture": POSTURE_EMPTY, "period": period, "methodology": methodology}
 
-    presented = rows[:PRESENTED_CONTRIBUTOR_LIMIT]
+    presented = _presented_with_both_signs(rows)
     total_return = _decimal(contribution.get("total_portfolio_return_pct"))
     explained = _decimal(contribution.get("total_contribution_pct"))
     presented_total = sum(
@@ -84,6 +84,41 @@ def build_contribution_ranking(snapshot: dict[str, Any]) -> dict[str, Any]:
         "available_count": len(rows),
         "contributors": [_published(row) for row in presented],
     }
+
+
+def _presented_with_both_signs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The largest effects, but never a one-sided page when the period was not.
+
+    Ranking by magnitude alone can truncate to a single sign: eleven gains
+    larger than the only loss produce a winners-only list, which is exactly the
+    misleading output this block exists to remove - the reader concludes nothing
+    detracted. So when both signs exist in the available set and the truncated
+    set holds only one, the weakest presented row yields its place to the
+    largest contributor of the missing sign.
+
+    One seat, not a split budget: reserving a fixed share for each sign would
+    misrepresent a period that genuinely was one-sided. This changes nothing in
+    the common case where the largest effects already include both.
+    """
+
+    presented = rows[:PRESENTED_CONTRIBUTOR_LIMIT]
+    if len(rows) <= PRESENTED_CONTRIBUTOR_LIMIT:
+        return presented
+
+    def sign_of(row: dict[str, Any]) -> int:
+        return 1 if row["_value"] > 0 else -1 if row["_value"] < 0 else 0
+
+    presented_signs = {sign_of(row) for row in presented}
+    if len(presented_signs) > 1:
+        return presented
+    missing = next(
+        (row for row in rows[PRESENTED_CONTRIBUTOR_LIMIT:] if sign_of(row) not in presented_signs),
+        None,
+    )
+    if missing is None:
+        # The period really is one-sided; the list is honestly single-signed.
+        return presented
+    return presented[:-1] + [missing]
 
 
 def _ranked_contributors(
