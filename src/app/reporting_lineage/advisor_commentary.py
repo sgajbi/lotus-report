@@ -27,6 +27,13 @@ ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID = (
 )
 NARRATIVE_TONES = frozenset({"positive", "neutral", "warning"})
 
+#: Whether a reviewed claim carries grounding a reader can check. Stated, never
+#: inferred from an empty ref list: Render can otherwise distinguish an
+#: ungrounded point only by contrast with grounded ones on the same page, and
+#: that signal vanishes precisely when every point is ungrounded.
+GROUNDING_GROUNDED = "grounded"
+GROUNDING_UNGROUNDED = "ungrounded"
+
 # lotus-ai's bounded refusal reasons, mapped exhaustively to report section
 # postures. Mapped by `metadata.reason_code` rather than by parsing the
 # error_code string, because the bare code is the stable part of that contract.
@@ -348,14 +355,28 @@ def _narrative_items(value: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         tone = _clean_str(item.get("tone")) or "neutral"
-        items.append(
-            {
-                "headline": _clean_str(item.get("headline")) or "",
-                "detail": _clean_str(item.get("detail")) or "",
-                "tone": tone if tone in NARRATIVE_TONES else "neutral",
-                "evidence_refs": _evidence_refs(item.get("evidence_refs")),
-            }
-        )
+        supplied_refs = item.get("evidence_refs")
+        supplied_count = len(supplied_refs) if isinstance(supplied_refs, list) else 0
+        refs = _evidence_refs(supplied_refs)
+        entry: dict[str, Any] = {
+            "headline": _clean_str(item.get("headline")) or "",
+            "detail": _clean_str(item.get("detail")) or "",
+            "tone": tone if tone in NARRATIVE_TONES else "neutral",
+            "evidence_refs": refs,
+            # An AI-drafted claim with visible grounding is checkable; without
+            # it the same sentence is an assertion. Render can only tell the
+            # difference by CONTRAST with grounded points on the same page -
+            # a signal that disappears exactly when every point is ungrounded -
+            # so the state is stated here rather than left to be inferred from
+            # an empty list.
+            "grounding": GROUNDING_GROUNDED if refs else GROUNDING_UNGROUNDED,
+        }
+        if not refs and supplied_count:
+            # Grounding was attempted and could not be read. The page draws it
+            # the same way - not checkable either way - but an operator needs
+            # the difference between "cited nothing" and "cited unreadably".
+            entry["unusable_evidence_ref_count"] = supplied_count
+        items.append(entry)
     return items
 
 

@@ -449,3 +449,70 @@ async def test_an_unproven_lookup_closes_the_section_without_failing_the_capture
 
     assert package["status"] == "unavailable"
     assert package["reason_code"] == "advisor_brief_source_unproven"
+
+
+@pytest.mark.asyncio
+async def test_a_reviewed_claim_states_whether_it_is_checkable():
+    """An AI-drafted claim with visible grounding is checkable; without it the
+    same sentence is an assertion. Render can otherwise tell the difference
+    only by CONTRAST with grounded points on the same page - a signal that
+    disappears exactly when every point is ungrounded - so the state is stated
+    rather than inferred from an empty list (issue #166)."""
+
+    payload = _accepted_payload()
+    payload["talking_points"] = [
+        {
+            "headline": "Equity allocation drove returns",
+            "detail": "Overweight global equities contributed 1.2%.",
+            "tone": "positive",
+            "evidence_refs": [
+                {
+                    "metric_label": "Equity Contribution",
+                    "metric_value": "1.2%",
+                    "source_ref": "performance:contribution:equities",
+                }
+            ],
+        },
+        {
+            "headline": "Positioning remains appropriate",
+            "detail": "No change recommended.",
+            "tone": "neutral",
+            "evidence_refs": [],
+        },
+    ]
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client)
+
+    points = package["talking_points"]
+    assert points[0]["grounding"] == "grounded"
+    assert points[1]["grounding"] == "ungrounded"
+    # Silent removal of reviewed content is never the answer: the claim a
+    # named reviewer accepted still reaches the page, saying what it is.
+    assert points[1]["headline"] == "Positioning remains appropriate"
+    assert "unusable_evidence_ref_count" not in points[1]
+
+
+@pytest.mark.asyncio
+async def test_unreadable_grounding_is_distinguished_from_none_offered():
+    """The page draws both the same - not checkable either way - but an
+    operator needs the difference between "cited nothing" and "cited
+    unreadably"."""
+
+    payload = _accepted_payload()
+    payload["talking_points"] = [
+        {
+            "headline": "Duration was reduced",
+            "detail": "Shortened by 0.4 years.",
+            "tone": "neutral",
+            "evidence_refs": [{"metric_label": "Duration"}, {"source_ref": "risk:duration"}],
+        }
+    ]
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client)
+
+    point = package["talking_points"][0]
+    assert point["grounding"] == "ungrounded"
+    assert point["evidence_refs"] == []
+    assert point["unusable_evidence_ref_count"] == 2
