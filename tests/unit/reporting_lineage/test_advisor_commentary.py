@@ -66,6 +66,11 @@ def _accepted_payload(**overrides) -> dict:
         "source_refs": ["performance:workspace-summary"],
         "evidence_types": ["metric_evidence"],
         "content_hash": "0a" * 32,
+        "output_validation": {
+            "validation_state": "VALIDATED",
+            "authority": "non_authoritative_ai_output",
+            "ruleset_version": "output-validation.v4",
+        },
         "content_hash_algorithm": "sha256",
         "notes": ["Review-gated projection; not client-release certification."],
     }
@@ -516,3 +521,95 @@ async def test_unreadable_grounding_is_distinguished_from_none_offered():
     assert point["grounding"] == "ungrounded"
     assert point["evidence_refs"] == []
     assert point["unusable_evidence_ref_count"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        {"metric_label": "Duration", "metric_value": "0.4", "source_ref": "risk:duration"},
+        "perf:ytd:twr",
+        {"unexpected": "shape"},
+    ],
+)
+async def test_a_malformed_reference_container_still_counts_as_offered(malformed):
+    """Review finding on PR #229: counting only list containers let a citation
+    that arrived in the wrong shape - a single reference object after schema
+    drift, say - look identical to a claim that cited nothing. That is exactly
+    the distinction the count exists to preserve."""
+
+    payload = _accepted_payload()
+    payload["talking_points"] = [
+        {
+            "headline": "Duration was reduced",
+            "detail": "Shortened by 0.4 years.",
+            "tone": "neutral",
+            "evidence_refs": malformed,
+        }
+    ]
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client)
+
+    point = package["talking_points"][0]
+    assert point["grounding"] == "ungrounded"
+    assert point["evidence_refs"] == []
+    assert point["unusable_evidence_ref_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_claim_that_offered_nothing_reports_no_unusable_count():
+    """The other side of the same distinction: absence is not malformation."""
+
+    payload = _accepted_payload()
+    payload["talking_points"] = [
+        {"headline": "No change", "detail": "Hold.", "tone": "neutral", "evidence_refs": []}
+    ]
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client)
+
+    assert package["talking_points"][0]["grounding"] == "ungrounded"
+    assert "unusable_evidence_ref_count" not in package["talking_points"][0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "verdict,fragment",
+    [
+        (None, "no validation verdict"),
+        ({"validation_state": "UNVALIDATED_LOCAL_ONLY"}, "UNVALIDATED_LOCAL_ONLY"),
+        ({"validation_state": "VALIDATED", "ruleset_version": "v4"}, "authority"),
+        (
+            {"validation_state": "VALIDATED", "authority": "non_authoritative_ai_output"},
+            "ruleset version",
+        ),
+    ],
+)
+async def test_narrative_without_a_complete_validated_verdict_is_inadmissible(verdict, fragment):
+    """lotus-ai refuses to publish non-VALIDATED output (ai#231) and fails
+    closed on incomplete verdicts, so a 200 always carries a complete
+    VALIDATED block. Report checks anyway: it composes this narrative verbatim
+    into an archived client document, and if the upstream guarantee ever
+    regresses, the first place it becomes durable is a governed PDF - by which
+    point it is evidence rather than a bug."""
+
+    payload = _accepted_payload()
+    if verdict is None:
+        payload.pop("output_validation")
+    else:
+        payload["output_validation"] = verdict
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client)
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_not_validated"
+    assert fragment in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_complete_validated_verdict_is_admissible():
+    package = await _resolve(_StubClient(200, _accepted_payload()))
+
+    assert package["status"] == "included"
