@@ -319,10 +319,18 @@ projection, issue #166). Ordering rules:
   bounded reason recorded on the job (`job_advisor_commentary_unavailable` event, snapshot
   package, and lineage summary): `advisor_brief_not_reviewed` (run not completed/accepted, or
   superseded), `advisor_brief_not_found` (unknown run or unretrievable output),
-  `advisor_brief_context_mismatch` (the brief asserts a portfolio, as-of date, or reporting
-  currency that differs from the report's; nulls mean "not asserted" and never conflict), and
-  `ai_disclosure_policy_unavailable` (accepting reviewer identity or content hash missing, so
-  the mandated disclosure line cannot be rendered truthfully).
+  `advisor_brief_not_validated` (the brief exists and was found, but lotus-ai withheld it
+  because its deterministic output validation never returned VALIDATED - the operator action is
+  to re-run the brief so it acquires a verdict, not to look for a missing run),
+  `advisor_brief_source_unproven` (lotus-ai could not prove which run answers the request, for
+  example a saturated candidate scan; the brief likely exists and this is retryable),
+  `advisor_brief_source_refused` (lotus-ai refused for a reason lotus-report does not recognise -
+  a reason report cannot interpret is not evidence of a cause it can name, so this never
+  masquerades as a known posture), `advisor_brief_context_mismatch` (the brief asserts a
+  portfolio, period, as-of date, reporting currency, or benchmark that differs from the
+  report's; nulls mean "not asserted" and never conflict), and
+  `ai_disclosure_policy_unavailable` (accepting reviewer identity, content hash, or grounding
+  source refs missing, so the mandated disclosure line cannot be rendered truthfully).
 - Transport-level lotus-ai unavailability fails the capture with the standard retryable
   posture instead - retrying can succeed, so the pack does not silently ship without a section
   the caller ordered.

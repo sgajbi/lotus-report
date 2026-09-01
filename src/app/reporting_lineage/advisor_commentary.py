@@ -27,15 +27,37 @@ ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID = (
 )
 NARRATIVE_TONES = frozenset({"positive", "neutral", "warning"})
 
-# lotus-ai problem-details reason codes that mean "this run is not (or is no
-# longer) the accepted narrative" - a review-state truth retrying cannot change.
+# lotus-ai's bounded refusal reasons, mapped exhaustively to report section
+# postures. Mapped by `metadata.reason_code` rather than by parsing the
+# error_code string, because the bare code is the stable part of that contract.
+#
+# "This run is not (or is no longer) the accepted narrative" - a review-state
+# truth that retrying cannot change.
 _NOT_REVIEWED_SOURCE_REASONS = frozenset(
     {"run_not_completed", "run_not_accepted", "run_superseded"}
 )
-# Reason codes that mean the brief cannot be retrieved at all.
+# The brief cannot be retrieved at all.
 _NOT_FOUND_SOURCE_REASONS = frozenset(
-    {"pack_projection_unsupported", "output_artifact_missing", "output_artifact_malformed"}
+    {
+        "pack_projection_unsupported",
+        "output_artifact_missing",
+        "output_artifact_malformed",
+        "no_accepted_run",
+    }
 )
+# The artifact EXISTS and was FOUND, and lotus-ai withheld it on authority
+# grounds: its deterministic output validation never returned VALIDATED
+# (lotus-ai#231). Distinct from every other reason because those are about
+# availability and this one is about admissibility - and because the operator
+# action differs: re-run the brief so it acquires a verdict, rather than hunt
+# for a missing run. For a governed client document, "withheld because its
+# authority was never established" is an audit-relevant statement that
+# "not found" would erase.
+_NOT_VALIDATED_SOURCE_REASONS = frozenset({"output_not_validated"})
+# The source could not prove which run answers the request - the brief very
+# likely exists and is valid. Retryable, unlike every reason above, and
+# lotus-ai deliberately excludes it from its own not-found set.
+_UNPROVEN_SOURCE_REASONS = frozenset({"lookup_scan_saturated", "no_context_match"})
 
 
 class AdvisorCommentarySourceUnavailableError(RuntimeError):
@@ -240,14 +262,35 @@ def _projection_identity_fault(
 
 
 def _map_source_reason(status_code: int, payload: dict[str, Any]) -> str:
+    """One report posture per lotus-ai refusal, with an honest fall-through.
+
+    The unmapped case used to return `advisor_brief_not_found`, which asserted
+    a cause the source never claimed: an operator was sent hunting for a
+    missing run when the brief existed and had been withheld for a specific
+    governed reason. That default is also what let the gap live - an unmapped
+    code was indistinguishable from a handled one.
+
+    A reason this service cannot interpret is not evidence of a cause it can
+    name, so unknown refusals now say exactly that. The failure mode of
+    lotus-ai adding a reason before Report maps it is a visible
+    "source refused, reason unrecognised", not a confident wrong answer.
+    """
+
     metadata = payload.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
     reason = _clean_str(metadata.get("reason_code")) or ""
     if reason in _NOT_REVIEWED_SOURCE_REASONS:
         return "advisor_brief_not_reviewed"
-    if reason in _NOT_FOUND_SOURCE_REASONS or status_code == 404:
+    if reason in _NOT_VALIDATED_SOURCE_REASONS:
+        return "advisor_brief_not_validated"
+    if reason in _UNPROVEN_SOURCE_REASONS:
+        return "advisor_brief_source_unproven"
+    if reason in _NOT_FOUND_SOURCE_REASONS:
         return "advisor_brief_not_found"
-    return "advisor_brief_not_found"
+    if not reason and status_code == 404:
+        # An unadorned 404 is the one status that means absence on its own.
+        return "advisor_brief_not_found"
+    return "advisor_brief_source_refused"
 
 
 def _context_mismatch(
