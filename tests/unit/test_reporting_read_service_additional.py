@@ -7,6 +7,9 @@ from app.application_errors import (
 )
 from app.config import settings
 from app.services.reporting_read_service import ReportingReadService
+from app.services.risk_supportability import (
+    risk_supportability as build_risk_supportability,
+)
 
 
 def _transaction_ledger_metadata(
@@ -880,13 +883,13 @@ def test_review_supportability_and_audit_edge_paths_remain_explicit():
         == "2026-02-24"
     )
 
-    risk_supportability = service._risk_supportability(
+    risk_supportability = build_risk_supportability(
         results={"YTD": {"metrics": {}}},
         metadata={
             "benchmark_context": {"requested": False},
             "risk_free_context": {"requested": True, "reason": "ZERO_RATE"},
         },
-        request_payload={"benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40"},
+        benchmark_code="BMK_PB_GLOBAL_BALANCED_60_40",
         period_failures=[{"period": "1Y", "message": "Insufficient history."}],
     )
 
@@ -1375,14 +1378,14 @@ def test_review_helper_edges_remain_meeting_safe():
         risk_client=_RiskSuccess(),
     )
 
-    unavailable = service._risk_supportability(results={}, metadata={}, request_payload={})
+    unavailable = build_risk_supportability(results={}, metadata={}, benchmark_code=None)
     assert unavailable["status"] == "unavailable"
     assert unavailable["notes"][0]["code"] == "missing_return_history"
 
-    ready = service._risk_supportability(
+    ready = build_risk_supportability(
         results={"YTD": {"metrics": {}}},
         metadata={"benchmark_context": {"requested": True}},
-        request_payload={"benchmark_code": "BMK"},
+        benchmark_code="BMK",
     )
     assert ready == {"status": "ready", "notes": []}
 

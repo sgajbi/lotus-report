@@ -45,6 +45,25 @@ _STATED_POSTURES = frozenset({POSTURE_READY, POSTURE_PARTIAL, POSTURE_UNAVAILABL
 REASON_SUPPORTABILITY_UNSTATED = "risk_supportability_unstated"
 
 
+#: The risk_summary field that presents each lotus-risk metric. Report owns
+#: which metrics a note concerns; this owns which field shows one, and the two
+#: are deliberately separate - the capture has no business knowing package key
+#: names, and the package has no business deciding which metrics a benchmark
+#: fact covers.
+#:
+#: A metric with no field is not an error: it is captured but not presented
+#: (Sharpe is), and a consumer needs to know a note concerns nothing on the
+#: page rather than drawing a sentence about an invisible measure.
+_METRIC_PRESENTED_AS = {
+    "VOLATILITY": "volatility_pct",
+    "DRAWDOWN": "drawdown_pct",
+    "VAR": "value_at_risk_pct",
+    "BETA": "beta",
+    "TRACKING_ERROR": "tracking_error_pct",
+    "INFORMATION_RATIO": "information_ratio",
+}
+
+
 def build_risk_posture(snapshot: dict[str, Any]) -> dict[str, Any]:
     """The stated support posture for the risk section, or nothing at all."""
 
@@ -88,7 +107,7 @@ def _published_note(note: dict[str, Any]) -> dict[str, Any]:
     section-wide fault is never read as a per-period one.
     """
 
-    published = {
+    published: dict[str, Any] = {
         "code": _text(note.get("code")) or None,
         "severity": _text(note.get("severity")) or None,
         "message": _text(note.get("message")) or None,
@@ -96,7 +115,34 @@ def _published_note(note: dict[str, Any]) -> dict[str, Any]:
     period = _text(note.get("period"))
     if period:
         published["period"] = period
+    measures = _affected_measures(note)
+    if measures is not None:
+        published["affected_measures"] = measures
     return published
+
+
+def _affected_measures(note: dict[str, Any]) -> list[str] | None:
+    """Which panel fields a note is about, when the capture said.
+
+    Present so a consumer can name the measures without keeping its own copy
+    of which ones are benchmark-relative. `missing_benchmark` is one fact about
+    the MANDATE covering three measures, so it reads as a single sentence
+    naming them - and a renderer that hardcoded that list would go stale the
+    moment the requested metric set moved.
+
+    An empty list is a real answer, distinct from absent: the note concerns
+    only metrics this report does not present, so there is nothing on the page
+    to say it about.
+    """
+
+    metrics = note.get("metrics")
+    if not isinstance(metrics, list):
+        return None
+    return [
+        _METRIC_PRESENTED_AS[metric]
+        for metric in metrics
+        if isinstance(metric, str) and metric in _METRIC_PRESENTED_AS
+    ]
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

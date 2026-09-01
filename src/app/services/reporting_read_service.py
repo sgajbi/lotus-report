@@ -17,6 +17,10 @@ from app.services.performance_contribution import (
     security_id_from_position_id,
 )
 from app.services.portfolio_review_advisor import build_advisor_sections
+from app.services.risk_supportability import (
+    BENCHMARK_RISK_METRICS,
+    risk_supportability,
+)
 
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
@@ -32,7 +36,6 @@ BENCHMARK_CODE_ALIASES = {
 }
 CLIENT_ID_KEYS = ("client_id",)
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
-BENCHMARK_RISK_METRICS = ("BETA", "TRACKING_ERROR", "INFORMATION_RATIO")
 PERFORMANCE_REVIEW_PERIODS: tuple[dict[str, object], ...] = (
     {"period": "1M", "frequencies": ["daily"]},
     {"period": "3M", "frequencies": ["daily"]},
@@ -698,10 +701,10 @@ class ReportingReadService:
 
         results = self._as_dict(risk_response.get("results"))
         metadata = self._as_dict(risk_response.get("metadata"))
-        supportability = self._risk_supportability(
+        supportability = risk_supportability(
             results=results,
             metadata=metadata,
-            request_payload=request_payload,
+            benchmark_code=self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
             period_failures=period_failures,
         )
         return {
@@ -812,82 +815,6 @@ class ReportingReadService:
             "results": {},
             "metadata": {},
         }
-
-    def _risk_supportability(
-        self,
-        *,
-        results: dict[str, object],
-        metadata: dict[str, object],
-        request_payload: dict[str, object],
-        period_failures: list[dict[str, object]] | None = None,
-    ) -> dict[str, object]:
-        notes: list[dict[str, object]] = []
-        if not results:
-            notes.append(
-                {
-                    "code": "missing_return_history",
-                    "severity": "blocking",
-                    "message": "lotus-risk returned no period results for the selected request.",
-                }
-            )
-
-        risk_free_context = self._as_dict(metadata.get("risk_free_context"))
-        if risk_free_context.get("requested") and risk_free_context.get("reason") == "ZERO_RATE":
-            notes.append(
-                {
-                    "code": "missing_risk_free_rate",
-                    "severity": "informational",
-                    "message": (
-                        "Risk-adjusted return uses the lotus-risk zero-rate convention because "
-                        "no source-backed risk-free rate was applied."
-                    ),
-                }
-            )
-
-        for failure in period_failures or []:
-            notes.append(
-                {
-                    "code": failure.get("code") or "risk_period_upstream_failure",
-                    "severity": "warning",
-                    "period": failure.get("period"),
-                    "message": failure.get("message")
-                    or "Risk metrics are unavailable for this period.",
-                }
-            )
-
-        benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
-        benchmark_context = self._as_dict(metadata.get("benchmark_context"))
-        if benchmark_code is None:
-            notes.append(
-                {
-                    "code": "missing_benchmark",
-                    "severity": "informational",
-                    "message": (
-                        "Benchmark-relative risk posture is unavailable because no benchmark "
-                        "code was provided."
-                    ),
-                }
-            )
-        elif not benchmark_context.get("requested"):
-            notes.append(
-                {
-                    "code": "missing_benchmark",
-                    "severity": "warning",
-                    "message": (
-                        "Benchmark-relative risk posture is unavailable because benchmark "
-                        "return series is not sourced for the risk calculation."
-                    ),
-                }
-            )
-
-        severities = {note.get("severity") for note in notes}
-        if "blocking" in severities:
-            status_value = "unavailable"
-        elif "warning" in severities:
-            status_value = "partial"
-        else:
-            status_value = "ready"
-        return {"status": status_value, "notes": notes}
 
     def _risk_metric_summary(self, results: dict[str, object]) -> dict[str, object]:
         summary: dict[str, object] = {}

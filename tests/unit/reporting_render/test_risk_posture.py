@@ -113,3 +113,91 @@ def test_malformed_notes_are_dropped_rather_than_published_as_empty():
     posture = build_risk_posture(_snapshot("partial", ["not-a-note", None, 42]))
 
     assert posture["notes"] == []
+
+
+def test_a_benchmark_note_names_the_measures_it_is_about():
+    """`missing_benchmark` is ONE fact about the mandate covering three
+    measures, so the page states it once and names them - three separate
+    markers would invite a reader to think three separate things went wrong.
+
+    Report supplies the list so the renderer does not keep its own copy of
+    which measures are benchmark-relative. That copy would go stale the moment
+    the requested metric set moved, and nothing would catch it - the same
+    two-copies defect as the availability/capture reason mapping.
+    """
+
+    posture = build_risk_posture(
+        _snapshot(
+            "partial",
+            [
+                {
+                    "code": "missing_benchmark",
+                    "severity": "informational",
+                    "metrics": ["BETA", "TRACKING_ERROR", "INFORMATION_RATIO"],
+                }
+            ],
+        )
+    )
+
+    assert posture["notes"][0]["affected_measures"] == [
+        "beta",
+        "tracking_error_pct",
+        "information_ratio",
+    ]
+
+
+def test_a_note_about_a_measure_the_page_does_not_show_says_so():
+    """`missing_risk_free_rate` concerns Sharpe, which this report captures and
+    does not present. An empty list is a real answer and distinct from absent:
+    there is nothing on the page to say the sentence about, so the consumer can
+    keep it off rather than drawing a note about an invisible measure."""
+
+    posture = build_risk_posture(
+        _snapshot(
+            "partial",
+            [
+                {
+                    "code": "missing_risk_free_rate",
+                    "severity": "informational",
+                    "metrics": ["SHARPE"],
+                }
+            ],
+        )
+    )
+
+    assert posture["notes"][0]["affected_measures"] == []
+
+
+def test_a_note_the_capture_did_not_scope_stays_unscoped():
+    """A section-wide fault must not acquire a measure list it never had -
+    absent means "about the section", and an empty list would wrongly say
+    "about nothing on this page"."""
+
+    posture = build_risk_posture(
+        _snapshot("unavailable", [{"code": "risk_upstream_failure", "severity": "blocking"}])
+    )
+
+    assert "affected_measures" not in posture["notes"][0]
+
+
+def test_the_benchmark_measures_come_from_the_constant_that_requests_them():
+    """The list Report publishes must be derived from the same constant that
+    decides those metrics are only requested with a benchmark, not written out
+    a second time beside it."""
+
+    from app.services.reporting_read_service import BENCHMARK_RISK_METRICS
+
+    posture = build_risk_posture(
+        _snapshot(
+            "partial",
+            [
+                {
+                    "code": "missing_benchmark",
+                    "severity": "informational",
+                    "metrics": list(BENCHMARK_RISK_METRICS),
+                }
+            ],
+        )
+    )
+
+    assert len(posture["notes"][0]["affected_measures"]) == len(BENCHMARK_RISK_METRICS)
