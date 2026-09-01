@@ -610,6 +610,14 @@ class _DummyAiClient:
             "evidence_types": ["metric_evidence"],
             "content_hash": "0b" * 32,
             "content_hash_algorithm": "sha256",
+            # Real lotus-ai responses always carry a complete VALIDATED verdict
+            # (ai#231 refuses to publish anything else), so a fixture without
+            # one models a response the service cannot produce.
+            "output_validation": {
+                "validation_state": "VALIDATED",
+                "authority": "non_authoritative_ai_output",
+                "ruleset_version": "output-validation.v4",
+            },
             "notes": [],
         }
 

@@ -135,6 +135,10 @@ async def resolve_advisor_commentary_package(
     if identity_fault is not None:
         return _unavailable(run_id, "advisor_brief_not_found", detail=identity_fault)
 
+    verdict_fault = _validation_verdict_fault(payload)
+    if verdict_fault is not None:
+        return _unavailable(run_id, "advisor_brief_not_validated", detail=verdict_fault)
+
     context = _as_dict_value(payload.get("context"))
     mismatch = _context_mismatch(
         context,
@@ -356,7 +360,7 @@ def _narrative_items(value: Any) -> list[dict[str, Any]]:
             continue
         tone = _clean_str(item.get("tone")) or "neutral"
         supplied_refs = item.get("evidence_refs")
-        supplied_count = len(supplied_refs) if isinstance(supplied_refs, list) else 0
+        supplied_count = _supplied_evidence_ref_count(supplied_refs)
         refs = _evidence_refs(supplied_refs)
         entry: dict[str, Any] = {
             "headline": _clean_str(item.get("headline")) or "",
@@ -378,6 +382,57 @@ def _narrative_items(value: Any) -> list[dict[str, Any]]:
             entry["unusable_evidence_ref_count"] = supplied_count
         items.append(entry)
     return items
+
+
+#: The only verdict whose narrative may enter a governed client document.
+_VALIDATED_STATE = "VALIDATED"
+
+
+def _validation_verdict_fault(payload: dict[str, Any]) -> str | None:
+    """Refuse narrative whose deterministic validation verdict is not VALIDATED.
+
+    lotus-ai already refuses to publish a non-VALIDATED output with a 409
+    (lotus-ai#231), and it fails closed on incomplete verdicts, so a 200 body
+    should always carry a complete VALIDATED block. This checks it anyway,
+    because Report composes that narrative verbatim into an archived client
+    document: if the guarantee ever regresses upstream, the first place it
+    would become durable is a governed PDF, and by then it is evidence rather
+    than a bug.
+
+    A missing or partial block is treated as a fault rather than a case to
+    tolerate - lotus-ai's contract makes all three fields present on success,
+    so their absence is a contract violation, and an unmarked narrative is
+    exactly what this check exists to keep out of the document.
+    """
+
+    verdict = _as_dict_value(payload.get("output_validation"))
+    if not verdict:
+        return "accepted output carries no validation verdict"
+    state = _clean_str(verdict.get("validation_state"))
+    if state != _VALIDATED_STATE:
+        return f"validation_state {state or 'missing'} != {_VALIDATED_STATE}"
+    if not _clean_str(verdict.get("authority")):
+        return "validation verdict carries no authority marking"
+    if not _clean_str(verdict.get("ruleset_version")):
+        return "validation verdict carries no ruleset version"
+    return None
+
+
+def _supplied_evidence_ref_count(value: Any) -> int:
+    """How many grounding references the source offered, however malformed.
+
+    A list is counted by its length. Anything else non-empty counts as ONE
+    offering that could not be read - a single reference object after schema
+    drift, say. Counting only lists would let "cited unreadably" masquerade as
+    "cited nothing", which is precisely the distinction the count exists to
+    preserve.
+    """
+
+    if isinstance(value, list):
+        return len(value)
+    if value is None or value == "" or value == {}:
+        return 0
+    return 1
 
 
 def _evidence_refs(value: Any) -> list[dict[str, str]]:
