@@ -166,14 +166,27 @@ def _validate_section_dependencies(
                     f"The {section.business_label} section requires the "
                     f"{field.business_label} field.",
                 )
-    # Temporary gate mirroring PortfolioReviewJobRequest: the render template
-    # does not render ADVISOR_COMMENTARY yet, and a PDF silently omitting an
-    # ordered section would be misleading (lotus-report#166 coordination).
+    # Temporary gate. THE SIBLING COPY IS PortfolioReviewJobRequest in
+    # app/reporting_jobs/models.py - remove both together, or PDF orders are
+    # refused on one path and accepted on the other.
+    #
+    # The reason has narrowed and is no longer "Render cannot draw the
+    # section": lotus-render#223 merged the template, and it does. What it does
+    # not draw is the per-claim `grounding` posture, so an ungrounded AI claim
+    # renders exactly like a grounded one minus its "Grounded on:" line -
+    # distinguishable only by contrast with grounded points on the same page,
+    # and not distinguishable at all on a page where none are grounded.
+    #
+    # That is the case this gate is still holding. A PDF is archived: an
+    # unverifiable claim that looks verifiable becomes durable evidence.
+    # Tracked as lotus-render#218; removing this gate before it closes would
+    # ship exactly the document the grounding posture exists to prevent.
     if "ADVISOR_COMMENTARY" in selected and "pdf" in set(output_formats):
         raise ReportOrderingSubmissionError(
             "report_section_output_format_unsupported",
             "The Advisor commentary section is currently available in json output "
-            "only; the governed PDF template does not yet render it.",
+            "only; the governed PDF template does not yet mark which claims are "
+            "grounded, so a PDF cannot show what a reader can check.",
         )
 
 
