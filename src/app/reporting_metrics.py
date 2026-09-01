@@ -30,6 +30,7 @@ ADVISOR_COMMENTARY_UNAVAILABLE_REASONS = frozenset(
         "advisor_brief_not_validated",
         "advisor_brief_source_unproven",
         "advisor_brief_source_refused",
+        "advisor_brief_source_contract_violation",
         "advisor_brief_context_mismatch",
         "ai_disclosure_policy_unavailable",
     }

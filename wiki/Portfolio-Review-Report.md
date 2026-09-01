@@ -329,7 +329,14 @@ projection, issue #166). Ordering rules:
   bound, and failing the job would deny the client a report over one optional section),
   `advisor_brief_source_refused` (lotus-ai refused for a reason lotus-report does not recognise -
   a reason report cannot interpret is not evidence of a cause it can name, so this never
-  masquerades as a known posture), `advisor_brief_context_mismatch` (the brief asserts a
+  masquerades as a known posture), `advisor_brief_source_contract_violation` (lotus-ai answered
+  **200** with a payload that breaks its own published contract: a projection naming a different
+  run, schema, or tenant than the one requested, or a validation verdict that is absent, partial,
+  or not VALIDATED when the contract makes it always present and complete. Distinct from
+  `advisor_brief_not_validated` on purpose - that is lotus-ai correctly *withholding* a brief,
+  this is lotus-ai *publishing* something it promised to refuse. The operator actions are
+  opposite: re-run the brief, versus investigate lotus-ai because a guarantee it publishes has
+  regressed. The recorded `detail` names the specific field), `advisor_brief_context_mismatch` (the brief asserts a
   portfolio, period, as-of date, reporting currency, or benchmark that differs from the
   report's; nulls mean "not asserted" and never conflict), and
   `ai_disclosure_policy_unavailable` (accepting reviewer identity, content hash, or grounding
