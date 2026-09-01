@@ -69,20 +69,17 @@ def resolve_allocation_presentation(
     allocation = allocation if isinstance(allocation, dict) else {}
     source_keys = dict(ALLOCATION_DIMENSIONS)
 
-    dimensions: list[dict[str, str]] = []
-    for dimension in selection:
-        source_key = source_keys.get(dimension)
-        if source_key is None:
-            # Ordering-time validation rejects unsupported dimensions; this is
-            # a defensive branch, not a reachable caller path.
-            continue
-        dimensions.append(
-            {
-                "dimension": dimension,
-                "package_key": f"by_{dimension}",
-                "posture": allocation_posture(allocation, source_key),
-            }
-        )
+    # Both paths into `selection` yield supported dimensions only - the caller's
+    # request is filtered against the governed set, and the default is one of
+    # them - so no unsupported-dimension branch is reachable here.
+    dimensions: list[dict[str, str]] = [
+        {
+            "dimension": dimension,
+            "package_key": f"by_{dimension}",
+            "posture": allocation_posture(allocation, source_keys[dimension]),
+        }
+        for dimension in selection
+    ]
     return {
         "resolved_by": "caller_request" if requested else "report_default_policy",
         "dimensions": dimensions,
