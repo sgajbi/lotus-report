@@ -7,6 +7,7 @@ from typing import Any, Sequence
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_render.contribution_ranking import build_contribution_ranking
+from app.reporting_render.risk_posture import build_risk_posture
 
 
 def _build_render_package(
@@ -102,6 +103,10 @@ def _build_render_package(
             f"to {job.as_of_date.strftime('%d.%m.%Y')}"
         ),
         "risk_summary": _risk_summary_section(snapshot, risk),
+        # Why a figure is missing, not merely that it is. Without this the
+        # panel prints one "Not available" for five different facts - two of
+        # which send an operator in opposite directions.
+        "risk_posture": build_risk_posture(snapshot),
         "top_holdings": _top_holdings(snapshot),
         "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
