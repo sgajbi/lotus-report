@@ -343,6 +343,17 @@ projection, issue #166). Ordering rules:
   content hash. Each narrative item's `evidence_refs` carries lotus-ai's typed grounding shape
   (`{metric_label, metric_value, source_ref}`, all required - lotus-ai#189); incomplete or
   differently shaped entries are dropped rather than composed as partial grounding.
+- Each narrative item also carries a **`grounding`** posture - `grounded` or `ungrounded` -
+  stating whether the claim reached the page with evidence a reader can check. It is stated
+  rather than left to be inferred from an empty `evidence_refs` list, because an ungrounded
+  claim is otherwise distinguishable only by contrast with grounded claims on the same page,
+  and that signal disappears precisely when no claim is grounded. An ungrounded item is drawn
+  neutrally, not as a warning: a named reviewer accepted it, so the page says what is and is
+  not checkable without editorialising, and the claim is never silently dropped.
+  When refs were supplied but none survived the shape check, the item additionally carries
+  **`unusable_evidence_ref_count`**. Both cases read identically to a client - not checkable
+  either way - but an operator needs the difference between "cited nothing" and "cited
+  unreadably".
 - lotus-report calls lotus-ai as registered caller `lotus-report` (`X-Caller-App`); that
   caller must be registered and active in the lotus-ai access-control registry for the
   environment.
