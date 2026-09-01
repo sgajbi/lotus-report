@@ -103,9 +103,14 @@ def main() -> int:
 
     # Probe one past the cap: a window holding exactly `limit` commits was fully
     # examined, so only a (limit + 1)th commit proves the span was truncated.
+    # `--since` STOPS traversal at the first commit older than the cutoff, so a
+    # newer-dated ancestor sitting behind an older-dated commit is silently
+    # omitted and its coverage never examined - a green audit for a window it
+    # never walked. `--since-as-filter` visits every commit and filters, so the
+    # claimed window is the audited window regardless of date monotonicity.
     probed = _git(
         "log",
-        f"--since={arguments.since_days} days ago",
+        f"--since-as-filter={arguments.since_days} days ago",
         f"-{arguments.limit + 1}",
         "--format=%H %h %s",
         "origin/main",

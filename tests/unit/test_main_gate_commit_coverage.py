@@ -127,6 +127,35 @@ def test_a_window_beyond_the_cap_fails_closed(monkeypatch, capsys) -> None:
     assert "audited 3 commit(s)" in output
 
 
+def test_the_window_walks_every_commit_regardless_of_date_order(monkeypatch) -> None:
+    """`--since` stops traversal at the first older commit, so a newer-dated
+    ancestor behind an older-dated one is silently omitted - a green audit for
+    a window it never walked. `--since-as-filter` visits every commit."""
+
+    recorded: list[tuple[str, ...]] = []
+
+    def _record(*args: str) -> list[str]:
+        recorded.append(args)
+        return []
+
+    monkeypatch.setattr(audit, "_git", _record)
+    monkeypatch.setattr(audit.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        audit.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse_namespace(limit=400, since_days=7, fail_on_gap=True),
+    )
+
+    audit.main()
+
+    assert recorded, "the audit never asked git for the window"
+    flags = recorded[0]
+    assert any(flag.startswith("--since-as-filter=") for flag in flags), flags
+    assert not any(flag.startswith("--since=") for flag in flags), (
+        "plain --since truncates the window at the first older commit"
+    )
+
+
 def test_audit_fails_closed_when_gh_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(audit.shutil, "which", lambda name: None)
     monkeypatch.setattr(
