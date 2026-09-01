@@ -78,6 +78,55 @@ def test_audit_counts_only_verdict_bearing_runs_and_fails_closed(monkeypatch, ca
     assert "1 with no verdict-bearing" in output
 
 
+def test_a_full_window_is_not_reported_as_truncated(monkeypatch, capsys) -> None:
+    """A window holding exactly --limit commits was fully examined; only a
+    commit BEYOND the cap proves the span was cut short. Declaring truncation
+    at equality would fail the scheduled audit for no reason."""
+
+    shas = [f"{index:040x}" for index in range(3)]
+    monkeypatch.setattr(
+        audit,
+        "_git",
+        lambda *args: [f"{sha} {sha[:9]} subject line" for sha in shas],
+    )
+    monkeypatch.setattr(audit, "_run_conclusions", lambda sha: ["success"])
+    monkeypatch.setattr(audit.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        audit.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse_namespace(limit=3, since_days=7, fail_on_gap=True),
+    )
+
+    exit_code = audit.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "WINDOW TRUNCATED" not in output
+
+
+def test_a_window_beyond_the_cap_fails_closed(monkeypatch, capsys) -> None:
+    shas = [f"{index:040x}" for index in range(4)]
+    monkeypatch.setattr(
+        audit,
+        "_git",
+        lambda *args: [f"{sha} {sha[:9]} subject line" for sha in shas],
+    )
+    monkeypatch.setattr(audit, "_run_conclusions", lambda sha: ["success"])
+    monkeypatch.setattr(audit.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        audit.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse_namespace(limit=3, since_days=7, fail_on_gap=True),
+    )
+
+    exit_code = audit.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "WINDOW TRUNCATED" in output
+    assert "audited 3 commit(s)" in output
+
+
 def test_audit_fails_closed_when_gh_is_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(audit.shutil, "which", lambda name: None)
     monkeypatch.setattr(

@@ -70,8 +70,13 @@ def test_pr_lane_runs_still_cancel_when_superseded(workflow: str) -> None:
     classes distinguishable rather than reading as unexplained drift."""
 
     concurrency = _concurrency(workflow)
-    if concurrency is None:
-        return
+    # Unlike the evidence workflows, absence is NOT acceptable here: with no
+    # group at all, superseded pushes queue instead of cancelling - the very
+    # behaviour this guard exists to prevent, so a missing block must fail
+    # rather than pass vacuously.
+    assert isinstance(concurrency, dict), (
+        f"{workflow} has no concurrency group, so superseded pushes queue instead of cancelling."
+    )
     assert concurrency.get("cancel-in-progress") is True, (
         f"{workflow} is PR-lane feedback on a moving branch; a superseded push "
         "should cancel rather than report a verdict on a tree nobody has."
