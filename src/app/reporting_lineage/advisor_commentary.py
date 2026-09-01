@@ -21,6 +21,13 @@ Failure semantics follow the report's section-vs-job split:
 
 from typing import Any, Protocol
 
+from app.advisor_brief_source_reasons import (
+    SECTION_REASON_CONTRACT_VIOLATION,
+    SECTION_REASON_NOT_FOUND,
+    SECTION_REASON_SOURCE_REFUSED,
+    section_reason_for,
+)
+
 ADVISOR_COMMENTARY_SECTION_ID = "ADVISOR_COMMENTARY"
 ADVISOR_BRIEF_ACCEPTED_OUTPUT_SCHEMA_ID = (
     "lotus-ai.workflow_pack_run.accepted_output.advisor_brief.v1"
@@ -38,55 +45,29 @@ GROUNDING_UNGROUNDED = "ungrounded"
 # postures. Mapped by `metadata.reason_code` rather than by parsing the
 # error_code string, because the bare code is the stable part of that contract.
 #
-# "This run is not (or is no longer) the accepted narrative" - a review-state
-# truth that retrying cannot change.
-_NOT_REVIEWED_SOURCE_REASONS = frozenset(
-    {"run_not_completed", "run_not_accepted", "run_superseded"}
-)
-# The brief cannot be retrieved at all.
-_NOT_FOUND_SOURCE_REASONS = frozenset(
-    {
-        "pack_projection_unsupported",
-        "output_artifact_missing",
-        "output_artifact_malformed",
-        "no_accepted_run",
-    }
-)
-# The artifact EXISTS and was FOUND, and lotus-ai withheld it on authority
-# grounds: its deterministic output validation never returned VALIDATED
-# (lotus-ai#231). Distinct from every other reason because those are about
-# availability and this one is about admissibility - and because the operator
-# action differs: re-run the brief so it acquires a verdict, rather than hunt
-# for a missing run. For a governed client document, "withheld because its
-# authority was never established" is an audit-relevant statement that
-# "not found" would erase.
-_NOT_VALIDATED_SOURCE_REASONS = frozenset({"output_not_validated"})
-# The source could not PROVE which run answers the request - the brief very
-# likely exists and is valid, and lotus-ai deliberately excludes these from its
-# own not-found set. Distinct from absence, and distinct again from a transport
-# failure: this capture does NOT retry them.
+# The mapping itself lives in app.advisor_brief_source_reasons, shared with the
+# pre-order availability check: both surfaces must give the same name to the
+# same upstream fact, and keeping two copies is what let them disagree.
 #
-# Retrying is wrong on both halves. An identical request saturates an identical
-# scan bound, so the retry budget would burn without the answer changing; and
-# raising the capture-retryable error would eventually fail the whole JOB,
-# denying the client a report over one optional section. The condition clears
-# through an operator action - a narrower report context, or a widened bound in
-# lotus-ai - and a later order then succeeds. So the section closes with a
-# posture that says "unproven", the report completes without it, and the job
-# record carries the reason an operator needs.
-_UNPROVEN_SOURCE_REASONS = frozenset({"lookup_scan_saturated", "no_context_match"})
-
-#: lotus-ai answered 200 with a payload that breaks its own published contract -
-#: a projection naming a different run or tenant, or a validation verdict that
-#: is absent or partial when the contract makes it always present and complete.
-#:
-#: Deliberately distinct from `advisor_brief_not_validated`, which is lotus-ai
-#: WITHHOLDING a brief whose validation failed. The two look alike on the page
-#: and are opposite in the operator's hands: withheld means re-run the brief so
-#: it acquires a verdict; contract violation means investigate lotus-ai,
-#: because a guarantee it publishes has regressed. Recording both as the same
-#: reason would send an operator to re-run a brief that was never the problem.
-_SOURCE_CONTRACT_VIOLATION = "advisor_brief_source_contract_violation"
+# Two of those postures deserve their reasoning recorded where the capture
+# acts on them.
+#
+# advisor_brief_source_unproven is distinct from absence, and distinct again
+# from a transport failure: this capture does NOT retry it. An identical
+# request saturates an identical scan bound, so the retry budget would burn
+# without the answer changing; and raising the capture-retryable error would
+# eventually fail the whole JOB, denying the client a report over one optional
+# section. The condition clears through an operator action - a narrower report
+# context, or a widened bound in lotus-ai - and a later order then succeeds.
+# So the section closes, the report completes without it, and the job record
+# carries the reason an operator needs.
+#
+# advisor_brief_not_validated is the one refusal where the artifact exists and
+# was found and was withheld on authority grounds: every other reason is about
+# availability, that one is about admissibility. For a governed client
+# document, "withheld because its authority was never established" is an
+# audit-relevant statement that "not found" would erase.
+_SOURCE_CONTRACT_VIOLATION = SECTION_REASON_CONTRACT_VIOLATION
 
 
 class AdvisorCommentarySourceUnavailableError(RuntimeError):
@@ -311,19 +292,14 @@ def _map_source_reason(status_code: int, payload: dict[str, Any]) -> str:
 
     metadata = payload.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
-    reason = _clean_str(metadata.get("reason_code")) or ""
-    if reason in _NOT_REVIEWED_SOURCE_REASONS:
-        return "advisor_brief_not_reviewed"
-    if reason in _NOT_VALIDATED_SOURCE_REASONS:
-        return "advisor_brief_not_validated"
-    if reason in _UNPROVEN_SOURCE_REASONS:
-        return "advisor_brief_source_unproven"
-    if reason in _NOT_FOUND_SOURCE_REASONS:
-        return "advisor_brief_not_found"
+    reason = _clean_str(metadata.get("reason_code"))
+    mapped = section_reason_for(reason)
+    if mapped is not None:
+        return mapped
     if not reason and status_code == 404:
         # An unadorned 404 is the one status that means absence on its own.
-        return "advisor_brief_not_found"
-    return "advisor_brief_source_refused"
+        return SECTION_REASON_NOT_FOUND
+    return SECTION_REASON_SOURCE_REFUSED
 
 
 def _context_mismatch(

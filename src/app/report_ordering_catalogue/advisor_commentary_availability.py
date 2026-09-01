@@ -11,10 +11,18 @@ Mapping, deliberate:
 - 200 with a verified identity echo -> ``ready`` with the accepted brief's
   run id, so the ordering flow can carry ``advisor_brief_run_id`` forward
   into the order without a second discovery step.
-- ``no_accepted_run`` -> ``advisor_brief_not_reviewed`` (no accepted brief
-  asserts this portfolio - the advisor has not accepted one yet).
-- ``no_context_match`` -> ``advisor_brief_context_mismatch`` (accepted
-  briefs exist for the portfolio, none assert the requested date/currency).
+- A bounded lotus-ai reason -> the section reason that
+  ``app.advisor_brief_source_reasons`` gives it, which is the SAME name the
+  capture surface uses. This module and the capture must never disagree about
+  what an upstream fact is called: an operator told "not reviewed - go accept
+  a brief" here and "not found - hunt for a missing run" after ordering has
+  been told the portfolio changed, when only the surface did.
+
+  Of those, this endpoint can answer with ``advisor_brief_not_reviewed`` (no
+  accepted brief asserts this portfolio) and ``advisor_brief_context_mismatch``
+  (accepted briefs exist, none assert the requested date/currency). Any other
+  mapped reason - a saturated scan, say - is not an availability answer and
+  falls through to unknown below.
 - Everything else - transport failure, 5xx, bounded 409 refusals, or a 200
   whose payload does not verify - -> ``advisor_brief_availability_unknown``.
   Claiming ``advisor_brief_not_reviewed`` when the lookup merely failed
@@ -27,6 +35,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any, Protocol
 
+from app.advisor_brief_source_reasons import section_reason_for
 from app.report_ordering_catalogue.models import (
     AdvisorCommentaryAcceptedBrief,
     AdvisorCommentaryAvailabilityResponse,
@@ -94,8 +103,10 @@ async def resolve_advisor_commentary_availability(
         )
 
     if status_code == 404:
-        reason = _lookup_reason(payload)
-        if reason == "no_accepted_run":
+        # Resolved through the shared vocabulary so this surface and the
+        # capture cannot drift apart on what the same fact is called.
+        section_reason = section_reason_for(_lookup_reason(payload))
+        if section_reason == REASON_NOT_REVIEWED:
             return _record(
                 AdvisorCommentaryAvailabilityResponse(
                     state="unavailable",
@@ -107,7 +118,7 @@ async def resolve_advisor_commentary_availability(
                 ),
                 started_at,
             )
-        if reason == "no_context_match":
+        if section_reason == REASON_CONTEXT_MISMATCH:
             return _record(
                 AdvisorCommentaryAvailabilityResponse(
                     state="unavailable",

@@ -427,8 +427,8 @@ async def test_a_brief_without_grounding_sources_cannot_carry_its_disclosure():
     [
         ("output_not_validated", "advisor_brief_not_validated"),
         ("lookup_scan_saturated", "advisor_brief_source_unproven"),
-        ("no_context_match", "advisor_brief_source_unproven"),
-        ("no_accepted_run", "advisor_brief_not_found"),
+        ("no_context_match", "advisor_brief_context_mismatch"),
+        ("no_accepted_run", "advisor_brief_not_reviewed"),
         ("pack_projection_unsupported", "advisor_brief_not_found"),
         ("run_superseded", "advisor_brief_not_reviewed"),
     ],
@@ -475,15 +475,17 @@ async def test_an_unadorned_404_still_means_absence():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reason", ["lookup_scan_saturated", "no_context_match"])
-async def test_an_unproven_lookup_closes_the_section_without_failing_the_capture(reason):
+async def test_an_unproven_lookup_closes_the_section_without_failing_the_capture():
     """`unproven` is not `unavailable-transport`. Raising the capture-retryable
     error would burn the retry budget on an identical request that saturates an
     identical bound, and would eventually fail the whole JOB - denying the
     client a report over one optional section. The condition clears through an
-    operator action, so the section closes and the report completes."""
+    operator action, so the section closes and the report completes.
 
-    client = _StubClient(409, {"metadata": {"reason_code": reason}})
+    Only a saturated scan is unproven. `no_context_match` is a definitive
+    answer and is covered by the shared-vocabulary test instead."""
+
+    client = _StubClient(409, {"metadata": {"reason_code": "lookup_scan_saturated"}})
 
     package = await _resolve(client)
 
