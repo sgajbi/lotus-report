@@ -432,3 +432,20 @@ async def test_an_unadorned_404_still_means_absence():
     package = await _resolve(client)
 
     assert package["reason_code"] == "advisor_brief_not_found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["lookup_scan_saturated", "no_context_match"])
+async def test_an_unproven_lookup_closes_the_section_without_failing_the_capture(reason):
+    """`unproven` is not `unavailable-transport`. Raising the capture-retryable
+    error would burn the retry budget on an identical request that saturates an
+    identical bound, and would eventually fail the whole JOB - denying the
+    client a report over one optional section. The condition clears through an
+    operator action, so the section closes and the report completes."""
+
+    client = _StubClient(409, {"metadata": {"reason_code": reason}})
+
+    package = await _resolve(client)
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_source_unproven"
