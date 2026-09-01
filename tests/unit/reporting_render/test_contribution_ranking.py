@@ -195,3 +195,44 @@ def test_a_contributor_without_a_computed_value_is_not_drawn_as_zero() -> None:
 
     assert [row["name"] for row in ranking["contributors"]] == ["Alphabet Inc Class A"]
     assert ranking["available_count"] == 1
+
+
+def test_truncation_never_produces_a_winners_only_page() -> None:
+    """Review finding on PR #228: ranking by magnitude alone can truncate to a
+    single sign. Eleven gains larger than the only loss would have produced a
+    winners-only list - recreating the exact defect this block exists to
+    remove, because the reader concludes nothing detracted."""
+
+    contributors = [
+        {"security_id": f"SEC_WIN_{index}", "total_contribution_pct": 2.0 + index}
+        for index in range(PRESENTED_CONTRIBUTOR_LIMIT + 1)
+    ] + [{"security_id": "SEC_LOSS", "total_contribution_pct": -0.10}]
+
+    ranking = build_contribution_ranking(
+        _snapshot(contribution={"top_position_contributors": contributors})
+    )
+
+    values = [row["contribution_pct"] for row in ranking["contributors"]]
+    assert ranking["presented_count"] == PRESENTED_CONTRIBUTOR_LIMIT
+    assert any(value.startswith("-") for value in values), (
+        f"a period with a loss must not present a winners-only ranking: {values}"
+    )
+    # The seat comes from the weakest presented row, so the largest effects survive.
+    assert values[0] == "12.00"
+
+
+def test_a_genuinely_one_sided_period_is_reported_as_one_sided() -> None:
+    """Reserving a seat must not invent an opposite sign that does not exist."""
+
+    contributors = [
+        {"security_id": f"SEC_{index}", "total_contribution_pct": 1.0 + index}
+        for index in range(PRESENTED_CONTRIBUTOR_LIMIT + 3)
+    ]
+
+    ranking = build_contribution_ranking(
+        _snapshot(contribution={"top_position_contributors": contributors})
+    )
+
+    values = [row["contribution_pct"] for row in ranking["contributors"]]
+    assert not any(value.startswith("-") for value in values)
+    assert ranking["presented_count"] == PRESENTED_CONTRIBUTOR_LIMIT
