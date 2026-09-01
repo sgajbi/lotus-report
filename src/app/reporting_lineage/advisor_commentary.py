@@ -75,6 +75,8 @@ async def resolve_advisor_commentary_package(
     portfolio_id: str,
     as_of_date: str,
     reporting_currency: str | None,
+    report_period: str | None = None,
+    benchmark_code: str | None = None,
 ) -> dict[str, Any]:
     """Resolve the accepted brief into the bounded section package.
 
@@ -90,7 +92,7 @@ async def resolve_advisor_commentary_package(
     if status_code != 200:
         return _unavailable(run_id, _map_source_reason(status_code, payload))
 
-    identity_fault = _projection_identity_fault(payload, run_id=run_id)
+    identity_fault = _projection_identity_fault(payload, run_id=run_id, tenant_id=tenant_id)
     if identity_fault is not None:
         return _unavailable(run_id, "advisor_brief_not_found", detail=identity_fault)
 
@@ -100,6 +102,8 @@ async def resolve_advisor_commentary_package(
         portfolio_id=portfolio_id,
         as_of_date=as_of_date,
         reporting_currency=reporting_currency,
+        report_period=report_period,
+        benchmark_code=benchmark_code,
     )
     if mismatch is not None:
         return _unavailable(run_id, "advisor_brief_context_mismatch", detail=mismatch)
@@ -108,11 +112,13 @@ async def resolve_advisor_commentary_package(
     reviewed_by = _clean_str(review.get("reviewed_by"))
     reviewed_at = _clean_str(review.get("reviewed_at"))
     content_hash = _clean_str(payload.get("content_hash"))
-    if not reviewed_by or not reviewed_at or not content_hash:
-        # Without the accepting reviewer identity and the pinned content hash
-        # the mandated AI-disclosure provenance line cannot be rendered
-        # truthfully, so the section closes rather than shipping narrative
-        # with an unverifiable disclosure.
+    source_refs = _string_list(payload.get("source_refs"))
+    if not reviewed_by or not reviewed_at or not content_hash or not source_refs:
+        # Without the accepting reviewer identity, the pinned content hash, or
+        # the grounding source references, the mandated AI-disclosure
+        # provenance line cannot be rendered truthfully - it names the
+        # reviewer, the run and the sources - so the section closes rather
+        # than shipping narrative under an unverifiable disclosure.
         return _unavailable(run_id, "ai_disclosure_policy_unavailable")
 
     return _included_package(
@@ -210,7 +216,9 @@ def _unavailable(run_id: str, reason_code: str, *, detail: str | None = None) ->
     return package
 
 
-def _projection_identity_fault(payload: dict[str, Any], *, run_id: str) -> str | None:
+def _projection_identity_fault(
+    payload: dict[str, Any], *, run_id: str, tenant_id: str
+) -> str | None:
     """A 200 body must carry the exact contract identity: composing narrative
     from a different schema, or for a different run, would archive it under
     fabricated provenance."""
@@ -221,6 +229,13 @@ def _projection_identity_fault(payload: dict[str, Any], *, run_id: str) -> str |
     payload_run_id = _clean_str(payload.get("run_id"))
     if payload_run_id != run_id:
         return f"accepted-output run_id {payload_run_id or 'missing'} != requested {run_id}"
+    payload_tenant = _clean_str(payload.get("tenant_id"))
+    if payload_tenant != tenant_id:
+        # lotus-ai is tenant-scoped and fails closed cross-tenant, so this
+        # should be unreachable - which is exactly why it is asserted rather
+        # than assumed: composing one tenant's reviewed narrative into another
+        # tenant's client document is the worst outcome this section has.
+        return f"accepted-output tenant {payload_tenant or 'missing'} != requested {tenant_id}"
     return None
 
 
@@ -241,6 +256,8 @@ def _context_mismatch(
     portfolio_id: str,
     as_of_date: str,
     reporting_currency: str | None,
+    report_period: str | None,
+    benchmark_code: str | None,
 ) -> str | None:
     """A null source-context value means "not asserted by the source" and never
     conflicts; only definite disagreements close the section."""
@@ -257,6 +274,16 @@ def _context_mismatch(
             f"brief reporting_currency {source_currency} != "
             f"report reporting_currency {reporting_currency}"
         )
+    source_period = _clean_str(context.get("period"))
+    if source_period and report_period and source_period != report_period:
+        # A brief written about YTD does not describe a Q3 report, however
+        # accurate it is about YTD.
+        return f"brief period {source_period} != report period {report_period}"
+    source_benchmark = _clean_str(context.get("benchmark"))
+    if source_benchmark and benchmark_code and source_benchmark != benchmark_code:
+        # Relative-performance narrative is only true of the benchmark it was
+        # written against.
+        return f"brief benchmark {source_benchmark} != report benchmark {benchmark_code}"
     return None
 
 

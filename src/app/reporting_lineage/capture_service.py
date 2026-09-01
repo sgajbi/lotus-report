@@ -657,6 +657,7 @@ class ReportingReadPortfolioReviewInputProvider:
                     snapshot_payload.get("reportingCurrency")
                 )
                 or job.reporting_currency,
+                report_period=_report_period_label(snapshot_payload),
             )
         return PortfolioReviewInputCapture(
             snapshot_payload=snapshot_payload,
@@ -669,6 +670,7 @@ class ReportingReadPortfolioReviewInputProvider:
         job: ReportJobLedgerRecord,
         recorder: _UpstreamRecorder,
         effective_reporting_currency: str | None,
+        report_period: str | None = None,
     ) -> dict[str, Any]:
         run_id = requested_advisor_brief_run_id(job.options)
         if run_id is None:
@@ -699,6 +701,8 @@ class ReportingReadPortfolioReviewInputProvider:
                 portfolio_id=_first_portfolio_id(job),
                 as_of_date=job.as_of_date.isoformat(),
                 reporting_currency=effective_reporting_currency,
+                report_period=report_period,
+                benchmark_code=_optional_str(job.options.get("benchmark_code")),
             )
         except AdvisorCommentarySourceUnavailableError as exc:
             raise PortfolioReviewInputCaptureError(
@@ -1366,6 +1370,15 @@ def _portfolio_memory_lineage_summary(report_input: dict[str, Any]) -> dict[str,
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _report_period_label(snapshot_payload: dict[str, Any]) -> str | None:
+    """The report's own review period, for comparison against the brief's."""
+
+    review_period = snapshot_payload.get("reviewPeriod")
+    if not isinstance(review_period, dict):
+        return None
+    return _optional_str(review_period.get("label"))
 
 
 def _optional_str(value: Any) -> str | None:
