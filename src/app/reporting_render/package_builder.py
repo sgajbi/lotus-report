@@ -7,6 +7,7 @@ from typing import Any, Sequence
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_render.contribution_ranking import build_contribution_ranking
+from app.reporting_render.risk_methodology import build_risk_methodology
 from app.reporting_render.risk_posture import build_risk_posture
 
 
@@ -107,6 +108,10 @@ def _build_render_package(
         # panel prints one "Not available" for five different facts - two of
         # which send an operator in opposite directions.
         "risk_posture": build_risk_posture(snapshot),
+        # A tail-risk number without its basis is not interpretable: 2% at
+        # 95% over one day and 2% at 99% over ten days are different
+        # statements about the same portfolio.
+        "risk_methodology": build_risk_methodology(snapshot),
         "top_holdings": _top_holdings(snapshot),
         "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
@@ -206,6 +211,22 @@ def _ytd_risk_metric(snapshot: dict[str, Any], metric: str) -> Any:
     )
 
 
+def _first_stated(*values: Any) -> Any:
+    """The first value the capture actually stated, treating 0 as stated.
+
+    The plain `a or b` this replaces read a legitimate zero as absence. That is
+    harmless where both sources agree, and wrong for drawdown in particular: a
+    portfolio that never fell during the period has a drawdown of exactly 0,
+    which is a finding, not a gap. Rendering it as "Not available" would tell a
+    reader we could not measure the thing we measured.
+    """
+
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _risk_summary_section(snapshot: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any]:
     """The risk panel, or nothing at all when the report did not order risk.
 
@@ -225,16 +246,35 @@ def _risk_summary_section(snapshot: dict[str, Any], risk: dict[str, Any]) -> dic
         return {}
     return {
         "volatility_pct": _percent_text(
-            _ytd_risk_metric(snapshot, "volatility") or risk.get("ytd_volatility_pct")
+            _first_stated(_ytd_risk_metric(snapshot, "volatility"), risk.get("ytd_volatility_pct"))
         ),
-        "beta": _decimal_text(_ytd_risk_metric(snapshot, "beta") or risk.get("ytd_beta")),
+        "beta": _decimal_text(
+            _first_stated(_ytd_risk_metric(snapshot, "beta"), risk.get("ytd_beta"))
+        ),
         "tracking_error_pct": _percent_text(
-            _ytd_risk_metric(snapshot, "tracking_error") or risk.get("ytd_tracking_error_pct")
+            _first_stated(
+                _ytd_risk_metric(snapshot, "tracking_error"), risk.get("ytd_tracking_error_pct")
+            )
         ),
         "information_ratio": _decimal_text(
-            _ytd_risk_metric(snapshot, "information_ratio") or risk.get("ytd_information_ratio")
+            _first_stated(
+                _ytd_risk_metric(snapshot, "information_ratio"), risk.get("ytd_information_ratio")
+            )
         ),
-        "value_at_risk_pct": _percent_text(_ytd_risk_metric(snapshot, "value_at_risk")),
+        "value_at_risk_pct": _percent_text(
+            _first_stated(
+                _ytd_risk_metric(snapshot, "value_at_risk"), risk.get("ytd_value_at_risk_pct")
+            )
+        ),
+        # Captured on every risk call and discarded here until now. The
+        # catalogue has advertised drawdown to callers all along.
+        "drawdown_pct": _percent_text(
+            _first_stated(_ytd_risk_metric(snapshot, "drawdown"), risk.get("ytd_drawdown_pct"))
+        ),
+        # Explicitly requested from lotus-risk, extracted, normalized, tested -
+        # and then dropped at this boundary. Its basis travels in
+        # `risk_methodology`, because the number alone is not interpretable.
+        "expected_shortfall_pct": _percent_text(risk.get("ytd_expected_shortfall_pct")),
     }
 
 
