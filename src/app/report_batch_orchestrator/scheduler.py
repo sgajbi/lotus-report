@@ -126,6 +126,12 @@ class BatchSchedulerRunResult:
     attempted_count: int
     materialized: tuple[BatchSchedulerMaterialization, ...]
     skipped_schedule_ids: tuple[str, ...]
+    #: Schedules refused because tenant ownership could not be proven (issue
+    #: #177). Deliberately distinct from `skipped_schedule_ids`: a skip is
+    #: "nothing to do", a refusal is "this would have attributed portfolios to
+    #: a tenant on no evidence". Collapsing them hides a governance stop inside
+    #: ordinary quiet.
+    refused_schedule_ids: tuple[str, ...] = ()
 
 
 class BatchScheduleSummaryResponse(BaseModel):
@@ -337,6 +343,17 @@ class BatchSchedulerRunResponse(BaseModel):
         description="Enabled schedule ids skipped because no eligible candidates were resolved.",
         examples=[[]],
     )
+    refused_schedule_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Enabled schedule ids refused because tenant ownership could not be proven for a "
+            "broad discovery selector (issue #177). Distinct from skipped: a skip means there "
+            "was nothing to do, a refusal means materializing would have attributed portfolios "
+            "to a tenant on no evidence. Broad scheduling stays refused until lotus-core "
+            "projects the authoritative tenant on portfolio discovery."
+        ),
+        examples=[[]],
+    )
     materialized: list[BatchSchedulerMaterializationResponse] = Field(
         default_factory=list,
         description="Durable batch materialization results for this pass.",
@@ -412,11 +429,6 @@ class CorePortfolioSource(Protocol):
         correlation_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]: ...
 
-    async def list_portfolios(
-        self,
-        correlation_id: str | None = None,
-    ) -> tuple[int, dict[str, Any]]: ...
-
 
 class BatchScheduleLedger(Protocol):
     def create_batch(
@@ -465,6 +477,7 @@ def batch_scheduler_run_response(
         attempted_count=result.attempted_count,
         materialized_count=len(result.materialized),
         skipped_schedule_ids=list(result.skipped_schedule_ids),
+        refused_schedule_ids=list(result.refused_schedule_ids),
         materialized=[
             BatchSchedulerMaterializationResponse(
                 schedule_id=item.schedule_id,
@@ -528,6 +541,31 @@ class StoredScheduleSource(Protocol):
     ) -> list[BatchScheduleDefinition]: ...
 
 
+def _tenant_attribution_is_a_stamp(schedule: BatchScheduleDefinition) -> bool:
+    """Would materializing this schedule attribute portfolios on no evidence?
+
+    `all_active_portfolios` asks lotus-core an unqualified question - "every
+    active portfolio" - and Report then labels whatever comes back with its own
+    CONFIGURED tenant. Nothing in that exchange proves the returned portfolios
+    belong to that tenant, so the label is configuration wearing the costume of
+    evidence, and a portfolio owned by tenant B can be materialized into a
+    durable batch attributed to tenant A (issue #177).
+
+    Enumerated selectors are a different claim: a person or an authoritative
+    contract named those specific portfolios under that tenant - the Gateway's
+    trusted-scope front door for stored schedules, a deployment operator for
+    configured ones. That is weaker than a source-owned tenant, which is why
+    #177 stays open, but it is a claim someone made rather than one Report
+    invented, so it is not refused here.
+
+    lotus-core has owned the authoritative tenant since core#1076; when its
+    discovery projects it (core#798 S2+), this becomes a verification against
+    the source instead of a refusal.
+    """
+
+    return schedule.selector_mode == "all_active_portfolios"
+
+
 class ReportBatchScheduler:
     def __init__(
         self,
@@ -549,6 +587,7 @@ class ReportBatchScheduler:
     ) -> BatchSchedulerRunResult:
         materialized: list[BatchSchedulerMaterialization] = []
         skipped: list[str] = []
+        refused: list[str] = []
         enabled_schedules = [schedule for schedule in config.schedules if schedule.enabled]
         if self._stored_schedule_source is not None:
             # Stored definitions join every pass - the daemon loop included, not just
@@ -563,6 +602,23 @@ class ReportBatchScheduler:
             )
 
         for schedule in enabled_schedules:
+            if _tenant_attribution_is_a_stamp(schedule):
+                # Refuse BEFORE discovery: asking the unqualified question and
+                # then declining to use the answer would still have fetched a
+                # portfolio set this scheduler cannot attribute.
+                _LOGGER.warning(
+                    "scheduled_batch_refused_unprovable_tenancy",
+                    extra={
+                        "extra_fields": {
+                            "schedule_id": schedule.schedule_id,
+                            "selector_mode": schedule.selector_mode,
+                            "scheduler_id": config.scheduler_id,
+                            "reason_code": "tenant_attribution_unprovable",
+                        }
+                    },
+                )
+                refused.append(schedule.schedule_id)
+                continue
             candidates = await self._resolve_candidates(
                 schedule=schedule,
                 caller_context=caller_context,
@@ -663,6 +719,7 @@ class ReportBatchScheduler:
             attempted_count=len(enabled_schedules),
             materialized=tuple(materialized),
             skipped_schedule_ids=tuple(skipped),
+            refused_schedule_ids=tuple(refused),
         )
 
     async def _resolve_candidates(
@@ -673,13 +730,6 @@ class ReportBatchScheduler:
         tenant_id: str,
         region: str,
     ) -> list[PortfolioBatchCandidate]:
-        if schedule.selector_mode == "all_active_portfolios":
-            return await self._resolve_all_active_candidates(
-                caller_context=caller_context,
-                tenant_id=tenant_id,
-                region=region,
-            )
-
         if schedule.selector_mode == "batch_manifest":
             return await self._resolve_manifest_candidates(
                 schedule=schedule,
@@ -710,36 +760,6 @@ class ReportBatchScheduler:
                 )
             )
         return candidates
-
-    async def _resolve_all_active_candidates(
-        self,
-        *,
-        caller_context: ReportCallerContext,
-        tenant_id: str,
-        region: str,
-    ) -> list[PortfolioBatchCandidate]:
-        status_code, payload = await self._portfolio_source.list_portfolios(
-            correlation_id=caller_context.correlation_id,
-        )
-        if status_code != 200:
-            return []
-        candidates: list[PortfolioBatchCandidate] = []
-        for portfolio in _portfolio_rows(payload):
-            if str(portfolio.get("status") or "").lower() != "active":
-                continue
-            portfolio_id = str(portfolio.get("portfolio_id") or "").strip()
-            if not portfolio_id:
-                continue
-            candidates.append(
-                _candidate_from_portfolio_payload(
-                    portfolio,
-                    tenant_id=tenant_id,
-                    region=region,
-                    selected=True,
-                    source_object="Portfolio",
-                )
-            )
-        return sorted(candidates, key=lambda candidate: candidate.portfolio_id)
 
     async def _resolve_manifest_candidates(
         self,

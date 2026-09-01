@@ -124,6 +124,7 @@ class BatchSchedulerProcess:
                     "materialized_count": len(result.materialized),
                     "materialized_batch_ids": [item.batch_id for item in result.materialized],
                     "skipped_schedule_ids": list(result.skipped_schedule_ids),
+                    "refused_schedule_ids": list(result.refused_schedule_ids),
                 }
             },
         )
