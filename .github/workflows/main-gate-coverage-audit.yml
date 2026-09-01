@@ -24,4 +24,4 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin main --quiet
-          python scripts/audit_main_gate_coverage.py --limit 60 --fail-on-gap
+          python scripts/audit_main_gate_coverage.py --since-days 7 --fail-on-gap

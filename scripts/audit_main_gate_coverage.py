@@ -70,10 +70,22 @@ def _run_conclusions(sha: str) -> list[str] | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--since-days",
+        type=int,
+        default=7,
+        help=(
+            "audit every commit on origin/main from the last N days; a time window, "
+            "not a commit count, so a busy day cannot age a commit out unexamined"
+        ),
+    )
+    parser.add_argument(
         "--limit",
         type=int,
-        default=60,
-        help="how many commits of origin/main history to audit",
+        default=400,
+        help=(
+            "safety cap on commits examined; reaching it means the window was "
+            "truncated, which is unverified coverage and fails under --fail-on-gap"
+        ),
     )
     parser.add_argument(
         "--fail-on-gap",
@@ -89,7 +101,17 @@ def main() -> int:
         print("gh is not available; cannot ask which commits the gate evaluated.")
         return 1 if arguments.fail_on_gap else 0
 
-    commits = _git("log", f"-{arguments.limit}", "--format=%H %h %s", "origin/main")
+    commits = _git(
+        "log",
+        f"--since={arguments.since_days} days ago",
+        f"-{arguments.limit}",
+        "--format=%H %h %s",
+        "origin/main",
+    )
+    # A prefix of the window is not the window: if the cap was reached, older
+    # commits inside the requested span went unexamined and their coverage is
+    # unknown, not proven.
+    truncated = len(commits) >= arguments.limit
     ungated: list[str] = []
     unknown: list[str] = []
     failing: list[str] = []
@@ -119,11 +141,18 @@ def main() -> int:
         print(f"UNGATED  {short}  {subject[:70]}")
 
     print(
-        f"\naudited {len(commits)} commit(s) on main; "
+        f"\naudited {len(commits)} commit(s) on main from the last "
+        f"{arguments.since_days} day(s); "
         f"{len(ungated)} with no verdict-bearing {WORKFLOW} run; "
         f"{len(unknown)} unverifiable; "
         f"{passing} passing, {len(failing)} with a failing verdict."
     )
+    if truncated:
+        print(
+            f"WINDOW TRUNCATED: the cap of {arguments.limit} commit(s) was reached, so "
+            f"older commits inside the {arguments.since_days}-day window went unexamined. "
+            "A prefix of the window is not the window; raise --limit and run again."
+        )
     # Coverage is the invariant; the pass/fail split is reported beside it
     # because they are different claims: a failing verdict is information
     # (a backfilled historical tree measured against today's environment, or
@@ -139,7 +168,7 @@ def main() -> int:
             "  gh workflow run main-releasability.yml --ref main-releasability-SHA "
             "-f expected_sha=SHA -f triggering_pr=backfill\n"
         )
-    if arguments.fail_on_gap and (ungated or unknown):
+    if arguments.fail_on_gap and (ungated or unknown or truncated):
         return 1
     return 0
 
