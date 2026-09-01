@@ -236,3 +236,63 @@ def test_a_genuinely_one_sided_period_is_reported_as_one_sided() -> None:
     values = [row["contribution_pct"] for row in ranking["contributors"]]
     assert not any(value.startswith("-") for value in values)
     assert ranking["presented_count"] == PRESENTED_CONTRIBUTOR_LIMIT
+
+
+def test_rows_with_no_usable_value_are_not_reported_as_an_empty_period() -> None:
+    """No economic activity and unusable evidence are different facts. Calling
+    a set of unreadable rows `empty` would tell a reader the portfolio did
+    nothing, when what happened is that the evidence could not be read."""
+
+    ranking = build_contribution_ranking(
+        _snapshot(
+            contribution={
+                "top_position_contributors": [
+                    {"security_id": "SEC_A", "total_contribution_pct": None},
+                    {"security_id": "SEC_B", "total_contribution_pct": "not-a-number"},
+                ]
+            }
+        )
+    )
+
+    assert ranking["posture"] == "unavailable"
+    assert ranking["unusable_row_count"] == 2
+    assert "contributors" not in ranking
+
+
+def test_a_source_that_returned_no_rows_at_all_is_empty() -> None:
+    """The genuine no-activity case keeps its own posture."""
+
+    ranking = build_contribution_ranking(_snapshot(contribution={"top_position_contributors": []}))
+
+    assert ranking["posture"] == "empty"
+    assert "unusable_row_count" not in ranking
+
+
+def test_a_mix_of_usable_and_unusable_rows_ranks_and_says_so() -> None:
+    """A subset of a complete set and a subset of a partly-unreadable set are
+    different claims, so the reconciliation carries the unusable count."""
+
+    ranking = build_contribution_ranking(
+        _snapshot(
+            contribution={
+                "top_position_contributors": [
+                    {"security_id": "SEC_A", "total_contribution_pct": 1.20},
+                    {"security_id": "SEC_B", "total_contribution_pct": -0.85},
+                    {"security_id": "SEC_X", "total_contribution_pct": None},
+                    {"security_id": "SEC_Y", "total_contribution_pct": "oops"},
+                ]
+            }
+        )
+    )
+
+    assert ranking["posture"] == "ready"
+    assert ranking["available_count"] == 2
+    assert ranking["unusable_row_count"] == 2
+    assert [row["contribution_pct"] for row in ranking["contributors"]] == ["1.20", "-0.85"]
+
+
+def test_a_fully_usable_set_reports_no_unusable_rows() -> None:
+    ranking = build_contribution_ranking(_snapshot())
+
+    assert ranking["posture"] == "ready"
+    assert ranking["unusable_row_count"] == 0

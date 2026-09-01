@@ -54,10 +54,23 @@ def build_contribution_ranking(snapshot: dict[str, Any]) -> dict[str, Any]:
         # The source did not compute it: a fact about the DATA, said not drawn.
         return {"posture": POSTURE_UNAVAILABLE}
 
+    supplied_rows = [row for row in contribution.get("top_position_contributors") or [] if row]
     rows = _ranked_contributors(contribution, snapshot)
     methodology = _methodology(contribution)
     period = _text(contribution.get("period"))
     if not rows:
+        if supplied_rows:
+            # The source returned contributors but none carries a usable value.
+            # That is NOT an empty period: no economic activity and unusable
+            # evidence are different facts, and calling this `empty` would tell
+            # a reader the portfolio did nothing when what actually happened is
+            # that the evidence could not be read.
+            return {
+                "posture": POSTURE_UNAVAILABLE,
+                "period": period,
+                "methodology": methodology,
+                "unusable_row_count": len(supplied_rows),
+            }
         # Computed, with nothing to rank: a fact about the PORTFOLIO, drawn as
         # an empty statement. Indistinguishable from `unavailable` if Render had
         # to infer it from an empty list - which is why posture is authoritative.
@@ -82,6 +95,12 @@ def build_contribution_ranking(snapshot: dict[str, Any]) -> dict[str, Any]:
         "presented_contribution_pct": _text_decimal(presented_total),
         "presented_count": len(presented),
         "available_count": len(rows),
+        # Rows the source supplied that carry no usable contribution value.
+        # Without this the reconciliation reads as "10 of 42 of everything the
+        # source knows", when part of what it returned could not be read at
+        # all - a subset of a complete set and a subset of a partly-unreadable
+        # set are different claims.
+        "unusable_row_count": len(supplied_rows) - len(rows),
         "contributors": [_published(row) for row in presented],
     }
 

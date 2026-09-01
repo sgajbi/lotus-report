@@ -1,7 +1,7 @@
 {
   "description": "Approved baseline monetary-float findings. New findings fail CI.",
   "policy_version": "1.1.0",
-  "generated_at": "2026-09-01T13:05:52Z",
+  "generated_at": "2026-07-18T14:44:28Z",
   "allowlist": [
     {
       "finding": "src/app/models/contracts.py:15:value: float",
@@ -73,91 +73,91 @@
       "finding": "src/app/services/reporting_read_service.py:1130:if not isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:1138:returns.append({\"date\": return_date, \"value\": float(return_value)})",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2133:reporting_amount: float,",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2151:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2179:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2218:def _absolute_money(self, value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2574:def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2576:if isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2577:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2580:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2647:def _to_float(value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2648:if isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2649:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2652:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     },
     {
       "finding": "src/app/services/reporting_read_service.py:2661:if isinstance(value, float):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
-      "review_by": "2027-02-28"
+      "review_by": "2026-10-22"
     }
   ]
 }
