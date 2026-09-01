@@ -1727,6 +1727,13 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
         "tracking_error_pct": "4.00%",
         "information_ratio": "0.72",
         "value_at_risk_pct": "-2.00%",
+        # Both captured on every risk call and discarded at this boundary
+        # until #235. This fixture states neither, so they read as absent -
+        # which is itself the point: the fixture was built from what the
+        # package already forwarded, so it could never fail when the boundary
+        # dropped something.
+        "drawdown_pct": "Not available",
+        "expected_shortfall_pct": "Not available",
     }
     assert report_data["top_holdings"] == [
         {
