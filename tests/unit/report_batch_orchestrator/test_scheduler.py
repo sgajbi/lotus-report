@@ -9,7 +9,6 @@ from app.report_batch_orchestrator.scheduler import (
     BatchScheduleDefinition,
     BatchSchedulerConfig,
     ReportBatchScheduler,
-    batch_scheduler_caller_context,
     batch_scheduler_config_from_settings,
 )
 from app.reporting_jobs.models import ReportCallerContext
@@ -181,21 +180,71 @@ def test_batch_scheduler_config_rejects_unsupported_schedule_sources(raw: str) -
         batch_scheduler_config_from_settings(source)
 
 
-def test_batch_scheduler_caller_context_is_deterministic_for_pass() -> None:
-    config = _config(_schedule())
+async def test_scheduler_refuses_broad_discovery_it_cannot_attribute(tmp_path) -> None:
+    """A scheduled all-active pass would ask lotus-core for every active
+    portfolio and then label the answer with this scheduler's CONFIGURED
+    tenant - configuration presented as evidence (issue #177). Report refuses
+    rather than stamping, and refuses BEFORE asking: the unqualified discovery
+    call is never made.
+    """
 
-    first = batch_scheduler_caller_context(config, pass_sequence=1)
-    second = batch_scheduler_caller_context(config, pass_sequence=1)
-    changed = batch_scheduler_caller_context(config, pass_sequence=2)
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {},
+        list_payload=(
+            200,
+            {
+                "portfolios": [
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
+                ]
+            },
+        ),
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
 
-    assert first == second
-    assert first.triggered_by == "scheduler-unit-1"
-    assert first.caller_application == "lotus-report-batch-scheduler"
-    assert first.correlation_id.startswith("corr-batch-scheduler-1-")
-    assert changed.correlation_id.startswith("corr-batch-scheduler-2-")
+    result = await scheduler.run_due_schedules(
+        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
+        caller_context=_caller_context(),
+    )
+
+    assert result.materialized == ()
+    assert result.refused_schedule_ids == ("monthly-sg-global-bal",)
+    # A refusal is not a skip: collapsing them would hide a governance stop
+    # inside ordinary quiet.
+    assert result.skipped_schedule_ids == ()
+    # Refused before discovery, so no portfolio was ever fetched to be stamped.
+    assert source.list_calls == []
+    assert source.calls == []
 
 
-async def test_scheduler_materializes_due_schedule_from_core_candidates(tmp_path) -> None:
+async def test_a_refused_schedule_creates_no_durable_batch(tmp_path) -> None:
+    """The invariant #177 exists for: no batch attributed to a tenant that was
+    never proven to own its portfolios."""
+
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {},
+        list_payload=(200, {"portfolios": [{"portfolio_id": "PB_X", "status": "active"}]}),
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    await scheduler.run_due_schedules(
+        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
+        caller_context=_caller_context(),
+    )
+
+    # Nothing durable exists to be attributed: the ledger holds no runnable
+    # batch for the refused pass.
+    assert ledger.list_runnable_batch_ids(tenant_ids=["tenant-sg"], limit=10) == []
+
+
+async def test_enumerated_schedules_are_unaffected_by_the_refusal(tmp_path) -> None:
+    """Only broad discovery is refused. An explicitly enumerated schedule
+    carries a claim someone made - the Gateway trusted-scope front door for
+    stored schedules, a deployment operator for configured ones - rather than
+    one Report invented, so it still materializes."""
+
     ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
     source = _PortfolioSource(
         {
@@ -208,108 +257,12 @@ async def test_scheduler_materializes_due_schedule_from_core_candidates(tmp_path
     scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
 
     result = await scheduler.run_due_schedules(
-        config=_config(_schedule()),
+        config=_config(_schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])),
         caller_context=_caller_context(),
     )
 
-    assert result.attempted_count == 1
-    assert result.skipped_schedule_ids == ()
+    assert result.refused_schedule_ids == ()
     assert len(result.materialized) == 1
-    materialized = result.materialized[0]
-    batch = ledger.get_batch(materialized.batch_id)
-    assert batch.status == "materialized"
-    assert batch.materialized_portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
-    assert batch.options["batch_schedule_id"] == "monthly-sg-global-bal"
-    assert batch.options["batch_selector_mode"] == "explicit_portfolio_list"
-    assert batch.options["batch_frequency"] == "monthly"
-    assert source.calls == [("PB_SG_GLOBAL_BAL_001", "corr-scheduler-unit")]
-
-
-async def test_scheduler_materializes_all_active_schedule_from_core_list(tmp_path) -> None:
-    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
-    source = _PortfolioSource(
-        {},
-        list_payload=(
-            200,
-            {
-                "portfolios": [
-                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
-                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
-                    {"portfolio_id": "PB_SG_CLOSED_001", "status": "closed"},
-                ]
-            },
-        ),
-    )
-    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
-
-    result = await scheduler.run_due_schedules(
-        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
-        caller_context=_caller_context(),
-    )
-
-    batch = ledger.get_batch(result.materialized[0].batch_id)
-    assert batch.selector_mode == "all_active_portfolios"
-    assert batch.materialized_portfolio_ids == [
-        "PB_SG_GLOBAL_BAL_001",
-        "PB_SG_GLOBAL_BAL_002",
-    ]
-    assert batch.options["batch_selector_mode"] == "all_active_portfolios"
-    assert source.calls == []
-    assert source.list_calls == ["corr-scheduler-unit"]
-
-
-async def test_scheduler_materializes_all_active_schedule_from_items_fallback(tmp_path) -> None:
-    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
-    source = _PortfolioSource(
-        {},
-        list_payload=(
-            200,
-            {
-                "items": [
-                    {"portfolio_id": "PB_SG_GLOBAL_BAL_002", "status": "active"},
-                    {"portfolio_id": "", "status": "active"},
-                    {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
-                    "not-a-portfolio",
-                ]
-            },
-        ),
-    )
-    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
-
-    result = await scheduler.run_due_schedules(
-        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
-        caller_context=_caller_context(),
-    )
-
-    batch = ledger.get_batch(result.materialized[0].batch_id)
-    assert batch.materialized_portfolio_ids == [
-        "PB_SG_GLOBAL_BAL_001",
-        "PB_SG_GLOBAL_BAL_002",
-    ]
-
-
-@pytest.mark.parametrize(
-    "list_payload",
-    [
-        (503, {}),
-        (200, {"portfolios": "not-a-list"}),
-    ],
-)
-async def test_scheduler_skips_all_active_schedule_without_source_candidates(
-    tmp_path,
-    list_payload: tuple[int, dict[str, object]],
-) -> None:
-    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
-    source = _PortfolioSource({}, list_payload=list_payload)
-    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
-
-    result = await scheduler.run_due_schedules(
-        config=_config(_schedule(selector_mode="all_active_portfolios", portfolio_ids=[])),
-        caller_context=_caller_context(),
-    )
-
-    assert result.materialized == ()
-    assert result.skipped_schedule_ids == ("monthly-sg-global-bal",)
 
 
 async def test_scheduler_materializes_manifest_schedule_with_provenance(tmp_path) -> None:

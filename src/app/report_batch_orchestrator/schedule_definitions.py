@@ -26,9 +26,13 @@ Deliberate boundaries:
   Operators changing cadence during an outage should run the operator
   :run-due route first; missed historical packs remain orderable through the
   ordinary batch API.
-- Portfolio-scope truth is owned upstream of this module. Report cannot verify a
-  portfolio's authoritative tenant today: lotus-core's discovery has no tenant
-  concept (issue #177, blocked on lotus-core#798), and manual batch orders carry
+- Portfolio-scope truth is owned upstream of this module. lotus-core has owned
+  the authoritative portfolio tenant since core#1076, but its discovery route
+  does not yet PROJECT it - no tenant filter, no tenant on the record - so
+  Report still cannot verify a portfolio's tenant from the source (issue #177,
+  waiting on core#798 S2+). Broad `all_active_portfolios` scheduling is refused
+  outright rather than stamped (see `_tenant_attribution_is_a_stamp`), and
+  manual batch orders carry
   the same trust model - their candidate scope is validated by the Gateway's
   trusted-scope contract before the request reaches Report. Schedule creation
   sits behind the same front door, so portfolio-ownership admission belongs to
