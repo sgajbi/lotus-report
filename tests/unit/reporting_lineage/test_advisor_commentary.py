@@ -305,3 +305,77 @@ def test_request_detection_helpers():
     assert requested_advisor_brief_run_id({"advisor_brief_run_id": " run_1 "}) == "run_1"
     assert requested_advisor_brief_run_id({"advisor_brief_run_id": "  "}) is None
     assert requested_advisor_brief_run_id({}) is None
+
+
+@pytest.mark.asyncio
+async def test_a_brief_written_about_another_period_is_not_admissible():
+    """A brief about YTD does not describe a Q3 report, however accurate it is
+    about YTD (issue #166 admissibility)."""
+
+    client = _StubClient(200, _accepted_payload())
+    package = await _resolve(client, report_period="Q3")
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_context_mismatch"
+    assert "period" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_brief_written_against_another_benchmark_is_not_admissible():
+    """Relative-performance narrative is only true of the benchmark it was
+    written against."""
+
+    payload = _accepted_payload()
+    payload["context"] = {**payload["context"], "benchmark": "BMK_OTHER"}
+    client = _StubClient(200, payload)
+
+    package = await _resolve(client, benchmark_code="BMK_PB_GLOBAL_BALANCED_60_40")
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_context_mismatch"
+    assert "benchmark" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_unasserted_period_and_benchmark_still_never_conflict():
+    """A null source value means "not asserted" and must not close a section
+    the source never disagreed with - the existing rule, extended to the two
+    new dimensions."""
+
+    payload = _accepted_payload()
+    payload["context"] = {**payload["context"], "period": None, "benchmark": None}
+    client = _StubClient(200, payload)
+
+    package = await _resolve(
+        client, report_period="Q3", benchmark_code="BMK_PB_GLOBAL_BALANCED_60_40"
+    )
+
+    assert package["status"] == "included"
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_tenant_projection_is_refused_even_though_ai_fails_closed():
+    """lotus-ai is tenant-scoped and should never return another tenant's run,
+    which is exactly why the echo is asserted rather than assumed: composing
+    one tenant's reviewed narrative into another tenant's client document is
+    the worst outcome this section has."""
+
+    client = _StubClient(200, _accepted_payload(tenant_id="tenant-uk"))
+    package = await _resolve(client)
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_not_found"
+    assert "tenant" in package["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_brief_without_grounding_sources_cannot_carry_its_disclosure():
+    """The mandated provenance line names the reviewer, the run AND the
+    sources; with no source refs it cannot be rendered truthfully, so the
+    section closes rather than shipping narrative under an empty disclosure."""
+
+    client = _StubClient(200, _accepted_payload(source_refs=[]))
+    package = await _resolve(client)
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "ai_disclosure_policy_unavailable"
