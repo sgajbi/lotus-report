@@ -94,6 +94,10 @@ def _build_render_package(
         "benchmark_presentation": resolve_benchmark_presentation(
             options=job.options, snapshot=snapshot
         ),
+        # What the presented returns MEAN. The figures are net of fees and
+        # the document never said so; the basis was carried only by a
+        # field name, which no renderer is obliged to read.
+        "performance_basis": _performance_basis_section(),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
         "performance_monthly_history": _performance_history(
@@ -836,6 +840,31 @@ def _portfolio_name(job: ReportJobLedgerRecord, snapshot: dict[str, Any]) -> str
     )
 
 
+#: The fee basis of every performance figure this package presents, and the
+#: snapshot keys that carry it. Report presents returns NET of fees, and the
+#: basis is published rather than left encoded in a field name: nothing fails
+#: when a renderer reads `net_return_pct` into a column headed "Portfolio",
+#: which is exactly what happened, and net versus gross changes what every
+#: number in the most-read table means to the person paying the fees.
+#:
+#: The keys live beside the basis so the two cannot disagree. Publishing "NET"
+#: while reading a gross field would be a confident wrong statement about
+#: money, which is worse than saying nothing.
+#:
+#: Deliberately NOT sourced from `performance.methodology.performance_basis`.
+#: That is the static string "NET_AND_GROSS_WHERE_AVAILABLE", set without
+#: reference to what was computed - a declared posture, not a measured one.
+PRESENTED_RETURN_BASIS = "NET"
+_PRESENTED_CUMULATIVE_RETURN_KEY = "net_cumulative_return"
+_PRESENTED_ANNUALIZED_RETURN_KEY = "net_annualized_return"
+
+
+def _performance_basis_section() -> dict[str, Any]:
+    """What the presented performance figures mean."""
+
+    return {"return_basis": PRESENTED_RETURN_BASIS}
+
+
 def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     summary = _as_dict(_as_dict(snapshot.get("performance")).get("summary"))
     periods: list[dict[str, str]] = []
@@ -846,7 +875,9 @@ def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         periods.append(
             {
                 "period": period_code,
-                "net_return_pct": _percent_text(period_summary.get("net_cumulative_return")),
+                "net_return_pct": _percent_text(
+                    period_summary.get(_PRESENTED_CUMULATIVE_RETURN_KEY)
+                ),
                 "benchmark_return_pct": _percent_text(
                     period_summary.get("benchmark_cumulative_return")
                 ),
@@ -875,8 +906,12 @@ def _performance_summary_table(snapshot: dict[str, Any]) -> list[dict[str, str]]
             {
                 "label": label,
                 "period": period_code,
-                "net_return_pct": _percent_text(period_summary.get("net_cumulative_return")),
-                "annualized_return_pct": _percent_text(period_summary.get("net_annualized_return")),
+                "net_return_pct": _percent_text(
+                    period_summary.get(_PRESENTED_CUMULATIVE_RETURN_KEY)
+                ),
+                "annualized_return_pct": _percent_text(
+                    period_summary.get(_PRESENTED_ANNUALIZED_RETURN_KEY)
+                ),
             }
         )
     return rows
