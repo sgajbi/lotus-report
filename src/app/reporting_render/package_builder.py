@@ -7,6 +7,7 @@ from typing import Any, Sequence
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
+from app.reporting_render.attribution_bridge import build_attribution_bridge
 from app.reporting_render.contribution_ranking import build_contribution_ranking
 from app.reporting_render.earnings_statement import build_earnings_statement
 from app.reporting_render.holdings_presentation import build_holdings_presentation
@@ -100,6 +101,10 @@ def _build_render_package(
         # the document never said so; the basis was carried only by a
         # field name, which no renderer is obliged to read.
         "performance_basis": _performance_basis_section(snapshot),
+        # Why the portfolio outperformed: the Brinson bridge, total ->
+        # named parts -> explicit residual -> reconciled sum. Every figure is
+        # the source's; the residual is presented, never allocated away.
+        "attribution_bridge": build_attribution_bridge(snapshot),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
         "performance_monthly_history": _performance_history(
