@@ -713,3 +713,77 @@ async def test_the_poll_waits_as_long_as_the_source_states_but_no_longer_than_th
     # 3600s capped at the bound, not honoured verbatim and not our fallback.
     assert sleeps[0] == 2.0
     assert sleeps[1] == PerformanceClient._MAX_STATED_POLL_DELAY_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_an_accepted_attribution_without_a_result_path_is_returned_as_is(monkeypatch):
+    """A 202 that names no result_path cannot be polled; the envelope goes
+    back to the capture unchanged rather than being retried against nothing."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[_FakeResponse(status_code=202, payload={"calculation_id": "calc-9"})]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert payload == {"calculation_id": "calc-9"}
+    assert [call["method"] for call in recorder.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_retry_after_header_falls_back_rather_than_crashing(monkeypatch):
+    """Retry-After is delta-seconds by contract, but a header is still input:
+    a value that does not parse is ignored and the linear fallback applies,
+    because one bad header must not fail a poll that would have succeeded."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                },
+            ),
+            _FakeResponse(
+                status_code=202,
+                payload={"calculation_id": "calc-9"},
+                headers={"Retry-After": "soon"},
+            ),
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    sleeps: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _record_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.25,
+    )
+
+    status_code, _payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    # The unparseable header fell back to the linear schedule (0.25 * 1).
+    assert sleeps[-1] == 0.25
