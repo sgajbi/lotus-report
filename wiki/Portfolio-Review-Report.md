@@ -375,3 +375,37 @@ projection, issue #166). Ordering rules:
 - lotus-report calls lotus-ai as registered caller `lotus-report` (`X-Caller-App`); that
   caller must be registered and active in the lotus-ai access-control registry for the
   environment.
+
+## Render package semantics (portfolio review)
+
+The render package carries typed semantic blocks beside the raw section data. Each states a
+reporting judgement Render must read rather than re-derive; the shared rules are:
+
+- **Posture is authoritative, never inferred.** `ready` / `empty` / `unavailable` are different
+  claims: *empty* is a fact about the portfolio and is drawn; *unavailable* is a fact about the
+  data and is said. A consumer must never infer meaning from an empty list or a present key.
+- **A subset never implies completeness.** Truncated or top-N sets carry reconciliation counts
+  (`presented` / `available`, plus the covered share where provable).
+- **A floor is not a total.** Sums over truncated evidence carry a completeness posture and the
+  reviewed/source counts; the page states "at least X", never a total.
+- **Absent is absent.** A basis, weight, or figure the capture did not establish is published as
+  absent - never defaulted, never rendered as zero. A genuine zero is kept, because "nothing"
+  is a finding and "unknown" is not.
+- **Codes are forwarded verbatim.** Note `code`/`severity` values are the operator's join key;
+  Report never rewords an unfamiliar one into a guess.
+
+Blocks, with their one load-bearing rule each:
+
+| Block | States | Load-bearing rule |
+|---|---|---|
+| `allocation_presentation` (#224) | The resolved, ordered dimension set with per-dimension posture | Render draws the resolved list, never guesses from which `by_*` keys have rows |
+| `contribution_ranking` (#209/#228) | Ranked contributors, both signs, with `presented_/available_count`, `presented_contribution_pct`, `unexplained_residual_pct`, `unusable_row_count` | The reconciliation describes exactly the presented set; a one-sided page means a genuinely one-sided period |
+| `risk_posture` (#234) | Why a risk figure is missing: posture + notes (+ `affected_measures`) | `missing_benchmark` (mandate fact) and `risk_upstream_failure` (transient) must not produce the same page |
+| `risk_methodology` (#235) | VaR method/confidence/horizon, `return_basis` | A tail-risk number without its basis is not interpretable; absent basis is published as absent |
+| `benchmark_presentation` (#241) | `available` / `unavailable` / `not_requested` + benchmark identity | A failed comparison must not render as an unbenchmarked mandate; replayed captures resolve from the ORDER, not table values |
+| `performance_basis` (#243/#247) | `return_basis: NET`, plus signed `fee_drag.gross_minus_net_pp` | Fee drag is computed from raw returns, never from displayed (rounded) numbers; sign preserved |
+| `holdings_presentation` (#245) | Posture, `presented_/available_count`, `presented_weight_pct`, Core's `supportability_status` verbatim | Empty portfolio != unavailable holdings != unreconciled holdings != trusted-complete - four distinct states |
+| `earnings_statement` (#249) | Income gross->withholding->net (+ by-type), realized P&L with named largest gain/loss, `completeness` | `window_truncated` sums are a floor: the page says "at least X, based on N transactions reviewed" and never the word "total"; truncated zeros never claim an empty period |
+
+Render-side drawing contracts are agreed per block before either side builds (recorded on the
+linked issues); the package is additive, so undrawn blocks change nothing on the page.
