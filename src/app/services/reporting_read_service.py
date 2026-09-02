@@ -345,10 +345,10 @@ class ReportingReadService:
                 performance_client=self._performance_client,
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
+                # None = portfolio's assigned benchmark; an omission, never "".
                 benchmark_code=self._normalized_benchmark_code(
                     self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
-                )
-                or "",
+                ),
             )
 
         if "RISK_ANALYTICS" in requested_sections:

@@ -213,6 +213,62 @@ async def test_transport_failure_closes_the_section_not_the_report():
     assert section["supportability"]["notes"][0]["code"] == "attribution_upstream_failure"
 
 
+def test_an_omitted_benchmark_is_an_omission_never_an_empty_string():
+    """The catalogue's recorded defaulting policy is "portfolio benchmark when
+    omitted", and the source's contract uses the lotus-core assignment for an
+    omitted benchmark_id. So no code means NO KEY - "" is neither a code nor
+    an omission, and sending it would ask the source a malformed question.
+
+    The identity treats the two as different financial questions for free:
+    "against the portfolio's assigned benchmark" and "against BMK_A" serialize
+    differently.
+    """
+
+    defaulted = build_attribution_request(
+        portfolio_id="P1", as_of_date="2026-04-22", benchmark_code=None
+    )
+    explicit = build_attribution_request(
+        portfolio_id="P1", as_of_date="2026-04-22", benchmark_code="BMK_A"
+    )
+
+    assert "benchmark_id" not in defaulted["stateful_input"]
+    assert explicit["stateful_input"]["benchmark_id"] == "BMK_A"
+    assert defaulted["calculation_id"] != explicit["calculation_id"]
+
+
+@pytest.mark.asyncio
+async def test_every_capture_outcome_is_visible_to_an_operator(monkeypatch):
+    """The dashboard must tell "still computing" from "refused" from "ready"
+    without reading job records, and the failure category is the section's own
+    bounded reason code so the two vocabularies cannot drift apart."""
+
+    recorded = []
+
+    def _record(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr("app.services.attribution_capture.record_report_operation", _record)
+
+    await _capture(_AttributionClient(200, RESULTS))
+    await _capture(
+        _AttributionClient(
+            202,
+            {"calculation_id": "calc-9", "result_path": "/p"},
+        )
+    )
+    await _capture(_AttributionClient(409, {"detail": "why"}))
+    await _capture(_DownClient())
+
+    outcomes = [(entry["status"], entry["failure_category"]) for entry in recorded]
+    assert outcomes == [
+        ("ready", None),
+        ("accepted", "attribution_accepted_not_complete"),
+        ("unavailable", "attribution_execution_failed"),
+        ("unavailable", "attribution_upstream_failure"),
+    ]
+    assert all(entry["operation"] == "attribution_capture" for entry in recorded)
+
+
 def test_the_request_asks_for_the_agreed_contract():
     """Stateful Brinson, NET, asset_class, YTD window from January 1st of the
     as-of year - the #254 contract, and the report's resolved benchmark rather

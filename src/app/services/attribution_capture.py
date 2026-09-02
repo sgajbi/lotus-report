@@ -18,6 +18,14 @@ attribution means for a report is decided HERE, as a stated posture:
   new one, and a later capture collects the finished result;
 - ``unavailable``  the source refused or failed; the reason is bounded.
 
+VERIFIED failure permanence: lotus-performance re-registration of an existing
+calculation id REPLAYs it with its existing status and does not re-enqueue,
+so a FAILED execution is held by source idempotency - every regenerate of the
+same financial question converges on the same failure. That is the identity
+working as designed, and it means re-ordering the report is NOT the remedy
+for `attribution_execution_failed`: recovery of failed compute jobs is
+lotus-performance's operator recovery, after which a regenerate collects.
+
 The section closes on ``pending``/``unavailable`` without failing the report,
 per the section-vs-job split - attribution is optional, and denying a client
 a report because one optional decomposition was still computing would invert
@@ -28,7 +36,10 @@ from __future__ import annotations
 
 import json
 import uuid
+from time import perf_counter
 from typing import Any, Protocol
+
+from app.reporting_metrics import record_report_operation
 
 #: One level ships first; the hierarchy slot is defined in the contract
 #: (each row carries its dimension), so deeper levels ride the same request
@@ -92,7 +103,7 @@ def build_attribution_request(
     *,
     portfolio_id: str,
     as_of_date: str,
-    benchmark_code: str,
+    benchmark_code: str | None,
 ) -> dict[str, Any]:
     """The stateful Brinson request for the presented period.
 
@@ -101,6 +112,15 @@ def build_attribution_request(
     period. `benchmark_id` is the report's RESOLVED benchmark - the caller
     normalizes aliases, because two surfaces resolving the same code
     differently is the one-fact-two-names defect.
+
+    An order without a benchmark code OMITS `benchmark_id` entirely, honouring
+    the catalogue's recorded defaulting policy (portfolio benchmark when
+    omitted) and the source's contract (an omitted id uses the lotus-core
+    assignment). Never an empty string - "" is neither a code nor an omission.
+    The identity handles both correctly for free: an omitted key and an
+    explicit code serialize differently, so "against the portfolio's assigned
+    benchmark" and "against BMK_X" are different financial questions with
+    different ids.
     """
 
     request: dict[str, Any] = {
@@ -114,11 +134,12 @@ def build_attribution_request(
         "input_mode": "stateful",
         "stateful_input": {
             "metric_basis": "NET",
-            "benchmark_id": benchmark_code,
             "dimensions": [ATTRIBUTION_GROUPING],
             "include_cash_flows": True,
         },
     }
+    if benchmark_code:
+        request["stateful_input"]["benchmark_id"] = benchmark_code
     # Stamped from the body it identifies, after the body is complete.
     request["calculation_id"] = attribution_calculation_id(request)
     return request
@@ -129,10 +150,11 @@ async def capture_attribution(
     performance_client: AttributionClient,
     portfolio_id: str,
     as_of_date: str,
-    benchmark_code: str,
+    benchmark_code: str | None,
 ) -> dict[str, Any]:
     """The attribution section of the snapshot, with its posture stated."""
 
+    started_at = perf_counter()
     request_payload = build_attribution_request(
         portfolio_id=portfolio_id,
         as_of_date=as_of_date,
@@ -152,64 +174,106 @@ async def capture_attribution(
     try:
         status_code, payload = await performance_client.get_attribution(request_payload)
     except Exception:
-        return {
-            **envelope,
-            "status": STATUS_UNAVAILABLE,
-            "supportability": _supportability(
-                "attribution_upstream_failure",
-                "lotus-performance could not be reached for attribution; the "
-                "section is unavailable for this capture.",
-            ),
-        }
+        return _recorded(
+            {
+                **envelope,
+                "status": STATUS_UNAVAILABLE,
+                "supportability": _supportability(
+                    "attribution_upstream_failure",
+                    "lotus-performance could not be reached for attribution; the "
+                    "section is unavailable for this capture.",
+                ),
+            },
+            started_at=started_at,
+        )
 
     if status_code < 400 and isinstance(payload.get("results_by_period"), dict):
-        return {
-            **envelope,
-            "status": STATUS_PRESENT,
-            # Verbatim: the decomposition, its per-period status/reasons, the
-            # reconciliation with the source-classified residual, and the
-            # model identity are all lotus-performance's statements. Report
-            # never rebalances a residual or reweights an effect.
-            "results_by_period": payload.get("results_by_period"),
-            "model": payload.get("model"),
-            "linking": payload.get("linking"),
-            "benchmark_context": payload.get("benchmark_context"),
-            "calculation_supportability": payload.get("calculation_supportability"),
-            "supportability": {"status": "ready", "notes": []},
-        }
+        return _recorded(
+            {
+                **envelope,
+                "status": STATUS_PRESENT,
+                # Verbatim: the decomposition, its per-period status/reasons, the
+                # reconciliation with the source-classified residual, and the
+                # model identity are all lotus-performance's statements. Report
+                # never rebalances a residual or reweights an effect.
+                "results_by_period": payload.get("results_by_period"),
+                "model": payload.get("model"),
+                "linking": payload.get("linking"),
+                "benchmark_context": payload.get("benchmark_context"),
+                "calculation_supportability": payload.get("calculation_supportability"),
+                "supportability": {"status": "ready", "notes": []},
+            },
+            started_at=started_at,
+        )
 
     if status_code == 202:
         # Accepted, not complete within the capture's budget. The calculation
         # exists upstream under our deterministic id; a rerun converges on it.
-        return {
-            **envelope,
-            "status": STATUS_PENDING,
-            "accepted": {
-                "calculation_id": _text(payload.get("calculation_id"))
-                or request_payload["calculation_id"],
-                "result_path": _text(payload.get("result_path")) or None,
+        return _recorded(
+            {
+                **envelope,
+                "status": STATUS_PENDING,
+                "accepted": {
+                    "calculation_id": _text(payload.get("calculation_id"))
+                    or request_payload["calculation_id"],
+                    "result_path": _text(payload.get("result_path")) or None,
+                },
+                "supportability": _supportability(
+                    "attribution_accepted_not_complete",
+                    "lotus-performance accepted the attribution calculation and had "
+                    "not completed it within the capture budget; regenerating the "
+                    "report collects the finished result.",
+                ),
             },
-            "supportability": _supportability(
-                "attribution_accepted_not_complete",
-                "lotus-performance accepted the attribution calculation and had "
-                "not completed it within the capture budget; regenerating the "
-                "report collects the finished result.",
-            ),
-        }
+            started_at=started_at,
+        )
 
     reason, message = _refusal(status_code, payload)
-    return {
-        **envelope,
-        "status": STATUS_UNAVAILABLE,
-        "supportability": _supportability(reason, message),
-    }
+    return _recorded(
+        {
+            **envelope,
+            "status": STATUS_UNAVAILABLE,
+            "supportability": _supportability(reason, message),
+        },
+        started_at=started_at,
+    )
+
+
+#: Metric status per capture outcome. `pending` records as `accepted` - the
+#: source accepted the work - so a dashboard can tell "still computing" from
+#: "refused" without reading job records.
+_METRIC_STATUS = {
+    STATUS_PRESENT: "ready",
+    STATUS_PENDING: "accepted",
+    STATUS_UNAVAILABLE: "unavailable",
+}
+
+
+def _recorded(section: dict[str, Any], *, started_at: float) -> dict[str, Any]:
+    """Every capture outcome is visible to an operator, not only to the job.
+
+    The failure category is the section's own bounded reason code, so the
+    dashboard vocabulary and the snapshot vocabulary cannot drift apart.
+    """
+
+    notes = section.get("supportability", {}).get("notes") or []
+    failure_category = notes[0].get("code") if notes else None
+    record_report_operation(
+        operation="attribution_capture",
+        status=_METRIC_STATUS.get(str(section.get("status")), "failed"),
+        failure_category=failure_category,
+        duration_seconds=perf_counter() - started_at,
+    )
+    return section
 
 
 def _refusal(status_code: int, payload: dict[str, Any]) -> tuple[str, str]:
     """A bounded reason for a refusal, never a guess.
 
     409 covers two verified source facts that share a status: a FAILED async
-    execution (re-ordering the report is the remedy) and an identity CONFLICT
+    execution (held by source idempotency - a regenerate converges on the same
+    failure, so the remedy is lotus-performance's compute recovery, then
+    regenerate) and an identity CONFLICT
     - the calculation id exists with a different payload. With the id derived
     from the full request body a conflict should not occur; if it does, it
     means Report's request construction changed across versions for the same

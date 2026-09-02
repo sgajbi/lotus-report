@@ -410,3 +410,44 @@ Blocks, with their one load-bearing rule each:
 
 Render-side drawing contracts are agreed per block before either side builds (recorded on the
 linked issues); the package is additive, so undrawn blocks change nothing on the page.
+
+## Performance attribution section (PERFORMANCE_ATTRIBUTION)
+
+Benchmark-relative return attribution — allocation, selection, and interaction effects by
+asset class — answering "why did we outperform?". Sourced from lotus-performance's stateful
+Brinson calculation (`/performance/attribution`, model `brinson_fachler`, linking `carino`);
+the effects, authoritative level totals, reconciliation and source-classified residual are
+composed **verbatim**. Report never rebalances a residual or reweights an effect, and the
+page draws the residual as its own labelled bridge segment.
+
+- **Opt-in** (`default_selected=false`) while the asynchronous capture proves itself in
+  production: the first section whose source may answer *accepted-but-not-complete*, and
+  default selection would add a submit-and-poll to every order's capture latency before that
+  posture has real-order evidence. The flip to default-on is a later, evidenced decision.
+- **Benchmark defaulting**: an order without `benchmark_code` follows the catalogue's
+  recorded policy — the calculation runs against the **portfolio's assigned benchmark**
+  (lotus-performance resolves it from the lotus-core assignment; the omission is passed
+  through as an omission, never as an empty string). The page names the benchmark the source
+  actually computed against; the requested code stays in lineage.
+- **Calculation identity**: the caller-supplied `calculation_id` is derived from the
+  canonical serialization of the request body — *same financial question, same identity* —
+  so an identical capture retry or a regenerate of the same question **converges on the same
+  upstream calculation** (lotus-performance REPLAYs a matching resubmission). A different
+  benchmark, window, grouping or basis is a different question with its own identity.
+- The section **fails closed without failing the report**, with one bounded reason:
+  - `attribution_accepted_not_complete` — the source accepted the calculation and had not
+    finished it within the capture's poll budget (which honours the source's stated
+    Retry-After in full, or not at all). Not a failure: **regenerating the report collects
+    the finished result** under the same calculation identity.
+  - `attribution_execution_failed` — the calculation ran at the source and failed, or the
+    identity conflicted; the source's own detail text (forwarded verbatim) says which.
+    **Re-ordering the report is NOT the remedy**: the failed execution is held by source
+    idempotency, so a regenerate converges on the same failure. Recovery of failed compute
+    jobs is lotus-performance's operator recovery; regenerate after it.
+  - `attribution_unsupported_for_portfolio` — the source cannot support the calculation for
+    this portfolio's inputs (e.g. no benchmark assignment). A fact about the mandate's data.
+  - `attribution_source_refused` — a refusal Report does not recognise, said as such.
+  - `attribution_upstream_failure` — lotus-performance unreachable for this capture.
+- Every capture outcome is recorded to metrics (`attribution_capture`: `ready` / `accepted`
+  / `unavailable`, failure category = the section's own reason code), so a dashboard tells
+  "still computing" from "refused" without reading job records.
