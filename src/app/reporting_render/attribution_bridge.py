@@ -81,9 +81,17 @@ def build_attribution_bridge(snapshot: dict[str, Any]) -> dict[str, Any]:
     materiality = _as_dict(reconciliation.get("residual_materiality"))
     dimension = _text(level.get("dimension")) or None
 
+    benchmark_context = _as_dict(attribution.get("benchmark_context"))
     return {
         **envelope,
         "posture": POSTURE_READY,
+        # The benchmark the page names is the one the SOURCE resolved and
+        # computed against - authoritative even when the order omitted a code
+        # and the portfolio's assignment answered. The requested code stays in
+        # the envelope for lineage; the resolved one is what "outperform"
+        # meant.
+        "benchmark_code": _text(benchmark_context.get("benchmark_id"))
+        or envelope["benchmark_code"],
         "model": _text(attribution.get("model")) or None,
         "linking": _text(attribution.get("linking")) or None,
         "grouping_dimension": dimension,

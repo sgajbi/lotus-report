@@ -527,6 +527,16 @@ class _PerformanceClientSuccess:
             "audit": {"counts": {"input_positions": 2}},
         }
 
+    async def get_attribution(self, payload):
+        self.attribution_requests = getattr(self, "attribution_requests", [])
+        self.attribution_requests.append(payload)
+        return 200, {
+            "results_by_period": {"YTD": {"levels": [], "reconciliation": {}}},
+            "model": "brinson_fachler",
+            "linking": "carino",
+            "benchmark_context": {"benchmark_id": "BMK_RESOLVED"},
+        }
+
 
 class _RiskClientSuccess:
     def __init__(self):
@@ -1330,3 +1340,44 @@ async def test_core_query_failure_maps_to_502():
     )
     with pytest.raises(ReportingUpstreamError):
         await service.get_portfolio_review("P1", {"as_of_date": "2026-02-24"}, None)
+
+
+@pytest.mark.asyncio
+async def test_ordering_attribution_composes_the_section_and_honours_defaulting():
+    """The wiring, proven through the real read service rather than the
+    capture module alone: ordering PERFORMANCE_ATTRIBUTION composes
+    response["attribution"], and an order without a benchmark code reaches
+    the source as an OMISSION (the catalogue's defaulting policy), never "".
+    """
+
+    performance_client = _PerformanceClientSuccess()
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=performance_client,
+        risk_client=_RiskClientSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "reporting_currency": "USD",
+            "sections": ["OVERVIEW", "PERFORMANCE_ATTRIBUTION"],
+        },
+        None,
+    )
+
+    assert response["attribution"]["status"] == "present"
+    submitted = performance_client.attribution_requests[0]
+    assert "benchmark_id" not in submitted["stateful_input"]
+
+    without_section = await service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "reporting_currency": "USD",
+            "sections": ["OVERVIEW"],
+        },
+        None,
+    )
+    assert "attribution" not in without_section

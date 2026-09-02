@@ -122,6 +122,26 @@ def test_effect_rows_carry_the_hierarchy_slot_and_a_reader_label():
     assert fixed_income["total_effect_pp"] == "-0.03"
 
 
+def test_the_page_names_the_benchmark_the_source_resolved():
+    """An order may omit the benchmark code (the portfolio's assignment
+    answers, per the catalogue's defaulting policy). The page must then name
+    the benchmark the source actually computed against - the resolved
+    identity from benchmark_context - not draw "outperformed" against nothing.
+    The requested code stays in the envelope for lineage."""
+
+    snapshot = _snapshot()
+    snapshot["attribution"]["request"]["benchmark_code"] = None
+    snapshot["attribution"]["benchmark_context"] = {
+        "benchmark_id": "BMK_PORTFOLIO_ASSIGNED",
+        "return_source": "calculated",
+    }
+
+    bridge = build_attribution_bridge(snapshot)
+
+    assert bridge["posture"] == "ready"
+    assert bridge["benchmark_code"] == "BMK_PORTFOLIO_ASSIGNED"
+
+
 def test_a_pending_calculation_is_said_with_its_identity():
     """The async posture reaches the page as a statement, never a wait: the
     calculation exists upstream, and regenerating collects it."""

@@ -90,6 +90,7 @@ FORBIDDEN_METRIC_LABELS = frozenset(
 IMPLEMENTED_REPORTING_OPERATIONS = frozenset(
     {
         "advisor_commentary_availability",
+        "attribution_capture",
         "archive_handoff",
         "batch_scheduler_pass",
         "batch_worker_run",
