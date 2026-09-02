@@ -197,3 +197,25 @@ def test_period_reasons_travel_with_the_sources_own_prose():
 
 def test_a_report_that_did_not_order_attribution_promises_nothing():
     assert build_attribution_bridge({}) == {}
+
+
+def test_malformed_levels_are_a_said_absence_not_a_crash_or_a_guess():
+    """A period whose levels are missing, non-list, or hold no mapping rows
+    has no bridge to draw. Each shape is a fact about the data, said - and a
+    malformed effect value renders as absent rather than a guessed figure."""
+
+    no_levels = _snapshot()
+    no_levels["attribution"]["results_by_period"]["YTD"]["levels"] = None
+
+    junk_levels = _snapshot()
+    junk_levels["attribution"]["results_by_period"]["YTD"]["levels"] = ["noise", 42]
+
+    assert build_attribution_bridge(no_levels)["posture"] == "unavailable"
+    assert build_attribution_bridge(junk_levels)["posture"] == "unavailable"
+
+    bad_value = _snapshot()
+    bad_value["attribution"]["results_by_period"]["YTD"]["levels"][0]["groups"][0]["allocation"] = (
+        "not-a-number"
+    )
+    bridge = build_attribution_bridge(bad_value)
+    assert bridge["effects"][0]["allocation_pp"] is None
