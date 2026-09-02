@@ -7,10 +7,13 @@ from app.observability import correlation_id_var, request_id_var, trace_id_var
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, payload, text: str = ""):
+    def __init__(self, status_code: int, payload, text: str = "", headers=None):
         self.status_code = status_code
         self._payload = payload
         self.text = text
+        # A real httpx.Response always has headers; a fake without them is
+        # the fake-fidelity gap that hides header-reading code from tests.
+        self.headers = dict(headers or {})
 
     def json(self):
         if isinstance(self._payload, Exception):
@@ -540,3 +543,173 @@ async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     assert status_code == 200
     assert payload == {"results": {}}
     assert kwargs["url"] == "http://risk/analytics/risk/calculate"
+
+
+@pytest.mark.asyncio
+async def test_performance_client_gets_attribution_synchronously_when_offered(monkeypatch):
+    """A 200 with results_by_period is the whole answer; no polling."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    assert payload == {"results_by_period": {"YTD": {}}}
+    assert [call["method"] for call in recorder.calls] == ["POST"]
+    assert recorder.calls[0]["url"] == "http://performance/performance/attribution"
+
+
+@pytest.mark.asyncio
+async def test_performance_client_polls_accepted_attribution_to_its_result(monkeypatch):
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                    "recommended_poll_after_seconds": 1,
+                },
+            ),
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                },
+            ),
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _no_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    assert payload == {"results_by_period": {"YTD": {}}}
+    assert [call["method"] for call in recorder.calls] == ["POST", "GET", "GET"]
+    assert recorder.calls[1]["url"] == ("http://performance/performance/attribution/results/calc-9")
+
+
+@pytest.mark.asyncio
+async def test_attribution_exhaustion_returns_the_accepted_envelope(monkeypatch):
+    """The load-bearing behaviour for the capture. A result still pending
+    after the budget comes back AS the accepted envelope - status 202, no
+    results_by_period - which is the capture's evidence for its
+    accepted-but-not-complete posture. The client never raises on pending:
+    what a pending attribution means for a report is the capture's judgement,
+    not the transport's."""
+
+    pending = _FakeResponse(
+        status_code=202,
+        payload={
+            "calculation_id": "calc-9",
+            "result_path": "/performance/attribution/results/calc-9",
+            "recommended_poll_after_seconds": 1,
+        },
+    )
+    recorder = _SequencedRecordingAsyncClient(responses=[pending] * 20)
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _no_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert "results_by_period" not in payload
+    assert payload["calculation_id"] == "calc-9"
+
+
+@pytest.mark.asyncio
+async def test_the_poll_waits_as_long_as_the_source_states_but_no_longer_than_the_cap(
+    monkeypatch,
+):
+    """The accepted envelope and the Retry-After header state when to come
+    back; a source that says so should not be hammered on our schedule. A
+    misbehaving source stating an hour is capped - the attempt budget bounds
+    the total, but each wait must be bounded too or one bad header hangs a
+    capture."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                    "recommended_poll_after_seconds": 2,
+                },
+            ),
+            _FakeResponse(
+                status_code=202,
+                payload={"calculation_id": "calc-9"},
+                headers={"Retry-After": "3600"},
+            ),
+            _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+
+    sleeps: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _record_sleep)
+
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.01,
+    )
+
+    status_code, _payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 200
+    # First wait honours the envelope's stated 2s; second is the header's
+    # 3600s capped at the bound, not honoured verbatim and not our fallback.
+    assert sleeps[0] == 2.0
+    assert sleeps[1] == PerformanceClient._MAX_STATED_POLL_DELAY_SECONDS
