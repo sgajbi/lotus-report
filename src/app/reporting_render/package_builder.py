@@ -8,6 +8,7 @@ from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
 from app.reporting_render.contribution_ranking import build_contribution_ranking
+from app.reporting_render.holdings_presentation import build_holdings_presentation
 from app.reporting_render.risk_methodology import build_risk_methodology
 from app.reporting_render.risk_posture import build_risk_posture
 
@@ -126,6 +127,14 @@ def _build_render_package(
         # statements about the same portfolio.
         "risk_methodology": build_risk_methodology(snapshot),
         "top_holdings": _top_holdings(snapshot),
+        # What that panel of five leaves out. A subset must never imply
+        # completeness, and the weights not summing to 100% asks a reader
+        # to notice arithmetic rather than telling them.
+        "holdings_presentation": build_holdings_presentation(
+            snapshot,
+            ranked=_ranked_holdings(snapshot),
+            limit=PRESENTED_HOLDING_LIMIT,
+        ),
         "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
         "governance_summary": _governance_summary_section(
@@ -949,7 +958,20 @@ def _performance_history(
     return normalized
 
 
-def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+#: How many holdings the overview panel presents. The reconciliation published
+#: beside it describes exactly this set, so the two are defined together.
+PRESENTED_HOLDING_LIMIT = 5
+
+
+def _ranked_holdings(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every holding, largest first, with the raw values ranking needs.
+
+    Split out so the panel and the reconciliation that explains it are drawn
+    from ONE ordered list. Two sorts would be two chances to describe different
+    sets, and a reconciliation describing a set that is not on the page is
+    worse than none - it looks checked.
+    """
+
     grouped_holdings = _as_dict(snapshot.get("holdings")).get("holdingsByAssetClass")
     if not isinstance(grouped_holdings, dict):
         return []
@@ -995,11 +1017,26 @@ def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
                     "ytd_total_return_pct": _percent_text(item.get("ytd_total_return_pct")),
                     "_sort_value": _optional_decimal(item.get("market_value_reporting_currency"))
                     or Decimal("0"),
+                    # Raw, for the reconciliation. `weight_pct` above is
+                    # already formatted text and summing that back would be
+                    # reading our own output instead of the evidence.
+                    "_weight": _optional_decimal(item.get("weight")),
                 }
             )
     flattened.sort(key=lambda item: item["_sort_value"], reverse=True)
+    return flattened
+
+
+def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
+    """The published position rows, in presentation order.
+
+    The field list is explicit rather than a strip of underscore-prefixed keys:
+    this is the package contract, and an internal field must not reach Render
+    just because someone added it to the ranking row above.
+    """
+
     positions: list[dict[str, str]] = []
-    for item in flattened:
+    for item in _ranked_holdings(snapshot):
         positions.append(
             {
                 "asset_class": item["asset_class"],
@@ -1034,7 +1071,7 @@ def _positions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _top_holdings(snapshot: dict[str, Any]) -> list[dict[str, str]]:
-    return _positions(snapshot)[:5]
+    return _positions(snapshot)[:PRESENTED_HOLDING_LIMIT]
 
 
 def _transactions(snapshot: dict[str, Any]) -> list[dict[str, str]]:
