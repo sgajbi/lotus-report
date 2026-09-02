@@ -4000,7 +4000,7 @@ class ReportingReadService:
     ) -> str:
         if cash_leg:
             return "Cash Ledger"
-        if transaction_type in {"DIVIDEND", "INTEREST", "COUPON"}:
+        if transaction_type in {"DIVIDEND", "INTEREST"}:
             return "Income"
         if transaction_type in {"DEPOSIT", "TRANSFER_IN", "WITHDRAWAL", "TRANSFER_OUT"}:
             return "Cash Flow"

@@ -2104,3 +2104,61 @@ async def test_build_risk_analytics_surfaces_missing_risk_free_and_benchmark_not
         "information_ratio": None,
         "benchmark_relative_risk": None,
     }
+
+
+def test_income_means_the_same_thing_on_every_surface() -> None:
+    """Income membership is owned by lotus-core's transaction type registry
+    (INCOME_RECOGNITION_TRANSACTION_TYPES = DIVIDEND, INTEREST; bond coupons
+    book as INTEREST - COUPON is not a registered type at all).
+
+    The review category previously also named "COUPON", a type the source
+    never emits, so the transaction table's Income label and the income
+    summary looked like they disagreed about what income is. They never did -
+    the phantom token just made agreement unprovable without reading the
+    source registry (lotus-report#249). This pins both surfaces to the same
+    set, so a type added to one and not the other fails here instead of
+    shipping a table and a summary that classify the same row differently.
+    """
+
+    service = ReportingReadService(
+        core_query_client=_CoreQuerySuccessMinimal(),
+        performance_client=_PerformanceSuccessEmpty(),
+        risk_client=_RiskSuccess(),
+    )
+    core_income_recognition_types = {"DIVIDEND", "INTEREST"}
+
+    categorised_as_income = {
+        transaction_type
+        for transaction_type in (
+            "DIVIDEND",
+            "INTEREST",
+            "COUPON",
+            "BUY",
+            "SELL",
+            "FEE",
+            "TAX",
+            "DEPOSIT",
+            "WITHDRAWAL",
+            "STOCK_DIVIDEND",
+        )
+        if service._transaction_review_category(
+            transaction_type=transaction_type, cash_leg=False, asset_class="Bond"
+        )
+        == "Income"
+    }
+    summarised_as_income = {
+        transaction_type
+        for transaction_type in categorised_as_income | {"DIVIDEND", "INTEREST", "COUPON"}
+        if service._summarize_income_rows(
+            [
+                {
+                    "transaction_type": transaction_type,
+                    "gross_transaction_amount_reporting_currency": 100.0,
+                }
+            ]
+        )[0]["transaction_count"]
+        == 1
+    }
+
+    assert categorised_as_income == core_income_recognition_types
+    assert summarised_as_income == core_income_recognition_types
