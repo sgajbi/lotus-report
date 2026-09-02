@@ -99,7 +99,7 @@ def _build_render_package(
         # What the presented returns MEAN. The figures are net of fees and
         # the document never said so; the basis was carried only by a
         # field name, which no renderer is obliged to read.
-        "performance_basis": _performance_basis_section(),
+        "performance_basis": _performance_basis_section(snapshot),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
         "performance_monthly_history": _performance_history(
@@ -873,10 +873,42 @@ _PRESENTED_CUMULATIVE_RETURN_KEY = "net_cumulative_return"
 _PRESENTED_ANNUALIZED_RETURN_KEY = "net_annualized_return"
 
 
-def _performance_basis_section() -> dict[str, Any]:
-    """What the presented performance figures mean."""
+#: The period the fee-drag figure describes: the same period the document's
+#: other basis statements present.
+_FEE_DRAG_PERIOD = "YTD"
 
-    return {"return_basis": PRESENTED_RETURN_BASIS}
+
+def _performance_basis_section(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """What the presented performance figures mean.
+
+    `fee_drag` carries the signed gross-minus-net difference for the presented
+    period, computed here from the RAW captured returns because Render must
+    not derive it from two displayed numbers - those are rounded, and a
+    difference of roundings is a different number than a rounding of the
+    difference. The field is named for what it IS (gross minus net, in
+    percentage points) rather than what it approximates: compounding means the
+    difference is not exactly "fees", which is why the agreed page wording
+    says "approximately".
+
+    Decided on #247: one line under the period table, never a gross column.
+    Absent gross means no figure - never a guessed drag - while a genuine
+    zero is kept, because "fees cost you nothing this period" is a finding
+    and "we cannot say" is not. The sign is preserved: a negative difference
+    (net above gross - rebates) must not be silently hidden or clamped, and
+    the page sentence follows the sign rather than assuming it.
+    """
+
+    summary = _as_dict(_as_dict(snapshot.get("performance")).get("summary"))
+    period_summary = _as_dict(summary.get(_FEE_DRAG_PERIOD))
+    gross = _optional_decimal(period_summary.get("gross_cumulative_return"))
+    net = _optional_decimal(period_summary.get(_PRESENTED_CUMULATIVE_RETURN_KEY))
+    fee_drag = None
+    if gross is not None and net is not None:
+        fee_drag = {
+            "period": _FEE_DRAG_PERIOD,
+            "gross_minus_net_pp": f"{(gross - net).quantize(Decimal('0.01'))}",
+        }
+    return {"return_basis": PRESENTED_RETURN_BASIS, "fee_drag": fee_drag}
 
 
 def _performance_periods(snapshot: dict[str, Any]) -> list[dict[str, str]]:
