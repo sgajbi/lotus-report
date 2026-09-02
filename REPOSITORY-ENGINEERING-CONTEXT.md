@@ -114,14 +114,15 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 ## 7. Active priorities
 
 1. **Analytics roadmap: decomposed and closed (#209).** Its comments remain the canonical
-   coverage matrix; the work queues are the successor issues. Active: **#254** attribution
-   bridge ("why did we outperform" - gated on the Render design slot; the Brinson
-   return-attribution endpoint on lotus-performance is the direct source), **#255** rolling
-   risk trend (gated on Render's queue catching up), **#249** earnings statement and **#247**
-   fee-drag line (Report halves merged; Render draws next). Selection stays by client/advisor
-   value, never field availability; every analytic gets an agreed Render contract before
-   implementation, and Report adds no further undrawn package fields until the page consumes
-   the queued ones.
+   coverage matrix; the work queues are the successor issues. **#249 earnings statement is
+   DELIVERED end to end** (render#238 drew it in the transaction page's empty half; the page
+   left Render's worst-list and their page-economy ratchet re-banked downward). Active:
+   **#254** attribution bridge - the design conversation is OPEN (Render's queue is clear);
+   the Brinson return-attribution endpoint on lotus-performance is the direct source, and it
+   is async, so capture needs an accepted-not-complete posture. **#255** rolling risk trend
+   waits behind #254 in value order. **#247** fee-drag line: field live, Render's line lands
+   in the earnings note voice. Selection stays by client/advisor value, never field
+   availability; every analytic gets an agreed Render contract before implementation.
 2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios` scheduling is refused
    (fail-closed) rather than stamped. Remaining: verify a *source-attributed* tenant once
    `lotus-core` projects it. The deleted stamping path must not be recreated.
@@ -134,8 +135,8 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 | Blocked | On | Why |
 |---|---|---|
 | #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
-| #254 attribution bridge | Render design slot | Largest layout cost of the B candidates; agreed contract before either side builds |
-| #255 risk trend, #249/#247 Render halves | Render's drawing queue | Report adds no further undrawn package fields until the page consumes the queued ones |
+| #254 attribution bridge | Design conversation (now open) | Contract agreed on #254 before either side builds |
+| #255 risk trend | #254 first, in value order | One analytic at a time through design |
 
 ---|---|---|
 | #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
