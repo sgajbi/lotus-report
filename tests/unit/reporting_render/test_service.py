@@ -610,6 +610,44 @@ def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
     assert "currency" not in {entry["dimension"] for entry in presentation["dimensions"]}
 
 
+def test_every_package_carries_the_document_reference_and_attempts_share_it(tmp_path):
+    """The governed identity a client document carries in its footer, minted
+    in the ONE envelope all four families share. Two render ATTEMPTS at the
+    same job and snapshot are the same governed document: different
+    render_job_id, same reference - per-attempt values are not even inputs.
+    A different snapshot is a different document."""
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot_payload = {
+        "readiness": {"status": "ready"},
+        "reportingCurrency": "USD",
+        "snapshot_id": "rsnap_doc_1",
+        "clientProfile": {"identity": {"client_name": "Alex Tan"}},
+        "overview": {"total_market_value": 1000.0, "currency": "USD"},
+    }
+
+    first_attempt = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_attempt_1",
+    )
+    second_attempt = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=snapshot_payload,
+        render_job_id="rdr_attempt_2",
+    )
+    regenerated = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot={**snapshot_payload, "snapshot_id": "rsnap_doc_2"},
+        render_job_id="rdr_attempt_3",
+    )
+
+    reference = first_attempt["render_context"]["document_reference"]
+    assert reference.startswith("rdoc_")
+    assert second_attempt["render_context"]["document_reference"] == reference
+    assert regenerated["render_context"]["document_reference"] != reference
+
+
 def test_a_report_that_did_not_order_risk_gets_no_risk_panel(tmp_path):
     """`riskAnalytics` is composed only when RISK_ANALYTICS is requested, so
     its absence means the caller deselected the section - not that a
