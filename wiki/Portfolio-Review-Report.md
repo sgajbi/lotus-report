@@ -405,6 +405,7 @@ Blocks, with their one load-bearing rule each:
 | `benchmark_presentation` (#241) | `available` / `unavailable` / `not_requested` + benchmark identity | A failed comparison must not render as an unbenchmarked mandate; replayed captures resolve from the ORDER, not table values |
 | `performance_basis` (#243/#247) | `return_basis: NET`, plus signed `fee_drag.gross_minus_net_pp` | Fee drag is computed from raw returns, never from displayed (rounded) numbers; sign preserved |
 | `holdings_presentation` (#245) | Posture, `presented_/available_count`, `presented_weight_pct`, Core's `supportability_status` verbatim | Empty portfolio != unavailable holdings != unreconciled holdings != trusted-complete - four distinct states |
+| `attribution_bridge` (#254) | Brinson bridge: effects with the hierarchy slot (`grouping_dimension`+`level`), source totals, reconciliation with source-classified residual, `ready`/`pending`/`unavailable` | The residual is presented, never allocated away; totals are the source's authoritative fields, never summed from rows; a pending async calculation is said with its identity, never waited on |
 | `earnings_statement` (#249) | Income gross->withholding->net (+ by-type), realized P&L with named largest gain/loss, `completeness` | `window_truncated` sums are a floor: the page says "at least X, based on N transactions reviewed" and never the word "total"; truncated zeros never claim an empty period |
 
 Render-side drawing contracts are agreed per block before either side builds (recorded on the
