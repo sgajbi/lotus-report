@@ -113,12 +113,15 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ## 7. Active priorities
 
-1. **#209 — analytics roadmap, rebaselined.** The capture-vs-package sweep is closed; remaining
-   candidates are classified A (correctness - none open), B (high-value advisor analytics:
-   risk attribution "why did we outperform", income/P&L communication, rolling risk trend,
-   gross-beside-net #247) and C (available data, not promoted). Selection is by client/advisor
-   value, never by field availability, and every B item gets a Render design slot before
-   implementation.
+1. **Analytics roadmap: decomposed and closed (#209).** Its comments remain the canonical
+   coverage matrix; the work queues are the successor issues. Active: **#254** attribution
+   bridge ("why did we outperform" - gated on the Render design slot; the Brinson
+   return-attribution endpoint on lotus-performance is the direct source), **#255** rolling
+   risk trend (gated on Render's queue catching up), **#249** earnings statement and **#247**
+   fee-drag line (Report halves merged; Render draws next). Selection stays by client/advisor
+   value, never field availability; every analytic gets an agreed Render contract before
+   implementation, and Report adds no further undrawn package fields until the page consumes
+   the queued ones.
 2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios` scheduling is refused
    (fail-closed) rather than stamped. Remaining: verify a *source-attributed* tenant once
    `lotus-core` projects it. The deleted stamping path must not be recreated.
@@ -131,7 +134,8 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 | Blocked | On | Why |
 |---|---|---|
 | #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
-| #209 B-item "risk attribution" | Render design slot | Largest layout cost of the B candidates; agreed contract before either side builds |
+| #254 attribution bridge | Render design slot | Largest layout cost of the B candidates; agreed contract before either side builds |
+| #255 risk trend, #249/#247 Render halves | Render's drawing queue | Report adds no further undrawn package fields until the page consumes the queued ones |
 
 ---|---|---|
 | #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
