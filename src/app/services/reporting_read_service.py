@@ -1618,8 +1618,8 @@ class ReportingReadService:
         return "by" + "".join(part.capitalize() for part in parts)
 
     def _map_income_summary_from_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
-        totals, _ = self._summarize_income_rows(rows)
-        return totals
+        totals, by_income_type = self._summarize_income_rows(rows)
+        return {**totals, "by_income_type": by_income_type}
 
     def _map_activity_summary_from_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
         buckets = self._summarize_activity_rows(rows)

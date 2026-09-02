@@ -734,6 +734,9 @@ async def test_summary_uses_strategic_core_query_routes_for_summary_details():
     assert response["allocation"]["byAssetClass"][0]["group"] == "Equity"
     assert response["allocation"]["byAssetClass"][0]["market_value"] == 600000.0
     assert response["incomeSummary"]["net_amount_reporting_currency"] == 90.0
+    # The by-type split was computed and discarded before #249; the earnings
+    # statement reads it from the snapshot, so the capture must forward it.
+    assert set(response["incomeSummary"]["by_income_type"]) <= {"DIVIDEND", "INTEREST"}
     assert response["activitySummary"]["total_inflows"] == 1000.0
     assert response["pnlSummary"]["unrealized_pnl_reporting_currency"] == 100_000.0
     assert response["pnlSummary"]["unrealized_pnl_status"] == "present"
