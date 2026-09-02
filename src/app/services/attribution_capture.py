@@ -27,7 +27,7 @@ the split's whole point.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Protocol
 
 #: One level ships first; the hierarchy slot is defined in the contract
 #: (each row carries its dimension), so deeper levels ride the same request
@@ -47,6 +47,19 @@ ATTRIBUTION_ENDPOINT = "/performance/attribution"
 #: while any change to what is asked (portfolio, date, grouping, period)
 #: yields a new calculation rather than colliding with an old answer.
 _CALCULATION_ID_NAMESPACE = uuid.UUID("9f4bbf51-2f43-4c56-9d0a-56f0a4f8f1d2")
+
+
+class AttributionClient(Protocol):
+    """What this capture needs from a performance client.
+
+    A Protocol rather than Any, so mypy proves the real client satisfies it at
+    the wiring site - a capture calling a method the client does not have is a
+    merge-order hazard that should fail statically, not at the first live
+    order.
+    """
+
+    async def get_attribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
+
 
 STATUS_PRESENT = "present"
 STATUS_PENDING = "pending"
@@ -96,7 +109,7 @@ def build_attribution_request(
 
 async def capture_attribution(
     *,
-    performance_client: Any,
+    performance_client: AttributionClient,
     portfolio_id: str,
     as_of_date: str,
     benchmark_code: str,
