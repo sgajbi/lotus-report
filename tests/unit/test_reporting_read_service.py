@@ -1060,6 +1060,7 @@ async def test_review_composes_core_query_performance_and_risk():
         "advisor_commentary",
         "asset_allocation",
         "performance_review",
+        "performance_attribution",
         "risk_review",
         "income_cash_activity",
         "holdings_appendix",
