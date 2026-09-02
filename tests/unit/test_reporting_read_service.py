@@ -1371,6 +1371,37 @@ async def test_ordering_attribution_composes_the_section_and_honours_defaulting(
     submitted = performance_client.attribution_requests[0]
     assert "benchmark_id" not in submitted["stateful_input"]
 
+    pending_client = _PerformanceClientSuccess()
+
+    async def _accepted(payload):
+        return 202, {"calculation_id": "calc-9", "result_path": "/p"}
+
+    pending_client.get_attribution = _accepted
+    pending_service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=pending_client,
+        risk_client=_RiskClientSuccess(),
+    )
+    pending_response = await pending_service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "reporting_currency": "USD",
+            "sections": ["OVERVIEW", "PERFORMANCE_ATTRIBUTION"],
+        },
+        None,
+    )
+    # A still-computing section must not report ready on the JSON surface: the
+    # data is not there, and "ready" would be the presence-implies-health
+    # inference this whole vocabulary exists to remove.
+    pending_section = next(
+        section
+        for section in pending_response["client_sections"]
+        if section["section_id"] == "performance_attribution"
+    )
+    assert pending_section["status"] == "pending"
+    assert pending_section["reason_code"] == "attribution_accepted_not_complete"
+
     without_section = await service.get_portfolio_review(
         "P1",
         {

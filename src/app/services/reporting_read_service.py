@@ -597,7 +597,7 @@ class ReportingReadService:
             }
         supportability = self._as_dict(self._as_dict(section_payload).get("supportability"))
         supportability_status = supportability.get("status")
-        if supportability_status in {"partial", "unavailable"}:
+        if supportability_status in {"partial", "unavailable", "pending"}:
             return {
                 "section_id": section_id,
                 "title": title,
