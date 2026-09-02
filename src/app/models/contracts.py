@@ -382,19 +382,32 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
                 "benchmark_relative_risk": 3.2,
             }
         },
-        "exposures": [{"risk_factor": "equity_beta", "value": 0.62}],
     },
+    # Shapes below mirror what the read service actually emits - an example
+    # documenting fields no code produces teaches consumers to build against
+    # fiction. Income membership (DIVIDEND, INTEREST) is owned by lotus-core's
+    # transaction type registry; bond coupons book as INTEREST.
     "income_and_activity": {
-        "summary": {"income_ytd": 18420.0, "fees_ytd": 2410.0, "net_cash_flow_ytd": -12500.0},
-        "realized_pnl_summary": {
-            "status": "present",
-            "total_realized_pnl_reporting_currency": 1250.0,
-            "transaction_count": 1,
+        "incomeSummary": {
+            "transaction_count": 9,
+            "gross_amount_reporting_currency": 18420.0,
+            "withholding_tax_reporting_currency": 2210.4,
+            "other_deductions_reporting_currency": 0.0,
+            "net_amount_reporting_currency": 16209.6,
         },
-        "cash_flow_breakdown": [
-            {"category": "DIVIDENDS", "amount": 9600.0},
-            {"category": "COUPONS", "amount": 8820.0},
-        ],
+        "activitySummary": {
+            "total_inflows": 50000.0,
+            "inflows_transaction_count": 2,
+            "total_fees": 2410.0,
+            "fees_transaction_count": 4,
+        },
+        "realizedPnlSummary": {
+            "status": "present",
+            "transaction_count": 1,
+            "total_realized_pnl_reporting_currency": 1250.0,
+            "total_realized_gains_reporting_currency": 1250.0,
+            "total_realized_losses_reporting_currency": 0.0,
+        },
     },
     "holdings": {
         "position_count": 8,
