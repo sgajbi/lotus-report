@@ -113,24 +113,27 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ## 7. Active priorities
 
-1. **#177 — tenant-safe materialization.** Broad `all_active_portfolios` scheduling is refused
+1. **#209 — analytics roadmap, rebaselined.** The capture-vs-package sweep is closed; remaining
+   candidates are classified A (correctness - none open), B (high-value advisor analytics:
+   risk attribution "why did we outperform", income/P&L communication, rolling risk trend,
+   gross-beside-net #247) and C (available data, not promoted). Selection is by client/advisor
+   value, never by field availability, and every B item gets a Render design slot before
+   implementation.
+2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios` scheduling is refused
    (fail-closed) rather than stamped. Remaining: verify a *source-attributed* tenant once
-   `lotus-core` projects it.
-2. **#166 — advisor commentary.** JSON path complete: admissibility validated (accepted,
-   non-superseded, tenant, portfolio, period, as-of, currency, benchmark, content hash, reviewer,
-   review time, source refs, and a complete VALIDATED output verdict) and the accepted projection
-   persisted verbatim into the snapshot. Each reviewed claim states its own `grounding` posture.
-   Remaining: the PDF leg and Workbench rendering.
-3. **#209 — analytics coverage.** Group A (already captured, snapshotted, and previously discarded
-   at the package boundary): contribution ranking **(shipped)**, threshold/breach, expected
-   shortfall, income/P&L, concentration. Drawdown-as-picture is *not* Group A — episodes and the
-   underwater curve need a new capture, so it is scoped separately from the drawdown scalar. Group B (absent from Report entirely) stays unscheduled until a
-   reporting question demands it. The canonical cross-repo matrix is `lotus-render#160`.
+   `lotus-core` projects it. The deleted stamping path must not be recreated.
+3. **#166 is closed.** Advisor commentary is complete on Report's side (JSON + governed PDF,
+   admissibility incl. validation verdict, grounding, one shared refusal vocabulary).
+   Downstream realization is tracked where it is owned: lotus-workbench#990.
 
 ## 8. Known blockers
 
 | Blocked | On | Why |
 |---|---|---|
+| #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
+| #209 B-item "risk attribution" | Render design slot | Largest layout cost of the B candidates; agreed contract before either side builds |
+
+---|---|---|
 | #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
 | #166 PDF leg | `lotus-render#218` | The template exists (render#223) but does not draw the per-claim `grounding` posture, so an ungrounded AI claim would be indistinguishable from a checkable one in an archived document. Report's PDF gate refuses the section until it does |
 | #166 Workbench rendering | `lotus-workbench#795` | Their lane; contract and reason vocabulary delivered |
