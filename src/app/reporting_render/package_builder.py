@@ -9,6 +9,7 @@ from app.reporting_lineage.allocation_presentation import resolve_allocation_pre
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
 from app.reporting_render.attribution_bridge import build_attribution_bridge
 from app.reporting_render.contribution_ranking import build_contribution_ranking
+from app.reporting_render.document_reference import mint_document_reference
 from app.reporting_render.earnings_statement import build_earnings_statement
 from app.reporting_render.holdings_presentation import build_holdings_presentation
 from app.reporting_render.risk_methodology import build_risk_methodology
@@ -349,11 +350,12 @@ def _render_package_envelope(
     the fourth.
     """
 
+    snapshot_id = snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}"
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
         "report_job_id": job.job_id,
-        "snapshot_id": snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}",
+        "snapshot_id": snapshot_id,
         "report_type": job.report_type,
         "report_data_contract_version": report_data_contract_version,
         "template_id": template_id,
@@ -361,7 +363,21 @@ def _render_package_envelope(
         "locale": "en-SG",
         "brand_variant": "private_banking",
         "output_format": "pdf",
-        "render_context": {"timezone": "Asia/Singapore"},
+        "render_context": {
+            "timezone": "Asia/Singapore",
+            # The governed identity every client document carries in its
+            # footer. Minted here - in the ONE envelope all four families
+            # share - from the financial question (job, snapshot, template),
+            # never from per-attempt values: a rerender of the same snapshot
+            # converges on the same reference, a regenerate or corrected
+            # template carries its own.
+            "document_reference": mint_document_reference(
+                report_job_id=job.job_id,
+                snapshot_id=snapshot_id,
+                template_id=template_id,
+                template_version="v1",
+            ),
+        },
         "report_data": report_data,
         "lineage_refs": lineage_refs,
         "disclosure_refs": disclosure_refs,
