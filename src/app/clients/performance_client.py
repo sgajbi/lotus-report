@@ -1,4 +1,6 @@
 import asyncio
+import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -14,11 +16,22 @@ class PerformanceClient:
         timeout_seconds: float,
         max_retries: int = 2,
         retry_backoff_seconds: float = 0.2,
+        poll_budget_seconds: float = 10.0,
+        clock: Callable[[], float] | None = None,
+        sleeper: Callable[[float], Awaitable[None]] | None = None,
     ):
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
+        #: Report's own bounded deadline for one async result. The source
+        #: states when it may next be polled; Report states how long it will
+        #: wait overall. Both bounds hold - neither is traded for the other.
+        self._poll_budget_seconds = poll_budget_seconds
+        #: Injectable so budget semantics are proven with a fake clock and
+        #: sleeper rather than wall-clock sleeps.
+        self._clock = clock or time.monotonic
+        self._sleeper = sleeper
 
     async def get_workspace_summary(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         url = f"{self._base_url}/performance/workspace-summary"
@@ -139,61 +152,66 @@ class PerformanceClient:
     ) -> tuple[int, dict[str, Any]]:
         """One poll loop for every async analytics result.
 
-        This existed as byte-identical copies per endpoint; a third copy for
-        attribution would have been the two-copies defect at n=3, so the
-        copies now delegate here.
+        Two authorities, both honoured:
 
-        The wait honours the cadence the source states - the Retry-After
-        header, or `recommended_poll_after_seconds` in the accepted envelope -
-        falling back to the linear schedule the copies used. A source that
-        says when to come back should not be hammered on our schedule. Each
-        wait is capped so a misbehaving source stating an hour cannot hang a
-        capture; the attempt budget bounds the total either way.
+        - The SOURCE states the minimum time before its result may next be
+          polled - the Retry-After header, or recommended_poll_after_seconds
+          in the accepted envelope. That is an instruction, not a suggestion:
+          this loop never polls early and never shortens a stated wait. A
+          source stating nothing keeps the old shape - immediate first poll,
+          then the linear fallback.
+        - REPORT states how long a capture waits overall
+          (poll_budget_seconds), plus an attempt bound as a backstop. When
+          the source's stated wait ends after Report's remaining budget, the
+          loop stops immediately and returns the accepted envelope: polling
+          early would disobey the source, sleeping on would disobey the
+          budget, and the truthful outcome is the pending posture.
 
-        Exhaustion returns the LAST payload - for a still-pending result that
-        is the accepted envelope, which is the capture's evidence for its
-        accepted-but-not-complete posture. This loop never raises on pending:
-        deciding what a pending result means for a report is the capture's
-        judgement, not the transport's.
+        Exhaustion of either bound returns the LAST payload - for a
+        still-pending result that is the accepted envelope, which is the
+        capture's evidence for its accepted-but-not-complete posture. The
+        loop never raises on pending: what a pending result means for a
+        report is the capture's judgement, not the transport's.
         """
 
+        sleeper = self._sleeper or asyncio.sleep
         result_url = f"{self._base_url}{result_path}"
+        deadline = self._clock() + self._poll_budget_seconds
         last_status = fallback_status_code
         last_payload = fallback_payload
-        delay = self._stated_poll_delay(fallback_payload, header_value=None) or 0.0
+        delay = self._stated_poll_delay(fallback_payload, header_value=None)
         for attempt in range(self._max_retries + 8):
-            # The stated wait applies BEFORE the first poll too - the source
-            # says "wait at least N between polls", and the 202 that carried
-            # the cadence counts as the previous contact. A source stating
-            # nothing keeps the old shape: first poll immediate, then the
-            # linear fallback.
-            wait = delay or (self._retry_backoff_seconds * attempt if attempt else 0.0)
-            if wait:
-                await asyncio.sleep(wait)
+            wait = float(delay) if delay is not None else self._retry_backoff_seconds * attempt
+            if wait > 0.0:
+                if self._clock() + wait > deadline:
+                    return last_status, last_payload
+                await sleeper(wait)
+            elif self._clock() >= deadline:
+                return last_status, last_payload
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 response = await client.get(result_url, params={}, headers=headers)
             last_status = response.status_code
             last_payload = response_payload(response)
             if last_status >= 400 or "results_by_period" in last_payload:
                 return last_status, last_payload
-            delay = (
-                self._stated_poll_delay(
-                    last_payload, header_value=response.headers.get("Retry-After")
-                )
-                or 0.0
+            delay = self._stated_poll_delay(
+                last_payload, header_value=response.headers.get("Retry-After")
             )
         return last_status, last_payload
 
-    #: Upper bound on a single stated wait. Bounds a misbehaving source; the
-    #: attempt budget bounds the total.
-    _MAX_STATED_POLL_DELAY_SECONDS = 5.0
-
     def _stated_poll_delay(
         self, payload: dict[str, Any], *, header_value: str | None
-    ) -> float | None:
-        # Whole seconds by contract: Retry-After is delta-seconds and the
-        # envelope's schema declares an integer. Parsing as int also keeps
-        # this duration out of the monetary-float guard's vocabulary.
+    ) -> int | None:
+        """The source's stated minimum wait, in whole seconds.
+
+        Retry-After is delta-seconds and the envelope schema declares an
+        integer; parsing as int also keeps a duration out of the
+        monetary-float guard's vocabulary. An unparseable header is ignored
+        (one bad header must not fail a poll that would have succeeded);
+        whether a large stated wait fits is the BUDGET's decision, made in
+        the loop - it is never truncated here.
+        """
+
         stated: int | None = None
         if header_value is not None:
             try:
@@ -206,7 +224,7 @@ class PerformanceClient:
                 stated = recommended
         if stated is None or stated <= 0:
             return None
-        return min(stated, self._MAX_STATED_POLL_DELAY_SECONDS)
+        return stated
 
     def _parse_payload(self, response: httpx.Response) -> dict[str, Any]:
         return response_payload(response)
