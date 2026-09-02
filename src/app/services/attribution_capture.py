@@ -26,6 +26,7 @@ the split's whole point.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any, Protocol
 
@@ -40,12 +41,25 @@ ATTRIBUTION_PERIOD = "YTD"
 
 ATTRIBUTION_ENDPOINT = "/performance/attribution"
 
-#: Namespace for deterministic calculation ids. The id is the idempotency
-#: handle lotus-performance offers callers: deriving it from the request's
-#: identifying facts means an identical retry converges on the same upstream
-#: calculation - the retry-convergence rule applied to an async source -
-#: while any change to what is asked (portfolio, date, grouping, period)
-#: yields a new calculation rather than colliding with an old answer.
+#: Namespace for deterministic calculation ids. lotus-performance treats a
+#: caller-supplied id as an idempotency handle with VERIFIED semantics: a
+#: duplicate id whose replay signature matches returns the existing execution
+#: (REPLAY - the convergence this capture wants), and a duplicate id with a
+#: different payload is a 409 CONFLICT telling the caller to reuse the
+#: original request exactly or pick a new id.
+#:
+#: The id therefore binds the COMPLETE financial question - it is derived
+#: from the canonical serialization of the request body itself, so every
+#: input capable of changing the authoritative result (portfolio, window,
+#: period, grouping, benchmark, basis, mode, frequency) changes the id, and
+#: a field added to the request later is bound automatically rather than
+#: remembered. A hand-picked tuple previously bound only portfolio, date,
+#: period and grouping: the same id with a DIFFERENT benchmark would have
+#: collided with the old calculation as a 409. Same financial question,
+#: same identity; different financial question, different identity.
+#:
+#: Transport-only values never enter the id because they never enter the
+#: body: correlation travels in headers, and the id key itself is excluded.
 _CALCULATION_ID_NAMESPACE = uuid.UUID("9f4bbf51-2f43-4c56-9d0a-56f0a4f8f1d2")
 
 
@@ -66,9 +80,12 @@ STATUS_PENDING = "pending"
 STATUS_UNAVAILABLE = "unavailable"
 
 
-def attribution_calculation_id(*, portfolio_id: str, as_of_date: str) -> str:
-    identity = "|".join((portfolio_id, as_of_date, ATTRIBUTION_PERIOD, ATTRIBUTION_GROUPING))
-    return str(uuid.uuid5(_CALCULATION_ID_NAMESPACE, identity))
+def attribution_calculation_id(request: dict[str, Any]) -> str:
+    """The identity of the financial question this request asks."""
+
+    semantic = {key: value for key, value in request.items() if key != "calculation_id"}
+    canonical = json.dumps(semantic, sort_keys=True, separators=(",", ":"))
+    return str(uuid.uuid5(_CALCULATION_ID_NAMESPACE, canonical))
 
 
 def build_attribution_request(
@@ -86,10 +103,7 @@ def build_attribution_request(
     differently is the one-fact-two-names defect.
     """
 
-    return {
-        "calculation_id": attribution_calculation_id(
-            portfolio_id=portfolio_id, as_of_date=as_of_date
-        ),
+    request: dict[str, Any] = {
         "portfolio_id": portfolio_id,
         "report_start_date": f"{as_of_date[:4]}-01-01",
         "report_end_date": as_of_date,
@@ -105,6 +119,9 @@ def build_attribution_request(
             "include_cash_flows": True,
         },
     }
+    # Stamped from the body it identifies, after the body is complete.
+    request["calculation_id"] = attribution_calculation_id(request)
+    return request
 
 
 async def capture_attribution(
@@ -191,12 +208,20 @@ async def capture_attribution(
 def _refusal(status_code: int, payload: dict[str, Any]) -> tuple[str, str]:
     """A bounded reason for a refusal, never a guess.
 
-    409 is the source reporting a FAILED async execution (or a conflicting
-    duplicate) - the calculation ran and did not succeed, so re-ordering the
-    report is the remedy. 422 is the source saying this portfolio cannot
-    support the calculation (missing benchmark assignment, unsupported
-    grouping) - a fact about the mandate's data, not a transient. Anything
-    else is a refusal Report does not recognise and says so.
+    409 covers two verified source facts that share a status: a FAILED async
+    execution (re-ordering the report is the remedy) and an identity CONFLICT
+    - the calculation id exists with a different payload. With the id derived
+    from the full request body a conflict should not occur; if it does, it
+    means Report's request construction changed across versions for the same
+    question, and the source's own detail text (forwarded verbatim below)
+    says which of the two happened. They are not split into separate codes
+    because the source offers no machine-readable reason - only prose - and
+    parsing error strings is the fragility the commentary mapping removed.
+
+    422 is the source saying this portfolio cannot support the calculation
+    (missing benchmark assignment, unsupported grouping) - a fact about the
+    mandate's data, not a transient. Anything else is a refusal Report does
+    not recognise and says so.
     """
 
     detail = _text(payload.get("detail"))

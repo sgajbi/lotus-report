@@ -99,21 +99,83 @@ async def test_accepted_but_not_complete_is_a_stated_posture_not_a_failure():
 
 @pytest.mark.asyncio
 async def test_an_identical_retry_converges_on_the_same_upstream_calculation():
-    """The retry-convergence rule applied to an async source. The calculation
-    id is derived from what is asked, so a capture retry re-addresses the SAME
-    upstream calculation instead of submitting a new one - and a different
-    question gets a different id rather than colliding with an old answer."""
+    """The retry-convergence rule applied to an async source, against
+    lotus-performance's VERIFIED idempotency: a duplicate id with a matching
+    replay signature returns the existing execution, and a duplicate id with
+    a different payload is a 409 CONFLICT. Convergence therefore requires the
+    id to be identical exactly when the payload is."""
 
     client = _AttributionClient(200, RESULTS)
     await _capture(client)
     await _capture(client)
 
     first, second = client.requests
+    assert first == second
     assert first["calculation_id"] == second["calculation_id"]
 
-    different_day = attribution_calculation_id(portfolio_id="P1", as_of_date="2026-04-23")
-    different_portfolio = attribution_calculation_id(portfolio_id="P2", as_of_date="2026-04-22")
-    assert len({first["calculation_id"], different_day, different_portfolio}) == 3
+
+def _request(**overrides):
+    request = build_attribution_request(
+        portfolio_id=overrides.pop("portfolio_id", "P1"),
+        as_of_date=overrides.pop("as_of_date", "2026-04-22"),
+        benchmark_code=overrides.pop("benchmark_code", "BMK_A"),
+    )
+    request.pop("calculation_id")
+    request.update(overrides)
+    return request
+
+
+def test_the_identity_binds_the_complete_financial_question():
+    """Same financial question -> same identity; different financial question
+    -> different identity. The id is derived from the canonical request body,
+    so EVERY input capable of changing the authoritative result changes it -
+    the previous hand-picked tuple omitted the benchmark, and the same id
+    with a different benchmark would have collided with the old calculation
+    as the source's 409 CONFLICT."""
+
+    base = attribution_calculation_id(_request())
+
+    assert attribution_calculation_id(_request()) == base
+
+    different_benchmark = _request()
+    different_benchmark["stateful_input"]["benchmark_id"] = "BMK_B"
+    assert attribution_calculation_id(different_benchmark) != base
+
+    different_grouping = _request(group_by=["sector"])
+    assert attribution_calculation_id(different_grouping) != base
+
+    different_window = _request(report_end_date="2026-04-23")
+    assert attribution_calculation_id(different_window) != base
+
+    different_period = _request(analyses=[{"period": "1Y", "frequencies": ["daily"]}])
+    assert attribution_calculation_id(different_period) != base
+
+    different_basis = _request()
+    different_basis["stateful_input"]["metric_basis"] = "GROSS"
+    assert attribution_calculation_id(different_basis) != base
+
+    every_id = {
+        base,
+        attribution_calculation_id(different_benchmark),
+        attribution_calculation_id(different_grouping),
+        attribution_calculation_id(different_window),
+        attribution_calculation_id(different_period),
+        attribution_calculation_id(different_basis),
+    }
+    assert len(every_id) == 6
+
+
+def test_transport_metadata_never_changes_the_identity():
+    """Correlation ids, retry counts and timestamps are transport, not the
+    financial question. They never enter the request body (correlation
+    travels in headers), and the id key itself is excluded - so a request
+    carrying a stale calculation_id still derives the same identity from what
+    it asks."""
+
+    with_stale_id = _request()
+    with_stale_id["calculation_id"] = "something-old"
+
+    assert attribution_calculation_id(with_stale_id) == attribution_calculation_id(_request())
 
 
 @pytest.mark.asyncio

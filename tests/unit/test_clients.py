@@ -660,15 +660,37 @@ async def test_attribution_exhaustion_returns_the_accepted_envelope(monkeypatch)
     assert payload["calculation_id"] == "calc-9"
 
 
+class _FakeTime:
+    """A clock and sleeper for proving budget semantics without wall time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _budget_client(recorder, fake_time, *, poll_budget_seconds):
+    return PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        max_retries=0,
+        retry_backoff_seconds=0.25,
+        poll_budget_seconds=poll_budget_seconds,
+        clock=fake_time.clock,
+        sleeper=fake_time.sleep,
+    )
+
+
 @pytest.mark.asyncio
-async def test_the_poll_waits_as_long_as_the_source_states_but_no_longer_than_the_cap(
-    monkeypatch,
-):
-    """The accepted envelope and the Retry-After header state when to come
-    back; a source that says so should not be hammered on our schedule. A
-    misbehaving source stating an hour is capped - the attempt budget bounds
-    the total, but each wait must be bounded too or one bad header hangs a
-    capture."""
+async def test_a_stated_wait_within_budget_is_honoured_in_full(monkeypatch):
+    """Retry-After is the source's minimum, not a suggestion Report may
+    shorten: the loop sleeps exactly the stated wait before polling."""
 
     recorder = _SequencedRecordingAsyncClient(
         responses=[
@@ -680,39 +702,119 @@ async def test_the_poll_waits_as_long_as_the_source_states_but_no_longer_than_th
                     "recommended_poll_after_seconds": 2,
                 },
             ),
-            _FakeResponse(
-                status_code=202,
-                payload={"calculation_id": "calc-9"},
-                headers={"Retry-After": "3600"},
-            ),
             _FakeResponse(status_code=200, payload={"results_by_period": {"YTD": {}}}),
         ]
     )
     monkeypatch.setattr(
         "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
     )
+    fake_time = _FakeTime()
 
-    sleeps: list[float] = []
-
-    async def _record_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-
-    monkeypatch.setattr("app.clients.performance_client.asyncio.sleep", _record_sleep)
-
-    client = PerformanceClient(
-        base_url="http://performance/",
-        timeout_seconds=3.0,
-        max_retries=0,
-        retry_backoff_seconds=0.01,
-    )
-
-    status_code, _payload = await client.get_attribution({"portfolio_id": "P1"})
+    client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
 
     assert status_code == 200
-    # First wait honours the envelope's stated 2s; second is the header's
-    # 3600s capped at the bound, not honoured verbatim and not our fallback.
-    assert sleeps[0] == 2.0
-    assert sleeps[1] == PerformanceClient._MAX_STATED_POLL_DELAY_SECONDS
+    assert payload == {"results_by_period": {"YTD": {}}}
+    assert fake_time.sleeps == [2.0]
+
+
+@pytest.mark.asyncio
+async def test_a_stated_wait_beyond_the_budget_stops_polling_immediately(monkeypatch):
+    """The steering case. The envelope says come back in 60s; Report's budget
+    is 10s. Polling early would disobey the source, sleeping on would disobey
+    the budget - so the loop performs ZERO polls and ZERO sleeps and returns
+    the accepted envelope, which becomes the truthful pending posture."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                    "recommended_poll_after_seconds": 60,
+                },
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+    fake_time = _FakeTime()
+
+    client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert payload["calculation_id"] == "calc-9"
+    assert fake_time.sleeps == []
+    assert [call["method"] for call in recorder.calls] == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_a_long_retry_after_arriving_mid_poll_ends_the_loop_truthfully(monkeypatch):
+    """An hour-long Retry-After is obeyed by NOT polling again within the
+    budget - never shortened and called early, never slept past the budget.
+    The last accepted envelope is returned for the pending posture."""
+
+    recorder = _SequencedRecordingAsyncClient(
+        responses=[
+            _FakeResponse(
+                status_code=202,
+                payload={
+                    "calculation_id": "calc-9",
+                    "result_path": "/performance/attribution/results/calc-9",
+                },
+            ),
+            _FakeResponse(
+                status_code=202,
+                payload={"calculation_id": "calc-9"},
+                headers={"Retry-After": "3600"},
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+    fake_time = _FakeTime()
+
+    client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert payload == {"calculation_id": "calc-9"}
+    # One immediate poll (nothing was stated yet) receives the 3600s
+    # instruction, which ends the loop: no second GET, no sleep ever recorded.
+    assert [call["method"] for call in recorder.calls] == ["POST", "GET"]
+    assert fake_time.sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_an_unstated_cadence_never_sleeps_past_the_budget(monkeypatch):
+    """A source stating nothing gets the linear fallback, and the budget still
+    bounds the total: the loop ends with the accepted envelope rather than
+    oversleeping, proven on the fake clock."""
+
+    pending = _FakeResponse(
+        status_code=202,
+        payload={
+            "calculation_id": "calc-9",
+            "result_path": "/performance/attribution/results/calc-9",
+        },
+    )
+    recorder = _SequencedRecordingAsyncClient(responses=[pending] * 20)
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+    fake_time = _FakeTime()
+
+    client = _budget_client(recorder, fake_time, poll_budget_seconds=1.0)
+    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+
+    assert status_code == 202
+    assert "results_by_period" not in payload
+    assert fake_time.now <= 1.0
+    assert sum(fake_time.sleeps) <= 1.0
 
 
 @pytest.mark.asyncio
