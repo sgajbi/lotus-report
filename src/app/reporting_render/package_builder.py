@@ -6,6 +6,7 @@ from typing import Any, Sequence
 
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
+from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
 from app.reporting_render.contribution_ranking import build_contribution_ranking
 from app.reporting_render.risk_methodology import build_risk_methodology
 from app.reporting_render.risk_posture import build_risk_posture
@@ -85,6 +86,14 @@ def _build_render_package(
         "allocation_summary": _allocation_summary_section(allocation),
         "allocation_breakdowns": _allocation_breakdowns(snapshot),
         "allocation_presentation": _allocation_presentation(job=job, snapshot=snapshot),
+        # Whether this report promised a benchmark comparison. Stated,
+        # because an all-unavailable comparison and an unbenchmarked
+        # mandate produce identical rows - and inferring from the rows
+        # silently drops a benchmarked mandate's columns during an
+        # upstream outage.
+        "benchmark_presentation": resolve_benchmark_presentation(
+            options=job.options, snapshot=snapshot
+        ),
         "performance_periods": _performance_periods(snapshot),
         "performance_summary_table": _performance_summary_table(snapshot),
         "performance_monthly_history": _performance_history(
