@@ -8,6 +8,7 @@ from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
 from app.reporting_render.contribution_ranking import build_contribution_ranking
+from app.reporting_render.earnings_statement import build_earnings_statement
 from app.reporting_render.holdings_presentation import build_holdings_presentation
 from app.reporting_render.risk_methodology import build_risk_methodology
 from app.reporting_render.risk_posture import build_risk_posture
@@ -137,6 +138,10 @@ def _build_render_package(
         ),
         "positions": _positions(snapshot),
         "transactions": _transactions(snapshot),
+        # What the transaction table adds up to, stated beside it instead
+        # of left to the reader's arithmetic. A truncated window makes
+        # the sums a floor, not a total, and the statement says which.
+        "earnings_statement": build_earnings_statement(snapshot),
         "governance_summary": _governance_summary_section(
             snapshot=snapshot,
             evidence=evidence,
