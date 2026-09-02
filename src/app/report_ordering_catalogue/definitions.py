@@ -126,6 +126,25 @@ PORTFOLIO_REVIEW_SECTION_DEFINITIONS = (
         dependency_field_ids=("benchmark_code",),
     ),
     ReportSectionDefinition(
+        section_id="PERFORMANCE_ATTRIBUTION",
+        response_section_id="performance_attribution",
+        response_title="Performance Attribution",
+        business_label="Performance attribution",
+        # Only what the section delivers - the description guard's rule.
+        description=(
+            "Benchmark-relative return attribution: allocation, selection, and "
+            "interaction effects by asset class."
+        ),
+        response_key="attribution",
+        display_order=45,
+        selection_posture="optional",
+        # Opt-in while the async capture proves itself in production: default
+        # selection would add an upstream submit-and-poll to every existing
+        # order's capture latency before the posture has been exercised live.
+        default_selected=False,
+        dependency_field_ids=("benchmark_code",),
+    ),
+    ReportSectionDefinition(
         section_id="RISK_ANALYTICS",
         response_section_id="risk_review",
         response_title="Risk Review",

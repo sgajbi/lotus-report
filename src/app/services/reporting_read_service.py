@@ -11,6 +11,7 @@ from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
+from app.services.attribution_capture import capture_attribution
 from app.services.performance_contribution import (
     map_contribution_levels,
     map_position_contributions,
@@ -20,6 +21,10 @@ from app.services.portfolio_review_advisor import build_advisor_sections
 from app.services.risk_supportability import (
     BENCHMARK_RISK_METRICS,
     risk_supportability,
+)
+from app.services.transaction_evidence import (
+    merge_transaction_source_product,
+    transaction_window_supportability,
 )
 
 HTTP_BAD_REQUEST = 400
@@ -334,6 +339,17 @@ class ReportingReadService:
                     )
             else:
                 response["performance"] = None
+
+        if "PERFORMANCE_ATTRIBUTION" in requested_sections:
+            response["attribution"] = await capture_attribution(
+                performance_client=self._performance_client,
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                benchmark_code=self._normalized_benchmark_code(
+                    self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+                )
+                or "",
+            )
 
         if "RISK_ANALYTICS" in requested_sections:
             response["riskAnalytics"] = await self._build_risk_analytics(
@@ -1693,7 +1709,7 @@ class ReportingReadService:
                 remaining_budget = max_rows - len(rows)
                 rows.extend(page_rows[:remaining_budget])
                 source_total = self._to_int(payload.get("total"))
-                source_product = self._merge_transaction_source_product(
+                source_product = merge_transaction_source_product(
                     current=source_product,
                     payload=payload,
                     returned_count=len(rows),
@@ -1717,7 +1733,7 @@ class ReportingReadService:
             rows=rows,
             source_total=source_total,
             fetched_pages=fetched_pages,
-            supportability=self._transaction_window_supportability(
+            supportability=transaction_window_supportability(
                 returned_count=len(rows),
                 source_total=source_total,
                 fetched_pages=fetched_pages,
@@ -1733,192 +1749,6 @@ class ReportingReadService:
         if transaction_result is None:
             return {"status": "ready", "notes": []}
         return transaction_result.supportability
-
-    def _transaction_window_supportability(
-        self,
-        *,
-        returned_count: int,
-        source_total: int | None,
-        fetched_pages: int,
-        stop_reason: str | None,
-        source_product: dict[str, object],
-    ) -> dict[str, object]:
-        notes: list[dict[str, object]] = []
-        notes.extend(
-            self._transaction_source_product_supportability_notes(
-                source_product=source_product,
-                returned_count=returned_count,
-                source_total=source_total,
-                fetched_pages=fetched_pages,
-            )
-        )
-        if stop_reason is None:
-            return {"status": "partial" if notes else "ready", "notes": notes}
-        max_rows = settings.report_transaction_max_rows
-        max_pages = settings.report_transaction_max_pages
-        if stop_reason == "max_rows_reached":
-            message = (
-                "Transaction rows were truncated at the report-owned row budget "
-                f"of {max_rows}; request a narrower window for complete transaction detail."
-            )
-        else:
-            message = (
-                "Transaction paging stopped at the report-owned page budget "
-                f"of {max_pages}; request a narrower window for complete transaction detail."
-            )
-        notes.insert(
-            0,
-            {
-                "code": "transaction_window_truncated",
-                "severity": "warning",
-                "reason": stop_reason,
-                "message": message,
-                "returned_count": returned_count,
-                "source_total": source_total,
-                "fetched_pages": fetched_pages,
-                "max_rows": max_rows,
-                "max_pages": max_pages,
-            },
-        )
-        return {"status": "partial", "notes": notes}
-
-    def _merge_transaction_source_product(
-        self,
-        *,
-        current: dict[str, object],
-        payload: dict[str, object],
-        returned_count: int,
-        source_total: int | None,
-        fetched_pages: int,
-    ) -> dict[str, object]:
-        source_product = dict(current)
-        for source_key, target_key in (
-            ("product_name", "product_name"),
-            ("product_version", "product_version"),
-            ("tenant_id", "tenant_id"),
-            ("generated_at", "generated_at"),
-            ("as_of_date", "as_of_date"),
-            ("data_quality_status", "data_quality_status"),
-            ("reconciliation_status", "reconciliation_status"),
-            ("latest_evidence_timestamp", "latest_evidence_timestamp"),
-            ("restatement_version", "restatement_version"),
-            ("source_batch_fingerprint", "source_batch_fingerprint"),
-            ("snapshot_id", "snapshot_id"),
-            ("content_hash", "content_hash"),
-            ("policy_version", "policy_version"),
-            ("correlation_id", "correlation_id"),
-            ("portfolio_id", "portfolio_id"),
-            ("reporting_currency", "reporting_currency"),
-            ("missing_instrument_reference_count", "missing_instrument_reference_count"),
-        ):
-            if payload.get(source_key) is not None:
-                source_product[target_key] = payload.get(source_key)
-        source_product.setdefault("product_name", "TransactionLedgerWindow")
-        source_product.setdefault("product_version", "v1")
-        source_product["source_service"] = "lotus-core"
-        source_product["source_endpoint"] = "/portfolios/{portfolio_id}/transactions"
-        source_product["source_total"] = source_total
-        source_product["returned_count"] = returned_count
-        source_product["fetched_page_count"] = fetched_pages
-        source_product["skip"] = payload.get("skip")
-        source_product["limit"] = payload.get("limit")
-        reason_codes = self._as_list(payload.get("reason_codes"))
-        if reason_codes:
-            source_product["reason_codes"] = [
-                self._safe_str(reason_code) for reason_code in reason_codes
-            ]
-        missing_security_ids = self._as_list(payload.get("missing_instrument_security_ids"))
-        if missing_security_ids:
-            source_product["missing_instrument_security_ids"] = [
-                self._safe_str(security_id) for security_id in missing_security_ids
-            ]
-        return source_product
-
-    def _transaction_source_product_supportability_notes(
-        self,
-        *,
-        source_product: dict[str, object],
-        returned_count: int,
-        source_total: int | None,
-        fetched_pages: int,
-    ) -> list[dict[str, object]]:
-        notes: list[dict[str, object]] = []
-        required_fields = (
-            "product_name",
-            "product_version",
-            "tenant_id",
-            "generated_at",
-            "as_of_date",
-            "data_quality_status",
-            "reconciliation_status",
-            "latest_evidence_timestamp",
-            "restatement_version",
-            "source_batch_fingerprint",
-            "snapshot_id",
-            "policy_version",
-            "correlation_id",
-        )
-        missing_fields = [
-            field for field in required_fields if source_product.get(field) in (None, "", [], {})
-        ]
-        if missing_fields:
-            notes.append(
-                {
-                    "code": "transaction_window_trust_metadata_incomplete",
-                    "severity": "warning",
-                    "missing_fields": missing_fields,
-                    "message": (
-                        "TransactionLedgerWindow source-product metadata is incomplete; "
-                        "transaction supportability is partial until core trust metadata is "
-                        "available."
-                    ),
-                    "returned_count": returned_count,
-                    "source_total": source_total,
-                    "fetched_pages": fetched_pages,
-                }
-            )
-        data_quality_status = self._safe_str(source_product.get("data_quality_status")).upper()
-        if data_quality_status and data_quality_status != "COMPLETE":
-            notes.append(
-                {
-                    "code": "transaction_window_source_quality_not_complete",
-                    "severity": "warning",
-                    "data_quality_status": data_quality_status,
-                    "reason_codes": source_product.get("reason_codes", []),
-                    "message": (
-                        "lotus-core marked the transaction ledger window as not complete; "
-                        "report transaction coverage must remain partial."
-                    ),
-                }
-            )
-        reconciliation_status = self._safe_str(source_product.get("reconciliation_status")).upper()
-        if reconciliation_status and reconciliation_status not in {"RECONCILED", "COMPLETE"}:
-            notes.append(
-                {
-                    "code": "transaction_window_reconciliation_not_complete",
-                    "severity": "warning",
-                    "reconciliation_status": reconciliation_status,
-                    "message": (
-                        "lotus-core transaction ledger reconciliation is not complete for this "
-                        "window."
-                    ),
-                }
-            )
-        if source_total is not None and returned_count < source_total:
-            notes.append(
-                {
-                    "code": "transaction_window_page_partial",
-                    "severity": "warning",
-                    "returned_count": returned_count,
-                    "source_total": source_total,
-                    "fetched_pages": fetched_pages,
-                    "message": (
-                        "The report payload contains fewer transaction rows than the source "
-                        "ledger window."
-                    ),
-                }
-            )
-        return notes
 
     def _summarize_income_rows(
         self,

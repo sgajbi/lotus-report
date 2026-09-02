@@ -681,6 +681,13 @@ class PortfolioReviewReportResponse(BaseModel):
         default=None,
         description="Performance periods, contribution, and supportability when sourced.",
     )
+    attribution: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Benchmark-relative return attribution (allocation/selection/interaction by "
+            "asset class) with its capture posture when the section is ordered."
+        ),
+    )
     risk_analytics: dict[str, Any] | None = Field(
         default=None,
         validation_alias="riskAnalytics",

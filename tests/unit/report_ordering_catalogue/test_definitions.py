@@ -30,6 +30,7 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
         "ADVISOR_COMMENTARY",
         "ALLOCATION",
         "PERFORMANCE",
+        "PERFORMANCE_ATTRIBUTION",
         "RISK_ANALYTICS",
         "INCOME_AND_ACTIVITY",
         "HOLDINGS",
@@ -41,22 +42,29 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
         25,
         30,
         40,
+        45,
         50,
         60,
         70,
         80,
     ]
     assert PORTFOLIO_REVIEW_SECTION_DEFINITIONS[0].selection_posture == "required"
-    # ADVISOR_COMMENTARY is the one opt-in section: reviewed AI-assisted
-    # narrative enters the pack only when the caller names an accepted brief.
+    # Two opt-in sections. ADVISOR_COMMENTARY: reviewed AI-assisted narrative
+    # enters the pack only when the caller names an accepted brief.
+    # PERFORMANCE_ATTRIBUTION: the first async capture stays opt-in until its
+    # pending posture has been exercised live - default selection would add a
+    # submit-and-poll to every existing order's latency before that.
     by_id = {section.section_id: section for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS}
     assert by_id["ADVISOR_COMMENTARY"].default_selected is False
+    assert by_id["PERFORMANCE_ATTRIBUTION"].default_selected is False
+    assert by_id["PERFORMANCE_ATTRIBUTION"].selection_posture == "optional"
+    assert by_id["PERFORMANCE_ATTRIBUTION"].dependency_field_ids == ("benchmark_code",)
     assert by_id["ADVISOR_COMMENTARY"].selection_posture == "optional"
     assert by_id["ADVISOR_COMMENTARY"].dependency_field_ids == ("advisor_brief_run_id",)
     assert all(
         section.default_selected
         for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS
-        if section.section_id != "ADVISOR_COMMENTARY"
+        if section.section_id not in {"ADVISOR_COMMENTARY", "PERFORMANCE_ATTRIBUTION"}
     )
 
 
