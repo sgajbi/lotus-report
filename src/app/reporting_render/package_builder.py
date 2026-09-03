@@ -21,24 +21,28 @@ def _build_render_package(
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
+    snapshot_id: str,
 ) -> dict[str, Any]:
     if job.report_type == "proof_pack":
         return _build_proof_pack_render_package(
             job=job,
             snapshot=snapshot,
             render_job_id=render_job_id,
+            snapshot_id=snapshot_id,
         )
     if job.report_type == "outcome_review":
         return _build_outcome_review_render_package(
             job=job,
             snapshot=snapshot,
             render_job_id=render_job_id,
+            snapshot_id=snapshot_id,
         )
     if job.report_type == "rebalance_wave":
         return _build_wave_render_package(
             job=job,
             snapshot=snapshot,
             render_job_id=render_job_id,
+            snapshot_id=snapshot_id,
         )
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
@@ -176,6 +180,7 @@ def _build_render_package(
         job=job,
         snapshot=snapshot,
         render_job_id=render_job_id,
+        snapshot_id=snapshot_id,
         report_data_contract_version="portfolio_review.v1",
         template_id="portfolio-review",
         report_data=report_data,
@@ -337,6 +342,7 @@ def _render_package_envelope(
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
+    snapshot_id: str,
     report_data_contract_version: str,
     template_id: str,
     report_data: dict[str, Any],
@@ -350,7 +356,19 @@ def _render_package_envelope(
     the fourth.
     """
 
-    snapshot_id = snapshot.get("snapshot_id") or f"snapshot-for-{job.job_id}"
+    # The identity printed into a governed document must be exactly the
+    # durable Report snapshot identity later recorded in Archive lineage. It
+    # therefore arrives from the ReportInputSnapshotRecord - the caller's
+    # durable fact - never rediscovered from the payload (which does not
+    # carry it in production) and never synthesised: a document wearing
+    # "snapshot-for-<job>" while Archive records rsnap_... is two names for
+    # one piece of evidence, disagreeing on the page that matters most.
+    if not (isinstance(snapshot_id, str) and snapshot_id.strip()):
+        raise ValueError(
+            "RENDER_PACKAGE_SNAPSHOT_IDENTITY_REQUIRED: governed rendering "
+            "requires the durable snapshot id; refusing to mint a document "
+            "identity for unidentified evidence."
+        )
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
@@ -433,6 +451,7 @@ def _build_proof_pack_render_package(
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
+    snapshot_id: str,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -490,6 +509,7 @@ def _build_proof_pack_render_package(
         job=job,
         snapshot=snapshot,
         render_job_id=render_job_id,
+        snapshot_id=snapshot_id,
         report_data_contract_version="dpm_proof_pack_report_input.v1",
         template_id="proof-pack",
         report_data=report_data,
@@ -508,6 +528,7 @@ def _build_outcome_review_render_package(
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
+    snapshot_id: str,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -580,6 +601,7 @@ def _build_outcome_review_render_package(
         job=job,
         snapshot=snapshot,
         render_job_id=render_job_id,
+        snapshot_id=snapshot_id,
         report_data_contract_version="dpm_outcome_report_input.v1",
         template_id="outcome-review",
         report_data=report_data,
@@ -598,6 +620,7 @@ def _build_wave_render_package(
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
     render_job_id: str,
+    snapshot_id: str,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -671,6 +694,7 @@ def _build_wave_render_package(
         job=job,
         snapshot=snapshot,
         render_job_id=render_job_id,
+        snapshot_id=snapshot_id,
         report_data_contract_version="dpm_wave_report_input.v1",
         template_id="rebalance-wave",
         report_data=report_data,
