@@ -589,6 +589,7 @@ def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     presentation = package["report_data"]["allocation_presentation"]
@@ -618,10 +619,12 @@ def test_every_package_carries_the_document_reference_and_attempts_share_it(tmp_
     A different snapshot is a different document."""
 
     ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    # Production-shaped: the payload does NOT carry snapshot_id - the durable
+    # identity lives on the ReportInputSnapshotRecord and crosses the boundary
+    # as its own parameter, never rediscovered from the payload.
     snapshot_payload = {
         "readiness": {"status": "ready"},
         "reportingCurrency": "USD",
-        "snapshot_id": "rsnap_doc_1",
         "clientProfile": {"identity": {"client_name": "Alex Tan"}},
         "overview": {"total_market_value": 1000.0, "currency": "USD"},
     }
@@ -630,16 +633,19 @@ def test_every_package_carries_the_document_reference_and_attempts_share_it(tmp_
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_attempt_1",
+        snapshot_id="rsnap_doc_1",
     )
     second_attempt = _build_render_package(
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_attempt_2",
+        snapshot_id="rsnap_doc_1",
     )
     regenerated = _build_render_package(
         job=ledger.get_job(ready.job_id),
-        snapshot={**snapshot_payload, "snapshot_id": "rsnap_doc_2"},
+        snapshot=snapshot_payload,
         render_job_id="rdr_attempt_3",
+        snapshot_id="rsnap_doc_2",
     )
 
     reference = first_attempt["render_context"]["document_reference"]
@@ -671,6 +677,7 @@ def test_a_report_that_did_not_order_risk_gets_no_risk_panel(tmp_path):
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     assert package["report_data"]["risk_summary"] == {}
@@ -700,6 +707,7 @@ def test_an_ordered_risk_section_still_draws_when_the_data_is_unavailable(tmp_pa
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     risk_summary = package["report_data"]["risk_summary"]
@@ -725,6 +733,7 @@ def test_a_snapshot_without_the_decision_resolves_it_rather_than_guessing(tmp_pa
         job=job,
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     presentation = package["report_data"]["allocation_presentation"]
@@ -749,6 +758,7 @@ def test_portfolio_review_render_package_includes_advisor_commentary(tmp_path):
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     commentary = package["report_data"]["advisor_commentary"]
@@ -782,6 +792,7 @@ def test_portfolio_review_render_package_reports_closed_advisor_commentary(tmp_p
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     commentary = package["report_data"]["advisor_commentary"]
@@ -801,6 +812,7 @@ def test_portfolio_review_render_package_reports_closed_advisor_commentary(tmp_p
             "overview": {"total_market_value": 15234567.89, "currency": "USD"},
         },
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
     assert absent["report_data"]["advisor_commentary"] == {"status": "not_supplied"}
 
@@ -876,6 +888,7 @@ def test_portfolio_review_render_package_includes_reviewed_advisory_narrative(tm
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_test_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     narrative = package["report_data"]["reviewed_advisory_narrative"]
@@ -945,6 +958,7 @@ def test_portfolio_review_render_package_includes_advisor_proposal_memo(tmp_path
         job=ledger.get_job(ready.job_id),
         snapshot=snapshot_payload,
         render_job_id="rdr_memo_pdf",
+        snapshot_id="rsnap_test_durable",
     )
 
     memo = package["report_data"]["advisor_proposal_memo"]
@@ -977,6 +991,7 @@ def test_reviewed_advisory_narrative_handles_optional_package_edges(tmp_path):
         ),
         snapshot={"proposal_narrative_package": package},
         render_job_id="rdr_edge_pdf",
+        snapshot_id="rsnap_test_durable",
     )
     assert "lotus-advise:proposal-narrative-review:not_available" not in rendered["lineage_refs"]
     assert "sha256:not_available" not in rendered["lineage_refs"]
@@ -1063,6 +1078,114 @@ def test_archive_payload_preserves_advisor_memo_and_supersession_metadata(tmp_pa
     assert metadata["supersedes_archive_document_id"] == "doc_old"
     assert metadata["archive_consequence"] == "rerender_supersedes_prior"
     assert _advisor_proposal_memo_archive_summary({}) is None
+
+
+class _RenderClientRecording:
+    """Succeeds like the success fake but keeps the submitted package, so the
+    regression can inspect what production actually sent."""
+
+    def __init__(self):
+        self.packages = []
+
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        self.packages.append(payload)
+        return 201, {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.13",
+            "render_duration_ms": 812,
+            "artifact_base64": "JVBERi0xLjQKJQ==",
+        }
+
+
+@pytest.mark.asyncio
+async def test_document_identity_binds_the_durable_snapshot_end_to_end(tmp_path):
+    """The invariant: the snapshot identity printed into a governed document
+    is exactly the durable Report snapshot identity later recorded in Archive
+    lineage.
+
+    Production-shaped throughout: the durable ReportInputSnapshotRecord has a
+    snapshot_id, the snapshot_payload does NOT - and nothing here injects one
+    into the payload. Previously the envelope rediscovered the id from the
+    payload and fell back to a synthetic snapshot-for-<job>, so the reference
+    in the footer named evidence Archive lineage would never record, and the
+    rerender path even overwrote the envelope's id AFTER the reference was
+    minted - one package, two disagreeing identities.
+    """
+
+    from app.reporting_render.document_reference import mint_document_reference
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    record = store.get_snapshot_by_job(ready.job_id)
+    assert record.snapshot_id.startswith("rsnap_")
+    assert "snapshot_id" not in record.snapshot_payload
+
+    render_client = _RenderClientRecording()
+    archive_client = _ArchiveClientSuccess()
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=render_client,
+        archive_client=archive_client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    completed = await service.render_for_job(ready)
+    assert completed.status == "archived"
+
+    package = render_client.packages[0]
+    expected_reference = mint_document_reference(
+        report_job_id=ready.job_id,
+        snapshot_id=record.snapshot_id,
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+    # The package carries the durable record id and mints the reference
+    # from it - never from the payload, never from a synthetic name.
+    assert package["snapshot_id"] == record.snapshot_id
+    assert package["render_context"]["document_reference"] == expected_reference
+    assert "snapshot-for-" not in package["snapshot_id"]
+
+    # Archive lineage records the SAME identity and the SAME reference.
+    archive_payload, _kwargs = archive_client.payloads[0]
+    assert archive_payload["metadata"]["snapshot_id"] == record.snapshot_id
+    assert archive_payload["metadata"]["document_reference"] == expected_reference
+
+    # Two render attempts of the same durable snapshot are the same governed
+    # document; a different durable snapshot is not.
+    second_attempt = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=record.snapshot_payload,
+        render_job_id="rdr_second_attempt",
+        snapshot_id=record.snapshot_id,
+    )
+    assert second_attempt["render_context"]["document_reference"] == expected_reference
+    other_snapshot = _build_render_package(
+        job=ledger.get_job(ready.job_id),
+        snapshot=record.snapshot_payload,
+        render_job_id="rdr_third_attempt",
+        snapshot_id="rsnap_regenerated",
+    )
+    assert other_snapshot["render_context"]["document_reference"] != expected_reference
+
+
+def test_governed_rendering_fails_closed_without_a_durable_identity(tmp_path):
+    """The synthetic fallback is gone: evidence without a durable identity is
+    refused, never given a name Archive lineage cannot corroborate."""
+
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+
+    with pytest.raises(ValueError, match="RENDER_PACKAGE_SNAPSHOT_IDENTITY_REQUIRED"):
+        _build_render_package(
+            job=ledger.get_job(ready.job_id),
+            snapshot={"readiness": {"status": "ready"}},
+            render_job_id="rdr_no_identity",
+            snapshot_id="  ",
+        )
 
 
 @pytest.mark.asyncio
@@ -1406,9 +1529,13 @@ def test_build_render_package_uses_fallback_values_for_sparse_snapshot(tmp_path)
         job=job,
         snapshot={"overview": {"currency": "SGD", "total_market_value": "1000.50"}},
         render_job_id="rdr-sparse",
+        snapshot_id="rsnap_test_durable",
     )
 
-    assert payload["snapshot_id"] == f"snapshot-for-{job.job_id}"
+    # The synthetic snapshot-for-<job> fallback is gone: a governed document
+    # never wears an identity Archive lineage will not record. Sparse
+    # PAYLOADS still render; an absent durable identity fails closed instead.
+    assert payload["snapshot_id"] == "rsnap_test_durable"
     assert payload["report_data"]["client_name"] == "Client"
     assert payload["report_data"]["currency"] == "SGD"
     assert payload["report_data"]["total_value"] == "1000.50"
@@ -1431,6 +1558,7 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
     payload = _build_render_package(
         job=job,
         render_job_id="rdr-rich",
+        snapshot_id="rsnap_test_durable",
         snapshot={
             "portfolioName": "PB SG Global Balanced",
             "reviewPeriod": {"label": "YTD"},
@@ -1895,6 +2023,7 @@ def test_build_render_package_emits_outcome_review_contract(tmp_path):
         job=job,
         snapshot=job.options["outcome_report_input"],
         render_job_id="rdr-outcome",
+        snapshot_id="rsnap_test_durable",
     )
 
     assert payload["report_type"] == "outcome_review"
@@ -1937,6 +2066,7 @@ def test_build_render_package_emits_proof_pack_contract(tmp_path):
         job=job,
         snapshot=job.options["proof_pack_report_input"],
         render_job_id="rdr-proof-pack",
+        snapshot_id="rsnap_test_durable",
     )
 
     assert payload["report_type"] == "proof_pack"
@@ -2030,6 +2160,7 @@ def test_build_render_package_emits_wave_contract(tmp_path):
         job=job,
         snapshot=job.options["wave_report_input"],
         render_job_id="rdr-wave",
+        snapshot_id="rsnap_test_durable",
     )
 
     assert payload["report_type"] == "rebalance_wave"
@@ -2081,6 +2212,7 @@ def test_build_render_package_rejects_incomplete_proof_pack_source_evidence(tmp_
                 "as_of_date": "2026-05-03",
             },
             render_job_id="rdr-proof-pack-fallbacks",
+            snapshot_id="rsnap_test_durable",
         )
 
 
@@ -2114,6 +2246,7 @@ def test_build_render_package_rejects_incomplete_outcome_review_source_evidence(
                 "review_window": {"end_date": "2026-04-23"},
             },
             render_job_id="rdr-outcome-fallbacks",
+            snapshot_id="rsnap_test_durable",
         )
 
 

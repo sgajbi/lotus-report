@@ -13,6 +13,7 @@ from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.document_reference import mint_document_reference
 from app.reporting_render.package_builder import (
     _as_dict,
     _build_render_package,
@@ -143,6 +144,9 @@ class PortfolioReviewRenderOrchestrationService:
                 job=job,
                 snapshot=snapshot.snapshot_payload,
                 render_job_id=render_job_id,
+                # The durable record's identity - the payload does not carry
+                # it, and governed rendering fails closed without it.
+                snapshot_id=snapshot.snapshot_id,
             )
         except ValueError as exc:
             failed_job = self._job_ledger.mark_failed(
@@ -414,6 +418,22 @@ def _build_archive_payload(
         "report_request_id": job.request_id,
         "snapshot_id": snapshot.snapshot_id,
         "snapshot_hash": snapshot.snapshot_hash,
+        # The governed identity printed in the document's footer, persisted
+        # into Archive lineage so the stored record proves which financial
+        # question it answers. Deterministic re-mint from the SAME durable
+        # facts the render envelope used (job, durable snapshot, template
+        # identity persisted at rendering) - a pure function of the identity,
+        # so the footer and the archive record cannot disagree.
+        "document_reference": mint_document_reference(
+            report_job_id=job.job_id,
+            snapshot_id=snapshot.snapshot_id,
+            template_id=str(
+                job.render_template_id or render_response.get("template_id") or "portfolio-review"
+            ),
+            template_version=str(
+                job.render_template_version or render_response.get("template_version") or "v1"
+            ),
+        ),
         "render_job_id": str(render_response.get("render_job_id") or job.render_job_id),
         "render_attempt_id": str(
             render_attempt_id

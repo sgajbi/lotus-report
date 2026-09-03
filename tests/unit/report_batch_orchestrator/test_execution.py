@@ -184,7 +184,12 @@ class _CaptureService:
 class _RenderClientSuccess:
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         assert payload["report_job_id"].startswith("rjob_")
-        assert payload["snapshot_id"].startswith("snapshot-for-rjob_")
+        # The render leg now carries the DURABLE snapshot identity - the same
+        # one the archive assertion below has always required. This fake
+        # previously asserted the synthetic snapshot-for-<job> name here,
+        # documenting the exact split identity the boundary fix removed: one
+        # package whose footer named evidence Archive lineage never recorded.
+        assert payload["snapshot_id"].startswith("rsnap_")
         assert payload["report_data"]["client_name"] == "Alex Tan"
         return 201, {
             "render_job_id": payload["render_job_id"],
