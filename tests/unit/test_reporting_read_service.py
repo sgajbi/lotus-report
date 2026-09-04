@@ -594,10 +594,63 @@ class _RollingRiskClientMixin:
         }
 
 
-class _RiskClientSuccess(_RollingRiskClientMixin):
+class _AttributionRiskClientMixin:
+    """The shipped /analytics/risk/historical-attribution answer, minimal but
+    production-shaped: one YTD period, TOTAL_RISK x VOLATILITY x SECTOR with
+    the reconciliation triple and two contributors."""
+
+    attribution_payloads: list[dict[str, object]]
+
+    async def historical_attribution(self, payload: dict[str, object]):
+        self.attribution_payloads.append(payload)
+        return 200, {
+            "source_service": "lotus-risk",
+            "input_mode": "stateful",
+            "results": {
+                "YTD": {
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-02-24",
+                    "attribution_sets": [
+                        {
+                            "attribution_type": "TOTAL_RISK",
+                            "metric": "VOLATILITY",
+                            "grouping_dimension": "SECTOR",
+                            "total_value": 0.1253,
+                            "reconciled_sum": 0.1249,
+                            "residual": 0.0004,
+                            "contributors": [
+                                {
+                                    "group_key": "SECTOR_TECH",
+                                    "group_label": "Technology",
+                                    "weight_average": 0.245,
+                                    "marginal_contribution": 0.0784,
+                                    "component_contribution": 0.0192,
+                                    "percent_contribution": 0.1532,
+                                }
+                            ],
+                            "quality_flags": [],
+                        }
+                    ],
+                    "error": None,
+                }
+            },
+            "metadata": {
+                "annualization_basis": 252,
+                "metric_unit_semantics": {
+                    "VOLATILITY": "decimal_ratio",
+                    "TRACKING_ERROR": "decimal_ratio",
+                },
+                "benchmark_context": {"requested": True, "reason": "APPLIED"},
+                "stateful_active_risk_gate_reason": "none",
+            },
+        }
+
+
+class _RiskClientSuccess(_RollingRiskClientMixin, _AttributionRiskClientMixin):
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
         self.rolling_payloads: list[dict[str, object]] = []
+        self.attribution_payloads: list[dict[str, object]] = []
 
     async def calculate_risk(self, payload: dict[str, object]):
         self.seen_payloads.append(payload)
@@ -1129,6 +1182,7 @@ async def test_review_composes_core_query_performance_and_risk():
         "performance_review",
         "performance_attribution",
         "risk_review",
+        "risk_attribution",
         "income_cash_activity",
         "holdings_appendix",
         "transactions_appendix",
@@ -1553,3 +1607,116 @@ async def test_risk_trend_upstream_failure_is_a_stated_unavailability():
     assert trend["results"] == {}
     # The point-in-time risk block is unaffected by the trend call's fate.
     assert response["riskAnalytics"]["supportability"]["status"] != "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_risk_attribution_is_captured_only_when_ordered_explicitly():
+    """#254 capture: the section never rides RISK_ANALYTICS silently - the
+    evidence-gated default stays off, and ordering RISK_ATTRIBUTION makes
+    exactly one attribution call whose answer is forwarded verbatim."""
+
+    risk_client = _RiskClientSuccess()
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=risk_client,
+    )
+    without = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ANALYTICS"]},
+        "CID-1",
+    )
+    assert "riskAttribution" not in without
+    assert risk_client.attribution_payloads == []
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "sections": ["RISK_ATTRIBUTION"],
+            "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
+        },
+        "CID-1",
+    )
+
+    attribution = response["riskAttribution"]
+    assert attribution["source"]["endpoint"] == "/analytics/risk/historical-attribution"
+    assert attribution["supportability"]["status"] == "ready"
+    assert attribution["request"]["attribution_types"] == ["TOTAL_RISK", "ACTIVE_RISK"]
+    assert attribution["request"]["metrics"] == ["VOLATILITY", "TRACKING_ERROR"]
+    assert attribution["request"]["grouping_dimension"] == "SECTOR"
+    # Forwarded verbatim, reconciliation triple intact.
+    stated = attribution["results"]["YTD"]["attribution_sets"][0]
+    assert (stated["total_value"], stated["reconciled_sum"], stated["residual"]) == (
+        0.1253,
+        0.1249,
+        0.0004,
+    )
+    assert attribution["metadata"]["metric_unit_semantics"]["VOLATILITY"] == "decimal_ratio"
+    assert len(risk_client.attribution_payloads) == 1
+    options = risk_client.attribution_payloads[0]["stateful_input"]["attribution_options"]
+    assert options["grouping_dimensions"] == ["SECTOR"]
+
+
+@pytest.mark.asyncio
+async def test_risk_attribution_without_a_benchmark_requests_total_risk_only():
+    risk_client = _RiskClientSuccess()
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=risk_client,
+    )
+    await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ATTRIBUTION"]},
+        "CID-1",
+    )
+
+    options = risk_client.attribution_payloads[0]["stateful_input"]["attribution_options"]
+    assert options["attribution_types"] == ["TOTAL_RISK"]
+    assert options["metrics"] == ["VOLATILITY"]
+
+
+@pytest.mark.asyncio
+async def test_risk_attribution_upstream_failure_is_a_stated_refusal():
+    class _FailingAttribution(_RiskClientSuccess):
+        async def historical_attribution(self, payload):
+            return 503, {"detail": "unavailable"}
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_FailingAttribution(),
+    )
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ATTRIBUTION"]},
+        "CID-1",
+    )
+
+    attribution = response["riskAttribution"]
+    assert attribution["supportability"]["status"] == "unavailable"
+    assert attribution["supportability"]["notes"][0]["code"] == "risk_attribution_upstream_failure"
+    assert attribution["results"] == {}
+
+
+@pytest.mark.asyncio
+async def test_risk_attribution_transport_failure_is_the_same_stated_refusal():
+    class _RaisingAttribution(_RiskClientSuccess):
+        async def historical_attribution(self, payload):
+            raise RuntimeError("connection reset")
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_RaisingAttribution(),
+    )
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ATTRIBUTION"]},
+        "CID-1",
+    )
+
+    attribution = response["riskAttribution"]
+    assert attribution["supportability"]["status"] == "unavailable"
+    assert attribution["supportability"]["notes"][0]["code"] == "risk_attribution_upstream_failure"

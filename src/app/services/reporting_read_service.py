@@ -370,6 +370,14 @@ class ReportingReadService:
                 as_of_date=as_of_date,
                 request_payload=request_payload,
             )
+        if "RISK_ATTRIBUTION" in requested_sections:
+            # Ordered explicitly, never by default (#254's evidence gate):
+            # the risk page's "what risk did we take for the result".
+            response["riskAttribution"] = await self._build_risk_attribution(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                request_payload=request_payload,
+            )
 
         client_sections = self._build_client_sections(
             response=response,
@@ -3856,6 +3864,95 @@ class ReportingReadService:
         if cash_leg:
             return f"Cash ledger leg for {transaction_type.title()}"
         return transaction_type.replace("_", " ").title() or "Transaction"
+
+    async def _build_risk_attribution(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        request_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """One upstream call for risk attribution (#254, contract locked with
+        Render 2026-09-04).
+
+        Report forwards the source's decomposition facts verbatim: the
+        reconciliation triple, contributors in source order, quality flags,
+        the benchmark context, and the source's unit statement. Nothing is
+        ranked, rescaled, re-reconciled, or allocated here. TOTAL_RISK x
+        VOLATILITY always; ACTIVE_RISK x TRACKING_ERROR only when the report
+        states a benchmark - active-risk availability is the source's fact.
+        """
+
+        benchmark_code = self._normalized_benchmark_code(
+            self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        )
+        attribution_types = ["TOTAL_RISK"]
+        metrics = ["VOLATILITY"]
+        if benchmark_code:
+            attribution_types.append("ACTIVE_RISK")
+            metrics.append("TRACKING_ERROR")
+        attribution_payload: dict[str, object] = {
+            "input_mode": "stateful",
+            "stateful_input": {
+                "portfolio_id": portfolio_id,
+                "as_of_date": as_of_date,
+                "reporting_currency": self._optional_string(
+                    request_payload, *REPORTING_CURRENCY_KEYS
+                ),
+                "client_id": self._optional_string(request_payload, *CLIENT_ID_KEYS),
+                "benchmark_id": benchmark_code,
+                "net_or_gross": "NET",
+                "periods": [{"type": "YTD", "name": "YTD"}],
+                "attribution_options": {
+                    "attribution_types": attribution_types,
+                    "metrics": metrics,
+                    "grouping_dimensions": ["SECTOR"],
+                },
+            },
+        }
+        try:
+            status_code, response_payload = await self._risk_client.historical_attribution(
+                attribution_payload
+            )
+        except Exception:
+            status_code, response_payload = 0, {}
+        request_block = {
+            "attribution_types": attribution_types,
+            "metrics": metrics,
+            "grouping_dimension": "SECTOR",
+        }
+        if status_code >= HTTP_BAD_REQUEST or status_code == 0:
+            return {
+                "source": {
+                    "service": "lotus-risk",
+                    "endpoint": "/analytics/risk/historical-attribution",
+                },
+                "request": request_block,
+                "supportability": {
+                    "status": "unavailable",
+                    "notes": [
+                        {
+                            "code": "risk_attribution_upstream_failure",
+                            "severity": "blocking",
+                            "message": (
+                                "Risk attribution is unavailable because lotus-risk could "
+                                "not calculate the decomposition."
+                            ),
+                        }
+                    ],
+                },
+                "results": {},
+                "metadata": {},
+            }
+        return {
+            "source": {
+                "service": "lotus-risk",
+                "endpoint": "/analytics/risk/historical-attribution",
+            },
+            "request": request_block,
+            "supportability": {"status": "ready", "notes": []},
+            "results": self._as_dict(response_payload.get("results")),
+            "metadata": self._as_dict(response_payload.get("metadata")),
+        }
 
     async def _build_risk_trend(
         self,

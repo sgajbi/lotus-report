@@ -37,3 +37,31 @@ async def test_rolling_metrics_posts_to_the_rolling_metrics_endpoint(monkeypatch
         "max_retries": 4,
         "backoff_seconds": 0.75,
     }
+
+
+@pytest.mark.asyncio
+async def test_historical_attribution_posts_to_the_attribution_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _fake_post_with_retry(**kwargs):
+        captured.update(kwargs)
+        return 200, {"results": {}}
+
+    monkeypatch.setattr(risk_client_module, "post_with_retry", _fake_post_with_retry)
+    monkeypatch.setattr(
+        risk_client_module, "propagation_headers", lambda: {"X-Correlation-ID": "corr-attr"}
+    )
+    client = RiskClient(
+        base_url="http://risk.dev.lotus/",
+        timeout_seconds=9.0,
+        max_retries=3,
+        retry_backoff_seconds=0.5,
+    )
+
+    status_code, payload = await client.historical_attribution({"input_mode": "stateful"})
+
+    assert status_code == 200
+    assert payload == {"results": {}}
+    assert captured["url"] == "http://risk.dev.lotus/analytics/risk/historical-attribution"
+    assert captured["json_body"] == {"input_mode": "stateful"}
+    assert captured["max_retries"] == 3
