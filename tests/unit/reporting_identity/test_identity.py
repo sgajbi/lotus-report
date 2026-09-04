@@ -160,3 +160,32 @@ def test_coverage_participates_in_identity() -> None:
 def test_a_revision_without_a_snapshot_hash_is_refused() -> None:
     with pytest.raises(ValueError, match="REPORT_REVISION_SNAPSHOT_HASH_REQUIRED"):
         derive_report_revision(series_key=_series(), source_revisions=_vector(), snapshot_hash="  ")
+
+
+def test_ordered_semantic_option_lists_keep_their_order_in_identity() -> None:
+    """An output-affecting ordered list (column order, ranking) must change
+    the series when reordered - only declared sets normalise."""
+
+    ordered = _series(semantic_options={"columns": ["market_value", "weight"]})
+    reversed_columns = _series(semantic_options={"columns": ["weight", "market_value"]})
+
+    assert ordered.digest() != reversed_columns.digest()
+
+
+def test_revision_ties_on_partial_sort_keys_cannot_reorder_the_digest() -> None:
+    """Two revisions identical in every casual sort field but differing in
+    another identity field must digest identically regardless of caller
+    order - the sort key is the complete canonical value."""
+
+    first = SourceRevision(source_service="lotus-core", methodology_version="m1")
+    second = SourceRevision(source_service="lotus-core", methodology_version="m2")
+
+    forward = SourceRevisionVector(revisions=(first, second), coverage="partial")
+    backward = SourceRevisionVector(revisions=(second, first), coverage="partial")
+
+    assert forward.digest() == backward.digest()
+
+
+def test_an_invented_coverage_state_is_refused() -> None:
+    with pytest.raises(Exception, match="coverage"):
+        SourceRevisionVector(revisions=(), coverage="compelete")
