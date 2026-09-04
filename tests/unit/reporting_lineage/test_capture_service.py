@@ -12,6 +12,7 @@ from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
     PortfolioReviewJobRequest,
     ProofPackReportJobRequest,
+    ProposalMemoReportPackage,
     ReportCallerContext,
     WaveReportJobRequest,
 )
@@ -1746,3 +1747,152 @@ def test_capture_service_getter_returns_cached_service(monkeypatch):
     assert service._portfolio_review_input_provider is sentinel_input_provider
 
     lineage_service.get_portfolio_review_snapshot_capture_service.cache_clear()
+
+
+def _proposal_memo_package(**overrides) -> dict:
+    package = {
+        "package_status": "INCLUDED_ADVISOR_PROPOSAL_MEMO",
+        "usage": "REPORT_REQUEST_APPROVED_ADVISOR_MEMO",
+        "memo_id": "pmemo_001",
+        "memo_version": "proposal-memo.v1",
+        "memo_status": "EVIDENCE_READY",
+        "proposal_id": "prop_001",
+        "proposal_version_no": 3,
+        "memo_hash": "sha256:memo",
+        "source_input_hash": "sha256:memo-inputs",
+        "review": {
+            "review_action": "APPROVE_FOR_ADVISOR_USE",
+            "reviewed_by": "advisor-123",
+            "reviewed_at": "2026-04-22T09:10:00Z",
+        },
+        "sections": [
+            {
+                "section_id": "RECOMMENDATION_SUMMARY",
+                "title": "Recommendation summary",
+                "status": "included",
+                "summary": "Rebalance toward quality income.",
+                "material_claims": [],
+                "evidence_refs": ["prop_001#rec"],
+                "reason_codes": [],
+            }
+        ],
+        "client_ready_publication": "BLOCKED",
+    }
+    package.update(overrides)
+    return package
+
+
+@pytest.mark.asyncio
+async def test_proposal_memo_survives_the_complete_durable_journey(monkeypatch, tmp_path):
+    """The steering's cross-stage rule, applied to the memo defect itself:
+
+    order -> durable job -> REAL capture -> immutable snapshot (exact
+    package and hash) -> REAL render package (advisor_proposal_memo) ->
+    lineage naming lotus-advise -> and a changed memo under the same
+    idempotency key CONFLICTS instead of silently reusing the old job.
+    Nothing here seeds the snapshot by hand - the production capture path
+    injects the package or the test fails.
+    """
+
+    from app.reporting_jobs.ledger import IdempotencyConflictError
+    from app.reporting_render.package_builder import _build_render_package
+
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _HappyReportingReadService,
+    )
+    request = _request(
+        requested_output_formats=["pdf"],
+        proposal_memo_package=_proposal_memo_package(),
+    )
+    ledger = ReportJobLedger(tmp_path / "jobs-memo.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-memo.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=request,
+        caller_context=_caller(),
+        idempotency_key="idem-memo-journey",
+    )
+
+    assert job.options["proposal_memo_package"]["memo_hash"] == "sha256:memo"
+
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    package = snapshot.snapshot_payload["proposal_memo_package"]
+    # The exact ACCEPTED package is the validated model's dump - the fixture
+    # plus the contract's defaulted postures, nothing rewritten or inferred.
+    expected = ProposalMemoReportPackage.model_validate(_proposal_memo_package()).model_dump(
+        mode="json"
+    )
+    assert package == expected
+    assert snapshot.lineage_summary["proposal_memo_id"] == "pmemo_001"
+    assert snapshot.lineage_summary["proposal_memo_hash"] == "sha256:memo"
+    assert snapshot.lineage_summary["proposal_memo_review_action"] == "APPROVE_FOR_ADVISOR_USE"
+    assert "lotus-advise" in snapshot.lineage_summary["source_services"]
+
+    render_package = _build_render_package(
+        job=ledger.get_job(job.job_id),
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_memo_journey",
+        snapshot_id=snapshot.snapshot_id,
+    )
+    memo = render_package["report_data"]["advisor_proposal_memo"]
+    assert memo["status"] == "included"
+    assert memo["memo_id"] == "pmemo_001"
+    assert memo["sections"][0]["section_id"] == "RECOMMENDATION_SUMMARY"
+
+    changed = _request(
+        requested_output_formats=["pdf"],
+        proposal_memo_package=_proposal_memo_package(
+            memo_hash="sha256:memo-changed", source_input_hash="sha256:memo-inputs-changed"
+        ),
+    )
+    with pytest.raises(IdempotencyConflictError):
+        ledger.create_portfolio_review_job(
+            request=changed,
+            caller_context=_caller(),
+            idempotency_key="idem-memo-journey",
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_memo_is_never_forwarded_to_domain_sources(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+    captured_payloads: list[dict] = []
+
+    class _RecordingReadService(_HappyReportingReadService):
+        async def get_portfolio_review(self, portfolio_id, request_payload, correlation_id=None):
+            captured_payloads.append(dict(request_payload))
+            return await super().get_portfolio_review(portfolio_id, request_payload, correlation_id)
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _RecordingReadService,
+    )
+    ledger = ReportJobLedger(tmp_path / "jobs-memo-upstream.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-memo-upstream.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(proposal_memo_package=_proposal_memo_package()),
+        caller_context=_caller(),
+        idempotency_key="idem-memo-upstream",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    assert captured_payloads, "capture must have called the domain read path"
+    for payload in captured_payloads:
+        assert "proposal_memo_package" not in payload
+        assert "proposal_narrative_package" not in payload

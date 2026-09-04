@@ -111,6 +111,8 @@ def _request_parts(
             options["proposal_narrative_package"] = request.proposal_narrative_package.model_dump(
                 mode="json"
             )
+        if request.proposal_memo_package is not None:
+            options["proposal_memo_package"] = request.proposal_memo_package.model_dump(mode="json")
         return (
             request.portfolio_scope,
             request.as_of_date,
