@@ -18,6 +18,7 @@ def _snapshot(
     supportability: dict[str, Any] | None = None,
     period: dict[str, Any] | None = None,
     results: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     metrics = metrics or ["ROLLING_VOLATILITY", "ROLLING_BETA", "ROLLING_TRACKING_ERROR"]
     block: dict[str, Any] = {
@@ -25,7 +26,7 @@ def _snapshot(
         "request": {"window_observations": 63, "metrics": metrics, "frequency": "daily"},
         "supportability": supportability or {"status": "ready", "notes": []},
         "results": results if results is not None else ({"YTD": period} if period else {}),
-        "metadata": {},
+        "metadata": metadata or {},
     }
     return {"riskTrend": block}
 
@@ -217,3 +218,42 @@ def test_malformed_points_are_skipped_as_gaps_never_guessed() -> None:
         {"date": "2026-03-05", "value": "0.15"},
         {"date": "2026-03-06", "value": "0.16"},
     ]
+
+
+def test_the_sources_unit_statement_is_forwarded_verbatim_on_ready_metrics() -> None:
+    """The cross-repo unit-semantics regression, producer side.
+
+    lotus-risk's rolling volatility is an annualized decimal ratio: 0.1374
+    MEANS 13.74%. The emission forwards the source's own unit statement so
+    the renderer can print the percentage meaning - Report never rescales
+    the values and never invents a unit the source did not state.
+    """
+
+    section = _risk_trend_section(
+        _snapshot(
+            period=_period(series_points=_points()),
+            metadata={
+                "annualization_basis": 252,
+                "metric_unit_semantics": {
+                    "ROLLING_VOLATILITY": "decimal_ratio",
+                    "ROLLING_BETA": "unitless",
+                    "ROLLING_TRACKING_ERROR": "decimal_ratio",
+                },
+            },
+        )
+    )
+
+    by_metric = {metric["metric"]: metric for metric in section["metrics"]}
+    assert by_metric["ROLLING_VOLATILITY"]["unit"] == "decimal_ratio"
+    assert by_metric["ROLLING_BETA"]["unit"] == "unitless"
+    assert by_metric["ROLLING_TRACKING_ERROR"]["unit"] == "decimal_ratio"
+    # Values stay the source's raw decimal strings; the unit is what makes
+    # them readable, not a rescale.
+    assert by_metric["ROLLING_VOLATILITY"]["series"][0] == {"date": "2026-03-03", "value": "0.1374"}
+
+
+def test_a_metric_without_a_stated_unit_carries_none_rather_than_a_guess() -> None:
+    section = _risk_trend_section(_snapshot(period=_period(series_points=_points())))
+
+    for metric in section["metrics"]:
+        assert "unit" not in metric
