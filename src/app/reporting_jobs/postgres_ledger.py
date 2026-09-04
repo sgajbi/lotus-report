@@ -427,7 +427,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                                   AND (
                                       member.failure_category NOT IN (
                                           'archive_storage_failed',
-                                          'archive_execution_failed'
+                                          'archive_execution_failed',
+                                          'archive_outcome_unknown'
                                       )
                                       OR EXISTS (
                                           SELECT 1 FROM report_job_relationship child
@@ -1130,7 +1131,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 WHERE report_job_id = %s
                   AND status = 'failed'
                   AND failure_category IN (
-                      'archive_storage_failed', 'archive_execution_failed'
+                      'archive_storage_failed', 'archive_execution_failed',
+                      'archive_outcome_unknown'
                   )
                 ORDER BY updated_at DESC, created_at DESC, rerender_attempt_id DESC
                 """,

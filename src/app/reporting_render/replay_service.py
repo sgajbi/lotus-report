@@ -311,7 +311,16 @@ class PortfolioReviewReplayService:
         runtimes look identical by version alone; typst#6783 can swap font
         sections) mean the event is a lead for operators, not a verdict."""
 
-        if source_job.failure_category != "render_artifact_unrecoverable":
+        # The comparison applies to every source that rendered before its
+        # failure - the artifactless legacy posture and the custody-outcome
+        # postures alike - because the replayed render is judged against the
+        # source's persisted fingerprint, not against its archive fate.
+        if source_job.failure_category not in {
+            "render_artifact_unrecoverable",
+            "archive_outcome_unknown",
+            "archive_handoff_failed",
+            "archive_handoff_not_configured",
+        }:
             return
         rendered = replayed.status in {
             "completed",
@@ -381,11 +390,14 @@ class PortfolioReviewReplayService:
         if source_job.failure_category not in {
             "archive_storage_failed",
             "archive_execution_failed",
+            "archive_outcome_unknown",
         }:
             return
         if self._archive_resolver is None or not source_job.render_job_id:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
-        archive_request_id = f"arch_{source_job.render_job_id}"
+        # Post-cutover jobs store the derived areq_ id at failure time;
+        # pre-cutover rows fall back to the historical arch_ scheme.
+        archive_request_id = source_job.archive_request_id or f"arch_{source_job.render_job_id}"
         try:
             status_code, payload = await self._archive_resolver.get_document_by_request_id(
                 archive_request_id,
@@ -434,13 +446,20 @@ class PortfolioReviewReplayService:
     def _require_retained_snapshot(
         self, source_job: ReportJobLedgerRecord
     ) -> ReportInputSnapshotRecord | None:
-        # The render_artifact_unrecoverable posture promises recovery from the
-        # retained snapshot. If that snapshot no longer exists, recollecting
-        # current upstream state would silently produce a document with
-        # different evidence under a failed-work-replay relationship, so the
-        # replay is refused instead - before any replayed job is created.
+        # These postures promise recovery from the retained snapshot: the
+        # source rendered (or renders deterministically) from evidence that
+        # is already captured, so recollecting current upstream state would
+        # silently produce a document with different evidence under a
+        # failed-work-replay relationship. If the snapshot no longer exists
+        # the replay is refused instead - before any replayed job is created.
         if (
-            source_job.failure_category != "render_artifact_unrecoverable"
+            source_job.failure_category
+            not in {
+                "render_artifact_unrecoverable",
+                "archive_outcome_unknown",
+                "archive_handoff_failed",
+                "archive_handoff_not_configured",
+            }
             or self._snapshot_store is None
         ):
             return None

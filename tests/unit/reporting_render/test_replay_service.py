@@ -281,7 +281,11 @@ class _RecapturingCapture:
 
 
 class _RecordingRenderClient:
-    """Returns rendered-with-artifact and records every submitted render_job_id."""
+    """Renders with the given custody outcome and records every render_job_id.
+
+    lotus-render delivered the bytes during the render call (render#120), so
+    the archive outcome is part of the render response - the fake mirrors
+    the shipped RenderSubmitResponse shape."""
 
     def __init__(
         self,
@@ -289,11 +293,17 @@ class _RecordingRenderClient:
         fingerprint: str = "typst-0.14.2:aaaa1111",
         runtime_version: str = "0.14.2",
         artifact_base64: str | None = "JVBERi0xLjQKJQ==",
+        archive_state: str | None = "archived_verified",
+        archive_document_id: str | None = "doc_recovered_1",
+        archive_detail: str | None = None,
     ) -> None:
         self.render_job_ids: list[str] = []
         self._fingerprint = fingerprint
         self._runtime_version = runtime_version
         self._artifact_base64 = artifact_base64
+        self._archive_state = archive_state
+        self._archive_document_id = archive_document_id
+        self._archive_detail = archive_detail
 
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         self.render_job_ids.append(payload["render_job_id"])
@@ -306,19 +316,15 @@ class _RecordingRenderClient:
             "bounded_determinism_fingerprint": self._fingerprint,
             "runtime_engine": "typst",
             "runtime_engine_version": self._runtime_version,
+            "archive_state": self._archive_state,
+            "archive_document_id": (
+                self._archive_document_id if self._archive_state == "archived_verified" else None
+            ),
+            "archive_detail": self._archive_detail,
         }
         if self._artifact_base64 is not None:
             response["artifact_base64"] = self._artifact_base64
         return 201, response
-
-
-class _RecordingArchiveClient:
-    def __init__(self) -> None:
-        self.payloads: list[dict] = []
-
-    async def archive_document(self, payload, **kwargs):
-        self.payloads.append(payload)
-        return 201, {"document_id": f"doc_recovered_{len(self.payloads)}"}
 
 
 def _artifactless_failed_source(ledger: ReportJobLedger):
@@ -366,10 +372,8 @@ def _recovery_services(
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     render_client = render_client or _RecordingRenderClient()
-    archive_client = _RecordingArchiveClient()
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=render_client,
-        archive_client=archive_client,
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -380,7 +384,7 @@ def _recovery_services(
         snapshot_store=snapshot_store,
         archive_resolver=archive_resolver or _NotCommittedArchiveResolver(),
     )
-    return replay_service, render_client, archive_client
+    return replay_service, render_client, render_client
 
 
 @pytest.mark.asyncio
@@ -417,9 +421,9 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
     # artifactless terminal render job of the source.
     assert render_client.render_job_ids == [f"rdr_{replayed.job_id}_pdf"]
     assert f"rdr_{failed_source.job_id}_pdf" not in render_client.render_job_ids
-    # Exactly one archived document: the failed original never reached archive,
-    # so recovery does not duplicate a client document.
-    assert len(archive_client.payloads) == 1
+    # Exactly one delivery: the recovery's single render call carried the
+    # bytes to Archive (render#120); the failed original never delivered.
+    assert len(archive_client.render_job_ids) == 1
     # The replay reused the retained snapshot verbatim, with explicit clone
     # lineage - the report evidence cannot drift from the original capture.
     source_snapshot = store.get_snapshot_by_job(failed_source.job_id)
@@ -467,8 +471,8 @@ async def test_artifactless_replay_fails_closed_when_snapshot_missing(tmp_path):
         )
 
     assert capture.called is False
-    assert render_client.render_job_ids == []
-    assert archive_client.payloads == []
+    assert archive_client.render_job_ids == []
+    assert archive_client.render_job_ids == []
 
 
 @pytest.mark.asyncio
@@ -498,7 +502,7 @@ async def test_replay_refuses_cross_tenant_and_cross_region_callers(tmp_path):
                 caller_context=foreign_caller,
                 idempotency_key="recover-cross-tenant",
             )
-    assert archive_client.payloads == []
+    assert archive_client.render_job_ids == []
 
 
 @pytest.mark.asyncio
@@ -543,7 +547,7 @@ async def test_replay_resumes_clone_after_crash_between_collecting_and_data_read
 
     assert result.replayed_job.job_id == stuck.job_id
     assert result.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 @pytest.mark.asyncio
@@ -597,9 +601,10 @@ async def test_chained_replay_preserves_root_evidence_pointers(tmp_path):
 
 
 async def _fail_source_through_artifactless_render(ledger, store, *, fingerprint: str):
-    """Drive the source job through the REAL trap: render completes (with a
-    fingerprint) but the replayed response carries no artifact bytes, so the
-    archive leg fails it as render_artifact_unrecoverable - proving the
+    """Drive the source job through the REAL trap of the cutover era: the
+    render completes (with a fingerprint) but the archive handoff deadline
+    expires - archive_pending - so the job fails closed as
+    archive_outcome_unknown with the derived areq_ id recorded, proving the
     render evidence survives the failure transition."""
 
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
@@ -623,14 +628,19 @@ async def _fail_source_through_artifactless_render(ledger, store, *, fingerprint
         trace_id=source.trace_id,
     )
     render_service = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(fingerprint=fingerprint, artifact_base64=None),
-        archive_client=_RecordingArchiveClient(),
+        render_client=_RecordingRenderClient(
+            fingerprint=fingerprint,
+            artifact_base64=None,
+            archive_state="archive_pending",
+        ),
         snapshot_store=store,
         job_ledger=ledger,
     )
     failed = await render_service.render_for_job(source)
     assert failed.status == "failed"
-    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert failed.failure_category == "archive_outcome_unknown"
+    assert failed.archive_request_id is not None
+    assert failed.archive_request_id.startswith("areq_")
     assert failed.render_bounded_determinism_fingerprint == fingerprint
     return failed
 
@@ -784,10 +794,6 @@ async def test_replay_records_incomparable_for_metadataless_render_after_archive
                 response.pop(key, None)
             return status_code, response
 
-    class _FailingArchiveClient:
-        async def archive_document(self, payload, **kwargs):
-            return 503, {"detail": "archive unavailable"}
-
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
@@ -796,8 +802,7 @@ async def test_replay_records_incomparable_for_metadataless_render_after_archive
         ledger, store, fingerprint="typst-0.14.2:aaaa1111"
     )
     render_service = PortfolioReviewRenderOrchestrationService(
-        render_client=_MetadatalessRenderClient(),
-        archive_client=_FailingArchiveClient(),
+        render_client=_MetadatalessRenderClient(archive_state="archive_failed"),
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -834,10 +839,6 @@ async def test_replay_records_comparison_when_archive_leg_fails_after_render(tmp
     archive leg still fail the job; the comparison judges the render, so it
     must be recorded despite the failed job status."""
 
-    class _FailingArchiveClient:
-        async def archive_document(self, payload, **kwargs):
-            return 503, {"detail": "archive unavailable"}
-
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
@@ -846,8 +847,10 @@ async def test_replay_records_comparison_when_archive_leg_fails_after_render(tmp
         ledger, store, fingerprint="typst-0.14.2:aaaa1111"
     )
     render_service = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(fingerprint="typst-0.14.2:aaaa1111"),
-        archive_client=_FailingArchiveClient(),
+        render_client=_RecordingRenderClient(
+            fingerprint="typst-0.14.2:aaaa1111",
+            archive_state="archive_failed",
+        ),
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -941,13 +944,12 @@ async def test_replay_records_incomparable_when_runtime_identity_missing(tmp_pat
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
     failing_render = PortfolioReviewRenderOrchestrationService(
-        render_client=_NoRuntimeRenderClient(artifact_base64=None),
-        archive_client=_RecordingArchiveClient(),
+        render_client=_NoRuntimeRenderClient(artifact_base64=None, archive_state="archive_pending"),
         snapshot_store=store,
         job_ledger=ledger,
     )
     failed = await failing_render.render_for_job(source)
-    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert failed.failure_category == "archive_outcome_unknown"
     assert failed.render_bounded_determinism_fingerprint is not None
     assert failed.render_runtime_engine is None
 
@@ -1117,7 +1119,7 @@ async def test_fresh_replay_key_cannot_mint_second_replacement(tmp_path):
         )
 
     # Exactly one replacement document; the same key still converges.
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
     again = await replay_service.replay_job(
         job_id=failed_source.job_id,
         command=ReportJobReplayRequest(reason="First recovery."),
@@ -1125,7 +1127,7 @@ async def test_fresh_replay_key_cannot_mint_second_replacement(tmp_path):
         idempotency_key="first-key",
     )
     assert again.replayed_job.job_id == first.replayed_job.job_id
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 @pytest.mark.asyncio
@@ -1139,23 +1141,16 @@ async def test_archive_stage_failed_replacement_blocks_until_resolved(tmp_path):
 
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
-    class _CommitsButAnswers500ArchiveClient:
-        def __init__(self) -> None:
-            self.committed: list[str] = []
-
-        async def archive_document(self, payload, **kwargs):
-            self.committed.append(payload["metadata"]["archive_request_id"])
-            return 500, {"detail": "response lost after commit"}
-
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     failed_source = _artifactless_failed_source(ledger)
     _create_snapshot_for(store, failed_source)
 
-    ambiguous_archive = _CommitsButAnswers500ArchiveClient()
+    # The delivery deadline expires after Archive may have committed - the
+    # cutover-era shape of "response lost after commit".
+    ambiguous_render = _RecordingRenderClient(archive_state="archive_pending")
     replay_a_render = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(),
-        archive_client=ambiguous_archive,
+        render_client=ambiguous_render,
         snapshot_store=store,
         job_ledger=ledger,
     )
@@ -1174,8 +1169,9 @@ async def test_archive_stage_failed_replacement_blocks_until_resolved(tmp_path):
     )
     replacement = first.replayed_job
     assert replacement.status == "failed"
-    assert replacement.failure_category == "archive_execution_failed"
-    assert len(ambiguous_archive.committed) == 1
+    assert replacement.failure_category == "archive_outcome_unknown"
+    assert replacement.archive_request_id is not None
+    assert replacement.archive_request_id.startswith("areq_")
 
     # The original source must refuse novel keys while the replacement's
     # archive outcome is unresolved.
@@ -1206,7 +1202,7 @@ async def test_archive_stage_failed_replacement_blocks_until_resolved(tmp_path):
     resolved = ledger.get_job(replacement.job_id)
     assert resolved.status == "archived"
     assert resolved.archive_document_id == "doc_from_replacement"
-    assert resolver.lookups == [f"arch_{replacement.render_job_id}"]
+    assert resolver.lookups == [replacement.archive_request_id]
 
     # The original now has a SUCCESSFUL replacement - still blocked, and no
     # new archive write ever happened during recovery.
@@ -1217,7 +1213,7 @@ async def test_archive_stage_failed_replacement_blocks_until_resolved(tmp_path):
             caller_context=_caller(),
             idempotency_key="ambiguous-third",
         )
-    assert resolving_archive.payloads == []
+    assert resolving_archive.render_job_ids == []
 
 
 @pytest.mark.asyncio
@@ -1255,7 +1251,7 @@ async def test_fresh_replay_key_allowed_after_failed_replacement(tmp_path):
         idempotency_key="healthy-key",
     )
     assert second.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 @pytest.mark.asyncio
@@ -1310,10 +1306,6 @@ async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
 
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
-    class _Failing500ArchiveClient:
-        async def archive_document(self, payload, **kwargs):
-            return 500, {"detail": "response lost after commit"}
-
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     source = ledger.create_portfolio_review_job(
@@ -1335,13 +1327,12 @@ async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
         trace_id=source.trace_id,
     )
     failing = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(),
-        archive_client=_Failing500ArchiveClient(),
+        render_client=_RecordingRenderClient(archive_state="archive_pending"),
         snapshot_store=store,
         job_ledger=ledger,
     )
     failed = await failing.render_for_job(source)
-    assert failed.failure_category == "archive_execution_failed"
+    assert failed.failure_category == "archive_outcome_unknown"
     assert failed.retry_eligible is True
 
     resolver = _CommittedArchiveResolver()
@@ -1360,7 +1351,7 @@ async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
             idempotency_key="recover-ambiguous",
         )
 
-    assert resolver.lookups == [f"arch_{failed.render_job_id}"]
+    assert resolver.lookups == [failed.archive_request_id]
     resolved = ledger.get_job(failed.job_id)
     assert resolved.status == "archived"
     assert resolved.archive_document_id == "doc_committed_1"
@@ -1370,7 +1361,7 @@ async def test_ambiguous_archive_failure_adopts_committed_document(tmp_path):
         if event.event_type == "job_replay_archive_resolved"
     ]
     assert events == ["job_replay_archive_resolved"]
-    assert archive_client.payloads == []
+    assert archive_client.render_job_ids == []
 
 
 @pytest.mark.asyncio
@@ -1415,7 +1406,7 @@ async def test_ambiguous_archive_failure_refuses_when_lookup_unavailable(tmp_pat
         )
 
     assert ledger.get_job(failed.job_id).status == "failed"
-    assert archive_client.payloads == []
+    assert archive_client.render_job_ids == []
 
 
 @pytest.mark.asyncio
@@ -1424,10 +1415,6 @@ async def test_archive_execution_failure_recovers_through_replay(tmp_path):
     archive ingest is idempotent by arch_{render_job_id}, so the replay
     recovers end-to-end once archive is healthy, with exactly one archived
     document (issue #211)."""
-
-    class _Failing500ArchiveClient:
-        async def archive_document(self, payload, **kwargs):
-            return 500, {"detail": "unexpected archive fault"}
 
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
@@ -1452,13 +1439,15 @@ async def test_archive_execution_failure_recovers_through_replay(tmp_path):
         trace_id=source.trace_id,
     )
     failing_service = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(),
-        archive_client=_Failing500ArchiveClient(),
+        render_client=_RecordingRenderClient(
+            archive_state="archive_failed",
+            archive_detail="archive_refused_500: internal: unexpected archive fault",
+        ),
         snapshot_store=store,
         job_ledger=ledger,
     )
     failed = await failing_service.render_for_job(source)
-    assert failed.failure_category == "archive_execution_failed"
+    assert failed.failure_category == "archive_handoff_failed"
     assert failed.retry_eligible is True
 
     replay_service, _rc, archive_client = _recovery_services(
@@ -1472,7 +1461,7 @@ async def test_archive_execution_failure_recovers_through_replay(tmp_path):
     )
 
     assert result.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 class _PurgedSourceSnapshotStore:
@@ -1531,7 +1520,7 @@ async def test_completed_replay_retry_stays_idempotent_after_snapshot_purge(tmp_
 
     assert retried.replayed_job.job_id == first.replayed_job.job_id
     assert retried.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 @pytest.mark.asyncio
@@ -1636,7 +1625,7 @@ async def test_lineage_guard_blocks_original_after_grandchild_succeeds(tmp_path)
         idempotency_key="lineage-b",
     )
     assert b_result.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
     # O's guard must see B through A.
     with pytest.raises(InvalidReportJobTransitionError):
@@ -1654,7 +1643,7 @@ async def test_lineage_guard_blocks_original_after_grandchild_succeeds(tmp_path)
             caller_context=_caller(),
             idempotency_key="lineage-b2",
         )
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 def test_lineage_guard_blocks_replaying_child_of_adopted_root(tmp_path):
@@ -1708,10 +1697,6 @@ async def test_resolved_archive_ancestor_does_not_strand_the_chain(tmp_path):
 
     from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 
-    class _Failing500ArchiveClient:
-        async def archive_document(self, payload, **kwargs):
-            return 500, {"detail": "archive fault"}
-
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     original = ledger.create_portfolio_review_job(
@@ -1733,13 +1718,12 @@ async def test_resolved_archive_ancestor_does_not_strand_the_chain(tmp_path):
         trace_id=original.trace_id,
     )
     failing_archive_render = PortfolioReviewRenderOrchestrationService(
-        render_client=_RecordingRenderClient(),
-        archive_client=_Failing500ArchiveClient(),
+        render_client=_RecordingRenderClient(archive_state="archive_pending"),
         snapshot_store=store,
         job_ledger=ledger,
     )
     original = await failing_archive_render.render_for_job(original)
-    assert original.failure_category == "archive_execution_failed"
+    assert original.failure_category == "archive_outcome_unknown"
 
     # Confirmed 404 permits replacement A; A fails at render.
     a_replay, _rc, _ac = _recovery_services(
@@ -1771,7 +1755,7 @@ async def test_resolved_archive_ancestor_does_not_strand_the_chain(tmp_path):
         idempotency_key="resolved-ancestor-b",
     )
     assert b_result.replayed_job.status == "archived"
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
     # With B succeeded, novel replays of O and A are refused.
     for job_id, key in (
@@ -1785,7 +1769,7 @@ async def test_resolved_archive_ancestor_does_not_strand_the_chain(tmp_path):
                 caller_context=_caller(),
                 idempotency_key=key,
             )
-    assert len(archive_client.payloads) == 1
+    assert len(archive_client.render_job_ids) == 1
 
 
 def test_guarded_creation_revalidates_source_eligibility(tmp_path):

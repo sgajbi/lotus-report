@@ -380,10 +380,11 @@ Observability floor for this wave:
 - the full lifecycle, identity chain, failure-mode table, and recovery commands are consolidated
   on [End-to-End Report Lifecycle](End-to-End-Report-Lifecycle)
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
-- a job failed with `archive_execution_failed` (an unclassified archive fault such as a generic
-  500) is retry-eligible. Its replay resolves the ambiguity FIRST via archive's
-  by-request-id lookup: a document committed under the original `arch_{render_job_id}` is
-  adopted (the source job resolves to archived with a `job_replay_archive_resolved` event and
+- a job failed with `archive_outcome_unknown` (the render#120 handoff deadline expired after
+  the delivery may have committed) or the legacy `archive_execution_failed` is retry-eligible.
+  Its replay resolves the ambiguity FIRST via archive's by-request-id lookup using the STORED
+  request id (post-cutover the derived `areq_` id, legacy rows their `arch_{render_job_id}`):
+  a committed document is adopted (the source job resolves to archived with a `job_replay_archive_resolved` event and
   the replay answers 409 - re-read the job status), an unanswerable lookup refuses fail-closed,
   and only a confirmed 404 re-renders and archives. Exactly one client document is possible in
   every branch. Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture; other report families stay non-retryable (no resolution path), while rerender attempts are retry-eligible: a retry resolves the failed attempt's own archive request first, adopting a committed correction or proving a clean 404 before any new attempt (migration 015 backfills previously stranded attempts)

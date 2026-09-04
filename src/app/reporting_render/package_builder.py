@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from numbers import Real
 from typing import Any, Sequence
@@ -395,6 +397,12 @@ def _render_package_envelope(
                 template_id=template_id,
                 template_version="v1",
             ),
+            # The custody facts only Report owns, passed to Archive verbatim
+            # by lotus-render's handoff (its build_archive_metadata). Render
+            # overlays identity, provenance, and the declared digest LAST, so
+            # nothing stated here can override what Render actually did -
+            # which is also why none of those overlaid fields appear here.
+            "archive": _archive_custody_block(job=job, snapshot=snapshot),
         },
         "report_data": report_data,
         "lineage_refs": lineage_refs,
@@ -403,6 +411,124 @@ def _render_package_envelope(
         "correlation_id": job.correlation_id,
         "trace_id": job.trace_id,
     }
+
+
+def _advisor_commentary_archive_summary(
+    snapshot_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Archive metadata keeps the accepted brief's audit identity for a
+    rendered ADVISOR_COMMENTARY section (issue #166 acceptance 4)."""
+
+    package = _as_dict(snapshot_payload.get("advisor_commentary_package"))
+    if not package or package.get("status") != "included":
+        return None
+    review = _as_dict(package.get("review"))
+    return {
+        "run_id": _optional_str(package.get("run_id")) or "not_available",
+        "request_id": _optional_str(package.get("request_id")) or "not_available",
+        "reviewed_by": _optional_str(review.get("reviewed_by")) or "not_available",
+        "reviewed_at": _optional_str(review.get("reviewed_at")) or "not_available",
+        "content_hash": _optional_str(package.get("content_hash")) or "not_available",
+        "schema_id": _optional_str(package.get("schema_id")) or "not_available",
+        "included_in_render": True,
+    }
+
+
+def _advisor_proposal_memo_archive_summary(
+    snapshot_payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    package = _as_dict(snapshot_payload.get("proposal_memo_package"))
+    if not package:
+        return None
+    review = _as_dict(package.get("review"))
+    sections = [section for section in package.get("sections", []) if isinstance(section, dict)]
+    return {
+        "memo_id": _optional_str(package.get("memo_id")) or "not_available",
+        "proposal_id": _optional_str(package.get("proposal_id")) or "not_available",
+        "proposal_version_no": _optional_int(package.get("proposal_version_no")) or 0,
+        "review_event_id": _optional_str(review.get("review_event_id")) or "not_available",
+        "review_action": _optional_str(review.get("review_action")) or "not_available",
+        "client_ready_status": _optional_str(package.get("client_ready_publication")) or "BLOCKED",
+        "memo_hash": _optional_str(package.get("memo_hash")) or "not_available",
+        "source_input_hash": _optional_str(package.get("source_input_hash")) or "not_available",
+        "section_count": len(sections),
+        "blocked_section_count": sum(
+            1 for section in sections if section.get("status") == "BLOCKED"
+        ),
+        "included_in_render": True,
+    }
+
+
+def _archive_custody_block(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Report-owned custody metadata for the render#120 archive handoff.
+
+    Exactly the ArchiveDocumentInput fields Report is the authority on:
+    request lineage, portfolio scope, reporting period, classification,
+    residency, retention, and the report-family audit summaries. Fields the
+    delivering authority owns (archive_request_id, document_reference,
+    declared_artifact_sha256, render identity/provenance, created_by_*) are
+    deliberately absent - lotus-render overlays them and would discard any
+    value stated here.
+    """
+
+    review_period = _as_dict(snapshot.get("reviewPeriod"))
+    identity = _as_dict(_as_dict(snapshot.get("clientProfile")).get("identity"))
+    portfolio_ids = job.portfolio_scope.get("portfolio_ids")
+    portfolio_id = (
+        str(portfolio_ids[0])
+        if isinstance(portfolio_ids, list) and portfolio_ids
+        else "portfolio-not-available"
+    )
+    custody: dict[str, Any] = {
+        "report_request_id": job.request_id,
+        "portfolio_scope": json.dumps(job.portfolio_scope, sort_keys=True, separators=(",", ":")),
+        "portfolio_id": portfolio_id,
+        "as_of_date": job.as_of_date.isoformat(),
+        "reporting_period_start": _date_text(
+            review_period.get("start_date")
+            or review_period.get("period_start")
+            or date(job.as_of_date.year, 1, 1)
+        ),
+        "reporting_period_end": _date_text(
+            review_period.get("end_date") or review_period.get("period_end") or job.as_of_date
+        ),
+        "frequency": _optional_str(review_period.get("frequency")) or "ad_hoc",
+        "classification": "confidential",
+        "region": job.region,
+        "tenant_id": job.tenant_id,
+        "retention_start_date": job.as_of_date.isoformat(),
+    }
+    client_reference = _optional_str(identity.get("client_reference")) or _optional_str(
+        identity.get("client_id")
+    )
+    if client_reference:
+        custody["client_reference"] = client_reference
+    retention_policy_id = _optional_str(job.options.get("retention_policy_id"))
+    if retention_policy_id:
+        custody["retention_policy_id"] = retention_policy_id
+    retain_until_date = _optional_str(job.options.get("retain_until_date"))
+    if retain_until_date:
+        custody["retain_until_date"] = retain_until_date
+    advisor_memo = _advisor_proposal_memo_archive_summary(snapshot)
+    if advisor_memo is not None:
+        custody["advisor_proposal_memo"] = advisor_memo
+    advisor_commentary = _advisor_commentary_archive_summary(snapshot)
+    if advisor_commentary is not None:
+        custody["advisor_commentary"] = advisor_commentary
+    return custody
+
+
+def _date_text(value: object) -> str:
+    if isinstance(value, date):
+        return str(value.isoformat())
+    text = _optional_str(value)
+    if text:
+        return str(text)
+    raise ValueError("date value is required")
 
 
 def _validate_dpm_common_snapshot(

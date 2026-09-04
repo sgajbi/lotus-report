@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS report_rerender_attempt (
             'archive_conflict',
             'archive_storage_failed',
             'archive_execution_failed',
+            'archive_outcome_unknown',
+            'archive_handoff_failed',
+            'archive_handoff_not_configured',
             'timeout',
             'cancelled',
             'operator_intervention_required'

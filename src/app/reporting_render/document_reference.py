@@ -32,6 +32,7 @@ nobody parses it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 
@@ -53,3 +54,18 @@ def mint_document_reference(
     }
     canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
     return f"rdoc_{uuid.uuid5(_DOCUMENT_REFERENCE_NAMESPACE, canonical)}"
+
+
+def derive_archive_request_id(document_reference: str, artifact_sha256: str) -> str:
+    """One custody request per (financial question, exact bytes).
+
+    Byte-for-byte the same derivation as lotus-render's
+    ``archive_handoff.derive_archive_request_id`` (the delivering authority):
+    any holder of the same reference and the same artifact digest computes the
+    same id, so Report can reconcile custody by request id without the render
+    response carrying it.
+    """
+
+    normalized = artifact_sha256.strip().lower().removeprefix("sha256:")
+    digest = hashlib.sha256(f"{document_reference}\n{normalized}".encode()).hexdigest()
+    return f"areq_{digest[:32]}"

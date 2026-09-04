@@ -23,12 +23,9 @@ from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.document_reference import derive_archive_request_id
 from app.reporting_render.package_builder import _build_render_package, _optional_int, _optional_str
-from app.reporting_render.service import (
-    _archive_failure_message,
-    _archive_failure_posture,
-    _build_archive_payload,
-)
+from app.reporting_render.service import _is_terminal_archive_refusal
 
 
 class RerenderSnapshotStore(Protocol):
@@ -134,19 +131,6 @@ class RerenderArchiveClient(Protocol):
         role: str | None = None,
     ) -> tuple[int, dict[str, Any]]: ...
 
-    async def archive_document(
-        self,
-        payload: dict[str, Any],
-        *,
-        actor_id: str,
-        tenant_id: str,
-        region: str,
-        correlation_id: str,
-        trace_id: str,
-        booking_center_code: str | None = None,
-        role: str | None = None,
-    ) -> tuple[int, dict[str, Any]]: ...
-
 
 class PortfolioReviewRerenderService:
     def __init__(
@@ -234,10 +218,9 @@ class PortfolioReviewRerenderService:
                 runtime_engine_version=_optional_str(render_response.get("runtime_engine_version")),
                 render_duration_ms=_optional_int(render_response.get("render_duration_ms")),
             )
-            archived = await self._archive_rerendered_job(
-                job=job,
-                snapshot=snapshot,
+            archived = self._record_rerender_archive_outcome(
                 attempt=rendered,
+                package=payload,
                 render_response=render_response,
                 caller_context=caller_context,
             )
@@ -292,7 +275,7 @@ class PortfolioReviewRerenderService:
         # outcome, and EVERY remaining ambiguity is resolved in the same pass
         # so none can surface later as a stale adoption.
         for attempt in self._ledger.list_unresolved_archive_ambiguous_attempts(job.job_id):
-            archive_request_id = f"arch_{attempt.render_job_id}"
+            archive_request_id = attempt.archive_request_id or f"arch_{attempt.render_job_id}"
             try:
                 status_code, payload = await self._archive_client.get_document_by_request_id(
                     archive_request_id,
@@ -331,61 +314,34 @@ class PortfolioReviewRerenderService:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered")
         return adopted_outcome
 
-    async def _archive_rerendered_job(
+    def _record_rerender_archive_outcome(
         self,
         *,
-        job: ReportJobLedgerRecord,
-        snapshot: Any,
         attempt: ReportRerenderAttemptRecord,
+        package: dict[str, Any],
         render_response: dict[str, Any],
         caller_context: ReportCallerContext,
     ) -> ReportRerenderAttemptRecord:
-        artifact_base64 = _optional_str(render_response.get("artifact_base64"))
-        if artifact_base64 is None:
-            # Same recoverable posture as the primary orchestration: a replayed
-            # "rendered" response carries no bytes, and a new rerender attempt
-            # (fresh idempotency key, fresh render job id) regenerates them.
-            return self._ledger.mark_rerender_failed(
-                rerender_attempt_id=attempt.rerender_attempt_id,
-                actor=caller_context.triggered_by,
-                correlation_id=caller_context.correlation_id,
-                trace_id=caller_context.trace_id,
-                failure_category="render_artifact_unrecoverable",
-                failure_message=(
-                    "The render completed previously but its artifact was only "
-                    "available in the original response. Request a new rerender "
-                    "attempt to regenerate it from the retained snapshot."
-                ),
-                retry_eligible=True,
-            )
+        """The render#120 cutover applied to corrections: Render delivered the
+        exact bytes during the render call; this records the custody outcome.
+        The derived areq_ id is stored durably before any failure posture, so
+        the resolution-first recovery (#215) reconciles the exact request that
+        may have committed instead of minting an unconvergeable fresh one.
+        """
 
-        archive_request_id = f"arch_{attempt.render_job_id}"
-        archiving = self._ledger.mark_rerender_archiving(
-            rerender_attempt_id=attempt.rerender_attempt_id,
-            archive_request_id=archive_request_id,
+        archive_state = _optional_str(render_response.get("archive_state"))
+        document_id = _optional_str(render_response.get("archive_document_id"))
+        artifact_sha256 = _optional_str(render_response.get("artifact_sha256"))
+        reference = str(package["render_context"]["document_reference"])
+        archive_request_id = (
+            derive_archive_request_id(reference, artifact_sha256) if artifact_sha256 else None
         )
-        status_code, archive_response = await self._archive_client.archive_document(
-            _build_archive_payload(
-                job=job,
-                snapshot=snapshot,
-                render_response=render_response,
+        if archive_request_id:
+            self._ledger.mark_rerender_archiving(
+                rerender_attempt_id=attempt.rerender_attempt_id,
                 archive_request_id=archive_request_id,
-                content_base64=artifact_base64,
-                render_attempt_id=attempt.rerender_attempt_id,
-                supersedes_render_job_id=attempt.previous_render_job_id,
-                supersedes_archive_document_id=attempt.previous_archive_document_id,
-                archive_consequence="correction",
-            ),
-            actor_id=caller_context.triggered_by,
-            tenant_id=caller_context.tenant_id,
-            region=caller_context.region,
-            correlation_id=caller_context.correlation_id,
-            trace_id=caller_context.trace_id,
-            booking_center_code=caller_context.booking_center_code,
-            role=caller_context.role,
-        )
-        document_id = _optional_str(archive_response.get("document_id"))
-        if status_code in {200, 201} and document_id:
+            )
+        if archive_state == "archived_verified" and document_id and archive_request_id:
             return self._ledger.mark_rerender_archived(
                 rerender_attempt_id=attempt.rerender_attempt_id,
                 actor=caller_context.triggered_by,
@@ -393,24 +349,47 @@ class PortfolioReviewRerenderService:
                 trace_id=caller_context.trace_id,
                 archive_document_id=document_id,
             )
-
-        failure_category, retry_eligible = _archive_failure_posture(
-            status_code, archive_response, report_type=job.report_type
-        )
-        if failure_category in {"archive_storage_failed", "archive_execution_failed"}:
-            # Retry-eligible for every family: attempt recovery is
-            # resolution-first (this service resolves the failed attempt's
-            # own arch_{render_job_id} before any new attempt), so a retry
-            # adopts a committed correction instead of duplicating it.
-            retry_eligible = True
+        if archive_state == "archive_pending" and archive_request_id:
+            failure_category = "archive_outcome_unknown"
+            failure_message = (
+                f"Archive custody is unresolved for {archive_request_id}: the "
+                "handoff deadline expired and the correction may have "
+                "committed. Attempt recovery resolves this request id before "
+                "any new attempt."
+            )
+        elif archive_state == "archive_failed":
+            archive_detail = _optional_str(render_response.get("archive_detail")) or ""
+            failure_category = "archive_handoff_failed"
+            failure_message = (
+                "lotus-render's archive handoff failed"
+                + (f" for {archive_request_id}" if archive_request_id else "")
+                + (f": {archive_detail}" if archive_detail else "")
+            )
+            if _is_terminal_archive_refusal(archive_detail):
+                return self._ledger.mark_rerender_failed(
+                    rerender_attempt_id=attempt.rerender_attempt_id,
+                    actor=caller_context.triggered_by,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                    failure_category=failure_category,
+                    failure_message=failure_message,
+                    retry_eligible=False,
+                )
+        else:
+            failure_category = "archive_handoff_not_configured"
+            failure_message = (
+                "The correction rendered but no archive handoff applied "
+                f"(archive_state={archive_state!r}). Report no longer relays "
+                "bytes; configure lotus-render's archive handoff and retry."
+            )
         return self._ledger.mark_rerender_failed(
-            rerender_attempt_id=archiving.rerender_attempt_id,
+            rerender_attempt_id=attempt.rerender_attempt_id,
             actor=caller_context.triggered_by,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
             failure_category=failure_category,
-            failure_message=_archive_failure_message(archive_response),
-            retry_eligible=retry_eligible,
+            failure_message=failure_message,
+            retry_eligible=True,
         )
 
 

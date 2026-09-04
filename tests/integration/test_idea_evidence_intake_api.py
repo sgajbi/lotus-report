@@ -210,7 +210,6 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=_SuccessfulRenderClient(),
-        archive_client=_SuccessfulArchiveClient(),
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -293,8 +292,7 @@ def test_idea_evidence_materialization_records_archive_failure_without_retry(tmp
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
     render_service = PortfolioReviewRenderOrchestrationService(
-        render_client=_SuccessfulRenderClient(),
-        archive_client=_UnavailableArchiveClient(),
+        render_client=_SuccessfulRenderClient(archive_state="archive_failed"),
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -319,7 +317,8 @@ def test_idea_evidence_materialization_records_archive_failure_without_retry(tmp
     assert response.status_code == 202
     record = ledger.get_job(response.json()["report_job_id"])
     assert record.status == "failed"
-    assert record.failure_category == "archive_storage_failed"
+    assert record.failure_category == "archive_handoff_failed"
+    assert "archive_unreachable" in (record.failure_message or "")
     # Proof-pack jobs have no replay/resolution path; a fresh order identity
     # would defeat archive idempotency, so the posture is non-retryable.
     assert record.retry_eligible is False
@@ -333,7 +332,6 @@ def test_idea_evidence_materialization_route_can_capture_json_only_proof(tmp_pat
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=_UnexpectedRenderClient(),
-        archive_client=_UnexpectedArchiveClient(),
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -517,7 +515,6 @@ def test_idea_evidence_materialization_route_conflicts_on_changed_payload_replay
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=_SuccessfulRenderClient(),
-        archive_client=_SuccessfulArchiveClient(),
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -758,6 +755,9 @@ class _UnexpectedRenderService:
 
 
 class _SuccessfulRenderClient:
+    def __init__(self, *, archive_state="archived_verified"):
+        self.archive_state = archive_state
+
     async def submit_render_package(self, payload, **kwargs):
         return 201, {
             "status": "rendered",
@@ -768,32 +768,21 @@ class _SuccessfulRenderClient:
             "runtime_engine_version": "0.14.2",
             "render_duration_ms": 420,
             "artifact_base64": "JVBERi0xLjQ=",
-        }
-
-
-class _SuccessfulArchiveClient:
-    async def archive_document(self, payload, **kwargs):
-        return 201, {"document_id": "doc_idea_evidence_pack_001"}
-
-
-class _UnavailableArchiveClient:
-    async def archive_document(self, payload, **kwargs):
-        return 503, {
-            "detail": {
-                "code": "archive_unavailable",
-                "message": "Archive is temporarily unavailable.",
-            }
+            "archive_state": self.archive_state,
+            "archive_document_id": (
+                "doc_idea_evidence_pack_001" if self.archive_state == "archived_verified" else None
+            ),
+            "archive_detail": (
+                "archive_unreachable: Archive is temporarily unavailable."
+                if self.archive_state == "archive_failed"
+                else None
+            ),
         }
 
 
 class _UnexpectedRenderClient:
     async def submit_render_package(self, payload, **kwargs):
         raise AssertionError("JSON-only materialization must not call render")
-
-
-class _UnexpectedArchiveClient:
-    async def archive_document(self, payload, **kwargs):
-        raise AssertionError("JSON-only materialization must not call archive")
 
 
 class _MissingKeyReportJobLedger:
