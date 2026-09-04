@@ -33,6 +33,22 @@ def test_merged_pr_dispatch_gates_every_revision_the_pr_put_on_main() -> None:
     # dispatcher must fail loudly if the repository setting ever changes.
     assert "allow_squash_merge" in dispatcher
     assert '"$merge_methods" != "false,false,true"' in dispatcher
+    # Ancestry is judged against the freshly fetched main, and a revision that
+    # is not main history is refused BEFORE any tag is created or gate
+    # dispatched: the guard must sit inside the loop, after the detach onto
+    # FETCH_HEAD and ahead of both the tag write and the workflow dispatch.
+    assert "git checkout --quiet --detach FETCH_HEAD" in dispatcher
+    guard = 'if ! git merge-base --is-ancestor "$revision" HEAD; then'
+    assert guard in dispatcher
+    assert dispatcher.index("git fetch origin main --quiet") < dispatcher.index(
+        "git checkout --quiet --detach FETCH_HEAD"
+    )
+    assert dispatcher.index("for revision in $revisions; do") < dispatcher.index(guard)
+    assert dispatcher.index(guard) < dispatcher.index(
+        'dispatch_ref="main-releasability-${revision}"'
+    )
+    assert dispatcher.index(guard) < dispatcher.index('gh api "repos/$GITHUB_REPOSITORY/git/refs"')
+    assert dispatcher.index(guard) < dispatcher.index("gh workflow run main-releasability.yml")
 
 
 def test_coverage_audit_workflow_runs_the_fail_closed_audit() -> None:
