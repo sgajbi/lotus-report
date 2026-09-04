@@ -49,6 +49,9 @@ jobs:
           fi
 
           git fetch origin main --quiet
+          # Judge ancestry against the freshly fetched main, not the event-time
+          # checkout snapshot.
+          git checkout --quiet --detach FETCH_HEAD
           revisions="$(git rev-list -n "$COMMIT_COUNT" "$MERGE_COMMIT_SHA" | tac)"
           if [ -z "$revisions" ]; then
             echo "::error::No revisions enumerated for merged PR #$PR_NUMBER at $MERGE_COMMIT_SHA"
@@ -56,6 +59,13 @@ jobs:
           fi
 
           for revision in $revisions; do
+            # A revision that is not on the fetched main (for example after a
+            # forced move of main between the merge event and this checkout)
+            # must never be tagged or gated as main history.
+            if ! git merge-base --is-ancestor "$revision" HEAD; then
+              echo "::error::Revision $revision is not an ancestor of main; refusing to dispatch."
+              exit 1
+            fi
             dispatch_ref="main-releasability-${revision}"
             existing_ref_sha=""
             if existing_ref_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$dispatch_ref" --jq .object.sha 2>/dev/null)"; then
