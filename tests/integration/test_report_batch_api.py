@@ -228,6 +228,7 @@ def _advance_report_job_to_archived(report_ledger, report_job, *, document_id: s
         output_format="pdf",
         template_id="portfolio-review",
         template_version="v1",
+        template_publication="development",
         artifact_sha256="a" * 64,
         bounded_determinism_fingerprint="b" * 64,
         runtime_engine="typst",

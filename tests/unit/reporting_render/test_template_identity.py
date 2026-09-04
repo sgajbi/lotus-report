@@ -226,3 +226,50 @@ async def test_a_mismatched_render_outcome_fails_closed_and_records_no_custody(t
     # The artifact this job never ordered is not recorded as its custody.
     assert outcome.archive_document_id is None
     assert outcome.render_artifact_sha256 is None
+
+
+class _RenderClientStatingPublication:
+    def __init__(self, publication):
+        self._publication = publication
+
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        response = {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
+            "artifact_sha256": "sha256:artifact",
+            "artifact_base64": "JVBERi0xLjQ=",
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_publication",
+        }
+        if self._publication is not None:
+            response["template_publication"] = self._publication
+        return 201, response
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("publication", ["development", "published", None])
+async def test_the_render_stated_publication_posture_is_persisted_verbatim(
+    tmp_path, publication
+) -> None:
+    """Render states the template's governance posture AT RENDER TIME; Report
+    persists that statement beside the version and custody facts - verbatim,
+    including its absence. Custody (archived) and publication stay distinct
+    facts; distribution authority is Gateway/Archive-owned, never inferred
+    from either."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientStatingPublication(publication),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    outcome = await service.render_for_job(ready)
+
+    record = ledger.get_job(ready.job_id)
+    assert record.render_template_publication == publication
+    assert outcome.status in {"archived", "completed", "archiving"}

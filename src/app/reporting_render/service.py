@@ -50,6 +50,7 @@ class RenderJobLedger(Protocol):
         output_format: str,
         template_id: str,
         template_version: str,
+        template_publication: str | None,
         artifact_sha256: str | None,
         bounded_determinism_fingerprint: str | None,
         runtime_engine: str | None,
@@ -192,6 +193,9 @@ class PortfolioReviewRenderOrchestrationService:
                     output_format="pdf",
                     template_id=str(payload["template_id"]),
                     template_version=str(payload["template_version"]),
+                    template_publication=_optional_str(
+                        response_payload.get("template_publication")
+                    ),
                     artifact_sha256=_optional_str(response_payload.get("artifact_sha256")),
                     bounded_determinism_fingerprint=_optional_str(
                         response_payload.get("bounded_determinism_fingerprint")
