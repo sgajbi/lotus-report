@@ -16,19 +16,35 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from app.report_ordering_catalogue.definitions import REPORT_FAMILY_DEFINITIONS
+from app.report_ordering_catalogue.definitions import (
+    REPORT_FAMILY_DEFINITIONS,
+    ReportFamilyDefinition,
+)
+
+
+def resolve_report_family(report_type: str) -> ReportFamilyDefinition:
+    """Resolve a report type to its governing ReportFamilyDefinition."""
+
+    for definition in REPORT_FAMILY_DEFINITIONS:
+        if definition.report_type == report_type:
+            return definition
+    raise LookupError(
+        f"REPORT_TEMPLATE_UNRESOLVED: no report family definition owns report type "
+        f"{report_type!r}; a job without a governed template cannot be accepted for PDF."
+    )
 
 
 def resolve_report_template(report_type: str) -> tuple[str, str]:
     """Resolve a report type to its governed (template_id, template_version)."""
 
-    for definition in REPORT_FAMILY_DEFINITIONS:
-        if definition.report_type == report_type:
-            return definition.template_id, definition.template_version
-    raise LookupError(
-        f"REPORT_TEMPLATE_UNRESOLVED: no report family definition owns report type "
-        f"{report_type!r}; a job without a governed template cannot be accepted for PDF."
-    )
+    definition = resolve_report_family(report_type)
+    return definition.template_id, definition.template_version
+
+
+def resolve_report_data_contract(report_type: str) -> str:
+    """Resolve a report type to the report_data contract version it emits."""
+
+    return resolve_report_family(report_type).report_data_contract_version
 
 
 def accepted_template_identity(

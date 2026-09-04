@@ -30,6 +30,12 @@ class RenderMetadataClient(Protocol):
         trace_id: str | None = None,
     ) -> tuple[int, dict[str, Any]]: ...
 
+    async def get_template_projection(
+        self,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]: ...
+
 
 class ReportCatalogueDefinitionError(ValueError):
     pass
@@ -56,9 +62,22 @@ class ReportOrderingCatalogueService:
             correlation_id=correlation_id,
             trace_id=trace_id,
         )
-        pdf_supportability = _pdf_supportability(render_status, render_metadata)
+        runtime_supportability = _pdf_supportability(render_status, render_metadata)
+        templates_status, templates_payload = await self._render_client.get_template_projection(
+            correlation_id=correlation_id,
+            trace_id=trace_id,
+        )
+        templates = _template_projection_index(templates_status, templates_payload)
         report_families = [
-            _family_item(definition, pdf_supportability) for definition in self._definitions
+            _family_item(
+                definition,
+                _family_pdf_supportability(
+                    definition,
+                    runtime=runtime_supportability,
+                    templates=templates,
+                ),
+            )
+            for definition in self._definitions
         ]
         return ReportOrderingCatalogueResponse(
             report_families=report_families,
@@ -178,6 +197,109 @@ def _pdf_supportability(
         reason_code=reason,
         message="Governed PDF creation is unavailable.",
     )
+
+
+def _template_projection_index(
+    status_code: int,
+    payload: dict[str, Any],
+) -> dict[tuple[str, str], dict[str, Any]] | None:
+    """The shipped render#265 projection, indexed by (id, version).
+
+    None means the evidence could not be read - every PDF-capable family
+    then states unavailability rather than guessing.
+    """
+
+    if status_code != 200:
+        return None
+    entries = payload.get("templates")
+    if not isinstance(entries, list):
+        return None
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        template_id = str(entry.get("template_id") or "")
+        template_version = str(entry.get("template_version") or "")
+        if template_id and template_version:
+            index[(template_id, template_version)] = entry
+    return index
+
+
+def _family_pdf_supportability(
+    definition: ReportFamilyDefinition,
+    *,
+    runtime: ReportCatalogueSupportability,
+    templates: dict[tuple[str, str], dict[str, Any]] | None,
+) -> ReportCatalogueSupportability:
+    """Version-aware: can Render create THIS family's intended template?
+
+    Proves the exact (template_id, template_version) the family orders is
+    registered, renderable for new renders, and supports the family's report
+    type and report_data contract. Publication posture is deliberately NOT
+    consulted: a development template is fully orderable for internal use -
+    "can Render create it?" and "may the product distribute it externally?"
+    are different questions, and this seam answers only the first.
+    """
+
+    if "pdf" not in definition.supported_output_formats:
+        return runtime
+    if runtime.state != "ready":
+        return runtime
+    if templates is None:
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="render_templates_unavailable",
+            message=(
+                "Governed PDF creation is unavailable because template evidence could not be read."
+            ),
+        )
+    entry = templates.get((definition.template_id, definition.template_version))
+    if entry is None:
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="template_version_not_registered",
+            message=(
+                f"Governed PDF creation is unavailable because template "
+                f"{definition.template_id}/{definition.template_version} is not "
+                "registered with the renderer."
+            ),
+        )
+    if str(entry.get("status") or "") != "active":
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="template_not_renderable",
+            message=(
+                f"Governed PDF creation is unavailable because template "
+                f"{definition.template_id}/{definition.template_version} is "
+                f"{entry.get('status') or 'in an unstated status'} for new renders."
+            ),
+        )
+    supported_types = entry.get("supported_report_types")
+    if not isinstance(supported_types, list) or definition.report_type not in supported_types:
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="report_type_not_supported",
+            message=(
+                f"Governed PDF creation is unavailable because template "
+                f"{definition.template_id}/{definition.template_version} does not "
+                f"support report type {definition.report_type}."
+            ),
+        )
+    supported_contracts = entry.get("supported_report_data_contract_versions")
+    if (
+        not isinstance(supported_contracts, list)
+        or definition.report_data_contract_version not in supported_contracts
+    ):
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="report_data_contract_not_supported",
+            message=(
+                f"Governed PDF creation is unavailable because template "
+                f"{definition.template_id}/{definition.template_version} does not "
+                f"accept contract {definition.report_data_contract_version}."
+            ),
+        )
+    return runtime
 
 
 def _family_item(

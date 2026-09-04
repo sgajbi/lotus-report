@@ -37,6 +37,27 @@ class RenderClient:
         )
         return result
 
+    async def get_template_projection(
+        self,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """GET /system/templates - the registry projection for version-aware
+        family supportability (render#265): per registered version, its id,
+        version, renderable status, publication posture, and supported report
+        types/contract versions. Deliberately narrow by contract - digests,
+        locales, output formats, and runtime posture are other surfaces."""
+
+        result: tuple[int, dict[str, Any]] = await get_with_retry(
+            url=f"{self._base_url}/system/templates",
+            timeout_seconds=self._timeout_seconds,
+            params={},
+            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+        return result
+
     async def get_metadata(
         self,
         correlation_id: str | None = None,
