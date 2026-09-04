@@ -21,7 +21,12 @@ class _WorkflowReportingReadService:
         }
 
     async def get_portfolio_review(
-        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+        self,
+        portfolio_id: str,
+        request_payload: dict,
+        correlation_id: str | None,
+        admitted_tenant_id: str | None = None,
+        evidence_posture: str = "ephemeral_composition",
     ) -> dict:
         return {
             "contract_version": "v1",

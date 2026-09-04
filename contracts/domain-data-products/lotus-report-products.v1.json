@@ -24,15 +24,19 @@
       "required_trust_metadata": [
         "product_name",
         "product_version",
-        "tenant_id",
+        "tenant_admission",
         "generated_at",
         "as_of_date",
         "reconciliation_status",
+        "reconciliation_reason_code",
         "data_quality_status",
         "source_batch_fingerprint",
         "lineage_bundle_id",
         "correlation_id"
       ],
+      "conditional_trust_metadata": {
+        "tenant_id": "Present exactly when tenant_admission is caller_admitted (or a future source_verified posture); an unattributed caller yields no tenant claim rather than a fabricated default."
+      },
       "serving_plane": "reporting_service",
       "current_routes": [
         "/reports/client-evidence-packs/{portfolio_id}",
