@@ -267,6 +267,28 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
             "silent document-content drift."
         ),
     ),
+    ReportingMetricContract(
+        name="lotus_report_archive_lineage_pending_jobs",
+        metric_type="gauge",
+        labels=(),
+        implemented=True,
+        description=(
+            "Jobs with archive lifecycle lineage pairs still pending after the latest "
+            "bounded reconciliation pass. No job, document, tenant, or trace labels. "
+            "A value that stays nonzero across passes while Archive is healthy means "
+            "lineage is not converging and needs operator attention."
+        ),
+    ),
+    ReportingMetricContract(
+        name="lotus_report_archive_lineage_oldest_pending_age_seconds",
+        metric_type="gauge",
+        labels=(),
+        implemented=True,
+        description=(
+            "Age of the oldest still-pending archive lineage pair observed by the "
+            "latest bounded reconciliation pass; zero when none are pending."
+        ),
+    ),
 )
 
 _REPORT_OPERATIONS_TOTAL = Counter(
@@ -316,12 +338,12 @@ _REPORT_JOB_RUNTIME_LAST_ITEMS = Gauge(
 )
 _REPORT_JOB_WORK_LEASE_EVENTS_TOTAL = Counter(
     "lotus_report_job_work_lease_events_total",
-    REPORTING_METRIC_CONTRACTS[9].description,
+    REPORTING_METRIC_CONTRACTS[12].description,
     [METRIC_SCHEDULER_OUTCOME_LABEL],
 )
 _ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL = Counter(
     "lotus_report_advisor_commentary_resolutions_total",
-    REPORTING_METRIC_CONTRACTS[10].description,
+    REPORTING_METRIC_CONTRACTS[13].description,
     [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
 )
 _REPLAY_FINGERPRINT_COMPARISONS_TOTAL = Counter(
@@ -329,6 +351,25 @@ _REPLAY_FINGERPRINT_COMPARISONS_TOTAL = Counter(
     REPORTING_METRIC_CONTRACTS[11].description,
     [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
 )
+
+
+_ARCHIVE_LINEAGE_PENDING_JOBS = Gauge(
+    "lotus_report_archive_lineage_pending_jobs",
+    REPORTING_METRIC_CONTRACTS[9].description,
+)
+_ARCHIVE_LINEAGE_OLDEST_PENDING_AGE_SECONDS = Gauge(
+    "lotus_report_archive_lineage_oldest_pending_age_seconds",
+    REPORTING_METRIC_CONTRACTS[10].description,
+)
+
+
+def record_archive_lineage_reconciliation(
+    *,
+    outstanding_jobs: int,
+    oldest_age_seconds: float | None,
+) -> None:
+    _ARCHIVE_LINEAGE_PENDING_JOBS.set(outstanding_jobs)
+    _ARCHIVE_LINEAGE_OLDEST_PENDING_AGE_SECONDS.set(oldest_age_seconds or 0.0)
 
 
 def validate_reporting_metric_contracts() -> None:

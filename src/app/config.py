@@ -98,6 +98,11 @@ class Settings(BaseSettings):
         ge=1,
         alias="REPORT_JOB_WORKER_MAX_ATTEMPTS",
     )
+    report_job_worker_lineage_reconciliation_limit: int = Field(
+        25,
+        ge=0,
+        alias="REPORT_JOB_WORKER_LINEAGE_RECONCILIATION_LIMIT",
+    )
     report_job_worker_retry_base_seconds: int = Field(
         5,
         ge=1,

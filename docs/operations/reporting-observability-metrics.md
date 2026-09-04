@@ -23,6 +23,8 @@ are implemented and proven.
 | `lotus_report_attention_events_last_count` | gauge | `attention_type`, `severity` | Latest source-backed operations attention scan counts for stuck-state and SLA-breach events |
 | `lotus_report_advisor_commentary_resolutions_total` | counter | `outcome`, `reason` | Bounded ADVISOR_COMMENTARY section resolutions (included, unavailable) with bounded closure reasons; section closures never fail the job, so this is the signal for systemic ordering problems |
 | `lotus_report_replay_fingerprint_comparisons_total` | counter | `outcome`, `reason` | Bounded replay fingerprint comparison observations (matched, diverged, incomparable); a nonzero same-runtime diverged rate is the alert for silent document-content drift |
+| `lotus_report_archive_lineage_pending_jobs` | gauge | (none) | Jobs with archive lifecycle lineage pairs still pending after the latest bounded reconciliation pass; nonzero across passes while Archive is healthy means lineage is not converging |
+| `lotus_report_archive_lineage_oldest_pending_age_seconds` | gauge | (none) | Age of the oldest still-pending archive lineage pair seen by the latest reconciliation pass; zero when none are pending |
 
 ## Scrape Targets
 
