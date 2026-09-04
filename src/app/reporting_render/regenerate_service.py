@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
+from app.clients.archive_client import ArchiveClient
+from app.config import settings
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -25,6 +27,7 @@ from app.reporting_lineage.service import (
 )
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.archive_lineage import record_archive_lineage
 from app.reporting_render.service import (
     get_portfolio_review_render_orchestration_service,
 )
@@ -56,11 +59,12 @@ class RegenerateLedger(Protocol):
         job_id: str,
         event_type: str,
         message: str,
-        event_payload: dict[str, object] | None = None,
+        event_payload: dict[str, Any] | None = None,
         event_idempotency_key: str | None = None,
         actor: str,
         correlation_id: str,
         trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
     ) -> bool: ...
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]: ...
@@ -91,6 +95,24 @@ class RegenerateRenderService(Protocol):
     async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
 
 
+class RegenerateArchiveLineageClient(Protocol):
+    async def record_lifecycle_transition(
+        self,
+        *,
+        source_document_id: str,
+        target_document_id: str,
+        transition_type: str,
+        transition_reason: str,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]: ...
+
+
 class PortfolioReviewRegenerateService:
     def __init__(
         self,
@@ -99,7 +121,9 @@ class PortfolioReviewRegenerateService:
         snapshot_store: RegenerateSnapshotStore,
         capture_service: RegenerateCaptureService,
         render_service: RegenerateRenderService,
+        archive_lineage_client: RegenerateArchiveLineageClient,
     ) -> None:
+        self._archive_lineage_client = archive_lineage_client
         self._ledger = ledger
         self._snapshot_store = snapshot_store
         self._capture_service = capture_service
@@ -178,6 +202,22 @@ class PortfolioReviewRegenerateService:
                 archive_document_id=regenerated.archive_document_id,
                 caller_context=caller_context,
             )
+            # report#266: the replacement supersedes the source document in
+            # Archive's OWN lifecycle - a same-key retry of this regenerate
+            # re-enters this block and re-attempts a pending linkage, and
+            # Archive replays a recorded pair idempotently. The stored
+            # replacement stands whether or not linkage is recorded yet.
+            if source_job.archive_document_id:
+                await record_archive_lineage(
+                    archive_client=self._archive_lineage_client,
+                    ledger=self._ledger,
+                    event_job_id=source_job.job_id,
+                    source_document_id=source_job.archive_document_id,
+                    target_document_id=regenerated.archive_document_id,
+                    transition_type="supersede",
+                    transition_reason=f"Regenerate replacement by {regenerated.job_id}",
+                    caller_context=caller_context,
+                )
         _upsert_regenerate_relationship(
             self._ledger,
             source_job=source_job,
@@ -202,6 +242,12 @@ class PortfolioReviewRegenerateService:
 
 def get_portfolio_review_regenerate_service() -> PortfolioReviewRegenerateService:
     return PortfolioReviewRegenerateService(
+        archive_lineage_client=ArchiveClient(
+            base_url=settings.archive_base_url,
+            timeout_seconds=settings.upstream_timeout_seconds,
+            max_retries=settings.upstream_max_retries,
+            retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+        ),
         ledger=get_report_job_ledger(),
         snapshot_store=get_report_input_snapshot_store(),
         capture_service=get_portfolio_review_snapshot_capture_service(),

@@ -23,6 +23,10 @@ from app.reporting_jobs.visibility import assert_job_visible
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
+from app.reporting_render.archive_lineage import (
+    record_archive_lineage,
+    settle_pending_archive_lineage,
+)
 from app.reporting_render.document_reference import derive_archive_request_id
 from app.reporting_render.package_builder import _build_render_package, _optional_int, _optional_str
 from app.reporting_render.service import _is_terminal_archive_refusal
@@ -34,6 +38,22 @@ class RerenderSnapshotStore(Protocol):
 
 class RerenderLedger(Protocol):
     def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
+
+    def append_job_event(
+        self,
+        *,
+        job_id: str,
+        event_type: str,
+        message: str,
+        event_payload: dict[str, Any] | None = None,
+        event_idempotency_key: str | None = None,
+        actor: str,
+        correlation_id: str,
+        trace_id: str,
+        skip_if_idempotency_key_exists: bool = False,
+    ) -> bool: ...
+
+    def list_status_events(self, job_id: str) -> list[Any]: ...
 
     def list_unresolved_archive_ambiguous_attempts(
         self, job_id: str
@@ -118,6 +138,22 @@ class RerenderRenderClient(Protocol):
 
 
 class RerenderArchiveClient(Protocol):
+    async def record_lifecycle_transition(
+        self,
+        *,
+        source_document_id: str,
+        target_document_id: str,
+        transition_type: str,
+        transition_reason: str,
+        actor_id: str,
+        tenant_id: str,
+        region: str,
+        correlation_id: str,
+        trace_id: str,
+        booking_center_code: str | None = None,
+        role: str | None = None,
+    ) -> tuple[int, dict[str, Any]]: ...
+
     async def get_document_by_request_id(
         self,
         archive_request_id: str,
@@ -167,6 +203,12 @@ class PortfolioReviewRerenderService:
         except ReportInputSnapshotNotFoundError as exc:
             raise ReportJobNotFoundError("report_snapshot_not_found") from exc
 
+        await settle_pending_archive_lineage(
+            archive_client=self._archive_client,
+            ledger=self._ledger,
+            event_job_id=job.job_id,
+            caller_context=caller_context,
+        )
         resolved = await self._resolve_ambiguous_attempts(
             job=job,
             caller_context=caller_context,
@@ -218,7 +260,7 @@ class PortfolioReviewRerenderService:
                 runtime_engine_version=_optional_str(render_response.get("runtime_engine_version")),
                 render_duration_ms=_optional_int(render_response.get("render_duration_ms")),
             )
-            archived = self._record_rerender_archive_outcome(
+            archived = await self._record_rerender_archive_outcome(
                 attempt=rendered,
                 package=payload,
                 render_response=render_response,
@@ -298,6 +340,19 @@ class PortfolioReviewRerenderService:
                     trace_id=caller_context.trace_id,
                     archive_document_id=document_id,
                 )
+                if attempt.previous_archive_document_id:
+                    await record_archive_lineage(
+                        archive_client=self._archive_client,
+                        ledger=self._ledger,
+                        event_job_id=attempt.report_job_id,
+                        source_document_id=attempt.previous_archive_document_id,
+                        target_document_id=document_id,
+                        transition_type="correct",
+                        transition_reason=(
+                            f"Rerender correction {attempt.rerender_attempt_id} (adopted)"
+                        ),
+                        caller_context=caller_context,
+                    )
                 if adopted_outcome is None:
                     adopted_outcome = self._ledger.record_adopted_rerender_outcome(
                         job=job,
@@ -314,7 +369,7 @@ class PortfolioReviewRerenderService:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered")
         return adopted_outcome
 
-    def _record_rerender_archive_outcome(
+    async def _record_rerender_archive_outcome(
         self,
         *,
         attempt: ReportRerenderAttemptRecord,
@@ -342,13 +397,28 @@ class PortfolioReviewRerenderService:
                 archive_request_id=archive_request_id,
             )
         if archive_state == "archived_verified" and document_id and archive_request_id:
-            return self._ledger.mark_rerender_archived(
+            archived = self._ledger.mark_rerender_archived(
                 rerender_attempt_id=attempt.rerender_attempt_id,
                 actor=caller_context.triggered_by,
                 correlation_id=caller_context.correlation_id,
                 trace_id=caller_context.trace_id,
                 archive_document_id=document_id,
             )
+            # report#266: the correction corrects the prior document in
+            # Archive's own lifecycle; a pending linkage is re-attempted at
+            # the next rerender entry for this job.
+            if attempt.previous_archive_document_id:
+                await record_archive_lineage(
+                    archive_client=self._archive_client,
+                    ledger=self._ledger,
+                    event_job_id=attempt.report_job_id,
+                    source_document_id=attempt.previous_archive_document_id,
+                    target_document_id=document_id,
+                    transition_type="correct",
+                    transition_reason=(f"Rerender correction {attempt.rerender_attempt_id}"),
+                    caller_context=caller_context,
+                )
+            return archived
         if archive_state == "archive_pending" and archive_request_id:
             failure_category = "archive_outcome_unknown"
             failure_message = (
