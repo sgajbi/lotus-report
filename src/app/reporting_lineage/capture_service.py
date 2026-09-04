@@ -789,6 +789,13 @@ class PortfolioReviewSnapshotCaptureService:
             if proposal_narrative_package is not None:
                 snapshot_payload = dict(snapshot_payload)
                 snapshot_payload["proposal_narrative_package"] = proposal_narrative_package
+            proposal_memo_package = _proposal_memo_package(job)
+            if proposal_memo_package is not None:
+                # The exact accepted package, injected verbatim: the render
+                # semantic reads it from the immutable snapshot, never from
+                # the live request, and nothing rewrites or infers content.
+                snapshot_payload = dict(snapshot_payload)
+                snapshot_payload["proposal_memo_package"] = proposal_memo_package
         except PortfolioReviewInputCaptureError as exc:
             upstream_calls = exc.upstream_calls
             failure_category, failure_message, retry_eligible = _map_job_failure(exc.original_error)
@@ -828,6 +835,7 @@ class PortfolioReviewSnapshotCaptureService:
             lineage_summary=_lineage_summary(
                 upstream_calls,
                 proposal_narrative_package=_proposal_narrative_package(job),
+                proposal_memo_package=_proposal_memo_package(job),
                 advisor_commentary_package=snapshot_payload.get("advisor_commentary_package"),
             ),
             captured_at=_utc_now(),
@@ -1350,6 +1358,7 @@ def _request_payload(job: ReportJobLedgerRecord) -> dict[str, Any]:
         **dict(job.options),
     }
     payload.pop("proposal_narrative_package", None)
+    payload.pop("proposal_memo_package", None)
     if job.reporting_currency:
         payload["reporting_currency"] = job.reporting_currency
     return payload
@@ -1357,6 +1366,11 @@ def _request_payload(job: ReportJobLedgerRecord) -> dict[str, Any]:
 
 def _proposal_narrative_package(job: ReportJobLedgerRecord) -> dict[str, Any] | None:
     package = job.options.get("proposal_narrative_package")
+    return package if isinstance(package, dict) else None
+
+
+def _proposal_memo_package(job: ReportJobLedgerRecord) -> dict[str, Any] | None:
+    package = job.options.get("proposal_memo_package")
     return package if isinstance(package, dict) else None
 
 
@@ -1490,6 +1504,7 @@ def _lineage_summary(
     calls: list[_RecordedUpstreamCall],
     *,
     proposal_narrative_package: dict[str, Any] | None = None,
+    proposal_memo_package: dict[str, Any] | None = None,
     advisor_commentary_package: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     summary = {
@@ -1525,6 +1540,26 @@ def _lineage_summary(
                 ),
                 "proposal_narrative_review_state": review.get("review_state"),
                 "proposal_narrative_source_hash": source_lineage.get("source_narrative_hash"),
+            }
+        )
+    if proposal_memo_package is not None:
+        summary_source_services = summary.get("source_services")
+        source_services = set(
+            summary_source_services if isinstance(summary_source_services, list) else []
+        )
+        source_services.add("lotus-advise")
+        memo_review = proposal_memo_package.get("review")
+        if not isinstance(memo_review, dict):
+            memo_review = {}
+        summary.update(
+            {
+                "source_services": sorted(source_services),
+                "proposal_memo_package_status": proposal_memo_package.get("package_status"),
+                "proposal_memo_id": proposal_memo_package.get("memo_id"),
+                "proposal_memo_hash": proposal_memo_package.get("memo_hash"),
+                "proposal_memo_review_action": memo_review.get("review_action"),
+                "proposal_memo_reviewed_by": memo_review.get("reviewed_by"),
+                "proposal_memo_reviewed_at": memo_review.get("reviewed_at"),
             }
         )
     if isinstance(advisor_commentary_package, dict):
