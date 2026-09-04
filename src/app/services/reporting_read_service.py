@@ -201,6 +201,8 @@ class ReportingReadService:
         portfolio_id: str,
         request_payload: dict[str, object],
         correlation_id: str | None,
+        admitted_tenant_id: str | None = None,
+        evidence_posture: str = "ephemeral_composition",
     ) -> dict[str, object]:
         as_of_date = self._request_as_of_date(request_payload)
         requested_sections = self._requested_sections(
@@ -395,6 +397,8 @@ class ReportingReadService:
             as_of_date=as_of_date,
             correlation_id=correlation_id,
             response=response,
+            admitted_tenant_id=admitted_tenant_id,
+            evidence_posture=evidence_posture,
         )
         response["client_sections"] = client_sections
         response["upstreamCapabilityAudit"] = self._upstream_capability_audit(response)
@@ -906,6 +910,8 @@ class ReportingReadService:
         as_of_date: str,
         correlation_id: str | None,
         response: dict[str, object],
+        admitted_tenant_id: str | None,
+        evidence_posture: str,
     ) -> dict[str, object]:
         source_refs = self._review_source_refs(portfolio_id=portfolio_id, response=response)
         source_services = sorted(
@@ -922,6 +928,34 @@ class ReportingReadService:
         data_quality_status = (
             "quality_warning" if readiness_status == "partial" else "quality_passed"
         )
+        # Trust claims state only what is PROVEN (#283):
+        # - the tenant is the ADMITTED caller tenant, never a hardcoded
+        #   "default"; an unattributed caller yields no tenant claim at all,
+        #   with the admission posture saying why (source-verified tenancy
+        #   arrives with Core #177);
+        # - no reconciliation policy exists yet, so reconciliation_status is
+        #   "unknown" with a bounded reason - "reconciled" was never proven;
+        # - evidence_posture distinguishes the synchronous ephemeral
+        #   composition from a durably captured snapshot: the two flows must
+        #   not publish indistinguishable evidence claims.
+        trust_metadata: dict[str, object] = {
+            "product_name": "ClientReportEvidencePack",
+            "product_version": "v1",
+            "generated_at": response.get("generated_at"),
+            "as_of_date": as_of_date,
+            "completeness_status": completeness_status,
+            "reconciliation_status": "unknown",
+            "reconciliation_reason_code": "no_reconciliation_policy_established",
+            "data_quality_status": data_quality_status,
+            "source_batch_fingerprint": f"portfolio-review:{portfolio_id}:{as_of_date}",
+            "lineage_bundle_id": lineage_bundle_id,
+            "correlation_id": correlation_id,
+        }
+        if admitted_tenant_id:
+            trust_metadata["tenant_id"] = admitted_tenant_id
+            trust_metadata["tenant_admission"] = "caller_admitted"
+        else:
+            trust_metadata["tenant_admission"] = "unattributed_caller"
         return {
             "product_id": "lotus-report:ClientReportEvidencePack:v1",
             "product_name": "ClientReportEvidencePack",
@@ -929,24 +963,13 @@ class ReportingReadService:
             "lineage_bundle_id": lineage_bundle_id,
             "evidence_bundle_id": evidence_bundle_id,
             "evidence_access_class": "customer_consumable",
+            "evidence_posture": evidence_posture,
             "portfolio_id": portfolio_id,
             "as_of_date": as_of_date,
             "correlation_id": correlation_id,
             "source_services": source_services,
             "source_refs": source_refs,
-            "trust_metadata": {
-                "product_name": "ClientReportEvidencePack",
-                "product_version": "v1",
-                "tenant_id": "default",
-                "generated_at": response.get("generated_at"),
-                "as_of_date": as_of_date,
-                "completeness_status": completeness_status,
-                "reconciliation_status": "reconciled",
-                "data_quality_status": data_quality_status,
-                "source_batch_fingerprint": f"portfolio-review:{portfolio_id}:{as_of_date}",
-                "lineage_bundle_id": lineage_bundle_id,
-                "correlation_id": correlation_id,
-            },
+            "trust_metadata": trust_metadata,
         }
 
     def _review_source_refs(
