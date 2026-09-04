@@ -182,6 +182,9 @@ class _CaptureService:
 
 
 class _RenderClientSuccess:
+    def __init__(self):
+        self.packages: list[dict] = []
+
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         assert payload["report_job_id"].startswith("rjob_")
         # The render leg now carries the DURABLE snapshot identity - the same
@@ -191,6 +194,14 @@ class _RenderClientSuccess:
         # package whose footer named evidence Archive lineage never recorded.
         assert payload["snapshot_id"].startswith("rsnap_")
         assert payload["report_data"]["client_name"] == "Alex Tan"
+        # The custody block rides render_context (render#120): Report-owned
+        # facts only, which Render passes to Archive verbatim.
+        custody = payload["render_context"]["archive"]
+        assert custody["tenant_id"] == "tenant-sg"
+        assert custody["region"] == "APAC"
+        assert custody["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+        assert "retention_start_date" in custody
+        self.packages.append(payload)
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -202,6 +213,8 @@ class _RenderClientSuccess:
             "runtime_engine_version": "0.14.2",
             "render_duration_ms": 812,
             "artifact_base64": "JVBERi0xLjQKJQ==",
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_archived",
         }
 
 
@@ -215,26 +228,21 @@ class _RenderClientValidationFailure:
         }
 
 
-class _ArchiveClientSuccess:
-    def __init__(self):
-        self.payloads: list[dict] = []
-
-    async def archive_document(self, payload, **kwargs):
-        self.payloads.append(payload)
-        assert kwargs["tenant_id"] == "tenant-sg"
-        assert kwargs["region"] == "APAC"
-        assert payload["metadata"]["report_job_id"].startswith("rjob_")
-        assert payload["metadata"]["snapshot_id"].startswith("rsnap_")
-        assert payload["metadata"]["render_job_id"].startswith("rdr_")
-        assert payload["metadata"]["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
-        assert "retention_policy_id" in payload["metadata"]
-        assert "retention_start_date" in payload["metadata"]
-        return 201, {"document_id": "doc_archived"}
-
-
-class _ArchiveClientStorageFailure:
-    async def archive_document(self, payload, **kwargs):
-        return 503, {"detail": "archive storage unavailable"}
+class _RenderClientArchivePending:
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        return 201, {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
+            "archive_state": "archive_pending",
+            "archive_document_id": None,
+        }
 
 
 class _FailingRenderService:
@@ -299,7 +307,6 @@ def _execution_service(
     report_job_ledger,
     store,
     render_client,
-    archive_client,
 ):
     return ReportBatchExecutionService(
         batch_ledger=batch_ledger,
@@ -307,7 +314,6 @@ def _execution_service(
         capture_service=_CaptureService(ledger=report_job_ledger, store=store),
         render_service=PortfolioReviewRenderOrchestrationService(
             render_client=render_client,
-            archive_client=archive_client,
             snapshot_store=store,
             job_ledger=report_job_ledger,
         ),
@@ -320,13 +326,12 @@ async def test_batch_item_execution_captures_renders_archives_and_marks_item_suc
 ) -> None:
     batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
-    archive_client = _ArchiveClientSuccess()
+    render_client = _RenderClientSuccess()
     service = _execution_service(
         batch_ledger=batch_ledger,
         report_job_ledger=report_job_ledger,
         store=store,
-        render_client=_RenderClientSuccess(),
-        archive_client=archive_client,
+        render_client=render_client,
     )
 
     result = await service.execute_item(
@@ -349,7 +354,7 @@ async def test_batch_item_execution_captures_renders_archives_and_marks_item_suc
         "lotus-performance",
         "lotus-risk",
     ]
-    assert archive_client.payloads[0]["metadata"]["snapshot_id"] == snapshot.snapshot_id
+    assert render_client.packages[0]["snapshot_id"] == snapshot.snapshot_id
 
 
 @pytest.mark.asyncio
@@ -361,7 +366,6 @@ async def test_batch_item_execution_propagates_render_failure_to_item(tmp_path) 
         report_job_ledger=report_job_ledger,
         store=store,
         render_client=_RenderClientValidationFailure(),
-        archive_client=_ArchiveClientSuccess(),
     )
 
     result = await service.execute_item(
@@ -388,8 +392,7 @@ async def test_batch_item_execution_propagates_archive_failure_to_item(tmp_path)
         batch_ledger=batch_ledger,
         report_job_ledger=report_job_ledger,
         store=store,
-        render_client=_RenderClientSuccess(),
-        archive_client=_ArchiveClientStorageFailure(),
+        render_client=_RenderClientArchivePending(),
     )
 
     result = await service.execute_item(
@@ -400,13 +403,13 @@ async def test_batch_item_execution_propagates_archive_failure_to_item(tmp_path)
     refreshed = batch_ledger.get_batch(batch.batch_id)
     job = report_job_ledger.get_job(item.report_job_id or "")
     assert result.item_status == "failed_retryable"
-    assert result.failure_category == "archive_storage_failed"
+    assert result.failure_category == "archive_outcome_unknown"
     assert result.retry_eligible is True
     assert refreshed.status == "failed"
-    assert refreshed.items[0].last_error_category == "archive_storage_failed"
+    assert refreshed.items[0].last_error_category == "archive_outcome_unknown"
     assert refreshed.items[0].retry_eligible is True
     assert job.status == "failed"
-    assert job.failure_category == "archive_storage_failed"
+    assert job.failure_category == "archive_outcome_unknown"
 
 
 @pytest.mark.asyncio
@@ -698,13 +701,12 @@ async def test_batch_item_execution_proceeds_when_the_linked_job_tenant_matches(
 
     batch_ledger, report_job_ledger, batch, item = _dispatched_batch(tmp_path)
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
-    archive_client = _ArchiveClientSuccess()
+    render_client = _RenderClientSuccess()
     service = _execution_service(
         batch_ledger=batch_ledger,
         report_job_ledger=report_job_ledger,
         store=store,
-        render_client=_RenderClientSuccess(),
-        archive_client=archive_client,
+        render_client=render_client,
     )
 
     result = await service.execute_item(

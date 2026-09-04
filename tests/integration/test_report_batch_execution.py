@@ -150,7 +150,11 @@ class _CaptureService:
 
 
 class _RenderClientSuccess:
+    def __init__(self):
+        self.packages: list[dict] = []
+
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        self.packages.append(payload)
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -162,16 +166,9 @@ class _RenderClientSuccess:
             "runtime_engine_version": "0.14.2",
             "render_duration_ms": 812,
             "artifact_base64": "JVBERi0xLjQKJQ==",
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_batch_execution_archived",
         }
-
-
-class _ArchiveClientSuccess:
-    def __init__(self):
-        self.payloads: list[dict] = []
-
-    async def archive_document(self, payload, **kwargs):
-        self.payloads.append(payload)
-        return 201, {"document_id": "doc_batch_execution_archived"}
 
 
 @pytest.mark.asyncio
@@ -181,7 +178,7 @@ async def test_postgres_batch_item_execution_archives_pdf_report_and_reconciles_
     batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(database_url))
     report_job_ledger = own_postgres_adapter(PostgresReportJobLedger(database_url))
     snapshot_store = own_postgres_adapter(PostgresReportInputSnapshotStore(database_url))
-    archive_client = _ArchiveClientSuccess()
+    render_client = _RenderClientSuccess()
     caller = _caller(suffix)
     batch = batch_ledger.create_batch(
         request=_batch_request(suffix),
@@ -203,8 +200,7 @@ async def test_postgres_batch_item_execution_archives_pdf_report_and_reconciles_
         report_job_ledger=report_job_ledger,
         capture_service=_CaptureService(ledger=report_job_ledger, store=snapshot_store),
         render_service=PortfolioReviewRenderOrchestrationService(
-            render_client=_RenderClientSuccess(),
-            archive_client=archive_client,
+            render_client=render_client,
             snapshot_store=snapshot_store,
             job_ledger=report_job_ledger,
         ),
@@ -226,6 +222,6 @@ async def test_postgres_batch_item_execution_archives_pdf_report_and_reconciles_
     assert refreshed_job.status == "archived"
     assert refreshed_job.archive_document_id == "doc_batch_execution_archived"
     assert snapshot.report_job_id == refreshed_job.job_id
-    assert archive_client.payloads
-    assert archive_client.payloads[0]["metadata"]["snapshot_id"] == snapshot.snapshot_id
-    assert archive_client.payloads[0]["metadata"]["report_job_id"] == refreshed_job.job_id
+    assert render_client.packages
+    assert render_client.packages[0]["snapshot_id"] == snapshot.snapshot_id
+    assert render_client.packages[0]["report_job_id"] == refreshed_job.job_id

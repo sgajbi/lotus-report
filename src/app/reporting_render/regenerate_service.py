@@ -88,14 +88,7 @@ class RegenerateCaptureService(Protocol):
 
 
 class RegenerateRenderService(Protocol):
-    async def render_for_job(
-        self,
-        job: ReportJobLedgerRecord,
-        *,
-        supersedes_render_job_id: str | None = None,
-        supersedes_archive_document_id: str | None = None,
-        archive_consequence: str | None = None,
-    ) -> ReportJobLedgerRecord: ...
+    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
 
 
 class PortfolioReviewRegenerateService:
@@ -163,12 +156,11 @@ class PortfolioReviewRegenerateService:
             )
             regenerated = await self._capture_service.capture_for_job(regenerated)
         if regenerated.status == "data_ready":
-            regenerated = await self._render_service.render_for_job(
-                regenerated,
-                supersedes_render_job_id=source_job.render_job_id,
-                supersedes_archive_document_id=source_job.archive_document_id,
-                archive_consequence="replacement",
-            )
+            # The replacement relationship is Report-owned lineage, recorded
+            # durably by _upsert_regenerate_relationship below; it never rode
+            # the archive handoff (Archive's create contract has no
+            # supersession fields - lifecycle transitions are its own API).
+            regenerated = await self._render_service.render_for_job(regenerated)
         if regenerated.status == "archived":
             if not regenerated.archive_document_id:
                 raise InvalidReportJobTransitionError(

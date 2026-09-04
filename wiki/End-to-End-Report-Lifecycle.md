@@ -11,7 +11,7 @@ capability is gated or pending, the gap is stated explicitly rather than implied
 
 | Service | Owns | Never owns |
 | --- | --- | --- |
-| lotus-report | WHAT the document communicates: report families, sections, composition, lifecycle orchestration, as-of semantics, lineage, failure semantics, archive handoff metadata | Rendering layout; document storage; entitlement |
+| lotus-report | WHAT the document communicates: report families, sections, composition, lifecycle orchestration, as-of semantics, lineage, failure semantics, Report-owned custody metadata (`render_context.archive`) | Rendering layout; document storage; byte delivery to Archive (lotus-render is the one transmit authority, render#120); entitlement |
 | lotus-render | HOW the document looks: templates, layout, typography, deterministic PDF production | Report facts; document retention (its store is job evidence, not documents - render#120) |
 | lotus-archive | Durable document identity, retention, legal hold, purge, access audit, source events | Report composition; render execution |
 | lotus-gateway | Caller entitlement, scope eligibility, ordering-options projection, document retrieval fronting | Report configuration truth (it projects report's catalogue verbatim) |
@@ -28,8 +28,8 @@ Report job statuses are the durable truth; the conceptual stages map onto them:
 | Ready for render | `data_ready` | Immutable input snapshot exists; JSON-only jobs stop here as a complete outcome |
 | Rendering | `rendering` | Render package built deterministically from the snapshot; submitted under `rdr_{job_id}_pdf` |
 | Rendered | `completed` | Render truth persisted: template identity, `artifact_sha256`, `bounded_determinism_fingerprint`, runtime identity |
-| Archiving | `archiving` | Base64 artifact + metadata handed to archive under deterministic `arch_{render_job_id}` |
-| Available | `archived` | `archive_document_id` recorded; archive owns the document from here |
+| Archiving | `archiving` | lotus-render delivered the exact bytes to Archive during the render call (render#120); Report records the custody outcome under the derived `areq_` request id |
+| Available | `archived` | Reached ONLY on `archived_verified`: Archive independently verified the declared SHA-256 and holds the bytes; `archive_document_id` recorded |
 | Degraded success | `completed_with_warnings` | Explicit partial outcome, never silent |
 | Failed | `failed` | Bounded `failure_category` + operator-actionable message + explicit `retry_eligible` |
 | Cancelled | `cancelled` | Only before render/archive side effects |
@@ -50,7 +50,7 @@ and runtime identity - evidence is never destroyed by a failure.
 | `render_job_id` | Report (`rdr_{job_id}_pdf`) | Deterministic per job; render converges identical retries via package-hash idempotency |
 | `artifact_sha256` | Render | Bytes of ONE render; NOT stable across re-renders (PDF metadata differs) - never compare across renders |
 | `bounded_determinism_fingerprint` | Render | Stable across re-renders of the same input **within the governed container runtime only** |
-| `archive_request_id` | Report (`arch_{render_job_id}`) | Deterministic; archive converges identical retries idempotently |
+| `archive_request_id` | Derived (`areq_` from `document_reference` + `artifact_sha256`) | Any holder of the same reference and digest computes the same id - Render derives it to deliver, Report derives it to reconcile; archive converges identical redeliveries idempotently. Legacy rows keep their stored `arch_{render_job_id}` ids |
 | `document_id` + checksum | Archive | Fresh per archived document; checksum verified on ingest |
 | Advisor commentary `run_id` + `content_hash` | lotus-ai (accepted-output projection) | Pinned at capture; kept in snapshot, lineage, render package, and archive metadata |
 
@@ -64,9 +64,11 @@ and runtime identity - evidence is never destroyed by a failure.
 | Same render id, different package (409) | `render_conflict` | Not retryable | Investigate identity misuse |
 | Render unavailable / 5xx | `render_execution_failed` | Retryable | Replay |
 | **Timeout after successful render** (terminal replay returns no artifact bytes) | `render_artifact_unrecoverable` | **Retryable** | Replay clones the retained snapshot and re-renders under a fresh render job id; content-identical by fingerprint, byte-different by design |
-| Archive validation / conflict | `archive_validation_failed` / `archive_conflict` | Not retryable | Investigate; document never silently duplicated |
-| Archive storage unavailable (503/507 or explicit storage codes) | `archive_storage_failed` | Retryable for portfolio review only | Replay - which FIRST resolves the original `arch_{render_job_id}` against archive: a committed document is adopted (the source job becomes archived, no second document possible), an unanswerable lookup refuses fail-closed, and only a confirmed 404 re-renders |
-| Archive other 5xx / unclassified fault | `archive_execution_failed` | Retryable for portfolio review only | Same resolution-first replay as above (report#211; migration 014 backfills previously stranded rows). The ambiguity resolution exists because a committed-but-response-lost ingest under a NEW request id would defeat archive idempotency and duplicate the document. Families without a resolution path stay non-retryable; rerender attempts gained resolution-first recovery in report#215 |
+| Custody deadline expired, delivery may have committed (`archive_pending`) | `archive_outcome_unknown` | Retryable | The derived `areq_` id is recorded durably BEFORE the failure posture. Replay FIRST resolves it against archive: a committed document is adopted (the source job becomes archived, no second document possible), an unanswerable lookup refuses fail-closed, and only a confirmed 404 re-renders - which redelivers under the SAME derived id and converges |
+| Archive refused custody with a 4xx (`archive_failed`, detail `archive_refused_4xx`, e.g. `declared_checksum_mismatch`, `artifact_identity_collision`) | `archive_handoff_failed` | Not retryable | Deterministic re-renders redeclare the same digest and re-fail identically; operator investigates the identity fault |
+| Archive unreachable / 5xx refusal / contained handoff crash (`archive_failed`, other details) | `archive_handoff_failed` | Retryable | Redelivery is idempotent by the derived request id - a retry converges, never duplicates |
+| Render reported no archive handoff (`archive_state` null) | `archive_handoff_not_configured` | Retryable | Configuration error: the byte relay is retired, so there is no fallback delivery. Fix lotus-render's `LOTUS_RENDER_ARCHIVE_BASE_URL` and retry; a governed document is never silently left out of custody |
+| Legacy rows: archive validation / conflict / storage / execution failures | `archive_validation_failed` / `archive_conflict` / `archive_storage_failed` / `archive_execution_failed` | As recorded | Pre-cutover categories remain replayable under their stored `arch_` request ids (report#211/#215 resolution-first recovery) |
 | Advisor brief not accepted / not found / context mismatch / disclosure impossible | Section closes, job proceeds | n/a | Reason recorded as job event + snapshot + lineage; document truthfully omits the section |
 | lotus-ai transport failure or 401/403 | `upstream_data_failed` | Retryable | Fix environment (401/403 = caller registry fault), then replay |
 | Duplicate submission | n/a | n/a | Idempotency keys converge at every hop (job, render, archive, replay, events) |

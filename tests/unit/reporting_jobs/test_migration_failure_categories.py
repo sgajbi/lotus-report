@@ -29,6 +29,7 @@ def test_report_job_failure_category_migrations_cover_model_vocabulary() -> None
         MIGRATIONS_DIR / "006_report_job_archive_handoff.sql",
         MIGRATIONS_DIR / "008_report_rerender_attempt.sql",
         MIGRATIONS_DIR / "013_report_failure_category_render_artifact_unrecoverable.sql",
+        MIGRATIONS_DIR / "016_report_archive_handoff_failure_categories.sql",
     ]
 
     for path in migration_paths:

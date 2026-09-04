@@ -666,10 +666,21 @@ class _CountingRenderService:
 
 
 class _RerenderRenderClient:
-    def __init__(self, *, status_code=201, payload=None):
+    def __init__(
+        self,
+        *,
+        status_code=201,
+        payload=None,
+        archive_state="archived_verified",
+        archive_document_id="doc_report_job_pdf_correction",
+        archive_detail=None,
+    ):
         self.status_code = status_code
         self.payload = payload
         self.payloads = []
+        self.archive_state = archive_state
+        self.archive_document_id = archive_document_id
+        self.archive_detail = archive_detail
 
     async def submit_render_package(self, payload, **kwargs):
         self.payloads.append(payload)
@@ -684,6 +695,11 @@ class _RerenderRenderClient:
             "runtime_engine_version": "0.14.2",
             "render_duration_ms": 731,
             "artifact_base64": "JVBERi0xLjQ=",
+            "archive_state": self.archive_state,
+            "archive_document_id": (
+                self.archive_document_id if self.archive_state == "archived_verified" else None
+            ),
+            "archive_detail": self.archive_detail,
         }
 
 
@@ -722,7 +738,6 @@ def _install_regenerate_service(
 ):
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=render_client,
-        archive_client=archive_client,
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -739,7 +754,6 @@ def _install_regenerate_service(
 def _install_replay_service(ledger, lineage_store, capture_service, render_client, archive_client):
     render_service = PortfolioReviewRenderOrchestrationService(
         render_client=render_client,
-        archive_client=archive_client,
         snapshot_store=lineage_store,
         job_ledger=ledger,
     )
@@ -2290,14 +2304,13 @@ def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_
         assert render_client.payloads[0]["snapshot_id"] == snapshot.snapshot_id
         assert "snapshot_hash" not in render_client.payloads[0]
         assert "render_attempt_id" not in render_client.payloads[0]
-        assert len(archive_client.payloads) == 1
-        metadata = archive_client.payloads[0]["metadata"]
-        assert metadata["snapshot_id"] == snapshot.snapshot_id
-        assert metadata["snapshot_hash"] == snapshot.snapshot_hash
-        assert metadata["render_attempt_id"] == body["rerender_attempt_id"]
-        assert metadata["supersedes_render_job_id"] == f"rdr_{job.job_id}_pdf"
-        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
-        assert metadata["archive_consequence"] == "correction"
+        # No relay: lotus-render delivered the bytes during the render call.
+        # The correction lineage (supersedes, consequence) is Report-ledger
+        # truth; the custody block in the package carries Report-owned facts.
+        assert archive_client.payloads == []
+        custody = render_client.payloads[0]["render_context"]["archive"]
+        assert custody["tenant_id"] == "tenant-sg"
+        assert custody["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
 
         events = ledger.list_status_events(job.job_id)
         assert [event.event_type for event in events][-2:] == [
@@ -2353,7 +2366,7 @@ def test_report_job_rerender_is_idempotent(tmp_path):
         assert second.status_code == 202
         assert second.json() == first.json()
         assert len(render_client.payloads) == 1
-        assert len(archive_client.payloads) == 1
+        assert archive_client.payloads == []
     finally:
         _clear_overrides()
 
@@ -2524,7 +2537,7 @@ def test_report_job_rerender_records_non_retryable_render_conflict(tmp_path):
         _clear_overrides()
 
 
-def test_report_job_rerender_records_missing_artifact_archive_validation_failure(tmp_path):
+def test_report_job_rerender_without_a_handoff_outcome_is_a_config_error(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     render_client = _RerenderRenderClient(
         payload={
@@ -2551,12 +2564,11 @@ def test_report_job_rerender_records_missing_artifact_archive_validation_failure
         assert response.status_code == 202
         body = response.json()
         assert body["status"] == "failed"
-        # A "rendered" response without bytes is a replay of a completed render,
-        # not an archive defect: it stays retry-eligible because a new rerender
-        # attempt regenerates the artifact from the retained snapshot.
-        assert body["failure_category"] == "render_artifact_unrecoverable"
+        # The relay is retired: a rendered response carrying no archive
+        # handoff outcome means the delivery path is not configured - the
+        # correction is never silently left out of custody.
+        assert body["failure_category"] == "archive_handoff_not_configured"
         assert body["retry_eligible"] is True
-        assert body["archive"] is None
         assert len(archive_client.payloads) == 0
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
     finally:
@@ -2572,11 +2584,8 @@ def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
     converges on the same outcome row."""
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=500,
-        payload={"detail": "response lost after commit"},
-    )
+    render_client = _RerenderRenderClient(archive_state="archive_pending")
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2591,16 +2600,23 @@ def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
             headers=_headers("rerender-adopt-1"),
         ).json()
         assert first["status"] == "failed"
-        assert first["failure_category"] == "archive_execution_failed"
+        assert first["failure_category"] == "archive_outcome_unknown"
         assert first["retry_eligible"] is True
         ambiguous_render_job_id = first["render"]["render_job_id"]
+        stored_request_id = next(
+            attempt.archive_request_id
+            for attempt in ledger.list_rerender_attempts(job.job_id)
+            if attempt.rerender_attempt_id == first["rerender_attempt_id"]
+        )
+        assert stored_request_id is not None
+        assert stored_request_id.startswith("areq_")
 
         # Archive holds the committed correction under attempt 1's request id.
         archive_client.lookup = (
             200,
             {
                 "document_id": "doc_committed_correction",
-                "archive_request_id": f"arch_{ambiguous_render_job_id}",
+                "archive_request_id": stored_request_id,
             },
         )
         renders_before = len(render_client.payloads)
@@ -2619,7 +2635,7 @@ def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
         assert second["rerender_attempt_id"] != first["rerender_attempt_id"]
         assert second["idempotency_key"] == "rerender-adopt-2"
         assert second["render"]["render_job_id"] == ambiguous_render_job_id
-        assert archive_client.lookups == [f"arch_{ambiguous_render_job_id}"]
+        assert archive_client.lookups == [stored_request_id]
         assert len(render_client.payloads) == renders_before
         assert len(archive_client.payloads) == archives_before
 
@@ -2645,7 +2661,7 @@ def test_rerender_adopts_committed_correction_after_ambiguous_failure(tmp_path):
         assert third["rerender_attempt_id"] == second["rerender_attempt_id"]
         assert third["status"] == "archived"
         assert third["archive"]["document_id"] == "doc_committed_correction"
-        assert archive_client.lookups == [f"arch_{ambiguous_render_job_id}"]
+        assert archive_client.lookups == [stored_request_id]
         assert len(render_client.payloads) == renders_before
         assert len(archive_client.payloads) == archives_before
     finally:
@@ -2658,11 +2674,8 @@ def test_rerender_confirmed_404_permits_fresh_attempt(tmp_path):
     archive - one correction document, under a new render job id."""
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=500,
-        payload={"detail": "archive fault, nothing committed"},
-    )
+    render_client = _RerenderRenderClient(archive_state="archive_pending")
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2678,11 +2691,17 @@ def test_rerender_confirmed_404_permits_fresh_attempt(tmp_path):
         ).json()
         assert first["status"] == "failed"
         ambiguous_render_job_id = first["render"]["render_job_id"]
+        stored_request_id = next(
+            attempt.archive_request_id
+            for attempt in ledger.list_rerender_attempts(job.job_id)
+            if attempt.rerender_attempt_id == first["rerender_attempt_id"]
+        )
 
-        # Archive recovers; the lookup confirms nothing committed (default
-        # 404 lookup), so the retry re-renders under a fresh identity.
-        archive_client.status_code = 201
-        archive_client.payload = {"document_id": "doc_fresh_correction"}
+        # The handoff recovers; the lookup confirms nothing committed
+        # (default 404), so the retry re-renders under a fresh identity and
+        # the delivery verifies.
+        render_client.archive_state = "archived_verified"
+        render_client.archive_document_id = "doc_fresh_correction"
 
         second = client.post(
             f"/reports/jobs/{job.job_id}/rerender",
@@ -2693,7 +2712,7 @@ def test_rerender_confirmed_404_permits_fresh_attempt(tmp_path):
         assert second["status"] == "archived"
         assert second["archive"]["document_id"] == "doc_fresh_correction"
         assert second["render"]["render_job_id"] != ambiguous_render_job_id
-        assert archive_client.lookups == [f"arch_{ambiguous_render_job_id}"]
+        assert archive_client.lookups == [stored_request_id]
     finally:
         _clear_overrides()
 
@@ -2704,11 +2723,8 @@ def test_rerender_refuses_when_ambiguity_lookup_unavailable(tmp_path):
     duplicate correction."""
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=500,
-        payload={"detail": "archive fault"},
-    )
+    render_client = _RerenderRenderClient(archive_state="archive_pending")
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2782,11 +2798,8 @@ def test_rerender_refuses_when_ambiguity_lookup_raises(tmp_path):
             raise RuntimeError("archive connection reset")
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RaisingLookupArchiveClient(
-        status_code=500,
-        payload={"detail": "archive fault"},
-    )
+    render_client = _RerenderRenderClient(archive_state="archive_pending")
+    archive_client = _RaisingLookupArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2820,11 +2833,8 @@ def test_rerender_refuses_when_lookup_answers_200_without_document_id(tmp_path):
     treating a malformed answer as a confirmed 404."""
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=500,
-        payload={"detail": "archive fault"},
-    )
+    render_client = _RerenderRenderClient(archive_state="archive_pending")
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2853,17 +2863,21 @@ def test_rerender_refuses_when_lookup_answers_200_without_document_id(tmp_path):
         _clear_overrides()
 
 
-def test_rerender_archive_validation_failure_stays_non_retryable(tmp_path):
-    """Issue #215: the resolution-first override applies only to ambiguous
-    archive-stage failures. A validation rejection is deterministic - the
-    same payload fails the same way - so the attempt stays non-retryable."""
+def test_rerender_custody_refusal_stays_non_retryable(tmp_path):
+    """A 4xx custody refusal (Archive's words in archive_detail) is
+    deterministic: a re-render redeclares the same digest and re-fails
+    identically, so the attempt stays non-retryable and is never treated as
+    ambiguous - nothing was stored behind the refusal."""
 
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=422,
-        payload={"detail": {"code": "archive_payload_invalid"}},
+    render_client = _RerenderRenderClient(
+        archive_state="archive_failed",
+        archive_detail=(
+            "archive_refused_422: declared_checksum_mismatch: declared artifact "
+            "sha256 does not match computed"
+        ),
     )
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     capture_service = _FakeCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
@@ -2879,10 +2893,11 @@ def test_rerender_archive_validation_failure_stays_non_retryable(tmp_path):
         ).json()
 
         assert first["status"] == "failed"
-        assert first["failure_category"] == "archive_validation_failed"
+        assert first["failure_category"] == "archive_handoff_failed"
         assert first["retry_eligible"] is False
-        # Not ambiguous: a validation rejection proves nothing committed, so
-        # the resolution scan must not pick it up.
+        assert "declared_checksum_mismatch" in first["failure_message"]
+        # Not ambiguous: a refusal proves nothing committed, so the
+        # resolution scan must not pick it up.
         assert ledger.list_unresolved_archive_ambiguous_attempts(job.job_id) == []
     finally:
         _clear_overrides()
@@ -2890,16 +2905,11 @@ def test_rerender_archive_validation_failure_stays_non_retryable(tmp_path):
 
 def test_report_job_rerender_records_archive_failure(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        status_code=503,
-        payload={
-            "detail": {
-                "code": "archive_storage_unavailable",
-                "message": "Archive storage is unavailable.",
-            }
-        },
+    render_client = _RerenderRenderClient(
+        archive_state="archive_failed",
+        archive_detail="archive_unreachable: connection refused",
     )
+    archive_client = _RerenderArchiveClient()
     _install_rerender_service(ledger, lineage_store, render_client, archive_client)
     try:
         job = _create_archived_pdf_job(client, ledger)
@@ -2913,12 +2923,11 @@ def test_report_job_rerender_records_archive_failure(tmp_path):
         assert response.status_code == 202
         body = response.json()
         assert body["status"] == "failed"
-        assert body["failure_category"] == "archive_storage_failed"
-        # Retry-eligible: attempt recovery is resolution-first (issue #215) -
-        # a retry adopts a committed correction or proves a clean 404 before
-        # any new attempt, so it cannot duplicate the correction document.
+        assert body["failure_category"] == "archive_handoff_failed"
+        # Retry-eligible: redelivery is idempotent by the derived request id,
+        # and attempt recovery stays resolution-first (issue #215).
         assert body["retry_eligible"] is True
-        assert body["archive"]["archive_request_id"].startswith("arch_rdr_rrnd_")
+        assert body["archive"]["archive_request_id"].startswith("areq_")
         assert ledger.list_status_events(job.job_id)[-1].event_type == "job_rerender_failed"
     finally:
         _clear_overrides()
@@ -2927,10 +2936,8 @@ def test_report_job_rerender_records_archive_failure(tmp_path):
 def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_archive(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     capture_service = _FakeCaptureService(ledger, lineage_store)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        payload={"document_id": "doc_report_job_pdf_replacement"}
-    )
+    render_client = _RerenderRenderClient(archive_document_id="doc_report_job_pdf_replacement")
+    archive_client = _RerenderArchiveClient()
     _install_regenerate_service(
         ledger,
         lineage_store,
@@ -2966,10 +2973,9 @@ def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_arch
 
         new_calls = lineage_store.list_upstream_calls_by_job(body["regenerated_report_job_id"])
         assert [call.service_name for call in new_calls] == ["lotus-core"]
-        metadata = archive_client.payloads[0]["metadata"]
-        assert metadata["supersedes_render_job_id"] == f"rdr_{source.job_id}_pdf"
-        assert metadata["supersedes_archive_document_id"] == "doc_report_job_pdf"
-        assert metadata["archive_consequence"] == "replacement"
+        # The replacement lineage is Report-ledger truth (relationship row
+        # below); the handoff carried only Report-owned custody facts.
+        assert archive_client.payloads == []
         assert [event.event_type for event in ledger.list_status_events(source.job_id)][-2:] == [
             "job_regenerate_requested",
             "job_regenerate_archived",
@@ -3011,10 +3017,8 @@ def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_arch
 def test_report_job_regenerate_is_idempotent(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     capture_service = _FakeCaptureService(ledger, lineage_store)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(
-        payload={"document_id": "doc_report_job_pdf_replacement"}
-    )
+    render_client = _RerenderRenderClient(archive_document_id="doc_report_job_pdf_replacement")
+    archive_client = _RerenderArchiveClient()
     _install_regenerate_service(
         ledger,
         lineage_store,
@@ -3046,7 +3050,7 @@ def test_report_job_regenerate_is_idempotent(tmp_path):
         assert second.json() == first.json()
         assert capture_service.calls == calls_after_source + 1
         assert len(render_client.payloads) == 1
-        assert len(archive_client.payloads) == 1
+        assert archive_client.payloads == []
         assert [
             event.event_type
             for event in ledger.list_status_events(source.job_id)
@@ -3225,8 +3229,8 @@ def test_report_job_regenerate_allows_partial_snapshot_lineage(tmp_path):
             )
 
     capture_service = _PartialCaptureService(ledger, lineage_store)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_partial_replacement"})
+    render_client = _RerenderRenderClient(archive_document_id="doc_partial_replacement")
+    archive_client = _RerenderArchiveClient()
     _install_regenerate_service(
         ledger,
         lineage_store,
@@ -3263,8 +3267,8 @@ def test_report_job_regenerate_allows_partial_snapshot_lineage(tmp_path):
 def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     capture_service = _FakeCaptureService(ledger, lineage_store)
-    render_client = _RerenderRenderClient()
-    archive_client = _RerenderArchiveClient(payload={"document_id": "doc_report_job_pdf_replay"})
+    render_client = _RerenderRenderClient(archive_document_id="doc_report_job_pdf_replay")
+    archive_client = _RerenderArchiveClient()
     _install_replay_service(
         ledger,
         lineage_store,
@@ -3322,7 +3326,7 @@ def test_report_job_replay_creates_new_job_and_is_idempotent(tmp_path):
         assert body["source_failure_category"] == "operator_intervention_required"
         assert body["archive"]["document_id"] == "doc_report_job_pdf_replay"
         assert len(render_client.payloads) == 1
-        assert len(archive_client.payloads) == 1
+        assert archive_client.payloads == []
         assert [
             event.event_type
             for event in ledger.list_status_events(source.job_id)
