@@ -375,6 +375,7 @@ def _risk_trend_section(snapshot: dict[str, Any]) -> dict[str, Any]:
             quality_flags=quality_flags,
         )
 
+    unit_semantics = _as_dict(_as_dict(trend.get("metadata")).get("metric_unit_semantics"))
     window_results = [item for item in period.get("window_results") or [] if isinstance(item, dict)]
     window_result = next(
         (
@@ -393,6 +394,7 @@ def _risk_trend_section(snapshot: dict[str, Any]) -> dict[str, Any]:
                 window_result=window_result,
                 benchmark_context=benchmark_context,
                 quality_flags=quality_flags,
+                unit=_optional_str(unit_semantics.get(metric)),
             )
         )
     return {"window": window, "metrics": metrics_out}
@@ -426,6 +428,7 @@ def _risk_trend_metric(
     window_result: dict[str, Any] | None,
     benchmark_context: dict[str, Any],
     quality_flags: list[str],
+    unit: str | None,
 ) -> dict[str, Any]:
     if metric in _BENCHMARK_DEPENDENT_ROLLING_METRICS and benchmark_context.get("reason") not in (
         None,
@@ -503,12 +506,19 @@ def _risk_trend_metric(
             ],
             "quality_flags": quality_flags,
         }
-    return {
+    ready: dict[str, Any] = {
         "metric": metric,
         "posture": "ready",
         "series": series,
         "quality_flags": quality_flags,
     }
+    if unit:
+        # The source's own unit statement, forwarded verbatim: decimal_ratio
+        # values are decimal fractions of one, unitless values read at face
+        # value. Absent when the source stated none - never guessed, so the
+        # renderer refuses to print an ambiguous number.
+        ready["unit"] = unit
+    return ready
 
 
 def _governance_summary_section(
