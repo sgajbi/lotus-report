@@ -554,6 +554,31 @@ class _RecordingRiskClient(RiskClient):
         self._inner = inner
         self._recorder = recorder
 
+    async def historical_attribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        started_at = perf_counter()
+        try:
+            status_code, response_payload = await self._inner.historical_attribution(payload)
+        except Exception as exc:
+            self._recorder.append_failure(
+                service_name="lotus-risk",
+                endpoint="/analytics/risk/historical-attribution",
+                method="POST",
+                request_payload=dict(payload),
+                started_at=started_at,
+                exc=exc,
+            )
+            raise
+        self._recorder.append_success(
+            service_name="lotus-risk",
+            endpoint="/analytics/risk/historical-attribution",
+            method="POST",
+            request_payload=dict(payload),
+            status_code=status_code,
+            response_payload=response_payload,
+            started_at=started_at,
+        )
+        return status_code, response_payload
+
     async def rolling_metrics(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:

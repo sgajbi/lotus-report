@@ -133,6 +133,7 @@ def _build_render_package(
         ),
         "risk_summary": _risk_summary_section(snapshot, risk),
         "risk_trend": _risk_trend_section(snapshot),
+        "risk_attribution": _risk_attribution_section(snapshot),
         # Why a figure is missing, not merely that it is. Without this the
         # panel prints one "Not available" for five different facts - two of
         # which send an operator in opposite directions.
@@ -398,6 +399,264 @@ def _risk_trend_section(snapshot: dict[str, Any]) -> dict[str, Any]:
             )
         )
     return {"window": window, "metrics": metrics_out}
+
+
+def _risk_attribution_section(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """ "What risk did we take for the result?" - the #254 contract locked
+    with Render 2026-09-04.
+
+    Absence of the captured block means the section was not ordered: no
+    panel. Every emitted fact is source-owned: the reconciliation triple
+    (total, reconciled sum, residual - required together, residual presented
+    never allocated away), contributors in source order with no ranking,
+    quality flags verbatim, refusals in the source's voice, and the
+    source-stated unit on ready sets. weight_average and percent_contribution
+    are decimal fractions of one STRUCTURALLY - the contract defines them so
+    forever; nothing here rescales.
+    """
+
+    attribution = _as_dict(snapshot.get("riskAttribution"))
+    if not attribution:
+        return {}
+    request = _as_dict(attribution.get("request"))
+    requested_types = [str(item) for item in request.get("attribution_types") or []]
+    requested_metrics = [str(item) for item in request.get("metrics") or []]
+    grouping = _optional_str(request.get("grouping_dimension")) or "SECTOR"
+    requested_sets = list(zip(requested_types, requested_metrics, strict=False))
+    supportability = _as_dict(attribution.get("supportability"))
+    if supportability.get("status") == "unavailable":
+        notes = [note for note in supportability.get("notes") or [] if isinstance(note, dict)]
+        return {
+            "sets": [
+                _risk_attribution_refusal(set_key, grouping, notes=notes)
+                for set_key in requested_sets
+            ]
+        }
+    results = _as_dict(attribution.get("results"))
+    period = _as_dict(results.get("YTD"))
+    if not period:
+        return {
+            "sets": [
+                _risk_attribution_refusal(
+                    set_key,
+                    grouping,
+                    notes=[
+                        {
+                            "code": "risk_attribution_period_missing",
+                            "message": "The source answered without the requested period.",
+                        }
+                    ],
+                )
+                for set_key in requested_sets
+            ]
+        }
+    window = {
+        "period": {
+            "name": "YTD",
+            "start_date": _optional_str(period.get("start_date")),
+            "end_date": _optional_str(period.get("end_date")),
+        }
+    }
+    period_error = _optional_str(period.get("error"))
+    if period_error:
+        return {
+            "window": window,
+            "sets": [
+                _risk_attribution_refusal(
+                    set_key,
+                    grouping,
+                    notes=[{"code": "risk_attribution_source_error", "message": period_error}],
+                )
+                for set_key in requested_sets
+            ],
+        }
+    metadata = _as_dict(attribution.get("metadata"))
+    unit_semantics = _as_dict(metadata.get("metric_unit_semantics"))
+    benchmark_context = _as_dict(metadata.get("benchmark_context"))
+    gate_reason = _optional_str(metadata.get("stateful_active_risk_gate_reason"))
+    source_sets = {
+        (
+            str(item.get("attribution_type")),
+            str(item.get("metric")),
+            str(item.get("grouping_dimension")),
+        ): item
+        for item in period.get("attribution_sets") or []
+        if isinstance(item, dict)
+    }
+    sets_out = [
+        _risk_attribution_set(
+            set_key,
+            grouping,
+            source_set=source_sets.get((set_key[0], set_key[1], grouping)),
+            unit=_optional_str(unit_semantics.get(set_key[1])),
+            benchmark_context=benchmark_context,
+            gate_reason=gate_reason,
+        )
+        for set_key in requested_sets
+    ]
+    return {"window": window, "sets": sets_out}
+
+
+def _risk_attribution_refusal(
+    set_key: tuple[str, str],
+    grouping: str,
+    *,
+    notes: list[dict[str, Any]],
+    posture: str = "unavailable",
+    quality_flags: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "attribution_type": set_key[0],
+        "metric": set_key[1],
+        "grouping_dimension": grouping,
+        "posture": posture,
+        "notes": notes,
+        "quality_flags": quality_flags or [],
+    }
+
+
+_ATTRIBUTION_CONTRIBUTOR_REQUIRED = ("group_key", "component_contribution", "percent_contribution")
+
+
+def _stated_number(value: Any) -> bool:
+    # Risk-attribution ratios, not monetary amounts.
+    return isinstance(value, (int, float)) and not isinstance(value, bool)  # monetary-float-allow
+
+
+def _attribution_contributors(rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """Contributor rows in source order, or None when any row lacks the
+    locked fields (group_key, component_contribution, percent_contribution).
+    Optional fields appear only when the source stated them."""
+
+    contributors: list[dict[str, Any]] = []
+    for row in rows:
+        group_key = row.get("group_key")
+        if (
+            not isinstance(group_key, str)
+            or not group_key
+            or not _stated_number(row.get("component_contribution"))
+            or not _stated_number(row.get("percent_contribution"))
+        ):
+            return None
+        contributor: dict[str, Any] = {
+            "group_key": group_key,
+            "group_label": _optional_str(row.get("group_label")) or group_key,
+            "component_contribution": repr(row.get("component_contribution")),
+            "percent_contribution": repr(row.get("percent_contribution")),
+        }
+        if _stated_number(row.get("marginal_contribution")):
+            contributor["marginal_contribution"] = repr(row.get("marginal_contribution"))
+        if _stated_number(row.get("weight_average")):
+            contributor["weight_average"] = repr(row.get("weight_average"))
+        contributors.append(contributor)
+    return contributors
+
+
+def _risk_attribution_set(
+    set_key: tuple[str, str],
+    grouping: str,
+    *,
+    source_set: dict[str, Any] | None,
+    unit: str | None,
+    benchmark_context: dict[str, Any],
+    gate_reason: str | None,
+) -> dict[str, Any]:
+    attribution_type, _metric = set_key
+    if attribution_type == "ACTIVE_RISK" and benchmark_context.get("reason") not in (
+        None,
+        "APPLIED",
+    ):
+        return _risk_attribution_refusal(
+            set_key,
+            grouping,
+            notes=[
+                {
+                    "code": "benchmark_not_applied",
+                    "message": str(benchmark_context.get("reason")),
+                }
+            ],
+        )
+    if source_set is None:
+        return _risk_attribution_refusal(
+            set_key,
+            grouping,
+            notes=[
+                {
+                    "code": "attribution_set_missing",
+                    "message": "The source emitted no result for the requested set.",
+                }
+            ],
+        )
+    quality_flags = [str(flag) for flag in source_set.get("quality_flags") or []]
+    triple = {name: source_set.get(name) for name in ("total_value", "reconciled_sum", "residual")}
+    if any(not _stated_number(value) for value in triple.values()):
+        return _risk_attribution_refusal(
+            set_key,
+            grouping,
+            notes=[
+                {
+                    "code": "attribution_reconciliation_incomplete",
+                    "message": (
+                        "The source did not state the full total / reconciled sum / "
+                        "residual triple; a decomposition without its reconciliation "
+                        "is not drawn."
+                    ),
+                }
+            ],
+            quality_flags=quality_flags,
+        )
+    contributors_raw = [
+        item for item in source_set.get("contributors") or [] if isinstance(item, dict)
+    ]
+    if not contributors_raw:
+        return _risk_attribution_refusal(
+            set_key,
+            grouping,
+            posture="empty",
+            notes=[
+                {
+                    "code": "risk_attribution_no_contributors",
+                    "message": (
+                        gate_reason
+                        if gate_reason and gate_reason != "none"
+                        else "The source stated the set without contributor rows."
+                    ),
+                }
+            ],
+            quality_flags=quality_flags,
+        )
+    contributors = _attribution_contributors(contributors_raw)
+    if contributors is None:
+        # A partial contributor row makes the DECOMPOSITION unreliable, not
+        # just the row: stated, never part-drawn.
+        return _risk_attribution_refusal(
+            set_key,
+            grouping,
+            notes=[
+                {
+                    "code": "attribution_contributors_incomplete",
+                    "message": (
+                        "The source stated a contributor row without its locked "
+                        "fields; the decomposition is stated, not drawn."
+                    ),
+                }
+            ],
+            quality_flags=quality_flags,
+        )
+    ready: dict[str, Any] = {
+        "attribution_type": set_key[0],
+        "metric": set_key[1],
+        "grouping_dimension": grouping,
+        "posture": "ready",
+        "total_value": repr(triple["total_value"]),
+        "reconciled_sum": repr(triple["reconciled_sum"]),
+        "residual": repr(triple["residual"]),
+        "contributors": contributors,
+        "quality_flags": quality_flags,
+    }
+    if unit:
+        ready["unit"] = unit
+    return ready
 
 
 def _risk_trend_refusal(

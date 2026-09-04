@@ -1897,3 +1897,122 @@ async def test_the_memo_is_never_forwarded_to_domain_sources(monkeypatch, tmp_pa
     for payload in captured_payloads:
         assert "proposal_memo_package" not in payload
         assert "proposal_narrative_package" not in payload
+
+
+@pytest.mark.asyncio
+async def test_risk_attribution_survives_the_complete_durable_journey(monkeypatch, tmp_path):
+    """The cross-stage rule applied to the new ordered semantic (#254):
+
+    order (sections includes RISK_ATTRIBUTION) -> durable job -> REAL
+    capture -> immutable snapshot carrying the captured block -> REAL render
+    package emitting report_data.risk_attribution per the locked contract.
+    """
+
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+
+    captured_block = {
+        "source": {
+            "service": "lotus-risk",
+            "endpoint": "/analytics/risk/historical-attribution",
+        },
+        "request": {
+            "attribution_types": ["TOTAL_RISK"],
+            "metrics": ["VOLATILITY"],
+            "grouping_dimension": "SECTOR",
+        },
+        "supportability": {"status": "ready", "notes": []},
+        "results": {
+            "YTD": {
+                "start_date": "2026-01-02",
+                "end_date": "2026-04-22",
+                "attribution_sets": [
+                    {
+                        "attribution_type": "TOTAL_RISK",
+                        "metric": "VOLATILITY",
+                        "grouping_dimension": "SECTOR",
+                        "total_value": 0.1253,
+                        "reconciled_sum": 0.1249,
+                        "residual": 0.0004,
+                        "contributors": [
+                            {
+                                "group_key": "SECTOR_TECH",
+                                "group_label": "Technology",
+                                "component_contribution": 0.0784,
+                                "percent_contribution": 0.6258,
+                            },
+                            {
+                                "group_key": "SECTOR_FIN",
+                                "group_label": "Financials",
+                                "component_contribution": -0.0112,
+                                "percent_contribution": -0.0894,
+                            },
+                        ],
+                        "quality_flags": [],
+                    }
+                ],
+                "error": None,
+            }
+        },
+        "metadata": {
+            "metric_unit_semantics": {"VOLATILITY": "decimal_ratio"},
+            "benchmark_context": {"requested": False, "reason": "APPLIED"},
+            "stateful_active_risk_gate_reason": "none",
+        },
+    }
+
+    class _AttributionReadService(_HappyReportingReadService):
+        async def get_portfolio_review(self, portfolio_id, request_payload, correlation_id=None):
+            payload = await super().get_portfolio_review(
+                portfolio_id, request_payload, correlation_id
+            )
+            sections = request_payload.get("sections") or []
+            if "RISK_ATTRIBUTION" in sections:
+                payload = dict(payload)
+                payload["riskAttribution"] = captured_block
+            return payload
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _AttributionReadService,
+    )
+
+    from app.reporting_render.package_builder import _build_render_package
+
+    ledger = ReportJobLedger(tmp_path / "jobs-risk-attr.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-risk-attr.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(
+            requested_output_formats=["pdf"],
+            options={"sections": ["OVERVIEW", "RISK_ATTRIBUTION"]},
+        ),
+        caller_context=_caller(),
+        idempotency_key="idem-risk-attribution-journey",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.snapshot_payload["riskAttribution"] == captured_block
+
+    render_package = _build_render_package(
+        job=ledger.get_job(job.job_id),
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_risk_attr_journey",
+        snapshot_id=snapshot.snapshot_id,
+    )
+    section = render_package["report_data"]["risk_attribution"]
+    only = section["sets"][0]
+    assert only["posture"] == "ready"
+    assert only["unit"] == "decimal_ratio"
+    assert (only["total_value"], only["reconciled_sum"], only["residual"]) == (
+        "0.1253",
+        "0.1249",
+        "0.0004",
+    )
+    assert [row["group_key"] for row in only["contributors"]] == ["SECTOR_TECH", "SECTOR_FIN"]

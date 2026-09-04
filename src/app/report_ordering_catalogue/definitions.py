@@ -158,6 +158,21 @@ PORTFOLIO_REVIEW_SECTION_DEFINITIONS = (
         dependency_field_ids=("benchmark_code",),
     ),
     ReportSectionDefinition(
+        section_id="RISK_ATTRIBUTION",
+        response_section_id="risk_attribution",
+        response_title="Risk Attribution",
+        business_label="Risk attribution",
+        description=(
+            "What risk was taken for the result: total and benchmark-relative risk "
+            "decomposed by sector, reconciled with a visible residual."
+        ),
+        response_key="riskAttribution",
+        display_order=55,
+        selection_posture="optional",
+        default_selected=False,
+        dependency_field_ids=("benchmark_code",),
+    ),
+    ReportSectionDefinition(
         section_id="INCOME_AND_ACTIVITY",
         response_section_id="income_cash_activity",
         response_title="Income, Cash, And Activity",

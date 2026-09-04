@@ -32,6 +32,7 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
         "PERFORMANCE",
         "PERFORMANCE_ATTRIBUTION",
         "RISK_ANALYTICS",
+        "RISK_ATTRIBUTION",
         "INCOME_AND_ACTIVITY",
         "HOLDINGS",
         "TRANSACTIONS",
@@ -44,6 +45,7 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
         40,
         45,
         50,
+        55,
         60,
         70,
         80,
@@ -61,10 +63,17 @@ def test_portfolio_review_sections_preserve_runtime_order_and_selection_truth() 
     assert by_id["PERFORMANCE_ATTRIBUTION"].dependency_field_ids == ("benchmark_code",)
     assert by_id["ADVISOR_COMMENTARY"].selection_posture == "optional"
     assert by_id["ADVISOR_COMMENTARY"].dependency_field_ids == ("advisor_brief_run_id",)
+    # RISK_ATTRIBUTION: ordered explicitly, never by default - #254's
+    # evidence gate keeps attribution off until named order/pending evidence
+    # exists from production-shaped traffic.
+    assert by_id["RISK_ATTRIBUTION"].default_selected is False
+    assert by_id["RISK_ATTRIBUTION"].selection_posture == "optional"
+    assert by_id["RISK_ATTRIBUTION"].dependency_field_ids == ("benchmark_code",)
     assert all(
         section.default_selected
         for section in PORTFOLIO_REVIEW_SECTION_DEFINITIONS
-        if section.section_id not in {"ADVISOR_COMMENTARY", "PERFORMANCE_ATTRIBUTION"}
+        if section.section_id
+        not in {"ADVISOR_COMMENTARY", "PERFORMANCE_ATTRIBUTION", "RISK_ATTRIBUTION"}
     )
 
 
