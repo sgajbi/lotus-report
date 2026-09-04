@@ -175,3 +175,30 @@ async def test_get_metadata_omits_optional_headers_when_context_is_absent(monkey
     assert status_code == 503
     assert payload == {"detail": "render unavailable"}
     assert captured_headers == {}
+
+
+@pytest.mark.asyncio
+async def test_get_template_projection_reads_the_system_templates_surface(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _fake_get_with_retry(**kwargs):
+        captured.update(kwargs)
+        return 200, {"templates": []}
+
+    monkeypatch.setattr(render_client_module, "get_with_retry", _fake_get_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus/",
+        timeout_seconds=5.0,
+        max_retries=2,
+        retry_backoff_seconds=0.1,
+    )
+
+    status_code, payload = await client.get_template_projection(
+        correlation_id="corr-tpl",
+        trace_id="0123456789abcdef0123456789abcdef",
+    )
+
+    assert status_code == 200
+    assert payload == {"templates": []}
+    assert captured["url"] == "http://render.dev.lotus/system/templates"
+    assert captured["max_retries"] == 2

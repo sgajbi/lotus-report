@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from numbers import Real
 from typing import Any, Sequence
 
+from app.report_ordering_catalogue.template_resolution import resolve_report_data_contract
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
@@ -184,7 +185,7 @@ def _build_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
-        report_data_contract_version="portfolio_review.v1",
+        report_data_contract_version=resolve_report_data_contract("portfolio_review"),
         report_data=report_data,
         lineage_refs=_dedupe_strings(lineage_refs),
         disclosure_refs=_dedupe_strings(disclosure_refs),
@@ -894,7 +895,7 @@ def _build_proof_pack_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
-        report_data_contract_version="dpm_proof_pack_report_input.v1",
+        report_data_contract_version=resolve_report_data_contract("proof_pack"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -985,7 +986,7 @@ def _build_outcome_review_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
-        report_data_contract_version="dpm_outcome_report_input.v1",
+        report_data_contract_version=resolve_report_data_contract("outcome_review"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -1077,7 +1078,7 @@ def _build_wave_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
-        report_data_contract_version="dpm_wave_report_input.v1",
+        report_data_contract_version=resolve_report_data_contract("rebalance_wave"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
