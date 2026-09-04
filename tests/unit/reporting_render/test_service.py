@@ -109,9 +109,10 @@ class _RenderClientWithArchiveOutcome:
     """Rendered successfully; the archive handoff (Render's leg) reported the
     given custody state - the exact response shapes lotus-render publishes."""
 
-    def __init__(self, archive_state, archive_document_id=None):
+    def __init__(self, archive_state, archive_document_id=None, archive_detail=None):
         self._archive_state = archive_state
         self._archive_document_id = archive_document_id
+        self._archive_detail = archive_detail
 
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 201, {
@@ -127,6 +128,7 @@ class _RenderClientWithArchiveOutcome:
             "artifact_base64": "JVBERi0xLjQKJQ==",
             "archive_state": self._archive_state,
             "archive_document_id": self._archive_document_id,
+            "archive_detail": self._archive_detail,
         }
 
 
@@ -1427,6 +1429,171 @@ async def test_artifactless_replay_still_records_verified_custody(tmp_path):
         "archiving",
         "archived",
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_custody_refusal_in_archives_own_words_is_terminal(tmp_path):
+    """archive_detail carries Render's stable grammar; a 4xx refusal
+    (checksum mismatch, identity collision) replays identically under the
+    same declaration, so the job is terminal for every family until an
+    operator acts - and the refusal words reach the failure message."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientWithArchiveOutcome(
+            "archive_failed",
+            archive_detail=(
+                "archive_refused_422: declared_checksum_mismatch: declared "
+                "artifact sha256 does not match computed"
+            ),
+        ),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_handoff_failed"
+    assert failed.retry_eligible is False
+    assert "declared_checksum_mismatch" in (failed.failure_message or "")
+
+
+@pytest.mark.asyncio
+async def test_pending_custody_on_a_resumed_archiving_job_keeps_its_request_id(tmp_path):
+    """A worker resuming an archiving-state job does not re-transition to
+    archiving; the pending outcome still fails closed with the recorded
+    reconciliation identity intact."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    ledger.mark_rendering(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+    ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    archiving = ledger.mark_archiving(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        archive_request_id="areq_previously_recorded",
+    )
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientWithArchiveOutcome("archive_pending"),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(archiving)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_outcome_unknown"
+    # COALESCE semantics: the previously recorded id survives the failure.
+    assert failed.archive_request_id == "areq_previously_recorded"
+
+
+@pytest.mark.asyncio
+async def test_a_package_validation_error_fails_the_job_before_any_render_call(tmp_path):
+    """The fail-closed identity guard surfaces through the ORCHESTRATION as
+    render_validation_failed - not as an unhandled exception."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    record = store.get_snapshot_by_job(ready.job_id)
+
+    class _BlankIdentityStore:
+        def get_snapshot_by_job(self, report_job_id):
+            class _Record:
+                snapshot_id = "  "
+                snapshot_hash = record.snapshot_hash
+                snapshot_payload = record.snapshot_payload
+                report_data_contract_version = record.report_data_contract_version
+
+            return _Record()
+
+    class _RenderMustNotBeCalled:
+        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+            raise AssertionError("a package that failed validation must not be submitted")
+
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderMustNotBeCalled(),
+        snapshot_store=_BlankIdentityStore(),
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.status == "failed"
+    assert failed.failure_category == "render_validation_failed"
+    assert failed.retry_eligible is False
+    assert "RENDER_PACKAGE_SNAPSHOT_IDENTITY_REQUIRED" in (failed.failure_message or "")
+
+
+def test_custody_block_carries_every_optional_report_owned_fact(tmp_path):
+    """client_reference, retention policy fields, and the advisor
+    commentary summary all ride the custody block when the evidence
+    carries them."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = store.get_snapshot_by_job(ready.job_id)
+    snapshot.snapshot_payload.setdefault("clientProfile", {}).setdefault("identity", {})[
+        "client_reference"
+    ] = "client-ref-042"
+    snapshot.snapshot_payload["advisor_commentary_package"] = {
+        "status": "included",
+        "run_id": "run_042",
+        "request_id": "req_042",
+        "content_hash": "sha256:commentary",
+        "review": {
+            "review_event_id": "rev_042",
+            "review_action": "APPROVE_FOR_CLIENT_USE",
+        },
+    }
+    job = ledger.get_job(ready.job_id)
+    job.options["retention_policy_id"] = "generated-report-standard"
+    job.options["retain_until_date"] = "2033-04-22"
+
+    package = _build_render_package(
+        job=job,
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_custody_optional",
+        snapshot_id=snapshot.snapshot_id,
+    )
+
+    custody = package["render_context"]["archive"]
+    assert custody["client_reference"] == "client-ref-042"
+    assert custody["retention_policy_id"] == "generated-report-standard"
+    assert custody["retain_until_date"] == "2033-04-22"
+    assert custody["advisor_commentary"]["run_id"] == "run_042"
+
+
+def test_package_builder_scalar_coercions_hold_their_edges():
+    from app.reporting_render.package_builder import _optional_bool
+
+    assert _optional_bool(True) is True
+    assert _optional_bool("YES") is True
+    assert _optional_bool("0") is False
+    assert _optional_bool("maybe") is None
+    assert _optional_bool(3.5) is None
 
 
 @pytest.mark.asyncio
