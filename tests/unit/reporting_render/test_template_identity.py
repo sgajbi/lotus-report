@@ -49,7 +49,11 @@ def test_acceptance_stamps_the_governed_template_on_pdf_jobs(tmp_path) -> None:
     )
 
     assert job.render_template_id == "portfolio-review"
-    assert job.render_template_version == "v1"
+    # The stamped pair IS the current family default - asserted against the
+    # definitions so this test follows deliberate default changes.
+    assert (job.render_template_id, job.render_template_version) == resolve_report_template(
+        "portfolio_review"
+    )
 
 
 def test_a_json_only_job_carries_no_template_identity(tmp_path) -> None:
@@ -69,12 +73,13 @@ def test_a_deployment_cannot_change_an_accepted_jobs_template(tmp_path, monkeypa
     default moves to v2. The package is built from the persisted acceptance
     fact, not from whatever the definitions say at render time."""
 
-    _ledger, store, ready = _seed_data_ready_job(tmp_path)
     monkeypatch.setattr(
         ledger_module,
         "accepted_template_identity",
-        lambda report_type, output_formats: ("portfolio-review", "v2"),
+        lambda report_type, output_formats: ("portfolio-review", "v0-frozen"),
     )
+    _ledger, store, ready = _seed_data_ready_job(tmp_path)
+    monkeypatch.undo()
     snapshot = store.get_snapshot_by_job(ready.job_id)
 
     package = _build_render_package(
@@ -84,12 +89,12 @@ def test_a_deployment_cannot_change_an_accepted_jobs_template(tmp_path, monkeypa
         snapshot_id=snapshot.snapshot_id,
     )
 
-    assert package["template_version"] == "v1"
+    assert package["template_version"] == "v0-frozen"
     assert package["render_context"]["document_reference"] == mint_document_reference(
         report_job_id=ready.job_id,
         snapshot_id=snapshot.snapshot_id,
         template_id="portfolio-review",
-        template_version="v1",
+        template_version="v0-frozen",
     )
 
 
@@ -97,7 +102,7 @@ def test_a_new_job_resolves_the_current_family_default(tmp_path, monkeypatch) ->
     monkeypatch.setattr(
         ledger_module,
         "accepted_template_identity",
-        lambda report_type, output_formats: ("portfolio-review", "v2"),
+        lambda report_type, output_formats: ("portfolio-review", "v99"),
     )
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
 
@@ -107,7 +112,7 @@ def test_a_new_job_resolves_the_current_family_default(tmp_path, monkeypatch) ->
         idempotency_key="idem-new-default",
     )
 
-    assert job.render_template_version == "v2"
+    assert job.render_template_version == "v99"
 
 
 def test_the_envelope_refuses_to_invent_a_template(tmp_path) -> None:
@@ -194,7 +199,7 @@ class _RenderClientWrongTemplate:
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
             "template_id": payload["template_id"],
-            "template_version": "v2",
+            "template_version": payload["template_version"] + "-not-ordered",
             "artifact_sha256": "sha256:wrong-template",
             "archive_state": "archived_verified",
             "archive_document_id": "doc_wrong_template",

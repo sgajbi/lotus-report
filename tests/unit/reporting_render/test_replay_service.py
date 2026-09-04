@@ -310,8 +310,8 @@ class _RecordingRenderClient:
         response = {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:recovered-artifact",
             "bounded_determinism_fingerprint": self._fingerprint,
             "runtime_engine": "typst",
