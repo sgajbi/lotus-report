@@ -1838,3 +1838,39 @@ def test_replay_rejects_non_portfolio_review_report_types(tmp_path):
         morphed = failed_source.model_copy(update={"report_type": report_type})
         with pytest.raises(InvalidReportJobTransitionError):
             assert_replay_eligible(morphed)
+
+
+@pytest.mark.asyncio
+async def test_replay_refuses_when_the_resolver_raises_or_answers_without_identity(tmp_path):
+    """A resolver transport failure and a 200 without a document id are both
+    unanswerable: the replay refuses fail-closed before creating any job."""
+
+    class _RaisingResolver:
+        async def get_document_by_request_id(self, archive_request_id, **kwargs):
+            raise RuntimeError("archive connection reset")
+
+    class _IdentitylessResolver:
+        async def get_document_by_request_id(self, archive_request_id, **kwargs):
+            return 200, {}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_artifactless_render(
+        ledger, store, fingerprint="typst-0.14.2:aaaa1111"
+    )
+
+    for resolver in (_RaisingResolver(), _IdentitylessResolver()):
+        replay_service, _rc, _ac = _recovery_services(
+            ledger,
+            store,
+            _RefusingCapture(),
+            snapshot_store=store,
+            archive_resolver=resolver,
+        )
+        with pytest.raises(InvalidReportJobTransitionError):
+            await replay_service.replay_job(
+                job_id=failed_source.job_id,
+                command=ReportJobReplayRequest(reason="Unanswerable resolution."),
+                caller_context=_caller(),
+                idempotency_key=f"unanswerable-{type(resolver).__name__}",
+            )
