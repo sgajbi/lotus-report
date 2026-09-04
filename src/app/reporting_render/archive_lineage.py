@@ -19,12 +19,14 @@ document is never destroyed or unarchived because its linkage is pending.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from app.reporting_jobs.models import ReportCallerContext
 
 LINEAGE_RECORDED_EVENT = "job_archive_lineage_recorded"
 LINEAGE_PENDING_EVENT = "job_archive_lineage_pending"
+LINEAGE_REFUSED_EVENT = "job_archive_lineage_refused"
 
 
 class ArchiveLineageClient(Protocol):
@@ -121,6 +123,33 @@ async def record_archive_lineage(
             skip_if_idempotency_key_exists=True,
         )
         return True
+    if 400 <= status_code < 500:
+        # A contract/policy refusal is TERMINAL for this pair: retrying the
+        # identical transition cannot converge, so it is surfaced for
+        # operator attention instead of hiding inside an endless pending
+        # retry. The stored document still stands.
+        ledger.append_job_event(
+            job_id=event_job_id,
+            event_type=LINEAGE_REFUSED_EVENT,
+            message=(
+                f"Archive REFUSED lifecycle linkage {source_document_id} -> "
+                f"{target_document_id} ({transition_type}) with status "
+                f"{status_code}. This pair will not be retried; operator "
+                "attention is required."
+            ),
+            event_payload={
+                "source_document_id": source_document_id,
+                "target_document_id": target_document_id,
+                "transition_type": transition_type,
+                "status_code": status_code,
+            },
+            event_idempotency_key=f"{LINEAGE_REFUSED_EVENT}:{pair}",
+            actor=caller_context.triggered_by,
+            correlation_id=caller_context.correlation_id,
+            trace_id=caller_context.trace_id,
+            skip_if_idempotency_key_exists=True,
+        )
+        return False
     ledger.append_job_event(
         job_id=event_job_id,
         event_type=LINEAGE_PENDING_EVENT,
@@ -168,7 +197,7 @@ async def settle_pending_archive_lineage(
         if not (source and target and transition):
             continue
         pair = _pair_key(str(source), str(target), str(transition))
-        if event.event_type == LINEAGE_RECORDED_EVENT:
+        if event.event_type in {LINEAGE_RECORDED_EVENT, LINEAGE_REFUSED_EVENT}:
             recorded.add(pair)
         elif event.event_type == LINEAGE_PENDING_EVENT:
             pending[pair] = payload
@@ -185,3 +214,61 @@ async def settle_pending_archive_lineage(
             transition_reason=str(payload.get("transition_reason") or "lineage settlement"),
             caller_context=caller_context,
         )
+
+
+class ReconciliationJobLedger(LineageEventLedger, Protocol):
+    def get_job(self, job_id: str) -> Any: ...
+
+    def list_pending_archive_lineage(self, *, limit: int) -> Sequence[Any]: ...
+
+
+async def reconcile_pending_archive_lineage(
+    *,
+    archive_client: ArchiveLineageClient,
+    ledger: ReconciliationJobLedger,
+    limit: int,
+) -> dict[str, int | float | None]:
+    """One bounded pass over outstanding lineage pairs, oldest first.
+
+    A transient Archive lifecycle outage self-heals after recovery even when
+    nobody orders another correction: this pass re-attempts each pending
+    pair through the same idempotent ``record_archive_lineage``, skips pairs
+    already recorded or terminally refused, and leaves fresh transient
+    failures pending for the next pass. No new lineage store exists - the
+    durable job events remain the single source of truth.
+    """
+
+    outstanding = list(ledger.list_pending_archive_lineage(limit=limit))
+    now = datetime.now(UTC)
+    oldest_age_seconds: float | None = None
+    for row in outstanding:
+        created = row.oldest_created_at
+        if created is None:
+            continue
+        age = (now - created).total_seconds()
+        if oldest_age_seconds is None or age > oldest_age_seconds:
+            oldest_age_seconds = age
+    settled_jobs = 0
+    for row in outstanding:
+        job = ledger.get_job(str(row.job_id))
+        caller_context = ReportCallerContext(
+            trigger_type="system",
+            triggered_by="archive-lineage-reconciler",
+            caller_application="lotus-report",
+            tenant_id=job.tenant_id,
+            region=job.region,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        await settle_pending_archive_lineage(
+            archive_client=archive_client,
+            ledger=ledger,
+            event_job_id=job.job_id,
+            caller_context=caller_context,
+        )
+        settled_jobs += 1
+    return {
+        "outstanding_jobs": len(outstanding),
+        "attempted_jobs": settled_jobs,
+        "oldest_age_seconds": oldest_age_seconds,
+    }

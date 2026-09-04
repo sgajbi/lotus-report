@@ -5,6 +5,7 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, TypeAlias
@@ -203,6 +204,12 @@ def _request_parts(
         request.reporting_currency,
         options,
     )
+
+
+@dataclass(frozen=True)
+class PendingArchiveLineage:
+    job_id: str
+    oldest_created_at: datetime | None
 
 
 class ReportJobLedger:
@@ -1142,6 +1149,49 @@ class ReportJobLedger:
                     for row in rows
                 )
         return records
+
+    def list_pending_archive_lineage(self, *, limit: int) -> list[PendingArchiveLineage]:
+        """Jobs with lineage pairs still pending, oldest first, bounded.
+
+        A pair is OUTSTANDING when its pending event has no recorded or
+        refused outcome event for the same (source, target, transition)
+        pair - matched by the pair suffix of the event idempotency keys, so
+        settled history never re-enters the reconciliation pass.
+        """
+
+        with self._lock:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT p.report_job_id AS job_id,
+                           MIN(p.created_at) AS oldest_created_at
+                    FROM report_status_event p
+                    WHERE p.event_type = 'job_archive_lineage_pending'
+                      AND p.event_idempotency_key IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM report_status_event r
+                          WHERE r.report_job_id = p.report_job_id
+                            AND r.event_type IN (
+                                'job_archive_lineage_recorded',
+                                'job_archive_lineage_refused'
+                            )
+                            AND substr(r.event_idempotency_key, length(r.event_type) + 2)
+                                = substr(p.event_idempotency_key, length(p.event_type) + 2)
+                      )
+                    GROUP BY p.report_job_id
+                    ORDER BY oldest_created_at
+                    LIMIT ?
+                    """,
+                    (max(0, limit),),
+                ).fetchall()
+        return [
+            PendingArchiveLineage(
+                job_id=str(row["job_id"]),
+                oldest_created_at=_dt_from_text(row["oldest_created_at"]),
+            )
+            for row in rows
+        ]
 
     def list_status_events(self, job_id: str) -> list[ReportStatusEvent]:
         with self._connect() as connection:

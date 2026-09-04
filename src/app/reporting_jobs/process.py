@@ -64,11 +64,13 @@ class ReportJobWorkerProcess:
         config: ReportJobWorkerProcessConfig,
         sleep: Sleep = asyncio.sleep,
         logger: logging.Logger | None = None,
+        maintenance: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._worker = worker
         self._config = config
         self._sleep = sleep
         self._logger = logger or logging.getLogger("report_job_worker")
+        self._maintenance = maintenance
         self._stopping = False
 
     def stop(self) -> None:
@@ -90,6 +92,15 @@ class ReportJobWorkerProcess:
                     max_items=self._config.max_items_per_pass,
                     lease_seconds=self._config.lease_seconds,
                 )
+                if self._maintenance is not None:
+                    # Bounded convergence work that must not depend on new
+                    # client commands - e.g. re-attempting pending Archive
+                    # lineage pairs so a transient outage self-heals. A
+                    # maintenance failure is logged, never fatal to the pass.
+                    try:
+                        await self._maintenance()
+                    except Exception:
+                        self._logger.exception("report_job_worker.maintenance_failed")
                 record_report_job_worker_metrics(
                     claimed_count=result.claimed_count,
                     completed_count=result.completed_count,
@@ -141,8 +152,51 @@ async def run_report_job_worker_process(
     process = ReportJobWorkerProcess(
         worker=worker or get_report_job_worker(retry_policy=config.retry_policy),
         config=config,
+        maintenance=build_archive_lineage_maintenance(source_settings),
     )
     await process.run(max_iterations=max_iterations)
+
+
+def build_archive_lineage_maintenance(
+    source_settings: Settings = settings,
+) -> Callable[[], Awaitable[None]]:
+    """One bounded reconciliation pass per worker iteration.
+
+    Reuses the durable job events and the idempotent lineage recorder - no
+    new store, no new workflow. Evaluation condition: a transient Archive
+    lifecycle outage self-heals after recovery even when nobody orders
+    another correction.
+    """
+
+    from app.clients.archive_client import ArchiveClient
+    from app.reporting_jobs.service import get_report_job_ledger
+    from app.reporting_metrics import record_archive_lineage_reconciliation
+    from app.reporting_render.archive_lineage import reconcile_pending_archive_lineage
+
+    archive_client = ArchiveClient(
+        base_url=source_settings.archive_base_url,
+        timeout_seconds=source_settings.upstream_timeout_seconds,
+        max_retries=source_settings.upstream_max_retries,
+        retry_backoff_seconds=source_settings.upstream_retry_backoff_seconds,
+    )
+
+    async def _maintenance() -> None:
+        ledger = get_report_job_ledger()
+        result = await reconcile_pending_archive_lineage(
+            archive_client=archive_client,
+            ledger=ledger,
+            limit=source_settings.report_job_worker_lineage_reconciliation_limit,
+        )
+        record_archive_lineage_reconciliation(
+            outstanding_jobs=int(result["outstanding_jobs"] or 0),
+            oldest_age_seconds=(
+                float(result["oldest_age_seconds"])
+                if result["oldest_age_seconds"] is not None
+                else None
+            ),
+        )
+
+    return _maintenance
 
 
 def start_worker_metrics_server(*, port: int | None = None) -> None:

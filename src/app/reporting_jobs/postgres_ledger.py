@@ -21,6 +21,7 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     InvalidReportJobWorkTransitionError,
     MissingIdempotencyKeyError,
+    PendingArchiveLineage,
     ReportJobNotFoundError,
     _request_parts,
     _transition_event_payload,
@@ -945,6 +946,47 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 report_job_id=str(row["report_job_id"]),
                 status=row["status"],
                 archive_document_id=row.get("archive_document_id"),
+            )
+            for row in rows
+        ]
+
+    def list_pending_archive_lineage(self, *, limit: int) -> list[PendingArchiveLineage]:
+        """Jobs with lineage pairs still pending, oldest first, bounded.
+
+        Pair-level: a pending event with no recorded or refused outcome for
+        the same pair (matched by the idempotency-key pair suffix), so
+        settled history never re-enters the reconciliation pass.
+        """
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT p.report_job_id AS job_id,
+                       MIN(p.created_at) AS oldest_created_at
+                FROM report_status_event p
+                WHERE p.event_type = 'job_archive_lineage_pending'
+                  AND p.event_idempotency_key IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM report_status_event r
+                      WHERE r.report_job_id = p.report_job_id
+                        AND r.event_type IN (
+                            'job_archive_lineage_recorded',
+                            'job_archive_lineage_refused'
+                        )
+                        AND substr(r.event_idempotency_key, length(r.event_type) + 2)
+                            = substr(p.event_idempotency_key, length(p.event_type) + 2)
+                  )
+                GROUP BY p.report_job_id
+                ORDER BY oldest_created_at
+                LIMIT %s
+                """,
+                (max(0, limit),),
+            ).fetchall()
+        return [
+            PendingArchiveLineage(
+                job_id=str(row["job_id"]),
+                oldest_created_at=row["oldest_created_at"],
             )
             for row in rows
         ]
