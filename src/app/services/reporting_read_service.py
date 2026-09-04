@@ -40,6 +40,10 @@ BENCHMARK_CODE_ALIASES = {
     "BMK_GLOBAL_BALANCED_60_40": "BMK_PB_GLOBAL_BALANCED_60_40",
 }
 CLIENT_ID_KEYS = ("client_id",)
+#: The rolling-trend window (observations): one quarter of daily
+#: observations, stated with the series on the page - a trend without
+#: its window is not interpretable.
+ROLLING_TREND_WINDOW_OBSERVATIONS = 63
 RISK_METRICS = ("VOLATILITY", "SHARPE", "DRAWDOWN", "VAR")
 PERFORMANCE_REVIEW_PERIODS: tuple[dict[str, object], ...] = (
     {"period": "1M", "frequencies": ["daily"]},
@@ -357,6 +361,14 @@ class ReportingReadService:
                 as_of_date=as_of_date,
                 request_payload=request_payload,
                 workspace_summary_payload=workspace_summary_payload,
+            )
+            # The rolling-risk trend rides the SAME ordered section (#255):
+            # the risk page gains "is risk changing?" beside its point-in-time
+            # numbers, from source-owned series.
+            response["riskTrend"] = await self._build_risk_trend(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                request_payload=request_payload,
             )
 
         client_sections = self._build_client_sections(
@@ -3844,6 +3856,94 @@ class ReportingReadService:
         if cash_leg:
             return f"Cash ledger leg for {transaction_type.title()}"
         return transaction_type.replace("_", " ").title() or "Transaction"
+
+    async def _build_risk_trend(
+        self,
+        portfolio_id: str,
+        as_of_date: str,
+        request_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """One upstream call for the risk-trend series (#255, agreed contract
+        on report#255 + render#160).
+
+        Report forwards the source's series and coverage facts verbatim: no
+        smoothing, no resampling, no gap-filling, no derived verdicts. A
+        trend statement appears ONLY if lotus-risk states one (it does not
+        today, so none appears). Benchmark-dependent metrics are requested
+        only when the report states a benchmark, and their availability is
+        the source's benchmark_context fact - never inferred here.
+        """
+
+        benchmark_code = self._normalized_benchmark_code(
+            self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+        )
+        metrics = ["ROLLING_VOLATILITY"]
+        if benchmark_code:
+            metrics.extend(["ROLLING_BETA", "ROLLING_TRACKING_ERROR"])
+        rolling_payload: dict[str, object] = {
+            "input_mode": "stateful",
+            "stateful_input": {
+                "portfolio_id": portfolio_id,
+                "as_of_date": as_of_date,
+                "reporting_currency": self._optional_string(
+                    request_payload, *REPORTING_CURRENCY_KEYS
+                ),
+                "client_id": self._optional_string(request_payload, *CLIENT_ID_KEYS),
+                "benchmark_id": benchmark_code,
+                "net_or_gross": "NET",
+                "periods": [{"type": "YTD", "name": "YTD"}],
+                "rolling_options": {
+                    "window_lengths": [ROLLING_TREND_WINDOW_OBSERVATIONS],
+                    "metrics": metrics,
+                    "include_time_series": True,
+                },
+            },
+        }
+        try:
+            status_code, response_payload = await self._risk_client.rolling_metrics(rolling_payload)
+        except Exception:
+            status_code, response_payload = 0, {}
+        if status_code >= HTTP_BAD_REQUEST or status_code == 0:
+            return {
+                "source": {
+                    "service": "lotus-risk",
+                    "endpoint": "/analytics/risk/rolling-metrics",
+                },
+                "request": {
+                    "window_observations": ROLLING_TREND_WINDOW_OBSERVATIONS,
+                    "metrics": metrics,
+                    "frequency": "daily",
+                },
+                "supportability": {
+                    "status": "unavailable",
+                    "notes": [
+                        {
+                            "code": "risk_trend_upstream_failure",
+                            "severity": "blocking",
+                            "message": (
+                                "Risk trend is unavailable because lotus-risk could not "
+                                "calculate rolling metrics."
+                            ),
+                        }
+                    ],
+                },
+                "results": {},
+                "metadata": {},
+            }
+        return {
+            "source": {
+                "service": "lotus-risk",
+                "endpoint": "/analytics/risk/rolling-metrics",
+            },
+            "request": {
+                "window_observations": ROLLING_TREND_WINDOW_OBSERVATIONS,
+                "metrics": metrics,
+                "frequency": "daily",
+            },
+            "supportability": {"status": "ready", "notes": []},
+            "results": self._as_dict(response_payload.get("results")),
+            "metadata": self._as_dict(response_payload.get("metadata")),
+        }
 
     def _build_risk_stateful_input(
         self,

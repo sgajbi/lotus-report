@@ -17,6 +17,18 @@ class RiskClient:
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
 
+    async def rolling_metrics(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        url = f"{self._base_url}/analytics/risk/rolling-metrics"
+        headers = propagation_headers()
+        return await post_with_retry(
+            url=url,
+            timeout_seconds=self._timeout_seconds,
+            json_body=payload,
+            headers=headers,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+
     async def calculate_risk(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         url = f"{self._base_url}/analytics/risk/calculate"
         headers = propagation_headers()
