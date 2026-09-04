@@ -1318,8 +1318,9 @@ class ReportJobLedger:
                   AND status = 'failed'
                   AND failure_category IN (
                       'archive_storage_failed', 'archive_execution_failed',
-                      'archive_outcome_unknown'
+                      'archive_outcome_unknown', 'archive_handoff_failed'
                   )
+                  AND retry_eligible = 1
                 ORDER BY updated_at DESC, created_at DESC, rerender_attempt_id DESC
                 """,
                 (job_id,),
