@@ -16,6 +16,9 @@ from app.reporting_render.package_builder import (
     _optional_int,
     _optional_str,
 )
+from app.reporting_render.package_builder import (
+    template_contract_mismatch as _template_contract_mismatch,
+)
 
 
 class RenderSnapshotStore(Protocol):
@@ -145,8 +148,8 @@ class PortfolioReviewRenderOrchestrationService:
                 trace_id=job.trace_id,
                 render_job_id=render_job_id,
                 output_format="pdf",
-                template_id=str(payload.get("template_id") or "portfolio-review"),
-                template_version=str(payload.get("template_version") or "v1"),
+                template_id=str(payload["template_id"]),
+                template_version=str(payload["template_version"]),
             )
 
         status_code, response_payload = await self._render_client.submit_render_package(
@@ -155,6 +158,29 @@ class PortfolioReviewRenderOrchestrationService:
             trace_id=job.trace_id,
         )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
+            # The template Render used must equal what Report ordered - the
+            # persisted acceptance fact the document_reference binds. A
+            # response stating a different (or no) template identity rendered
+            # a document this job never ordered: fail closed, never record it
+            # as this job's completion.
+            mismatch = _template_contract_mismatch(payload, response_payload)
+            if mismatch:
+                failed_job = self._job_ledger.mark_failed(
+                    job_id=job.job_id,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                    failure_category="render_validation_failed",
+                    failure_message=mismatch,
+                    retry_eligible=False,
+                )
+                record_report_operation(
+                    operation="render_handoff",
+                    status=failed_job.status,
+                    failure_category=failed_job.failure_category,
+                    duration_seconds=perf_counter() - started_at,
+                )
+                return failed_job
             rendered = job
             if job.status in {"data_ready", "rendering"}:
                 rendered = self._job_ledger.mark_completed(
@@ -164,12 +190,8 @@ class PortfolioReviewRenderOrchestrationService:
                     trace_id=job.trace_id,
                     render_job_id=str(response_payload.get("render_job_id") or render_job_id),
                     output_format="pdf",
-                    template_id=str(
-                        response_payload.get("template_id") or payload.get("template_id")
-                    ),
-                    template_version=str(
-                        response_payload.get("template_version") or payload.get("template_version")
-                    ),
+                    template_id=str(payload["template_id"]),
+                    template_version=str(payload["template_version"]),
                     artifact_sha256=_optional_str(response_payload.get("artifact_sha256")),
                     bounded_determinism_fingerprint=_optional_str(
                         response_payload.get("bounded_determinism_fingerprint")

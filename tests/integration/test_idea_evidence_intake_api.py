@@ -761,6 +761,8 @@ class _SuccessfulRenderClient:
     async def submit_render_package(self, payload, **kwargs):
         return 201, {
             "status": "rendered",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "render_job_id": payload["render_job_id"],
             "artifact_sha256": "sha256:idea-evidence-rendered-pdf",
             "bounded_determinism_fingerprint": "fingerprint-idea-evidence",

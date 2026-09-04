@@ -10,6 +10,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from app.postgres import PostgresConnectionProvider
+from app.report_ordering_catalogue.template_resolution import accepted_template_identity
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -308,6 +309,11 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             report_type=report_type,
             request=request,
         )
+        # Template selection is an immutable job fact, stamped at acceptance
+        # for PDF-capable jobs - identical to the SQLite ledger's discipline.
+        render_template_id, render_template_version = accepted_template_identity(
+            report_type, output_formats
+        )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
             report_type=report_type,
@@ -526,8 +532,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         None,
                         None,
                         None,
-                        None,
-                        None,
+                        render_template_id,
+                        render_template_version,
                         None,
                         None,
                         None,
