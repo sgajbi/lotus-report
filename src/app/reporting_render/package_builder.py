@@ -472,23 +472,32 @@ def _risk_trend_metric(
             ],
             "quality_flags": quality_flags,
         }
-    series: list[dict[str, str]] = []
+    series: list[dict[str, Any]] = []
+    computed_points = 0
     for point in window_result.get("metric_series") or []:
         if not isinstance(point, dict):
-            continue
-        values = _as_dict(point.get("metric_values"))
-        value = values.get(metric)
-        if value is None or isinstance(value, bool) or isinstance(value, str):
-            # A point the source could not compute is a visible gap - the
-            # date simply has no entry for this metric. Never filled.
             continue
         date_text = _optional_str(point.get("date"))
         if not date_text:
             continue
+        values = _as_dict(point.get("metric_values"))
+        value = values.get(metric)
+        if value is None:
+            # The source stated an observation slot here without computing
+            # this metric. That fact is PRESERVED, never dropped: the point
+            # carries value null plus the posture naming why, and only ever
+            # both together. No dates are generated and no calendar is
+            # classified - lotus-risk owns cadence truth; how an explicit
+            # gap is displayed is lotus-render's decision.
+            series.append({"date": date_text, "value": None, "point_posture": "not_computed"})
+            continue
+        if isinstance(value, bool) or isinstance(value, str):
+            continue
         # Not monetary: a rolling risk ratio forwarded at the precision the
         # source's JSON number round-trips to.
         series.append({"date": date_text, "value": repr(value)})
-    if len(series) < 2:
+        computed_points += 1
+    if computed_points < 2:
         # One point cannot state a trend; a "ready" claim over it would be
         # derivation. Fail-visible per the agreed contract.
         return {
@@ -498,7 +507,7 @@ def _risk_trend_metric(
                 {
                     "code": "series_insufficient_for_trend",
                     "message": (
-                        f"The source emitted {len(series)} computed point(s); a trend "
+                        f"The source emitted {computed_points} computed point(s); a trend "
                         "needs at least two."
                     ),
                 }

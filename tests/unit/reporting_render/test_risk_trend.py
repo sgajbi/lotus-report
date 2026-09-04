@@ -100,9 +100,11 @@ def test_a_ready_series_is_forwarded_verbatim_with_visible_gaps() -> None:
     volatility = section["metrics"][0]
     assert volatility["metric"] == "ROLLING_VOLATILITY"
     assert volatility["posture"] == "ready"
-    # The warm-up null is a visible gap: the date simply has no entry, and
-    # nothing is filled in its place.
+    # The warm-up null is a source-stated observation slot: preserved as an
+    # explicit gap point (value null AND the posture naming why, always
+    # together), never dropped and never filled.
     assert volatility["series"] == [
+        {"date": "2026-03-02", "value": None, "point_posture": "not_computed"},
         {"date": "2026-03-03", "value": "0.1374"},
         {"date": "2026-03-04", "value": "0.141"},
     ]
@@ -212,8 +214,9 @@ def test_malformed_points_are_skipped_as_gaps_never_guessed() -> None:
 
     volatility = section["metrics"][0]
     assert volatility["posture"] == "ready"
-    # Only the two well-formed numeric points survive; nothing is coerced or
-    # invented for the malformed ones.
+    # The two well-formed numeric points survive byte-identically; malformed
+    # shapes (no date, non-dict, non-numeric value) are skipped, never
+    # coerced into gap points - a gap is a SOURCE-stated fact, not a repair.
     assert volatility["series"] == [
         {"date": "2026-03-05", "value": "0.15"},
         {"date": "2026-03-06", "value": "0.16"},
@@ -249,7 +252,7 @@ def test_the_sources_unit_statement_is_forwarded_verbatim_on_ready_metrics() -> 
     assert by_metric["ROLLING_TRACKING_ERROR"]["unit"] == "decimal_ratio"
     # Values stay the source's raw decimal strings; the unit is what makes
     # them readable, not a rescale.
-    assert by_metric["ROLLING_VOLATILITY"]["series"][0] == {"date": "2026-03-03", "value": "0.1374"}
+    assert by_metric["ROLLING_VOLATILITY"]["series"][1] == {"date": "2026-03-03", "value": "0.1374"}
 
 
 def test_a_metric_without_a_stated_unit_carries_none_rather_than_a_guess() -> None:
@@ -257,3 +260,70 @@ def test_a_metric_without_a_stated_unit_carries_none_rather_than_a_guess() -> No
 
     for metric in section["metrics"]:
         assert "unit" not in metric
+
+
+def _computed(date: str, value: float) -> dict[str, Any]:
+    return {"date": date, "metric_values": {"ROLLING_VOLATILITY": value}}
+
+
+def _not_computed(date: str) -> dict[str, Any]:
+    return {"date": date, "metric_values": {"ROLLING_VOLATILITY": None}}
+
+
+def test_gap_shapes_are_distinguished_exactly_as_the_source_states_them() -> None:
+    """The steering's five-way distinction, in one series: an absent calendar
+    date emits NOTHING (the source stated no slot), an explicit null emits a
+    gap point, warm-up and partial-end coverage are runs of gap points at
+    the stated dates, and computed observations are value strings. Report
+    classifies no calendars and generates no dates - the emitted slots are
+    exactly the source's slots."""
+
+    points = [
+        _not_computed("2026-03-02"),  # warm-up
+        _not_computed("2026-03-03"),  # warm-up
+        _computed("2026-03-04", 0.14),
+        # 2026-03-05 absent entirely: no slot stated, so no entry appears
+        _computed("2026-03-06", 0.15),
+        _not_computed("2026-03-09"),  # mid-series explicit gap
+        _computed("2026-03-10", 0.16),
+        _not_computed("2026-03-11"),  # partial end coverage
+    ]
+    section = _risk_trend_section(
+        _snapshot(metrics=["ROLLING_VOLATILITY"], period=_period(series_points=points))
+    )
+
+    volatility = section["metrics"][0]
+    assert volatility["posture"] == "ready"
+    assert volatility["series"] == [
+        {"date": "2026-03-02", "value": None, "point_posture": "not_computed"},
+        {"date": "2026-03-03", "value": None, "point_posture": "not_computed"},
+        {"date": "2026-03-04", "value": "0.14"},
+        {"date": "2026-03-06", "value": "0.15"},
+        {"date": "2026-03-09", "value": None, "point_posture": "not_computed"},
+        {"date": "2026-03-10", "value": "0.16"},
+        {"date": "2026-03-11", "value": None, "point_posture": "not_computed"},
+    ]
+    # The locked pair discipline: every point is either a computed value
+    # string with no posture, or null WITH the posture - never one alone.
+    for point in volatility["series"]:
+        if point["value"] is None:
+            assert point["point_posture"] == "not_computed"
+        else:
+            assert "point_posture" not in point
+
+
+def test_gap_points_do_not_count_toward_a_trend() -> None:
+    points = [
+        _not_computed("2026-03-02"),
+        _computed("2026-03-03", 0.14),
+        _not_computed("2026-03-04"),
+        _not_computed("2026-03-05"),
+    ]
+    section = _risk_trend_section(
+        _snapshot(metrics=["ROLLING_VOLATILITY"], period=_period(series_points=points))
+    )
+
+    volatility = section["metrics"][0]
+    assert volatility["posture"] == "unavailable"
+    assert volatility["notes"][0]["code"] == "series_insufficient_for_trend"
+    assert "1 computed point" in volatility["notes"][0]["message"]
