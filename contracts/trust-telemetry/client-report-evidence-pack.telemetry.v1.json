@@ -25,7 +25,8 @@
     "max_allowed_age_seconds": 86400
   },
   "completeness_status": "partial",
-  "reconciliation_status": "reconciled",
+  "reconciliation_status": "unknown",
+  "reconciliation_reason_code": "no_reconciliation_policy_established",
   "data_quality_status": "quality_warning",
   "lineage": {
     "lineage_materialized": true,
@@ -63,9 +64,11 @@
     "product_name": "ClientReportEvidencePack",
     "product_version": "v1",
     "tenant_id": "TENANT_PRIVATE_BANKING_DEMO",
+    "tenant_admission": "caller_admitted",
     "generated_at": "2026-04-20T00:00:00Z",
     "as_of_date": "2026-04-20",
-    "reconciliation_status": "reconciled",
+    "reconciliation_status": "unknown",
+    "reconciliation_reason_code": "no_reconciliation_policy_established",
     "data_quality_status": "quality_warning",
     "source_batch_fingerprint": "sha256:client-report-evidence-pack-demo",
     "lineage_bundle_id": "lineage:lotus-report:client-report-evidence-pack:2026-04-20",
