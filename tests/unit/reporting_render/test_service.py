@@ -1432,6 +1432,33 @@ async def test_artifactless_replay_still_records_verified_custody(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_the_source_owned_request_id_is_recorded_verbatim(tmp_path):
+    """render#258: Render serializes the archive_request_id it presented to
+    Archive; Report records that value verbatim - the local derivation is
+    only a rollout fallback for responses predating the field."""
+
+    class _RenderClientWithSourceOwnedId(_RenderClientWithArchiveOutcome):
+        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+            status_code, response = await super().submit_render_package(
+                payload, correlation_id, trace_id
+            )
+            response["archive_request_id"] = "areq_source_owned_0123456789abcdef"
+            return status_code, response
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientWithSourceOwnedId("archive_pending"),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    failed = await service.render_for_job(ready)
+
+    assert failed.failure_category == "archive_outcome_unknown"
+    assert failed.archive_request_id == "areq_source_owned_0123456789abcdef"
+
+
+@pytest.mark.asyncio
 async def test_a_custody_refusal_in_archives_own_words_is_terminal(tmp_path):
     """archive_detail carries Render's stable grammar; a 4xx refusal
     (checksum mismatch, identity collision) replays identically under the

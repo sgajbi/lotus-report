@@ -244,10 +244,15 @@ class PortfolioReviewRenderOrchestrationService:
         archive_state = _optional_str(render_response.get("archive_state"))
         document_id = _optional_str(render_response.get("archive_document_id"))
         artifact_sha256 = _optional_str(render_response.get("artifact_sha256"))
-        reference = str(package["render_context"]["document_reference"])
-        archive_request_id = (
-            derive_archive_request_id(reference, artifact_sha256) if artifact_sha256 else None
-        )
+        # One authority for archive request identity (render#258): Render
+        # derives the id, returns it, Report records it verbatim, Archive
+        # resolves it. The local derivation remains ONLY as a rollout
+        # fallback for responses predating the field, guarded by the
+        # cross-repo parity test; it is deleted once the fallback is dead.
+        archive_request_id = _optional_str(render_response.get("archive_request_id"))
+        if archive_request_id is None and artifact_sha256:
+            reference = str(package["render_context"]["document_reference"])
+            archive_request_id = derive_archive_request_id(reference, artifact_sha256)
         if archive_state == "archived_verified" and document_id and archive_request_id:
             if job.status == "completed":
                 self._job_ledger.mark_archiving(
