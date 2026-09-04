@@ -131,6 +131,7 @@ def _build_render_package(
             f"to {job.as_of_date.strftime('%d.%m.%Y')}"
         ),
         "risk_summary": _risk_summary_section(snapshot, risk),
+        "risk_trend": _risk_trend_section(snapshot),
         # Why a figure is missing, not merely that it is. Without this the
         # panel prints one "Not available" for five different facts - two of
         # which send an operator in opposite directions.
@@ -315,6 +316,198 @@ def _risk_summary_section(snapshot: dict[str, Any], risk: dict[str, Any]) -> dic
         # and then dropped at this boundary. Its basis travels in
         # `risk_methodology`, because the number alone is not interpretable.
         "expected_shortfall_pct": _percent_text(risk.get("ytd_expected_shortfall_pct")),
+    }
+
+
+def _risk_trend_section(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """ "Is this portfolio's risk changing?" - the agreed #255 contract.
+
+    Absence of the captured block means the report did not order the risk
+    section: no panel, not an empty one. Everything emitted is a source-owned
+    fact: the series verbatim (a source gap is a visible gap), the window and
+    frequency stated beside it, per-metric posture derived only from the
+    source's own coverage facts, and NO trend statement unless lotus-risk
+    states one (it does not today). A ready series needs at least two
+    computed points - one point cannot state a trend, and drawing it flat
+    would be derivation.
+    """
+
+    trend = _as_dict(snapshot.get("riskTrend"))
+    if not trend:
+        return {}
+    request = _as_dict(trend.get("request"))
+    requested_metrics = [str(metric) for metric in request.get("metrics") or []]
+    supportability = _as_dict(trend.get("supportability"))
+    window: dict[str, Any] = {
+        "window_observations": _optional_int(request.get("window_observations")),
+        "frequency": _optional_str(request.get("frequency")) or "daily",
+    }
+    if supportability.get("status") == "unavailable":
+        notes = [note for note in supportability.get("notes") or [] if isinstance(note, dict)]
+        return _risk_trend_refusal(window, requested_metrics, notes)
+
+    results = _as_dict(trend.get("results"))
+    period = _as_dict(results.get("YTD"))
+    if not period:
+        return _risk_trend_refusal(
+            window,
+            requested_metrics,
+            [
+                {
+                    "code": "risk_trend_period_missing",
+                    "message": "The source answered without the requested period.",
+                }
+            ],
+        )
+    window["period"] = {
+        "name": "YTD",
+        "start_date": _optional_str(period.get("start_date")),
+        "end_date": _optional_str(period.get("end_date")),
+    }
+    quality_flags = [str(flag) for flag in period.get("quality_flags") or []]
+    period_error = _optional_str(period.get("error"))
+    if period_error:
+        # A period the source marks in error is SAID, not drawn.
+        return _risk_trend_refusal(
+            window,
+            requested_metrics,
+            [{"code": "risk_trend_source_error", "message": period_error}],
+            quality_flags=quality_flags,
+        )
+
+    window_results = [item for item in period.get("window_results") or [] if isinstance(item, dict)]
+    window_result = next(
+        (
+            item
+            for item in window_results
+            if _optional_int(item.get("window_length")) == window["window_observations"]
+        ),
+        None,
+    )
+    benchmark_context = _as_dict(period.get("benchmark_context"))
+    metrics_out: list[dict[str, Any]] = []
+    for metric in requested_metrics:
+        metrics_out.append(
+            _risk_trend_metric(
+                metric=metric,
+                window_result=window_result,
+                benchmark_context=benchmark_context,
+                quality_flags=quality_flags,
+            )
+        )
+    return {"window": window, "metrics": metrics_out}
+
+
+def _risk_trend_refusal(
+    window: dict[str, Any],
+    requested_metrics: list[str],
+    notes: list[dict[str, Any]],
+    *,
+    quality_flags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Every requested metric refused for the same stated reason - the page
+    says why, never draws."""
+
+    metric_entry: dict[str, Any] = {"posture": "unavailable", "notes": notes}
+    if quality_flags is not None:
+        metric_entry["quality_flags"] = quality_flags
+    return {
+        "window": window,
+        "metrics": [{"metric": metric, **metric_entry} for metric in requested_metrics],
+    }
+
+
+_BENCHMARK_DEPENDENT_ROLLING_METRICS = frozenset({"ROLLING_BETA", "ROLLING_TRACKING_ERROR"})
+
+
+def _risk_trend_metric(
+    *,
+    metric: str,
+    window_result: dict[str, Any] | None,
+    benchmark_context: dict[str, Any],
+    quality_flags: list[str],
+) -> dict[str, Any]:
+    if metric in _BENCHMARK_DEPENDENT_ROLLING_METRICS and benchmark_context.get("reason") not in (
+        None,
+        "APPLIED",
+    ):
+        # The #241 voice: a benchmark-relative series on a benchmark the
+        # source could not apply is stated unavailable with the source's own
+        # reason - never invisible, never drawn from partial alignment.
+        return {
+            "metric": metric,
+            "posture": "unavailable",
+            "notes": [
+                {
+                    "code": "benchmark_not_applied",
+                    "message": str(benchmark_context.get("reason")),
+                }
+            ],
+            "quality_flags": quality_flags,
+        }
+    if window_result is None:
+        return {
+            "metric": metric,
+            "posture": "unavailable",
+            "notes": [
+                {
+                    "code": "risk_trend_window_missing",
+                    "message": "The source emitted no result for the requested window.",
+                }
+            ],
+            "quality_flags": quality_flags,
+        }
+    context = _as_dict(window_result.get("metric_series_context"))
+    if not context.get("included"):
+        return {
+            "metric": metric,
+            "posture": "empty",
+            "notes": [
+                {
+                    "code": "risk_trend_series_not_included",
+                    "message": str(context.get("reason") or "NO_METRIC_SERIES"),
+                }
+            ],
+            "quality_flags": quality_flags,
+        }
+    series: list[dict[str, str]] = []
+    for point in window_result.get("metric_series") or []:
+        if not isinstance(point, dict):
+            continue
+        values = _as_dict(point.get("metric_values"))
+        value = values.get(metric)
+        if value is None or isinstance(value, bool) or isinstance(value, str):
+            # A point the source could not compute is a visible gap - the
+            # date simply has no entry for this metric. Never filled.
+            continue
+        date_text = _optional_str(point.get("date"))
+        if not date_text:
+            continue
+        # Not monetary: a rolling risk ratio forwarded at the precision the
+        # source's JSON number round-trips to.
+        series.append({"date": date_text, "value": repr(value)})
+    if len(series) < 2:
+        # One point cannot state a trend; a "ready" claim over it would be
+        # derivation. Fail-visible per the agreed contract.
+        return {
+            "metric": metric,
+            "posture": "unavailable",
+            "notes": [
+                {
+                    "code": "series_insufficient_for_trend",
+                    "message": (
+                        f"The source emitted {len(series)} computed point(s); a trend "
+                        "needs at least two."
+                    ),
+                }
+            ],
+            "quality_flags": quality_flags,
+        }
+    return {
+        "metric": metric,
+        "posture": "ready",
+        "series": series,
+        "quality_flags": quality_flags,
     }
 
 

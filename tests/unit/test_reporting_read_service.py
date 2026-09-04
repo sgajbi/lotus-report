@@ -538,9 +538,66 @@ class _PerformanceClientSuccess:
         }
 
 
-class _RiskClientSuccess:
+class _RollingRiskClientMixin:
+    """The shipped /analytics/risk/rolling-metrics answer, minimal but
+    production-shaped: one YTD period, one 63-observation window, series
+    points with a warm-up null."""
+
+    rolling_payloads: list[dict[str, object]]
+
+    async def rolling_metrics(self, payload: dict[str, object]):
+        self.rolling_payloads.append(payload)
+        return 200, {
+            "source_service": "lotus-risk",
+            "input_mode": "stateful",
+            "results": {
+                "YTD": {
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-02-24",
+                    "benchmark_context": {
+                        "requested": True,
+                        "available": True,
+                        "aligned": True,
+                        "reason": "APPLIED",
+                    },
+                    "quality_flags": [],
+                    "error": None,
+                    "window_results": [
+                        {
+                            "window_length": 63,
+                            "metric_summaries": {},
+                            "metric_series": [
+                                {
+                                    "date": "2026-02-20",
+                                    "metric_values": {"ROLLING_VOLATILITY": None},
+                                },
+                                {
+                                    "date": "2026-02-23",
+                                    "metric_values": {"ROLLING_VOLATILITY": 0.137},
+                                },
+                                {
+                                    "date": "2026-02-24",
+                                    "metric_values": {"ROLLING_VOLATILITY": 0.141},
+                                },
+                            ],
+                            "metric_series_context": {
+                                "requested": True,
+                                "included": True,
+                                "emitted_point_count": 3,
+                                "reason": "INCLUDED",
+                            },
+                        }
+                    ],
+                }
+            },
+            "metadata": {"annualization_basis": 252},
+        }
+
+
+class _RiskClientSuccess(_RollingRiskClientMixin):
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
+        self.rolling_payloads: list[dict[str, object]] = []
 
     async def calculate_risk(self, payload: dict[str, object]):
         self.seen_payloads.append(payload)
@@ -1412,3 +1469,87 @@ async def test_ordering_attribution_composes_the_section_and_honours_defaulting(
         None,
     )
     assert "attribution" not in without_section
+
+
+@pytest.mark.asyncio
+async def test_risk_trend_rides_the_ordered_risk_section_verbatim():
+    """#255 capture: one rolling-metrics call under the RISK_ANALYTICS
+    section, the source's results forwarded verbatim into riskTrend, the
+    request stating window/metrics/frequency. Benchmark-dependent metrics
+    are requested only because the report states a benchmark."""
+
+    risk_client = _RiskClientSuccess()
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=risk_client,
+    )
+    response = await service.get_portfolio_review(
+        "P1",
+        {
+            "as_of_date": "2026-02-24",
+            "sections": ["RISK_ANALYTICS"],
+            "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
+        },
+        "CID-1",
+    )
+
+    trend = response["riskTrend"]
+    assert trend["source"]["endpoint"] == "/analytics/risk/rolling-metrics"
+    assert trend["supportability"]["status"] == "ready"
+    assert trend["request"]["window_observations"] == 63
+    assert trend["request"]["metrics"] == [
+        "ROLLING_VOLATILITY",
+        "ROLLING_BETA",
+        "ROLLING_TRACKING_ERROR",
+    ]
+    # Forwarded verbatim: the warm-up null is still there, untouched.
+    points = trend["results"]["YTD"]["window_results"][0]["metric_series"]
+    assert points[0]["metric_values"]["ROLLING_VOLATILITY"] is None
+    assert len(risk_client.rolling_payloads) == 1
+    rolling_options = risk_client.rolling_payloads[0]["stateful_input"]["rolling_options"]
+    assert rolling_options["include_time_series"] is True
+    assert rolling_options["window_lengths"] == [63]
+
+
+@pytest.mark.asyncio
+async def test_risk_trend_without_a_benchmark_requests_volatility_only():
+    risk_client = _RiskClientSuccess()
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=risk_client,
+    )
+    await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ANALYTICS"]},
+        "CID-1",
+    )
+
+    rolling_options = risk_client.rolling_payloads[0]["stateful_input"]["rolling_options"]
+    assert rolling_options["metrics"] == ["ROLLING_VOLATILITY"]
+
+
+@pytest.mark.asyncio
+async def test_risk_trend_upstream_failure_is_a_stated_unavailability():
+    class _RollingDownRiskClient(_RiskClientSuccess):
+        async def rolling_metrics(self, payload: dict[str, object]):
+            return 503, {"detail": "rolling unavailable"}
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_RollingDownRiskClient(),
+    )
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["RISK_ANALYTICS"]},
+        "CID-1",
+    )
+
+    trend = response["riskTrend"]
+    assert trend["supportability"]["status"] == "unavailable"
+    assert trend["supportability"]["notes"][0]["code"] == "risk_trend_upstream_failure"
+    assert trend["results"] == {}
+    # The point-in-time risk block is unaffected by the trend call's fate.
+    assert response["riskAnalytics"]["supportability"]["status"] != "unavailable"
