@@ -28,7 +28,12 @@ from app.reporting_render.archive_lineage import (
     settle_pending_archive_lineage,
 )
 from app.reporting_render.document_reference import derive_archive_request_id
-from app.reporting_render.package_builder import _build_render_package, _optional_int, _optional_str
+from app.reporting_render.package_builder import (
+    _build_render_package,
+    _optional_int,
+    _optional_str,
+    template_contract_mismatch,
+)
 from app.reporting_render.service import _is_terminal_archive_refusal
 
 
@@ -248,6 +253,31 @@ class PortfolioReviewRerenderService:
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
         )
+        template_mismatch = (
+            template_contract_mismatch(payload, render_response)
+            if status_code in {200, 201} and render_response.get("status") == "rendered"
+            else None
+        )
+        if template_mismatch:
+            # The corrected document must carry the ORIGINAL job's exact
+            # presentation contract; an artifact on any other template is not
+            # a correction of this document. Fail closed, never archive it.
+            failed = self._ledger.mark_rerender_failed(
+                rerender_attempt_id=attempt.rerender_attempt_id,
+                actor=caller_context.triggered_by,
+                correlation_id=caller_context.correlation_id,
+                trace_id=caller_context.trace_id,
+                failure_category="render_validation_failed",
+                failure_message=template_mismatch,
+                retry_eligible=False,
+            )
+            record_report_operation(
+                operation="rerender_from_snapshot",
+                status=failed.status,
+                failure_category=failed.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed
         if status_code in {200, 201} and render_response.get("status") == "rendered":
             rendered = self._ledger.mark_rerender_rendered(
                 rerender_attempt_id=attempt.rerender_attempt_id,

@@ -689,6 +689,8 @@ class _RerenderRenderClient:
         return self.status_code, {
             "status": "rendered",
             "render_job_id": payload["render_job_id"],
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:rerender-artifact",
             "bounded_determinism_fingerprint": "fingerprint-rerender",
             "runtime_engine": "typst",
@@ -2499,6 +2501,48 @@ def test_report_job_rerender_records_render_validation_failure(tmp_path):
         _clear_overrides()
 
 
+def test_report_job_rerender_refuses_an_artifact_on_the_wrong_template(tmp_path):
+    """A corrected document must carry the ORIGINAL job's exact presentation
+    contract. A response claiming success on a different template version is
+    not a correction of this document: the attempt fails closed as a
+    validation failure and nothing reaches Archive."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient(
+        payload={
+            "status": "rendered",
+            "render_job_id": "rdr_wrong_template",
+            "template_id": "portfolio-review",
+            "template_version": "v2",
+            "artifact_sha256": "sha256:wrong-template",
+            "artifact_base64": "JVBERi0xLjQ=",
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_wrong_template",
+        },
+    )
+    archive_client = _RerenderArchiveClient()
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        response = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Template correction."},
+            headers=_headers(f"rerender-{job.job_id}-wrong-template"),
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["failure_category"] == "render_validation_failed"
+        assert body["retry_eligible"] is False
+        assert "RENDER_TEMPLATE_CONTRACT_MISMATCH" in body["failure_message"]
+        assert body["archive"] is None
+        assert len(archive_client.payloads) == 0
+    finally:
+        _clear_overrides()
+
+
 def test_report_job_rerender_records_retryable_render_execution_failure(tmp_path):
     client, ledger, lineage_store = _client(tmp_path)
     render_client = _RerenderRenderClient(
@@ -2562,6 +2606,8 @@ def test_report_job_rerender_without_a_handoff_outcome_is_a_config_error(tmp_pat
         payload={
             "status": "rendered",
             "render_job_id": "rdr_missing_artifact",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
             "artifact_sha256": "sha256:rerender-artifact",
             "bounded_determinism_fingerprint": "fingerprint-rerender",
             "runtime_engine": "typst",

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
+from app.report_ordering_catalogue.template_resolution import accepted_template_identity
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -542,6 +543,13 @@ class ReportJobLedger:
             report_type=report_type,
             request=request,
         )
+        # Template selection is an immutable job fact: a PDF-capable job is
+        # stamped with its governed template id/version at ACCEPTANCE, so a
+        # later deployment that changes the family default cannot change the
+        # presentation contract this job was accepted under.
+        render_template_id, render_template_version = accepted_template_identity(
+            report_type, output_formats
+        )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
             report_type=report_type,
@@ -703,9 +711,9 @@ class ReportJobLedger:
                         report_job_id, report_request_id, report_type, portfolio_scope_json,
                         status, failure_category, failure_message, current_step, retry_eligible,
                         cancel_requested, created_at, updated_at, started_at, completed_at,
-                        cancelled_at
+                        cancelled_at, render_template_id, render_template_version
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -723,6 +731,8 @@ class ReportJobLedger:
                         None,
                         None,
                         None,
+                        render_template_id,
+                        render_template_version,
                     ),
                 )
                 self._append_status_event(

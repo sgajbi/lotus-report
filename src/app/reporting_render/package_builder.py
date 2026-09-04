@@ -185,7 +185,6 @@ def _build_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_data_contract_version="portfolio_review.v1",
-        template_id="portfolio-review",
         report_data=report_data,
         lineage_refs=_dedupe_strings(lineage_refs),
         disclosure_refs=_dedupe_strings(disclosure_refs),
@@ -542,6 +541,53 @@ def _governance_summary_section(
     }
 
 
+def template_contract_mismatch(
+    package: dict[str, Any], render_response: dict[str, Any]
+) -> str | None:
+    """A stated failure when Render's response disagrees with the ordered template.
+
+    Report ordered exactly one governed (template_id, template_version) - the
+    acceptance fact the document_reference binds. The response must state the
+    same pair: silence cannot prove equality, and a different pair means the
+    artifact is not the document this job accepted. Returns the failure
+    message, or None when the contract holds.
+    """
+
+    ordered_id = str(package.get("template_id") or "")
+    ordered_version = str(package.get("template_version") or "")
+    stated_id = _optional_str(render_response.get("template_id"))
+    stated_version = _optional_str(render_response.get("template_version"))
+    if stated_id == ordered_id and stated_version == ordered_version:
+        return None
+    return (
+        "RENDER_TEMPLATE_CONTRACT_MISMATCH: ordered "
+        f"{ordered_id}/{ordered_version}, response stated "
+        f"{stated_id or 'nothing'}/{stated_version or 'nothing'}; refusing to "
+        "record an artifact this job never ordered."
+    )
+
+
+def _job_template_identity(job: ReportJobLedgerRecord) -> tuple[str, str]:
+    """The governed template id/version persisted on the job at acceptance.
+
+    Fails closed: the envelope never invents a template version. A PDF job
+    without a persisted template identity is a defect (pre-backfill data or a
+    creation-path regression), not something rendering may paper over with a
+    default - a defaulted version could silently rebuild an accepted document
+    on a presentation contract it never agreed to.
+    """
+
+    template_id = (job.render_template_id or "").strip()
+    template_version = (job.render_template_version or "").strip()
+    if not template_id or not template_version:
+        raise ValueError(
+            "RENDER_PACKAGE_TEMPLATE_IDENTITY_REQUIRED: governed rendering "
+            f"requires the template id/version persisted on job {job.job_id} "
+            "at acceptance; refusing to invent a presentation contract."
+        )
+    return template_id, template_version
+
+
 def _render_package_envelope(
     *,
     job: ReportJobLedgerRecord,
@@ -549,7 +595,6 @@ def _render_package_envelope(
     render_job_id: str,
     snapshot_id: str,
     report_data_contract_version: str,
-    template_id: str,
     report_data: dict[str, Any],
     lineage_refs: list[str],
     disclosure_refs: list[str],
@@ -574,6 +619,7 @@ def _render_package_envelope(
             "requires the durable snapshot id; refusing to mint a document "
             "identity for unidentified evidence."
         )
+    template_id, template_version = _job_template_identity(job)
     return {
         "render_package_version": "render_package.v1",
         "render_job_id": render_job_id,
@@ -582,7 +628,7 @@ def _render_package_envelope(
         "report_type": job.report_type,
         "report_data_contract_version": report_data_contract_version,
         "template_id": template_id,
-        "template_version": "v1",
+        "template_version": template_version,
         "locale": "en-SG",
         "brand_variant": "private_banking",
         "output_format": "pdf",
@@ -598,7 +644,7 @@ def _render_package_envelope(
                 report_job_id=job.job_id,
                 snapshot_id=snapshot_id,
                 template_id=template_id,
-                template_version="v1",
+                template_version=template_version,
             ),
             # The custody facts only Report owns, passed to Archive verbatim
             # by lotus-render's handoff (its build_archive_metadata). Render
@@ -840,7 +886,6 @@ def _build_proof_pack_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_data_contract_version="dpm_proof_pack_report_input.v1",
-        template_id="proof-pack",
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -932,7 +977,6 @@ def _build_outcome_review_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_data_contract_version="dpm_outcome_report_input.v1",
-        template_id="outcome-review",
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -1025,7 +1069,6 @@ def _build_wave_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_data_contract_version="dpm_wave_report_input.v1",
-        template_id="rebalance-wave",
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
