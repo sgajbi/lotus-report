@@ -521,6 +521,7 @@ def test_postgres_report_job_ledger_persists_render_and_archive_handoff() -> Non
         output_format="pdf",
         template_id="portfolio-review",
         template_version="v1",
+        template_publication="development",
         artifact_sha256="sha256:artifact",
         bounded_determinism_fingerprint="fingerprint",
         runtime_engine="typst",

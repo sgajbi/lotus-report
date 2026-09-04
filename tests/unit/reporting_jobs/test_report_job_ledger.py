@@ -741,6 +741,7 @@ def test_report_job_ledger_marks_rendering_and_completed(tmp_path):
         output_format="pdf",
         template_id="portfolio-review",
         template_version="v1",
+        template_publication="development",
         artifact_sha256="sha256:artifact",
         bounded_determinism_fingerprint="fingerprint",
         runtime_engine="typst",

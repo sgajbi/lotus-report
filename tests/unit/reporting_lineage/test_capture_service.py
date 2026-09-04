@@ -1085,6 +1085,7 @@ async def test_capture_service_returns_terminal_proof_pack_job_without_mutation(
         output_format="pdf",
         template_id="proof-pack",
         template_version="v1",
+        template_publication="development",
         artifact_sha256="sha256:artifact",
         bounded_determinism_fingerprint="fingerprint",
         runtime_engine="typst",

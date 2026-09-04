@@ -1474,6 +1474,15 @@ class ReportJobRenderInfo(BaseModel):
         description="Template version used by lotus-render.",
         examples=["v1"],
     )
+    template_publication: str | None = Field(
+        default=None,
+        description=(
+            "Render-stated governance posture of the template version AT RENDER "
+            "TIME: published or development (null before Render stated it). "
+            "Custody (archived) and publication are distinct facts; external "
+            "distribution authority is Gateway/Archive-owned, not Report's."
+        ),
+    )
     artifact_sha256: str | None = Field(
         default=None,
         description="Rendered artifact hash when rendering completed successfully.",
@@ -2738,6 +2747,7 @@ class ReportJobLedgerRecord(BaseModel):
     render_output_format: str | None = None
     render_template_id: str | None = None
     render_template_version: str | None = None
+    render_template_publication: str | None = None
     render_artifact_sha256: str | None = None
     render_bounded_determinism_fingerprint: str | None = None
     render_runtime_engine: str | None = None

@@ -201,6 +201,7 @@ def _record_to_render(record: ReportJobLedgerRecord) -> ReportJobRenderInfo | No
         output_format=record.render_output_format,
         template_id=record.render_template_id,
         template_version=record.render_template_version,
+        template_publication=record.render_template_publication,
         artifact_sha256=record.render_artifact_sha256,
         bounded_determinism_fingerprint=record.render_bounded_determinism_fingerprint,
         runtime_engine=record.render_runtime_engine,
