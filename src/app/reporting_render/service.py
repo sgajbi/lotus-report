@@ -300,6 +300,18 @@ class PortfolioReviewRenderOrchestrationService:
                 "delivery or confirming a clean 404 - before any re-render."
             )
         elif archive_state == "archive_failed":
+            # An exhausted 5xx sequence or a lost connection does not prove
+            # Archive failed to commit. The delivery's request id is recorded
+            # durably BEFORE the failure posture, so replay can resolve the
+            # exact request that may have crossed the boundary.
+            if archive_request_id and job.status == "completed":
+                self._job_ledger.mark_archiving(
+                    job_id=job.job_id,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                    archive_request_id=archive_request_id,
+                )
             archive_detail = _optional_str(render_response.get("archive_detail")) or ""
             failure_category = "archive_handoff_failed"
             failure_message = (

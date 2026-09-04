@@ -1266,6 +1266,65 @@ def test_report_job_ledger_scans_all_unresolved_archive_ambiguous_attempts(tmp_p
     assert timestamps == sorted(timestamps, reverse=True)
 
 
+def test_ambiguity_scan_sees_possibly_committed_failures_and_nothing_else(tmp_path):
+    """The scan exists to resolve requests that MAY have crossed the service
+    boundary. A retry-eligible archive_handoff_failed attempt is exactly
+    that; a terminal custody refusal (retry_eligible false) proves nothing
+    was stored and must not be scanned."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="rerender-scan-handoff-job",
+    )
+
+    ambiguous, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_scan",
+        snapshot_hash="sha256:snapshot-scan",
+        idempotency_key="rerender-scan-handoff-ambiguous",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id="corr-scan-handoff-1",
+        trace_id="trace-scan-handoff-1",
+    )
+    assert created is True
+    ambiguous = ledger.mark_rerender_failed(
+        rerender_attempt_id=ambiguous.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-scan-handoff-1",
+        trace_id="trace-scan-handoff-1",
+        failure_category="archive_handoff_failed",
+        failure_message="archive_unreachable: connection reset",
+        retry_eligible=True,
+    )
+    terminal, created = ledger.create_rerender_attempt(
+        job=job,
+        snapshot_id="rsnap_scan",
+        snapshot_hash="sha256:snapshot-scan",
+        idempotency_key="rerender-scan-handoff-terminal",
+        actor="advisor-123",
+        reason="Template correction.",
+        correlation_id="corr-scan-handoff-2",
+        trace_id="trace-scan-handoff-2",
+    )
+    assert created is True
+    ledger.mark_rerender_failed(
+        rerender_attempt_id=terminal.rerender_attempt_id,
+        actor="advisor-123",
+        correlation_id="corr-scan-handoff-2",
+        trace_id="trace-scan-handoff-2",
+        failure_category="archive_handoff_failed",
+        failure_message="archive_refused_422: declared_checksum_mismatch: refused",
+        retry_eligible=False,
+    )
+
+    scanned = ledger.list_unresolved_archive_ambiguous_attempts(job.job_id)
+
+    assert [attempt.rerender_attempt_id for attempt in scanned] == [ambiguous.rerender_attempt_id]
+
+
 def test_report_job_ledger_mark_rerender_archived_clears_failure_posture(tmp_path):
     """Issue #215 (PR #219 review): resolving an ambiguous attempt to
     archived must clear its failure fields - an archived row still carrying

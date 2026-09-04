@@ -391,13 +391,22 @@ class PortfolioReviewReplayService:
             "archive_storage_failed",
             "archive_execution_failed",
             "archive_outcome_unknown",
+            "archive_handoff_failed",
         }:
             return
         if self._archive_resolver is None or not source_job.render_job_id:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
-        # Post-cutover jobs store the derived areq_ id at failure time;
-        # pre-cutover rows fall back to the historical arch_ scheme.
-        archive_request_id = source_job.archive_request_id or f"arch_{source_job.render_job_id}"
+        if source_job.failure_category in {"archive_outcome_unknown", "archive_handoff_failed"}:
+            # Post-cutover custody failures record the derived areq_ id at
+            # failure time. Without it the original request is unresolvable
+            # and rendering a replacement could duplicate a committed
+            # document - fail closed rather than guess.
+            archive_request_id = source_job.archive_request_id
+            if not archive_request_id:
+                raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        else:
+            # Pre-cutover rows fall back to the historical arch_ scheme.
+            archive_request_id = source_job.archive_request_id or f"arch_{source_job.render_job_id}"
         try:
             status_code, payload = await self._archive_resolver.get_document_by_request_id(
                 archive_request_id,

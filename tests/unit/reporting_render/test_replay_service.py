@@ -1874,3 +1874,181 @@ async def test_replay_refuses_when_the_resolver_raises_or_answers_without_identi
                 caller_context=_caller(),
                 idempotency_key=f"unanswerable-{type(resolver).__name__}",
             )
+
+
+async def _fail_source_through_failed_handoff(ledger, store):
+    """The dangerous window: Archive may have committed the delivery, then
+    the handoff reported failure (lost response / exhausted 5xx). The job
+    fails retry-eligible with the exact delivery id recorded."""
+
+    from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-failed-handoff",
+    )
+    _create_snapshot_for(store, source)
+    source = ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    source = ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    render_service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RecordingRenderClient(
+            archive_state="archive_failed",
+            archive_detail="archive_unreachable: connection reset by peer",
+        ),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+    failed = await render_service.render_for_job(source)
+    assert failed.status == "failed"
+    assert failed.failure_category == "archive_handoff_failed"
+    assert failed.retry_eligible is True
+    assert failed.archive_request_id is not None
+    assert failed.archive_request_id.startswith("areq_")
+    return failed
+
+
+@pytest.mark.asyncio
+async def test_committed_but_reported_failed_delivery_is_adopted_never_duplicated(tmp_path):
+    """THE invariant: Archive committed the document, the response path
+    failed, Report recorded archive_handoff_failed. The replay resolves the
+    exact original request id FIRST - the committed document is adopted,
+    the source becomes archived, the replay refuses as unnecessary, and no
+    render call and no second Archive document ever happen."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_failed_handoff(ledger, store)
+
+    resolver = _CommittedArchiveResolver(document_id="doc_committed_before_response_loss")
+    replay_service, _rc, render_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=resolver,
+    )
+
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Recover the failed handoff."),
+            caller_context=_caller(),
+            idempotency_key="recover-failed-handoff",
+        )
+
+    resolved = ledger.get_job(failed_source.job_id)
+    assert resolved.status == "archived"
+    assert resolved.archive_document_id == "doc_committed_before_response_loss"
+    assert resolver.lookups == [failed_source.archive_request_id]
+    # Zero new artifact: the replacement render never ran.
+    assert render_client.render_job_ids == []
+
+
+@pytest.mark.asyncio
+async def test_proven_absence_permits_the_replacement_render(tmp_path):
+    """Only a confirmed 404 on the exact original request id releases the
+    rerender - and the replacement then archives as one fresh document."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_failed_handoff(ledger, store)
+
+    replay_service, _rc, render_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=_NotCommittedArchiveResolver(),
+    )
+    result = await replay_service.replay_job(
+        job_id=failed_source.job_id,
+        command=ReportJobReplayRequest(reason="Absence proven; re-render."),
+        caller_context=_caller(),
+        idempotency_key="recover-after-404",
+    )
+
+    assert result.replayed_job.status == "archived"
+    assert len(render_client.render_job_ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unanswerable_resolution_refuses_the_replay_fail_closed(tmp_path):
+    """A 5xx or transport failure while resolving proves nothing - the
+    replay refuses rather than risking a duplicate."""
+
+    class _DownResolver:
+        async def get_document_by_request_id(self, archive_request_id, **kwargs):
+            return 503, {"detail": "archive unavailable"}
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    failed_source = await _fail_source_through_failed_handoff(ledger, store)
+
+    replay_service, _rc, render_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=_DownResolver(),
+    )
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed_source.job_id,
+            command=ReportJobReplayRequest(reason="Resolver down."),
+            caller_context=_caller(),
+            idempotency_key="recover-resolver-down",
+        )
+    assert render_client.render_job_ids == []
+
+
+@pytest.mark.asyncio
+async def test_a_custody_failure_without_its_request_id_cannot_be_replayed(tmp_path):
+    """A post-cutover custody failure whose request id was never recorded is
+    unresolvable: rendering a replacement could duplicate a committed
+    document, so the replay fails closed instead of guessing."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_request(output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="source-idless-custody",
+    )
+    _create_snapshot_for(store, source)
+    failed = ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="archive_handoff_failed",
+        failure_message="Handoff failed before any request id was recorded.",
+        retry_eligible=True,
+    )
+    assert failed.archive_request_id is None
+
+    replay_service, _rc, render_client = _recovery_services(
+        ledger,
+        store,
+        _RefusingCapture(),
+        snapshot_store=store,
+        archive_resolver=_CommittedArchiveResolver(),
+    )
+    with pytest.raises(InvalidReportJobTransitionError):
+        await replay_service.replay_job(
+            job_id=failed.job_id,
+            command=ReportJobReplayRequest(reason="No recorded identity."),
+            caller_context=_caller(),
+            idempotency_key="recover-idless",
+        )
+    assert render_client.render_job_ids == []

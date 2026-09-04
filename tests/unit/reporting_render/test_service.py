@@ -1649,6 +1649,11 @@ async def test_failed_handoff_fails_closed_and_stays_retryable(tmp_path):
     assert failed.status == "failed"
     assert failed.failure_category == "archive_handoff_failed"
     assert failed.retry_eligible is True
+    # A lost connection or exhausted 5xx does not prove Archive failed to
+    # commit: the exact delivery id is recorded durably so replay can
+    # resolve it before rendering any replacement.
+    assert failed.archive_request_id is not None
+    assert failed.archive_request_id.startswith("areq_")
 
 
 @pytest.mark.asyncio
