@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -79,7 +79,7 @@ class ReportSeriesKey(BaseModel):
             "tenant_id": self.tenant_id,
             "report_family_id": self.report_family_id,
             "report_type": self.report_type,
-            "portfolio_scope": _canonical_value(self.portfolio_scope),
+            "portfolio_scope": _canonical_portfolio_scope(self.portfolio_scope),
             "as_of_date": self.as_of_date,
             "sections": sorted(self.sections),
             "allocation_dimensions": sorted(self.allocation_dimensions),
@@ -133,19 +133,18 @@ class SourceRevisionVector(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     revisions: tuple[SourceRevision, ...] = ()
-    coverage: str = "unknown"
+    coverage: Literal["unknown", "partial", "complete"] = "unknown"
 
     def canonical(self) -> dict[str, Any]:
         return {
             "coverage": self.coverage,
+            # Sorted by the COMPLETE canonical value: two revisions that
+            # differ in ANY identity field order deterministically, and only
+            # byte-identical revisions can tie - so caller-side ordering can
+            # never change the digest.
             "revisions": sorted(
                 (revision.canonical() for revision in self.revisions),
-                key=lambda item: (
-                    str(item.get("source_service", "")),
-                    str(item.get("source_product", "")),
-                    str(item.get("content_hash", "")),
-                    str(item.get("calculation_run_id", "")),
-                ),
+                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
             ),
         }
 
@@ -199,13 +198,26 @@ def derive_report_revision(
     )
 
 
+def _canonical_portfolio_scope(scope: dict[str, Any]) -> Any:
+    """The scope canonical form: ``portfolio_ids`` is a set by contract and
+    sorts; every other value keeps the generic rule."""
+
+    canonical = dict(_canonical_value(scope))
+    portfolio_ids = canonical.get("portfolio_ids")
+    if isinstance(portfolio_ids, list) and all(isinstance(item, str) for item in portfolio_ids):
+        canonical["portfolio_ids"] = sorted(portfolio_ids)
+    return canonical
+
+
 def _canonical_value(value: Any) -> Any:
     """Deterministic form for nested request values.
 
-    Mappings sort by key; LISTS KEEP THEIR ORDER (a list in a request may be
-    semantically ordered - only fields the series key knows to be sets, like
-    sections, are sorted, and portfolio_ids below is normalized explicitly);
-    scalars pass through verbatim.
+    Mappings sort by key; LISTS KEEP THEIR ORDER - a list in a request may
+    be semantically ordered (column order, ranking), so a generic sort would
+    erase output-affecting semantics. Only fields the series key KNOWS to be
+    sets are normalized: ``sections`` and ``allocation_dimensions`` at the
+    top level, and ``portfolio_ids`` inside the scope. Scalars pass through
+    verbatim.
     """
 
     if isinstance(value, dict):
@@ -214,10 +226,7 @@ def _canonical_value(value: Any) -> Any:
             for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
         }
     if isinstance(value, (list, tuple)):
-        items = [_canonical_value(item) for item in value]
-        if all(isinstance(item, str) for item in items):
-            return sorted(items)
-        return items
+        return [_canonical_value(item) for item in value]
     return value
 
 
