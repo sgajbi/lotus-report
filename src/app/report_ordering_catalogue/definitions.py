@@ -264,7 +264,11 @@ REPORT_FAMILY_DEFINITIONS = (
         audience_roles=("client_advisor", "portfolio_manager"),
         client_release_posture="advisor_review_required_distribution_not_supported",
         template_id="portfolio-review",
-        template_version="v1",
+        # v2 (rolling-risk trend page, publication=development) for NEW jobs
+        # per the 2026-09-04 internal/advisor-review go-live decision -
+        # existing jobs keep the version persisted at their acceptance, and
+        # no other report family moves.
+        template_version="v2",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="single_portfolio",

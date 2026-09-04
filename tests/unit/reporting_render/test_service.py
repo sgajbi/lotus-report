@@ -50,8 +50,8 @@ class _RenderClientSuccess:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
@@ -68,8 +68,8 @@ class _RenderClientSuccessWithoutArtifact:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
@@ -118,8 +118,8 @@ class _RenderClientWithArchiveOutcome:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
@@ -1095,8 +1095,8 @@ class _RenderClientRecording:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
@@ -1150,8 +1150,10 @@ async def test_document_identity_binds_the_durable_snapshot_end_to_end(tmp_path)
     expected_reference = mint_document_reference(
         report_job_id=ready.job_id,
         snapshot_id=record.snapshot_id,
-        template_id="portfolio-review",
-        template_version="v1",
+        # The reference binds the pair persisted on the job at acceptance -
+        # the current family default, whatever it is - not a fixed version.
+        template_id=ready.render_template_id,
+        template_version=ready.render_template_version,
     )
     # The package carries the durable record id and mints the reference
     # from it - never from the payload, never from a synthetic name.

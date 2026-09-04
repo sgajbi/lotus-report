@@ -205,8 +205,8 @@ class _RenderClientSuccess:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
@@ -233,8 +233,8 @@ class _RenderClientArchivePending:
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
-            "template_id": "portfolio-review",
-            "template_version": "v1",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
             "artifact_sha256": "sha256:artifact",
             "bounded_determinism_fingerprint": "fingerprint",
             "runtime_engine": "typst",
