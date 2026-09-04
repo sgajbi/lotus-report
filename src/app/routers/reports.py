@@ -147,6 +147,19 @@ async def get_portfolio_review(
             description="Caller-supplied correlation id propagated to upstream service calls.",
         ),
     ] = None,
+    tenant_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Tenant-Id",
+            description=(
+                "Admitted caller tenant. When present it is recorded as the "
+                "evidence pack's caller-admitted tenant; when absent the "
+                "evidence carries no tenant claim (tenant_admission="
+                "unattributed_caller). Source-verified tenancy is a separate, "
+                "stronger posture."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     try:
         return await service.get_portfolio_review(
@@ -155,6 +168,7 @@ async def get_portfolio_review(
                 request.model_dump(exclude_none=True, mode="json"), section_limit
             ),
             correlation_id=correlation_id,
+            admitted_tenant_id=tenant_id,
         )
     except ReportingApplicationError as exc:
         raise _reporting_application_error_to_http(exc) from exc

@@ -682,6 +682,8 @@ class ReportingReadPortfolioReviewInputProvider:
                 portfolio_id=_first_portfolio_id(job),
                 request_payload=_request_payload(job),
                 correlation_id=job.correlation_id or None,
+                admitted_tenant_id=job.tenant_id,
+                evidence_posture="durable_snapshot",
             )
         except Exception as exc:
             raise PortfolioReviewInputCaptureError(

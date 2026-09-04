@@ -403,7 +403,14 @@ class _HappyReportingReadService:
         self._performance = performance_client
         self._risk = risk_client
 
-    async def get_portfolio_review(self, portfolio_id, request_payload, correlation_id=None):
+    async def get_portfolio_review(
+        self,
+        portfolio_id,
+        request_payload,
+        correlation_id=None,
+        admitted_tenant_id=None,
+        evidence_posture="ephemeral_composition",
+    ):
         await self._core.get_portfolio_summary(portfolio_id, request_payload, correlation_id)
         await self._core.get_asset_allocation(portfolio_id, request_payload, correlation_id)
         await self._core.get_portfolio_transactions(
@@ -1873,7 +1880,14 @@ async def test_the_memo_is_never_forwarded_to_domain_sources(monkeypatch, tmp_pa
     captured_payloads: list[dict] = []
 
     class _RecordingReadService(_HappyReportingReadService):
-        async def get_portfolio_review(self, portfolio_id, request_payload, correlation_id=None):
+        async def get_portfolio_review(
+            self,
+            portfolio_id,
+            request_payload,
+            correlation_id=None,
+            admitted_tenant_id=None,
+            evidence_posture="ephemeral_composition",
+        ):
             captured_payloads.append(dict(request_payload))
             return await super().get_portfolio_review(portfolio_id, request_payload, correlation_id)
 
@@ -1965,7 +1979,14 @@ async def test_risk_attribution_survives_the_complete_durable_journey(monkeypatc
     }
 
     class _AttributionReadService(_HappyReportingReadService):
-        async def get_portfolio_review(self, portfolio_id, request_payload, correlation_id=None):
+        async def get_portfolio_review(
+            self,
+            portfolio_id,
+            request_payload,
+            correlation_id=None,
+            admitted_tenant_id=None,
+            evidence_posture="ephemeral_composition",
+        ):
             payload = await super().get_portfolio_review(
                 portfolio_id, request_payload, correlation_id
             )
@@ -2016,3 +2037,49 @@ async def test_risk_attribution_survives_the_complete_durable_journey(monkeypatc
         "0.0004",
     )
     assert [row["group_key"] for row in only["contributors"]] == ["SECTOR_TECH", "SECTOR_FIN"]
+
+
+@pytest.mark.asyncio
+async def test_durable_capture_admits_the_jobs_tenant_into_evidence(monkeypatch, tmp_path):
+    """The durable path publishes the job's admitted tenant and the
+    durable_snapshot posture - never a hardcoded default, and never
+    indistinguishable from the synchronous ephemeral composition."""
+
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+    seen: dict[str, object] = {}
+
+    class _TenantRecordingReadService(_HappyReportingReadService):
+        async def get_portfolio_review(
+            self,
+            portfolio_id,
+            request_payload,
+            correlation_id=None,
+            admitted_tenant_id=None,
+            evidence_posture="ephemeral_composition",
+        ):
+            seen["admitted_tenant_id"] = admitted_tenant_id
+            seen["evidence_posture"] = evidence_posture
+            return await super().get_portfolio_review(portfolio_id, request_payload, correlation_id)
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _TenantRecordingReadService,
+    )
+    ledger = ReportJobLedger(tmp_path / "jobs-tenant.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-tenant.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-tenant-evidence",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    assert seen["admitted_tenant_id"] == job.tenant_id
+    assert seen["evidence_posture"] == "durable_snapshot"

@@ -1720,3 +1720,39 @@ async def test_risk_attribution_transport_failure_is_the_same_stated_refusal():
     attribution = response["riskAttribution"]
     assert attribution["supportability"]["status"] == "unavailable"
     assert attribution["supportability"]["notes"][0]["code"] == "risk_attribution_upstream_failure"
+
+
+@pytest.mark.asyncio
+async def test_evidence_trust_claims_state_only_what_is_proven():
+    """#283: the pack's tenant is the ADMITTED tenant (never a hardcoded
+    default), an unattributed caller yields no tenant claim at all, the
+    reconciliation status is unknown until a policy proves it, and the
+    synchronous flow is explicitly ephemeral."""
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_RiskClientSuccess(),
+    )
+
+    admitted = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["OVERVIEW"]},
+        "CID-1",
+        admitted_tenant_id="tenant-sg",
+    )
+    trust = admitted["evidence"]["trust_metadata"]
+    assert admitted["evidence"]["evidence_posture"] == "ephemeral_composition"
+    assert trust["tenant_id"] == "tenant-sg"
+    assert trust["tenant_admission"] == "caller_admitted"
+    assert trust["reconciliation_status"] == "unknown"
+    assert trust["reconciliation_reason_code"] == "no_reconciliation_policy_established"
+
+    unattributed = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["OVERVIEW"]},
+        "CID-2",
+    )
+    trust = unattributed["evidence"]["trust_metadata"]
+    assert "tenant_id" not in trust
+    assert trust["tenant_admission"] == "unattributed_caller"
