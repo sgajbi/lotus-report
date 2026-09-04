@@ -704,7 +704,7 @@ class _RerenderRenderClient:
 
 
 class _RerenderArchiveClient:
-    def __init__(self, *, status_code=201, payload=None, lookup=None):
+    def __init__(self, *, status_code=201, payload=None, lookup=None, lifecycle_status=201):
         self.status_code = status_code
         self.payload = payload or {"document_id": "doc_report_job_pdf_correction"}
         self.payloads = []
@@ -712,6 +712,16 @@ class _RerenderArchiveClient:
         # "never committed", which permits fresh attempts.
         self.lookup = lookup or (404, {"error": {"code": "document_not_found"}})
         self.lookups = []
+        self.lifecycle_status = lifecycle_status
+        self.lifecycle_transitions = []
+
+    async def record_lifecycle_transition(self, **kwargs):
+        self.lifecycle_transitions.append(kwargs)
+        return self.lifecycle_status, {
+            "lifecycle_relationship_id": "life_test",
+            "source_document_id": kwargs["source_document_id"],
+            "target_document_id": kwargs["target_document_id"],
+        }
 
     async def archive_document(self, payload, **kwargs):
         self.payloads.append(payload)
@@ -746,6 +756,7 @@ def _install_regenerate_service(
         snapshot_store=lineage_store,
         capture_service=capture_service,
         render_service=render_service,
+        archive_lineage_client=archive_client,
     )
     app.dependency_overrides[get_portfolio_review_regenerate_service] = lambda: service
     return service
@@ -2313,10 +2324,18 @@ def test_report_job_rerender_uses_existing_snapshot_and_archives_correction(tmp_
         assert custody["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
 
         events = ledger.list_status_events(job.job_id)
-        assert [event.event_type for event in events][-2:] == [
+        assert [event.event_type for event in events][-3:] == [
             "job_rerender_requested",
             "job_rerender_archived",
+            "job_archive_lineage_recorded",
         ]
+        # report#266: the correction is linked old -> new through Archive's
+        # lifecycle API, never through create metadata.
+        assert len(archive_client.lifecycle_transitions) == 1
+        lineage = archive_client.lifecycle_transitions[0]
+        assert lineage["transition_type"] == "correct"
+        assert lineage["source_document_id"] == "doc_report_job_pdf"
+        assert lineage["target_document_id"] == "doc_report_job_pdf_correction"
 
         diagnostics = client.get(
             f"/reports/jobs/{job.job_id}/diagnostics",
@@ -2863,6 +2882,58 @@ def test_rerender_refuses_when_lookup_answers_200_without_document_id(tmp_path):
         _clear_overrides()
 
 
+def test_pending_lineage_settles_on_the_next_rerender_entry(tmp_path):
+    """report#266 recovery: the correction archives even when the lifecycle
+    call fails - the linkage is recorded as PENDING, the document is never
+    disturbed, and the next rerender entry for the job settles the exact
+    pending pair against a recovered Archive."""
+
+    client, ledger, lineage_store = _client(tmp_path)
+    render_client = _RerenderRenderClient()
+    archive_client = _RerenderArchiveClient(lifecycle_status=503)
+    _install_rerender_service(ledger, lineage_store, render_client, archive_client)
+    capture_service = _FakeCaptureService(ledger, lineage_store)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        capture_service
+    )
+    try:
+        job = _create_archived_pdf_job(client, ledger)
+
+        first = client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Correction with lineage outage."},
+            headers=_headers("rerender-lineage-pending-1"),
+        ).json()
+
+        # The correction stands; the linkage is explicitly pending.
+        assert first["status"] == "archived"
+        assert first["archive"]["document_id"] == "doc_report_job_pdf_correction"
+        event_types = [event.event_type for event in ledger.list_status_events(job.job_id)]
+        assert "job_archive_lineage_pending" in event_types
+        assert "job_archive_lineage_recorded" not in event_types
+
+        # Archive recovers; the next rerender entry settles the pair before
+        # any new work (this request itself refuses on unrelated grounds or
+        # proceeds - either way the settlement ran).
+        archive_client.lifecycle_status = 201
+        client.post(
+            f"/reports/jobs/{job.job_id}/rerender",
+            json={"reason": "Second correction attempt."},
+            headers=_headers("rerender-lineage-pending-2"),
+        )
+
+        event_types = [event.event_type for event in ledger.list_status_events(job.job_id)]
+        assert "job_archive_lineage_recorded" in event_types
+        settled = [
+            call
+            for call in archive_client.lifecycle_transitions
+            if call["source_document_id"] == "doc_report_job_pdf"
+        ]
+        assert len(settled) >= 2  # the failed first attempt and the settlement
+    finally:
+        _clear_overrides()
+
+
 def test_rerender_custody_refusal_stays_non_retryable(tmp_path):
     """A 4xx custody refusal (Archive's words in archive_detail) is
     deterministic: a re-render redeclares the same digest and re-fails
@@ -2976,11 +3047,19 @@ def test_report_job_regenerate_creates_new_snapshot_lineage_and_replacement_arch
         # The replacement lineage is Report-ledger truth (relationship row
         # below); the handoff carried only Report-owned custody facts.
         assert archive_client.payloads == []
-        assert [event.event_type for event in ledger.list_status_events(source.job_id)][-2:] == [
+        assert [event.event_type for event in ledger.list_status_events(source.job_id)][-3:] == [
             "job_regenerate_requested",
             "job_regenerate_archived",
+            "job_archive_lineage_recorded",
         ]
-        regenerate_events = ledger.list_status_events(source.job_id)[-2:]
+        # report#266: the replacement supersedes the source document through
+        # Archive's lifecycle API.
+        assert len(archive_client.lifecycle_transitions) == 1
+        lineage = archive_client.lifecycle_transitions[0]
+        assert lineage["transition_type"] == "supersede"
+        assert lineage["source_document_id"] == "doc_report_job_pdf"
+        assert lineage["target_document_id"] == "doc_report_job_pdf_replacement"
+        regenerate_events = ledger.list_status_events(source.job_id)[-3:-1]
         assert (
             regenerate_events[0].event_payload["regenerated_job_id"]
             == body["regenerated_report_job_id"]
