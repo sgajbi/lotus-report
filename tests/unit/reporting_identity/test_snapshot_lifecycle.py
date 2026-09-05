@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.reporting_identity.snapshot_lifecycle import (
     SNAPSHOT_LIFECYCLE_POLICY_REF,
+    read_reproduction_availability,
     snapshot_lifecycle_claim,
 )
 
@@ -44,3 +45,16 @@ def test_the_contract_declares_no_second_retention_engine() -> None:
     contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
     assert contract["document_lifecycle_authority_repository"] == "lotus-archive"
     assert "no second retention or legal-hold engine" in contract["statement"]
+
+
+def test_legacy_rows_read_as_the_capability_claim_without_rewrite() -> None:
+    """Policy 1.0.0 stamped "rerender_from_snapshot" for the same snapshot
+    capability 1.1.0 names "snapshot_recomposition" - the contract says those
+    rows READ AS the capability claim while stored bytes are never rewritten,
+    so readback translates exactly that one legacy spelling and nothing else."""
+
+    assert read_reproduction_availability("rerender_from_snapshot") == "snapshot_recomposition"
+    assert read_reproduction_availability("snapshot_recomposition") == "snapshot_recomposition"
+    assert read_reproduction_availability("none") == "none"
+    assert read_reproduction_availability(None) is None
+    assert read_reproduction_availability(7) is None
