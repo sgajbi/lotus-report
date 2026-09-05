@@ -48,6 +48,12 @@ class IdeaEvidenceReportPackageIdentity(BaseModel):
     )
 
 
+class IdeaEvidenceMaterializationRecoveryIdentity(IdeaEvidenceReportPackageIdentity):
+    """Exact consumer and portfolio identity bound to one Report request."""
+
+    portfolio_id: str = Field(min_length=3)
+
+
 class IdeaEvidenceSourceSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -10,6 +10,14 @@ import pytest
 from psycopg.errors import UniqueViolation
 
 from app.config import settings
+from app.idea_evidence_intake.models import IdeaEvidencePackMaterializationRequest
+from app.idea_evidence_intake.recovery import (
+    recover_idea_materialization,
+    recovery_identity_from_request,
+)
+from app.idea_evidence_intake.service import (
+    build_proof_pack_report_job_request_from_idea_evidence,
+)
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
@@ -20,6 +28,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
+    ReportJobListFilters,
 )
 from app.reporting_jobs.postgres_ledger import (
     PostgresReportJobLedger,
@@ -65,6 +74,41 @@ def _ledger() -> PostgresReportJobLedger:
     return own_postgres_adapter(PostgresReportJobLedger(_database_url()))
 
 
+def _idea_materialization_request(
+    unique_suffix: str,
+) -> IdeaEvidencePackMaterializationRequest:
+    return IdeaEvidencePackMaterializationRequest.model_validate(
+        {
+            "idea_evidence_pack": {
+                "report_evidence_pack_id": f"irep_{unique_suffix}",
+                "conversion_intent_id": f"icnv_{unique_suffix}",
+                "candidate_id": f"icand_{unique_suffix}",
+                "purpose": "CLIENT_REPORT_EVIDENCE",
+                "evidence_packet_id": f"ievp_{unique_suffix}",
+                "evidence_content_fingerprint": f"sha256:{unique_suffix}",
+                "source_signal_ids": [f"sig_{unique_suffix}"],
+                "source_summaries": [
+                    {
+                        "product_id": "lotus-core:HoldingsAsOf:v1",
+                        "source_system": "lotus-core",
+                        "product_version": "v1",
+                        "as_of_date": "2026-06-24",
+                        "generated_at_utc": "2026-06-24T08:00:00Z",
+                        "data_quality_status": "complete",
+                        "freshness": "fresh",
+                    }
+                ],
+                "reason_codes": ["HIGH_CASH_REVIEWED_FOR_REPORT"],
+                "retention_policy_ref": "generated-report-standard",
+                "requested_at_utc": "2026-06-24T08:15:00Z",
+            },
+            "portfolio_id": f"PB_SG_GLOBAL_BAL_001_{unique_suffix}",
+            "as_of_date": "2026-06-24",
+            "requested_output_formats": ["json"],
+        }
+    )
+
+
 def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() -> None:
     ledger = _ledger()
     ledger.check_ready()
@@ -99,6 +143,55 @@ def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() 
         "accepted",
         "cancelled",
     ]
+
+
+def test_postgres_recovers_exact_idea_materialization_after_adapter_restart() -> None:
+    unique_suffix = uuid4().hex
+    idempotency_key = f"idea-materialization-recovery-{unique_suffix}"
+    request = _idea_materialization_request(unique_suffix)
+    caller_context = ReportCallerContext(
+        triggered_by="advisor-123",
+        caller_application="lotus-idea",
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code="SG",
+        role="advisor",
+        correlation_id=f"corr-idea-recovery-{unique_suffix}",
+        trace_id=f"trace-idea-recovery-{unique_suffix}",
+    )
+    submitting_ledger = _ledger()
+    created = submitting_ledger.create_proof_pack_report_job(
+        request=build_proof_pack_report_job_request_from_idea_evidence(request),
+        caller_context=caller_context,
+        idempotency_key=idempotency_key,
+    )
+
+    restarted_ledger = _ledger()
+    recovered = recover_idea_materialization(
+        ledger=restarted_ledger,
+        tenant_id="tenant-sg",
+        idempotency_key=idempotency_key,
+        expected_identity=recovery_identity_from_request(request),
+    )
+
+    assert recovered.report_job_id == created.job_id
+    assert recovered.report_request_id == created.request_id
+    assert recovered.report_package_identity.candidate_id == f"icand_{unique_suffix}"
+    assert recovered.materialization_status == "accepted"
+    assert recovered.creates_rendered_output is False
+    assert recovered.creates_archive_record is False
+    assert (
+        len(
+            restarted_ledger.list_jobs(
+                filters=ReportJobListFilters(
+                    tenant_id="tenant-sg",
+                    idempotency_key=idempotency_key,
+                    limit=2,
+                )
+            )
+        )
+        == 1
+    )
 
 
 def test_postgres_report_submission_persists_and_recovers_durable_work() -> None:

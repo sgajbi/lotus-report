@@ -5,6 +5,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.idea_evidence_intake.materialization_contract import (
+    IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION,
+)
 from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackMaterializationRequest,
@@ -236,6 +239,32 @@ def test_idea_evidence_materialization_maps_to_source_owned_proof_pack_request()
     }
     assert proof_pack_input["client_publication_authority_granted"] is False
     assert proof_pack_input["sections"][0]["section_type"] == "IDEA_SOURCE_EVIDENCE"
+    assert report_job_request.options[IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION] == {
+        "report_evidence_pack_id": "irep_001",
+        "conversion_intent_id": "icnv_001",
+        "candidate_id": "icand_001",
+        "evidence_packet_id": "ievp_001",
+        "evidence_content_fingerprint": "sha256:idea-evidence-content",
+        "source_contract_version": "lotus_idea_evidence_pack_report_input.v1",
+        "owned_product": "lotus-report:ClientReportEvidencePack:v1",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+    }
+
+
+def test_idea_evidence_materialization_replaces_spoofed_recovery_identity() -> None:
+    request = IdeaEvidencePackMaterializationRequest(
+        idea_evidence_pack=_request(),
+        portfolio_id="PB_SG_GLOBAL_BAL_001",
+        as_of_date="2026-06-24",
+        requested_output_formats=["json"],
+        options={IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION: {"candidate_id": "spoofed"}},
+    )
+
+    report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
+
+    identity = report_job_request.options[IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION]
+    assert identity["candidate_id"] == "icand_001"
+    assert identity["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
 
 
 def _request(report_evidence_pack_id: str = "irep_001") -> IdeaEvidencePackIntakeRequest:
