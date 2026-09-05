@@ -244,6 +244,12 @@ def _create_snapshot_for(store: ReportInputSnapshotStore, job) -> None:
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=_SNAPSHOT_PAYLOAD,
+            report_revision_id="rrv2_source-revision",
+            series_digest="series-digest-1",
+            source_revision_digest="vector-digest-1",
+            factual_content_digest="sha256:facts-1",
+            factual_boundary_version="fb1",
+            source_revision_vector={"coverage": "partial", "revisions": []},
             supportability_status="complete",
             completeness_status="complete",
             lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
@@ -436,6 +442,12 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
     # the lineage endpoint joins calls by snapshot id and must not contradict.
     assert cloned.lineage_summary["call_count"] == 0
     assert cloned.lineage_summary["upstream_evidence"] == "cloned_from_source_snapshot"
+    # The clone re-serves the SAME captured facts, so it carries the SAME
+    # report revision - inherited verbatim, never re-minted.
+    assert cloned.report_revision_id == "rrv2_source-revision"
+    assert cloned.factual_content_digest == "sha256:facts-1"
+    assert cloned.factual_boundary_version == "fb1"
+    assert cloned.source_revision_vector == {"coverage": "partial", "revisions": []}
     assert (
         cloned.lineage_summary["source_call_count"]
         == (source_snapshot.lineage_summary["call_count"])

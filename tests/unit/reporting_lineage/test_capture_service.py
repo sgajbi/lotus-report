@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import asdict
 from datetime import UTC, datetime
 
@@ -2083,3 +2084,181 @@ async def test_durable_capture_admits_the_jobs_tenant_into_evidence(monkeypatch,
     assert record.status == "data_ready"
     assert seen["admitted_tenant_id"] == job.tenant_id
     assert seen["evidence_posture"] == "durable_snapshot"
+
+
+def _stated_review_payload() -> dict:
+    """A realistically shaped captured payload: composition timestamps and
+    transport metadata beside source-stated revision evidence, so the
+    factual boundary is proven against the real capture shape."""
+
+    return {
+        "report_id": "portfolio-review:PB_SG_GLOBAL_BAL_001:2026-04-22",
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-04-22",
+        "contract_version": "v1",
+        "generated_at": "2026-04-22T09:00:01Z",
+        "correlation_id": "corr-instance-a",
+        "holdings": {
+            "rows": [{"security_id": "SEC1", "market_value": "100.25"}],
+            "sourceProduct": {
+                "source_service": "lotus-core",
+                "product_name": "HoldingsAsOf",
+                "product_version": "v1",
+                "as_of_date": "2026-04-22",
+                "generated_at": "2026-04-22T08:59:59Z",
+                "restatement_version": "r1",
+                "source_batch_fingerprint": "core-batch-77",
+                "snapshot_id": "core-snap-9",
+                "content_hash": "sha256:holdings-r1",
+                "reconciliation_status": "reconciled",
+            },
+        },
+        "evidence": {
+            "trust_metadata": {
+                "generated_at": "2026-04-22T09:00:01Z",
+                "correlation_id": "corr-instance-a",
+            }
+        },
+    }
+
+
+def _instance_variant(payload: dict, *, marker: str) -> dict:
+    """The SAME facts captured at another instant over another request:
+    only report-side capture-instance fields differ."""
+
+    variant = copy.deepcopy(payload)
+    variant["generated_at"] = "2026-04-23T11:30:00Z"
+    variant["correlation_id"] = f"corr-instance-{marker}"
+    variant["evidence"]["trust_metadata"]["generated_at"] = "2026-04-23T11:30:00Z"
+    variant["evidence"]["trust_metadata"]["correlation_id"] = f"corr-instance-{marker}"
+    return variant
+
+
+@pytest.mark.asyncio
+async def test_identical_facts_share_one_revision_across_capture_instances(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs-revision.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-revision.sqlite3")
+    first_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-rev-a"
+    )
+    second_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-rev-b"
+    )
+    base_payload = _stated_review_payload()
+
+    for job, payload in (
+        (first_job, base_payload),
+        (second_job, _instance_variant(base_payload, marker="b")),
+    ):
+        service = PortfolioReviewSnapshotCaptureService(
+            snapshot_store=store,
+            job_ledger=ledger,
+            portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+                snapshot_payload=payload
+            ),
+        )
+        record = await service.capture_for_job(job)
+        assert record.status == "data_ready"
+
+    first = store.get_snapshot_by_job(first_job.job_id)
+    second = store.get_snapshot_by_job(second_job.job_id)
+
+    assert first.report_revision_id is not None
+    assert first.report_revision_id.startswith("rrv2_")
+    assert first.report_revision_id == second.report_revision_id
+    assert first.factual_content_digest == second.factual_content_digest
+    assert first.factual_boundary_version == "fb1"
+    # ... while the capture-instance integrity hashes stay distinct: the
+    # stored bytes really do differ in their instance fields.
+    assert first.snapshot_hash != second.snapshot_hash
+    assert "report_revision_id" not in first.snapshot_payload
+
+
+@pytest.mark.asyncio
+async def test_capture_persists_stated_source_revisions_and_honest_coverage(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="revision-vector")
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            snapshot_payload=_stated_review_payload()
+        ),
+    )
+
+    await service.capture_for_job(job)
+
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    vector = snapshot.source_revision_vector
+    assert vector is not None
+    # Core stated revision evidence, performance and risk stated none:
+    # coverage is computed from that evidence, never asserted complete.
+    assert vector["coverage"] == "partial"
+    by_service = {}
+    for revision in vector["revisions"]:
+        by_service.setdefault(revision["source_service"], revision)
+    core = by_service["lotus-core"]
+    assert core["restatement_version"] == "r1"
+    assert core["source_batch_fingerprint"] == "core-batch-77"
+    assert core["source_snapshot_id"] == "core-snap-9"
+    assert core["content_hash"] == "sha256:holdings-r1"
+    assert core["reconciliation_state"] == "reconciled"
+    # Silent participants are preserved as bare entries - explicit absence.
+    assert set(by_service) == {"lotus-core", "lotus-performance", "lotus-risk"}
+    assert list(by_service["lotus-performance"]) == ["source_service"]
+
+
+@pytest.mark.asyncio
+async def test_a_restated_source_cut_changes_the_report_revision(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs-restated.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-restated.sqlite3")
+    original_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-restate-a"
+    )
+    restated_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-restate-b"
+    )
+    restated_payload = copy.deepcopy(_stated_review_payload())
+    restated_payload["holdings"]["rows"][0]["market_value"] = "99.75"
+    restated_payload["holdings"]["sourceProduct"]["restatement_version"] = "r2"
+    restated_payload["holdings"]["sourceProduct"]["content_hash"] = "sha256:holdings-r2"
+
+    for job, payload in (
+        (original_job, _stated_review_payload()),
+        (restated_job, restated_payload),
+    ):
+        service = PortfolioReviewSnapshotCaptureService(
+            snapshot_store=store,
+            job_ledger=ledger,
+            portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+                snapshot_payload=payload
+            ),
+        )
+        await service.capture_for_job(job)
+
+    original = store.get_snapshot_by_job(original_job.job_id)
+    restated = store.get_snapshot_by_job(restated_job.job_id)
+
+    assert original.report_revision_id != restated.report_revision_id
+    assert original.series_digest == restated.series_digest
+    assert original.factual_content_digest != restated.factual_content_digest
+
+
+@pytest.mark.asyncio
+async def test_a_failed_capture_mints_no_revision(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="revision-failed")
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            error=ReportingUpstreamError("core unavailable"),
+        ),
+    )
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "failed"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.snapshot_payload.get("capture_status") == "failed"
+    assert snapshot.report_revision_id is None
+    assert snapshot.factual_content_digest is None
+    assert snapshot.source_revision_vector is None

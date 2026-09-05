@@ -15,6 +15,7 @@ from app.reporting_identity import (
     SourceRevision,
     SourceRevisionVector,
     derive_report_revision,
+    factual_content_digest,
 )
 
 
@@ -87,12 +88,12 @@ def test_same_facts_derive_the_same_revision_and_rerender_mints_nothing() -> Non
     first = derive_report_revision(
         series_key=_series(),
         source_revisions=_vector(),
-        snapshot_hash="sha256:snapshot-1",
+        factual_content_digest="sha256:facts-1",
     )
     second = derive_report_revision(
         series_key=_series(),
         source_revisions=_vector(),
-        snapshot_hash="sha256:snapshot-1",
+        factual_content_digest="sha256:facts-1",
     )
 
     assert first == second
@@ -103,12 +104,12 @@ def test_a_restatement_produces_a_different_revision() -> None:
     original = derive_report_revision(
         series_key=_series(),
         source_revisions=_vector(restatement_version="r1"),
-        snapshot_hash="sha256:snapshot-1",
+        factual_content_digest="sha256:facts-1",
     )
     restated = derive_report_revision(
         series_key=_series(),
         source_revisions=_vector(restatement_version="r2", content_hash="sha256:holdings-r2"),
-        snapshot_hash="sha256:snapshot-2",
+        factual_content_digest="sha256:facts-2",
     )
 
     assert original.report_revision_id != restated.report_revision_id
@@ -117,10 +118,10 @@ def test_a_restatement_produces_a_different_revision() -> None:
 
 def test_changed_snapshot_facts_alone_change_the_revision() -> None:
     base = derive_report_revision(
-        series_key=_series(), source_revisions=_vector(), snapshot_hash="sha256:snapshot-1"
+        series_key=_series(), source_revisions=_vector(), factual_content_digest="sha256:facts-1"
     )
     recaptured = derive_report_revision(
-        series_key=_series(), source_revisions=_vector(), snapshot_hash="sha256:snapshot-2"
+        series_key=_series(), source_revisions=_vector(), factual_content_digest="sha256:facts-2"
     )
 
     assert base.report_revision_id != recaptured.report_revision_id
@@ -154,9 +155,11 @@ def test_coverage_participates_in_identity() -> None:
     assert stated.digest() != unknown.digest()
 
 
-def test_a_revision_without_a_snapshot_hash_is_refused() -> None:
-    with pytest.raises(ValueError, match="REPORT_REVISION_SNAPSHOT_HASH_REQUIRED"):
-        derive_report_revision(series_key=_series(), source_revisions=_vector(), snapshot_hash="  ")
+def test_a_revision_without_a_content_digest_is_refused() -> None:
+    with pytest.raises(ValueError, match="REPORT_REVISION_CONTENT_DIGEST_REQUIRED"):
+        derive_report_revision(
+            series_key=_series(), source_revisions=_vector(), factual_content_digest="  "
+        )
 
 
 def test_ordered_semantic_option_lists_keep_their_order_in_identity() -> None:
@@ -211,7 +214,8 @@ def test_an_invented_coverage_state_is_refused() -> None:
                 "report_revision_id": "rrv2_x",
                 "series_digest": "a",
                 "source_revision_digest": "b",
-                "snapshot_hash": "c",
+                "factual_content_digest": "c",
+                "factual_boundary_version": "fb1",
                 "extra_field": "y",
             }
         ),
@@ -276,3 +280,53 @@ def test_blank_revision_fields_are_not_evidence() -> None:
         revisions=(blank,), expected_sources=("lotus-core",)
     )
     assert vector.coverage == "unknown"
+
+
+def test_capture_instance_fields_are_outside_the_factual_boundary() -> None:
+    """Timestamps and transport metadata at ANY depth are capture-instance
+    facts, not report facts: removing or changing them never changes the
+    factual digest."""
+
+    payload = {
+        "portfolio_id": "P1",
+        "generated_at": "2026-04-22T09:00:01Z",
+        "correlation_id": "corr-a",
+        "evidence": {
+            "trust_metadata": {
+                "generated_at": "2026-04-22T09:00:01Z",
+                "correlation_id": "corr-a",
+                "trace_id": "trace-a",
+            }
+        },
+        "rows": [{"value": "1.25", "captured_at": "2026-04-22T09:00:00Z"}],
+    }
+    recaptured = {
+        "portfolio_id": "P1",
+        "generated_at": "2026-04-23T11:30:00Z",
+        "correlation_id": "corr-b",
+        "evidence": {
+            "trust_metadata": {
+                "generated_at": "2026-04-23T11:30:00Z",
+                "correlation_id": "corr-b",
+                "trace_id": "trace-b",
+            }
+        },
+        "rows": [{"value": "1.25", "captured_at": "2026-04-23T11:29:59Z"}],
+    }
+
+    assert factual_content_digest(payload) == factual_content_digest(recaptured)
+
+
+def test_a_changed_fact_changes_the_factual_digest() -> None:
+    base = {"portfolio_id": "P1", "rows": [{"value": "1.25"}], "generated_at": "t1"}
+    changed = {"portfolio_id": "P1", "rows": [{"value": "1.26"}], "generated_at": "t1"}
+
+    assert factual_content_digest(base) != factual_content_digest(changed)
+
+
+def test_the_digest_refuses_a_payload_carrying_its_own_revision_id() -> None:
+    """No circular identity: the revision binding lives beside the payload,
+    never inside its own preimage."""
+
+    with pytest.raises(ValueError, match="REPORT_REVISION_CIRCULAR_IDENTITY"):
+        factual_content_digest({"report_revision_id": "rrv2_x", "portfolio_id": "P1"})

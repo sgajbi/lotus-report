@@ -137,7 +137,8 @@ def run_ledger_schema_checks() -> int:
                   'idx_report_batch_item_lease_expiry',
                   'idx_report_batch_item_report_job',
                   'idx_report_batch_item_retry',
-                  'idx_report_batch_cycle_recognition'
+                  'idx_report_batch_cycle_recognition',
+                  'idx_report_input_snapshot_revision'
               )
             """
         ).fetchall()
@@ -170,6 +171,7 @@ def run_ledger_schema_checks() -> int:
             "idx_report_batch_item_report_job",
             "idx_report_batch_item_retry",
             "idx_report_batch_cycle_recognition",
+            "idx_report_input_snapshot_revision",
         } - indexes
         if missing_indexes:
             print(f"Ledger schema smoke failed: missing indexes {sorted(missing_indexes)}")

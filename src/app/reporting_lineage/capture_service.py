@@ -18,6 +18,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.reporting_identity.capture_binding import revision_for_capture
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.advisor_commentary import (
     AcceptedOutputClient,
@@ -1289,6 +1290,11 @@ class PortfolioReviewSnapshotCaptureService:
         failure_message: str | None = None,
         retry_eligible: bool = False,
     ) -> ReportJobLedgerRecord:
+        snapshot_request = _bind_revision_identity(
+            job=job,
+            snapshot_request=snapshot_request,
+            upstream_calls=upstream_calls,
+        )
         try:
             snapshot, calls = self._snapshot_store.create_capture(
                 snapshot=snapshot_request,
@@ -1370,6 +1376,38 @@ class PortfolioReviewSnapshotCaptureService:
             duration_seconds=perf_counter() - started_at,
         )
         return record
+
+
+def _bind_revision_identity(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot_request: ReportInputSnapshotCreateRequest,
+    upstream_calls: list[ReportUpstreamCallCreateRequest],
+) -> ReportInputSnapshotCreateRequest:
+    """Mint the canonical revision identity for a successful capture and
+    bind it BESIDE the payload (report#283): the payload bytes and their
+    integrity hash stay untouched, so the id is never its own preimage. A
+    failed capture mints nothing."""
+
+    minted = revision_for_capture(
+        job=job,
+        snapshot_payload=snapshot_request.snapshot_payload,
+        upstream_services=tuple(call.service_name for call in upstream_calls),
+    )
+    if minted is None:
+        return snapshot_request
+    identity, vector = minted
+    bound: ReportInputSnapshotCreateRequest = snapshot_request.model_copy(
+        update={
+            "report_revision_id": identity.report_revision_id,
+            "series_digest": identity.series_digest,
+            "source_revision_digest": identity.source_revision_digest,
+            "factual_content_digest": identity.factual_content_digest,
+            "factual_boundary_version": identity.factual_boundary_version,
+            "source_revision_vector": vector.canonical(),
+        }
+    )
+    return bound
 
 
 def _first_portfolio_id(job: ReportJobLedgerRecord) -> str:

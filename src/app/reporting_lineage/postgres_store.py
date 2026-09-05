@@ -141,10 +141,15 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                 INSERT INTO report_input_snapshot (
                     snapshot_id, report_job_id, report_type, report_data_contract_version,
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
-                    snapshot_storage_ref, supportability_status, completeness_status,
+                    snapshot_storage_ref, report_revision_id, series_digest,
+                    source_revision_digest, factual_content_digest, factual_boundary_version,
+                    source_revision_vector_json, supportability_status, completeness_status,
                     lineage_summary_json, captured_at, created_at, correlation_id, trace_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 """,
             (
                 snapshot_id,
@@ -156,6 +161,16 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                 Jsonb(_normalize_json_value(request.snapshot_payload)),
                 snapshot_hash,
                 request.snapshot_storage_ref,
+                request.report_revision_id,
+                request.series_digest,
+                request.source_revision_digest,
+                request.factual_content_digest,
+                request.factual_boundary_version,
+                (
+                    Jsonb(_normalize_json_value(request.source_revision_vector))
+                    if request.source_revision_vector is not None
+                    else None
+                ),
                 request.supportability_status,
                 request.completeness_status,
                 Jsonb(_normalize_json_value(request.lineage_summary)),

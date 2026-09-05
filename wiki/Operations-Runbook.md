@@ -668,12 +668,22 @@ WHERE relationship.source_report_job_id = '<report-job-id>'
    OR relationship.derived_report_job_id = '<report-job-id>'
 ORDER BY relationship.created_at;
 
--- durable snapshot evidence for one job
+-- durable snapshot evidence for one job (report_revision_id: the canonical
+-- factual identity shared by re-captures of identical facts; NULL on failed
+-- captures and pre-identity history)
 SELECT snapshot_id, report_job_id, report_type, report_data_contract_version, as_of_date,
-       snapshot_hash, snapshot_storage_ref, supportability_status, completeness_status,
+       snapshot_hash, snapshot_storage_ref, report_revision_id, series_digest,
+       source_revision_digest, factual_content_digest, factual_boundary_version,
+       source_revision_vector_json, supportability_status, completeness_status,
        lineage_summary_json, captured_at, correlation_id, trace_id
 FROM report_input_snapshot
 WHERE report_job_id = '<report-job-id>';
+
+-- every capture instance of one report revision (restatement forensics)
+SELECT snapshot_id, report_job_id, snapshot_hash, captured_at
+FROM report_input_snapshot
+WHERE report_revision_id = '<report-revision-id>'
+ORDER BY captured_at;
 
 -- append-only upstream lineage for one snapshot
 SELECT upstream_call_id, snapshot_id, service_name, endpoint, method, contract_version,

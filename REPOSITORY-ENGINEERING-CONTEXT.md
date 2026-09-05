@@ -120,15 +120,22 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    (`src/app/reporting_identity/`, fail-closed and mutation-stable), truthful
    evidence claims (admitted tenant, `evidence_posture`, unknown
    reconciliation — `src/app/services/review_evidence.py`), replay inheriting
-   the accepted template contract, and business-cycle-only batch identity.
-   Remaining, in order: wire `ReportRevisionIdentity` through durable capture
-   → persistence → readback → handoff (retire portfolio/date bundle labels);
-   persist one `AcceptedDocumentContract` covering ALL contract axes
-   (report-data, envelope, locale/brand/disclosure — template identity is
-   already persisted); trust-state separation incl. source-cut coherence;
-   snapshot lifecycle metadata; the 17-point integrated proof. Design
-   decisions (hash boundary, no circular identity, historical mapping) are
-   recorded in the 2026-09-05 audit and on #283.
+   the accepted template contract, business-cycle-only batch identity, and
+   revision minting at capture: every successful capture derives
+   `report_revision_id` (`rrv2_`) from series key + stated source revisions +
+   factual content under the versioned `fb1` boundary
+   (`src/app/reporting_identity/capture_binding.py`), persists it in side
+   columns (migration 020), exposes it on job diagnostics, and replay-clones
+   inherit it verbatim; failed captures and pre-identity history stay NULL.
+   Remaining, in order: hand the revision off downstream (render metadata,
+   Archive lineage) and retire the portfolio/date bundle labels in the
+   evidence pack; persist one `AcceptedDocumentContract` covering ALL
+   contract axes (report-data, envelope, locale/brand/disclosure — template
+   identity is already persisted); trust-state separation incl. source-cut
+   coherence; snapshot lifecycle metadata; the 17-point integrated proof.
+   Design decisions (hash boundary, no circular identity, historical
+   mapping) are recorded in the 2026-09-05 audit, on #283, and in
+   `src/app/reporting_identity/identity.py`'s module docstring.
 2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios`
    scheduling stays refused (fail-closed). Remaining: verify a
    *source-attributed* tenant once `lotus-core` projects tenant identity on

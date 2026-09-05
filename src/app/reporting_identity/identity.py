@@ -10,15 +10,49 @@ Three typed identities close the ambiguity the v1 evidence labels carried:
   nothing here synthesises a revision to fill a field.
 - ``ReportRevisionIdentity`` derives a versioned, opaque, deterministic
   report-revision id from the canonical serialization of the series key, the
-  source revision vector digest, and the immutable snapshot hash.
+  source revision vector digest, and the factual-content digest of the
+  captured snapshot payload.
+
+Hash boundary (the report#283 audit decision, finding 1):
+
+  Two DISTINCT hashes exist and neither replaces the other.
+
+  - ``snapshot_hash`` (owned by the lineage store) covers the COMPLETE
+    inline payload bytes, capture timestamps and transport metadata
+    included. It is the capture-INSTANCE integrity hash: it proves the
+    stored bytes are the captured bytes. Historical values are never
+    recomputed or rewritten.
+  - ``factual_content_digest`` (owned here) covers the payload with the
+    versioned ``CAPTURE_INSTANCE_KEYS`` removed recursively. It is the
+    factual-CONTENT hash: two captures that produced identical reader-
+    visible facts share it even though their instance hashes differ.
+
+  Source-stated timestamps inside ``sourceProduct`` blocks share key names
+  with capture-instance fields and are therefore also outside the factual
+  boundary - deliberately: which source cut served the facts is carried by
+  the SourceRevisionVector, which participates in the revision preimage
+  separately, so a changed source cut still changes the revision id.
+
+Capture-instance policy: every successful capture is one snapshot row (its
+own ``snapshot_hash`` and ``captured_at``); the revision id is derived, not
+random, so a re-capture yielding identical facts from identical stated
+source revisions IS the same report revision across distinct capture
+instances. A failed capture records no facts and mints NO revision. Rows
+captured before this identity existed keep NULL revision columns - history
+is never relabelled (audit finding 5).
+
+No circular identity (audit finding 2): the revision id is persisted in
+side columns beside the payload, never inside it; the digest refuses a
+payload that already carries one.
 
 Invariants (each pinned by tests):
 
   same revision id -> same tenant, same semantic request, same source
-  revision vector, same immutable snapshot facts;
+  revision vector, same factual snapshot content;
   a restatement or backdated correction that changes source facts ->
   a different report revision;
-  a pure rerender of the same snapshot -> the SAME report revision.
+  a pure rerender or replay-clone of the same snapshot -> the SAME
+  report revision.
 
 The structured fields remain authoritative everywhere; the opaque id is a
 stable reference, never a string to parse.
@@ -34,6 +68,19 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 REPORT_REVISION_ID_VERSION = "rrv2"
+
+#: Version tag of the factual-content boundary below. Bump when the
+#: exclusion set changes; the tag participates in the revision preimage so
+#: ids minted under different boundaries can never collide silently.
+FACTUAL_BOUNDARY_VERSION = "fb1"
+
+#: Capture-instance keys excluded - recursively, by exact name - from the
+#: factual-content digest. These record WHEN and THROUGH WHICH REQUEST the
+#: facts were captured or served, never WHAT the facts are:
+#: ``generated_at`` (composition/serving instants), ``captured_at``
+#: (capture instants), ``correlation_id``/``trace_id`` (transport).
+#: Everything else in the payload is factual content by definition.
+CAPTURE_INSTANCE_KEYS = frozenset({"generated_at", "captured_at", "correlation_id", "trace_id"})
 
 #: Fields a source may state about the revision of the facts it served.
 #: Every field is optional because only the source owns this evidence -
@@ -222,42 +269,77 @@ class ReportRevisionIdentity(BaseModel):
     report_revision_id: str
     series_digest: str
     source_revision_digest: str
-    snapshot_hash: str
+    factual_content_digest: str
+    factual_boundary_version: str
+
+
+def factual_content_digest(snapshot_payload: dict[str, Any]) -> str:
+    """Digest of the payload's factual content under the versioned boundary.
+
+    ``CAPTURE_INSTANCE_KEYS`` are removed recursively before canonical
+    hashing, so a payload that differs only in capture instants or transport
+    metadata digests identically. Refuses a payload that already carries a
+    revision id: the id must never be part of its own preimage.
+    """
+
+    if "report_revision_id" in snapshot_payload:
+        raise ValueError(
+            "REPORT_REVISION_CIRCULAR_IDENTITY: the snapshot payload already "
+            "carries a report_revision_id; the revision binding lives beside "
+            "the payload, never inside its own preimage."
+        )
+    return f"sha256:{_sha256_of(_factual_content(snapshot_payload))}"
 
 
 def derive_report_revision(
     *,
     series_key: ReportSeriesKey,
     source_revisions: SourceRevisionVector,
-    snapshot_hash: str,
+    factual_content_digest: str,
 ) -> ReportRevisionIdentity:
     """Derive the deterministic report-revision identity.
 
     The id changes when - and only when - the semantic request, the source
-    revision evidence, or the immutable snapshot facts change. Capture time
+    revision evidence, or the factual snapshot content changes. Capture time
     deliberately does NOT participate: two captures that produced identical
     facts from identical source revisions ARE the same revision, and a pure
     rerender (same snapshot) never mints a new one.
     """
 
-    if not snapshot_hash.strip():
+    if not factual_content_digest.strip():
         raise ValueError(
-            "REPORT_REVISION_SNAPSHOT_HASH_REQUIRED: a report revision exists "
-            "only for captured facts; refusing to mint identity without the "
-            "immutable snapshot hash."
+            "REPORT_REVISION_CONTENT_DIGEST_REQUIRED: a report revision "
+            "exists only for captured facts; refusing to mint identity "
+            "without the factual-content digest."
         )
     canonical = {
         "identity_version": REPORT_REVISION_ID_VERSION,
+        "factual_boundary_version": FACTUAL_BOUNDARY_VERSION,
         "series": series_key.canonical(),
         "source_revisions": source_revisions.canonical(),
-        "snapshot_hash": snapshot_hash,
+        "factual_content_digest": factual_content_digest,
     }
     return ReportRevisionIdentity(
         report_revision_id=f"{REPORT_REVISION_ID_VERSION}_{_sha256_of(canonical)}",
         series_digest=series_key.digest(),
         source_revision_digest=source_revisions.digest(),
-        snapshot_hash=snapshot_hash,
+        factual_content_digest=factual_content_digest,
+        factual_boundary_version=FACTUAL_BOUNDARY_VERSION,
     )
+
+
+def _factual_content(value: Any) -> Any:
+    """The payload with capture-instance keys removed at every depth."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): _factual_content(item)
+            for key, item in value.items()
+            if str(key) not in CAPTURE_INSTANCE_KEYS
+        }
+    if isinstance(value, (list, tuple)):
+        return [_factual_content(item) for item in value]
+    return value
 
 
 def _canonical_portfolio_scope(scope: dict[str, Any]) -> Any:

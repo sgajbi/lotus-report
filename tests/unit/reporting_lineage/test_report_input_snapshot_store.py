@@ -342,3 +342,39 @@ def test_report_input_snapshot_store_rejects_upstream_calls_for_missing_snapshot
                 )
             ],
         )
+
+
+def test_report_input_snapshot_store_roundtrips_the_revision_binding(tmp_path) -> None:
+    """The revision binding persists beside the payload and reads back
+    verbatim - and a snapshot created without one stays honestly NULL."""
+
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    bound = store.create_snapshot(
+        _request(
+            report_job_id="rjob_bound",
+            report_revision_id="rrv2_roundtrip",
+            series_digest="series-digest-rt",
+            source_revision_digest="vector-digest-rt",
+            factual_content_digest="sha256:facts-rt",
+            factual_boundary_version="fb1",
+            source_revision_vector={
+                "coverage": "partial",
+                "revisions": [{"source_service": "lotus-core", "restatement_version": "r1"}],
+            },
+        )
+    )
+    unbound = store.create_snapshot(_request(report_job_id="rjob_unbound"))
+
+    loaded = store.get_snapshot_by_job("rjob_bound")
+    assert loaded.report_revision_id == "rrv2_roundtrip"
+    assert loaded.series_digest == "series-digest-rt"
+    assert loaded.source_revision_digest == "vector-digest-rt"
+    assert loaded.factual_content_digest == "sha256:facts-rt"
+    assert loaded.factual_boundary_version == "fb1"
+    assert loaded.source_revision_vector == {
+        "coverage": "partial",
+        "revisions": [{"source_service": "lotus-core", "restatement_version": "r1"}],
+    }
+    assert bound.report_revision_id == "rrv2_roundtrip"
+    assert unbound.report_revision_id is None
+    assert unbound.source_revision_vector is None

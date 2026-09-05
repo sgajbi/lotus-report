@@ -528,6 +528,17 @@ class PortfolioReviewReplayService:
                     as_of_date=source_snapshot.as_of_date,
                     snapshot_payload=source_snapshot.snapshot_payload,
                     snapshot_storage_ref=source_snapshot.snapshot_storage_ref,
+                    # A clone re-serves the SAME captured facts, so it IS the
+                    # same report revision: the binding is inherited verbatim,
+                    # NULLs included - a pre-identity source snapshot stays
+                    # unlabelled rather than gaining an identity its original
+                    # never stated.
+                    report_revision_id=source_snapshot.report_revision_id,
+                    series_digest=source_snapshot.series_digest,
+                    source_revision_digest=source_snapshot.source_revision_digest,
+                    factual_content_digest=source_snapshot.factual_content_digest,
+                    factual_boundary_version=source_snapshot.factual_boundary_version,
+                    source_revision_vector=source_snapshot.source_revision_vector,
                     supportability_status=source_snapshot.supportability_status,
                     completeness_status=source_snapshot.completeness_status,
                     lineage_summary=_cloned_lineage_summary(

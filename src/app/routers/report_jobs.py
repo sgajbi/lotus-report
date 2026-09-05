@@ -402,12 +402,20 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
 def _snapshot_to_diagnostics(
     snapshot: ReportInputSnapshotRecord,
 ) -> ReportJobSnapshotDiagnostics:
+    vector = snapshot.source_revision_vector or {}
+    coverage = vector.get("coverage")
     return ReportJobSnapshotDiagnostics(
         snapshot_id=snapshot.snapshot_id,
         snapshot_hash=snapshot.snapshot_hash,
         supportability_status=snapshot.supportability_status,
         completeness_status=snapshot.completeness_status,
         captured_at=snapshot.captured_at,
+        report_revision_id=snapshot.report_revision_id,
+        series_digest=snapshot.series_digest,
+        source_revision_digest=snapshot.source_revision_digest,
+        factual_content_digest=snapshot.factual_content_digest,
+        factual_boundary_version=snapshot.factual_boundary_version,
+        source_revision_coverage=str(coverage) if isinstance(coverage, str) else None,
     )
 
 

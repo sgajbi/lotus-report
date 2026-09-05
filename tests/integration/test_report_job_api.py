@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.reporting_identity import revision_for_capture
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
@@ -595,6 +596,16 @@ class _FakeCaptureService:
         if isinstance(proposal_narrative_package, dict):
             snapshot_payload["proposal_narrative_package"] = proposal_narrative_package
             source_services.append("lotus-advise")
+        # Fake-fidelity: the real capture path mints the revision binding via
+        # this same helper, so the fake must state it too or every readback
+        # test would prove the wrong (unbound) shape.
+        minted = revision_for_capture(
+            job=job,
+            snapshot_payload=snapshot_payload,
+            upstream_services=("lotus-core",),
+        )
+        assert minted is not None
+        revision, vector = minted
         snapshot = self._lineage_store.create_snapshot(
             ReportInputSnapshotCreateRequest(
                 report_job_id=job.job_id,
@@ -603,6 +614,12 @@ class _FakeCaptureService:
                 portfolio_scope=job.portfolio_scope,
                 as_of_date=job.as_of_date,
                 snapshot_payload=snapshot_payload,
+                report_revision_id=revision.report_revision_id,
+                series_digest=revision.series_digest,
+                source_revision_digest=revision.source_revision_digest,
+                factual_content_digest=revision.factual_content_digest,
+                factual_boundary_version=revision.factual_boundary_version,
+                source_revision_vector=vector.canonical(),
                 snapshot_storage_ref=None,
                 supportability_status="complete",
                 completeness_status="complete",
@@ -959,6 +976,15 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert diagnostics_body["event_count"] == 4
         assert diagnostics_body["latest_event"]["to_status"] == "cancelled"
         assert diagnostics_body["snapshot"]["snapshot_id"].startswith("rsnap_")
+        # A successful capture minted a canonical revision, and the readback
+        # surface exposes it beside the capture-instance hash.
+        assert diagnostics_body["snapshot"]["report_revision_id"].startswith("rrv2_")
+        assert diagnostics_body["snapshot"]["factual_boundary_version"] == "fb1"
+        assert diagnostics_body["snapshot"]["source_revision_coverage"] in {
+            "unknown",
+            "partial",
+            "complete",
+        }
         assert diagnostics_body["lineage"]["upstream_call_count"] == 1
         assert diagnostics_body["lineage"]["source_services"] == ["lotus-core"]
         assert diagnostics_body["operation_links"]["status_url"] == (
