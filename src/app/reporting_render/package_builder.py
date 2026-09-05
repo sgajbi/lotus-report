@@ -130,6 +130,12 @@ def _build_render_package(
             "monthly_history",
             limit=12,
         ),
+        # The report#288 contract locked with Render: a SEPARATE additive
+        # block beside the portfolio rows (the chart pairs points by period
+        # keys, never row position), owner field names verbatim
+        # (benchmark_id; input_mode dropped deliberately), and a posture
+        # that is never an empty line.
+        "benchmark_series": _benchmark_series_section(snapshot),
         "performance_annual_history": _performance_history(
             snapshot,
             "annual_history",
@@ -1764,6 +1770,69 @@ def _performance_history(
             }
         )
     return normalized
+
+
+def _benchmark_series_section(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """The benchmark's monthly series for the cumulative chart (report#288).
+
+    Postures per the locked contract: ``ready`` (the source stated the
+    series - points forwarded verbatim at the portfolio rows' precision
+    treatment, capped to the same 12-month window, missing months simply
+    missing), ``unbenchmarked`` (no benchmark assigned or requested - a
+    normal state, no caption), ``unavailable`` (a benchmark was expected
+    but the source stated no series - carries the source's own diagnostics
+    sentence where present, else the stated supportability note). A stated
+    posture is never an empty line: an available-but-empty series reads
+    unavailable, not ready.
+    """
+
+    performance = _as_dict(snapshot.get("performance"))
+    context = _as_dict(performance.get("benchmark"))
+    rows = performance.get("benchmark_monthly_history")
+    points: list[dict[str, str]] = []
+    for item in (rows if isinstance(rows, list) else [])[-12:]:
+        if not isinstance(item, dict):
+            continue
+        points.append(
+            {
+                "period": _optional_str(item.get("period")) or "Not available",
+                "period_start": _optional_str(item.get("period_start")) or "Not available",
+                "period_end": _optional_str(item.get("period_end")) or "Not available",
+                "twr_pct": _percent_text(item.get("twr_pct")),
+                "cumulative_twr_pct": _percent_text(item.get("cumulative_twr_pct")),
+            }
+        )
+    status = _optional_str(context.get("comparison_status"))
+    if status == "available" and points:
+        return {
+            "posture": "ready",
+            "benchmark_id": _optional_str(context.get("benchmark_code")) or "Not available",
+            "benchmark_currency": _optional_str(context.get("benchmark_currency")),
+            "return_source": _optional_str(context.get("return_source")) or "Not available",
+            "points": points,
+        }
+    if status in {"not_requested", None} and not points:
+        return {"posture": "unbenchmarked", "points": []}
+    statement = _optional_str(context.get("source_statement"))
+    if statement is None:
+        statement = _supportability_note_message(
+            performance, code="benchmark_comparison_unavailable"
+        )
+    return {
+        "posture": "unavailable",
+        "benchmark_id": _optional_str(context.get("benchmark_code")),
+        "points": [],
+        "source_statement": statement
+        or "Benchmark return series is not sourced in this report response.",
+    }
+
+
+def _supportability_note_message(performance: dict[str, Any], *, code: str) -> str | None:
+    notes = _as_dict(performance.get("supportability")).get("notes")
+    for note in notes if isinstance(notes, list) else []:
+        if isinstance(note, dict) and note.get("code") == code:
+            return _optional_str(note.get("message"))
+    return None
 
 
 #: How many holdings the overview panel presents. The reconciliation published

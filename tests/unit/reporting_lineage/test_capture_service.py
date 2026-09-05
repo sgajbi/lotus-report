@@ -2090,6 +2090,101 @@ async def test_risk_attribution_survives_the_complete_durable_journey(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_benchmark_series_survives_the_complete_durable_journey(monkeypatch, tmp_path):
+    """The cross-stage rule applied to report#288:
+
+    order -> durable job -> REAL capture -> immutable snapshot carrying the
+    source-stated benchmark buckets -> REAL render package emitting
+    report_data.benchmark_series per the contract locked with Render."""
+
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+
+    benchmark_history = [
+        {
+            "period": "2026-01",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "twr_pct": -1.21,
+            "cumulative_twr_pct": -1.21,
+        },
+        {
+            "period": "2026-02",
+            "period_start": "2026-02-01",
+            "period_end": "2026-02-24",
+            "twr_pct": 1.02,
+            "cumulative_twr_pct": -0.2,
+        },
+    ]
+
+    class _BenchmarkReadService(_HappyReportingReadService):
+        async def get_portfolio_review(
+            self,
+            portfolio_id,
+            request_payload,
+            correlation_id=None,
+            admitted_tenant_id=None,
+            evidence_posture="ephemeral_composition",
+        ):
+            payload = await super().get_portfolio_review(
+                portfolio_id, request_payload, correlation_id
+            )
+            payload = dict(payload)
+            performance = dict(payload.get("performance") or {})
+            performance["benchmark_monthly_history"] = benchmark_history
+            performance["benchmark"] = {
+                "benchmark_code": "BMK_PB_GLOBAL_BALANCED_60_40",
+                "requested_benchmark_code": None,
+                "comparison_status": "available",
+                "return_source": "calculated",
+                "benchmark_currency": "USD",
+                "reason_code": None,
+            }
+            payload["performance"] = performance
+            return payload
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _BenchmarkReadService,
+    )
+
+    from app.reporting_render.package_builder import _build_render_package
+
+    ledger = ReportJobLedger(tmp_path / "jobs-benchmark-series.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-benchmark-series.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(requested_output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="idem-benchmark-series-journey",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    performance = snapshot.snapshot_payload["performance"]
+    assert performance["benchmark_monthly_history"] == benchmark_history
+
+    render_package = _build_render_package(
+        job=ledger.get_job(job.job_id),
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_benchmark_series_journey",
+        snapshot_id=snapshot.snapshot_id,
+    )
+    block = render_package["report_data"]["benchmark_series"]
+    assert block["posture"] == "ready"
+    assert block["benchmark_id"] == "BMK_PB_GLOBAL_BALANCED_60_40"
+    assert block["benchmark_currency"] == "USD"
+    assert block["return_source"] == "calculated"
+    assert [point["period"] for point in block["points"]] == ["2026-01", "2026-02"]
+    assert block["points"][1]["cumulative_twr_pct"] == "-0.20%"
+
+
+@pytest.mark.asyncio
 async def test_durable_capture_admits_the_jobs_tenant_into_evidence(monkeypatch, tmp_path):
     """The durable path publishes the job's admitted tenant and the
     durable_snapshot posture - never a hardcoded default, and never

@@ -27,6 +27,12 @@ from app.services.transaction_evidence import (
     merge_transaction_source_product,
     transaction_window_supportability,
 )
+from app.services.workspace_performance import (
+    benchmark_source_statement,
+    workspace_benchmark_history,
+    workspace_breakdowns,
+    workspace_performance_history,
+)
 
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
@@ -1846,6 +1852,7 @@ class ReportingReadService:
         benchmark_available = False
         resolved_benchmark_code: str | None = None
         resolved_benchmark_source: str | None = None
+        resolved_benchmark_currency: str | None = None
         for period, row in results_by_period.items():
             row_dict = self._as_dict(row)
             portfolio_twr = self._as_dict(row_dict.get("portfolio_twr"))
@@ -1861,6 +1868,10 @@ class ReportingReadService:
                 )
                 resolved_benchmark_source = (
                     self._safe_str(benchmark.get("return_source")) or resolved_benchmark_source
+                )
+                resolved_benchmark_currency = (
+                    self._safe_str(benchmark.get("benchmark_currency"))
+                    or resolved_benchmark_currency
                 )
             annualized_supported = self._annualized_return_supported(period)
             summary[period] = {
@@ -1887,26 +1898,33 @@ class ReportingReadService:
             }
         return {
             "summary": summary,
-            "monthly_history": self._workspace_performance_history(
+            "monthly_history": workspace_performance_history(
                 results_by_period=results_by_period,
                 period_name="1Y",
                 frequency="monthly",
             ),
-            "annual_history": self._workspace_performance_history(
+            "annual_history": workspace_performance_history(
                 results_by_period=results_by_period,
                 period_name="5Y",
                 frequency="yearly",
             )
-            or self._workspace_performance_history(
+            or workspace_performance_history(
                 results_by_period=results_by_period,
                 period_name="SI",
                 frequency="yearly",
+            ),
+            "benchmark_monthly_history": workspace_benchmark_history(
+                results_by_period=results_by_period,
+                period_name="1Y",
+                frequency="monthly",
             ),
             "benchmark": self._performance_benchmark_context(
                 request_payload,
                 available=benchmark_available,
                 resolved_benchmark_code=resolved_benchmark_code,
                 return_source=resolved_benchmark_source,
+                benchmark_currency=resolved_benchmark_currency,
+                source_statement=benchmark_source_statement(payload),
             ),
             "supportability": self._performance_supportability(
                 request_payload,
@@ -2119,64 +2137,7 @@ class ReportingReadService:
         return end_date if isinstance(end_date, str) and end_date else None
 
     def _workspace_daily_breakdowns(self, period_payload: dict[str, object]) -> list[object]:
-        return self._workspace_breakdowns(period_payload, frequency="daily")
-
-    def _workspace_breakdowns(
-        self, period_payload: dict[str, object], *, frequency: str
-    ) -> list[object]:
-        portfolio_twr = self._as_dict(period_payload.get("portfolio_twr"))
-        net_block = self._as_dict(portfolio_twr.get("net"))
-        breakdowns = self._as_dict(net_block.get("breakdowns"))
-        items = breakdowns.get(frequency)
-        return items if isinstance(items, list) else []
-
-    def _workspace_performance_history(
-        self,
-        *,
-        results_by_period: dict[str, object],
-        period_name: str,
-        frequency: str,
-    ) -> list[dict[str, object]]:
-        period_payload = self._as_dict(results_by_period.get(period_name))
-        history: list[dict[str, object]] = []
-        cumulative_value = 0.0
-        for item in self._workspace_breakdowns(period_payload, frequency=frequency):
-            row = self._as_dict(item)
-            economics = self._as_dict(row.get("economics"))
-            begin_market_value = self._to_float(economics.get("begin_market_value"))
-            end_market_value = self._to_float(economics.get("end_market_value"))
-            beginning_cash_flow = self._to_float(economics.get("beginning_cash_flow"))
-            ending_cash_flow = self._to_float(economics.get("ending_cash_flow"))
-            net_cash_flow = self._to_float(economics.get("net_cash_flow"))
-            flow_adjusted_end_value = self._to_float(
-                economics.get("flow_adjusted_end_market_value")
-            )
-            performance_value = flow_adjusted_end_value - begin_market_value
-            cumulative_value += performance_value
-            inflows = sum(
-                amount for amount in (beginning_cash_flow, ending_cash_flow) if amount > 0
-            )
-            outflows = sum(
-                amount for amount in (beginning_cash_flow, ending_cash_flow) if amount < 0
-            )
-            history.append(
-                {
-                    "period": self._safe_str(row.get("period")),
-                    "period_start": self._safe_str(row.get("period_start")),
-                    "period_end": self._safe_str(row.get("period_end")),
-                    "begin_market_value": begin_market_value,
-                    "end_market_value": end_market_value,
-                    "inflows": inflows,
-                    "outflows": outflows,
-                    "net_cash_flow": net_cash_flow,
-                    "performance_value": performance_value,
-                    "cumulative_performance_value": cumulative_value,
-                    "twr_pct": self._return_base(row, "period_return"),
-                    "cumulative_twr_pct": self._return_base(row, "cumulative_return"),
-                    "annualized_twr_pct": self._return_base(row, "annualized_return"),
-                }
-            )
-        return history
+        return workspace_breakdowns(period_payload, frequency="daily")
 
     def _workspace_portfolio_open_date(self, payload: dict[str, object]) -> str | None:
         results_by_period = self._as_dict(payload.get("results_by_period"))
@@ -3583,6 +3544,8 @@ class ReportingReadService:
         available: bool = False,
         resolved_benchmark_code: str | None = None,
         return_source: str | None = None,
+        benchmark_currency: str | None = None,
+        source_statement: str | None = None,
     ) -> dict[str, object]:
         requested_benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
         benchmark_code = self._normalized_benchmark_code(requested_benchmark_code)
@@ -3592,12 +3555,14 @@ class ReportingReadService:
                 "requested_benchmark_code": requested_benchmark_code,
                 "comparison_status": "available",
                 "return_source": return_source,
+                "benchmark_currency": benchmark_currency,
                 "reason_code": None,
             }
         return {
             "benchmark_code": benchmark_code,
             "comparison_status": "unavailable" if benchmark_code else "not_requested",
             "reason_code": "benchmark_return_series_not_sourced" if benchmark_code else None,
+            "source_statement": source_statement,
         }
 
     def _performance_supportability(

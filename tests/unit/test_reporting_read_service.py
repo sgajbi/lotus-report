@@ -398,6 +398,24 @@ class _PerformanceClientSuccess:
                         "summary": {"cumulative_return": {"base": 6.6}},
                         "benchmark_id": "BMK_PB_GLOBAL_BALANCED_60_40",
                         "return_source": "calculated",
+                        "breakdowns": {
+                            "monthly": [
+                                {
+                                    "period": "2026-01",
+                                    "period_start": "2026-01-01",
+                                    "period_end": "2026-01-31",
+                                    "period_return": {"base": -1.21},
+                                    "cumulative_return": {"base": -1.21},
+                                },
+                                {
+                                    "period": "2026-02",
+                                    "period_start": "2026-02-01",
+                                    "period_end": "2026-02-24",
+                                    "period_return": {"base": 1.02},
+                                    "cumulative_return": {"base": -0.2},
+                                },
+                            ],
+                        },
                     },
                     "active": {"net": {"cumulative_return": {"base": 0.48}}},
                     "money_weighted_return": {"start_date": "2025-02-24", "end_date": "2026-02-24"},
@@ -1239,9 +1257,28 @@ async def test_review_composes_core_query_performance_and_risk():
         "requested_benchmark_code": "BMK_GLOBAL_BALANCED_60_40",
         "comparison_status": "available",
         "return_source": "calculated",
+        "benchmark_currency": "USD",
         "reason_code": None,
     }
     assert response["performance"]["supportability"] == {"status": "ready", "notes": []}
+    # report#288: the benchmark's OWN monthly buckets, verbatim - the
+    # source's period identity and base returns, no economics, no linking.
+    assert response["performance"]["benchmark_monthly_history"] == [
+        {
+            "period": "2026-01",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "twr_pct": -1.21,
+            "cumulative_twr_pct": -1.21,
+        },
+        {
+            "period": "2026-02",
+            "period_start": "2026-02-01",
+            "period_end": "2026-02-24",
+            "twr_pct": 1.02,
+            "cumulative_twr_pct": -0.2,
+        },
+    ]
     assert response["performance"]["summary"]["1M"]["net_annualized_return"] is None
     assert response["performance"]["summary"]["YTD"]["gross_annualized_return"] is None
     assert response["performance"]["summary"]["5Y"]["net_annualized_return"] == 3.9
