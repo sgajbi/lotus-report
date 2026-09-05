@@ -1558,6 +1558,7 @@ async def test_a_package_validation_error_fails_the_job_before_any_render_call(t
                 snapshot_hash = record.snapshot_hash
                 snapshot_payload = record.snapshot_payload
                 report_data_contract_version = record.report_data_contract_version
+                report_revision_id = record.report_revision_id
 
             return _Record()
 

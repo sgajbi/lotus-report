@@ -352,7 +352,7 @@ def test_report_input_snapshot_store_roundtrips_the_revision_binding(tmp_path) -
     bound = store.create_snapshot(
         _request(
             report_job_id="rjob_bound",
-            report_revision_id="rrv2_roundtrip",
+            report_revision_id="rrv3_roundtrip",
             series_digest="series-digest-rt",
             source_revision_digest="vector-digest-rt",
             factual_content_digest="sha256:facts-rt",
@@ -366,7 +366,7 @@ def test_report_input_snapshot_store_roundtrips_the_revision_binding(tmp_path) -
     unbound = store.create_snapshot(_request(report_job_id="rjob_unbound"))
 
     loaded = store.get_snapshot_by_job("rjob_bound")
-    assert loaded.report_revision_id == "rrv2_roundtrip"
+    assert loaded.report_revision_id == "rrv3_roundtrip"
     assert loaded.series_digest == "series-digest-rt"
     assert loaded.source_revision_digest == "vector-digest-rt"
     assert loaded.factual_content_digest == "sha256:facts-rt"
@@ -375,6 +375,6 @@ def test_report_input_snapshot_store_roundtrips_the_revision_binding(tmp_path) -
         "coverage": "partial",
         "revisions": [{"source_service": "lotus-core", "restatement_version": "r1"}],
     }
-    assert bound.report_revision_id == "rrv2_roundtrip"
+    assert bound.report_revision_id == "rrv3_roundtrip"
     assert unbound.report_revision_id is None
     assert unbound.source_revision_vector is None

@@ -247,6 +247,7 @@ class PortfolioReviewRerenderService:
             snapshot=snapshot.snapshot_payload,
             render_job_id=attempt.render_job_id,
             snapshot_id=snapshot.snapshot_id,
+            report_revision_id=snapshot.report_revision_id,
         )
         status_code, render_response = await self._render_client.submit_render_package(
             payload,

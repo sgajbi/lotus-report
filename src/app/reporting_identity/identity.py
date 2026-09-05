@@ -47,20 +47,20 @@ payload that already carries one.
 
 Invariants (each pinned by tests):
 
-  same revision id -> same tenant, same semantic request, same source
-  revision vector, same factual snapshot content;
+  same revision id -> same tenant, same semantic request, same stated
+  source revisions, same factual snapshot content;
   a restatement or backdated correction that changes source facts ->
   a different report revision;
   a pure rerender or replay-clone of the same snapshot -> the SAME
   report revision.
 
-Coverage-policy note: the qualifying-evidence rule (only
-``QUALIFYING_REVISION_EVIDENCE_FIELDS`` establish coverage) tightened the
-computed coverage claim after the first rrv2 mints landed. The derivation
-scheme (rrv2) and factual boundary (fb1) are unchanged; a snapshot minted
-under the looser rule keeps its stored id and its persisted vector shows
-verbatim which claim it made - stored identities are references, never
-recomputed, and historical snapshots are never rewritten.
+Coverage-policy note: coverage is a DERIVED claim - a function of the
+stated revisions under Report's qualifying-evidence policy - so it is
+excluded from the revision preimage (rrv3): policy evolution re-grades
+claims, never re-mints identities. The persisted vector still records the
+claim made at capture verbatim. rrv2 ids (which hashed the claim) remain
+valid stored references, never recomputed; historical snapshots are never
+rewritten.
 
 The structured fields remain authoritative everywhere; the opaque id is a
 stable reference, never a string to parse.
@@ -75,7 +75,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-REPORT_REVISION_ID_VERSION = "rrv2"
+#: rrv3 supersedes rrv2 by EXCLUDING the derived coverage claim from the
+#: revision preimage: coverage is a function of the stated revisions under
+#: Report's current policy, so hashing it made identity drift with policy
+#: evolution - identical facts and identical stated source revisions could
+#: mint different ids across a policy deployment while both wore the same
+#: version tag. Stored rrv2 ids remain valid references; nothing recomputes
+#: or rewrites them - the tag says which scheme minted which id.
+REPORT_REVISION_ID_VERSION = "rrv3"
 
 #: Version tag of the factual-content boundary below. Bump when the
 #: exclusion set changes; the tag participates in the revision preimage so
@@ -303,20 +310,37 @@ class SourceRevisionVector(BaseModel):
         return cls(revisions=revisions, coverage=coverage)
 
     def canonical(self) -> dict[str, Any]:
+        """The persisted form: the stated evidence AND the coverage claim
+        Report computed over it at capture time, recorded verbatim."""
+
         return {
             "coverage": self.coverage,
-            # Sorted by the COMPLETE canonical value: two revisions that
-            # differ in ANY identity field order deterministically, and only
-            # byte-identical revisions can tie - so caller-side ordering can
-            # never change the digest.
-            "revisions": sorted(
-                (revision.canonical() for revision in self.revisions),
-                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
-            ),
+            "revisions": self._canonical_revisions(),
         }
 
+    def evidence_canonical(self) -> dict[str, Any]:
+        """The identity form: ONLY the stated evidence. The derived coverage
+        claim is deliberately excluded - it is a function of the revisions
+        under Report's current policy, so including it would make revision
+        identity drift with policy evolution while the facts and the stated
+        source revisions stayed identical. Participation is fully carried by
+        the revisions themselves (silent participants appear as bare
+        entries), so nothing factual is lost."""
+
+        return {"revisions": self._canonical_revisions()}
+
+    def _canonical_revisions(self) -> list[dict[str, Any]]:
+        # Sorted by the COMPLETE canonical value: two revisions that
+        # differ in ANY identity field order deterministically, and only
+        # byte-identical revisions can tie - so caller-side ordering can
+        # never change the digest.
+        return sorted(
+            (revision.canonical() for revision in self.revisions),
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+        )
+
     def digest(self) -> str:
-        return _sha256_of(self.canonical())
+        return _sha256_of(self.evidence_canonical())
 
 
 class ReportRevisionIdentity(BaseModel):
@@ -374,7 +398,7 @@ def derive_report_revision(
         "identity_version": REPORT_REVISION_ID_VERSION,
         "factual_boundary_version": FACTUAL_BOUNDARY_VERSION,
         "series": series_key.canonical(),
-        "source_revisions": source_revisions.canonical(),
+        "source_revisions": source_revisions.evidence_canonical(),
         "factual_content_digest": factual_content_digest,
     }
     return ReportRevisionIdentity(

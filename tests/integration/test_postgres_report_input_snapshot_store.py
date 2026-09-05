@@ -125,7 +125,7 @@ def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> N
     request = _request(
         unique_suffix,
         report_job_id=_seed_job(unique_suffix),
-        report_revision_id="rrv2_roundtrip",
+        report_revision_id="rrv3_roundtrip",
         series_digest="series-digest-rt",
         source_revision_digest="vector-digest-rt",
         factual_content_digest="sha256:facts-rt",
@@ -142,7 +142,7 @@ def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> N
     loaded = store.get_snapshot_by_job(request.report_job_id)
     assert loaded.report_job_id == request.report_job_id
     # The revision binding roundtrips verbatim through the JSONB column set.
-    assert loaded.report_revision_id == "rrv2_roundtrip"
+    assert loaded.report_revision_id == "rrv3_roundtrip"
     assert loaded.factual_content_digest == "sha256:facts-rt"
     assert loaded.factual_boundary_version == "fb1"
     assert loaded.source_revision_vector == {

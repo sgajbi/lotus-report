@@ -97,7 +97,7 @@ def test_same_facts_derive_the_same_revision_and_rerender_mints_nothing() -> Non
     )
 
     assert first == second
-    assert first.report_revision_id.startswith("rrv2_")
+    assert first.report_revision_id.startswith("rrv3_")
 
 
 def test_a_restatement_produces_a_different_revision() -> None:
@@ -147,12 +147,29 @@ def test_missing_source_evidence_stays_missing() -> None:
     assert SourceRevisionVector(revisions=(sparse,)).coverage == "unknown"
 
 
-def test_coverage_participates_in_identity() -> None:
+def test_the_derived_coverage_claim_never_participates_in_identity() -> None:
+    """Coverage is a function of the revisions under Report's CURRENT
+    policy: hashing it would re-mint identities whenever the policy
+    evolves while facts and stated revisions stayed identical (rrv3).
+    The claim is persisted verbatim; the identity ignores it."""
+
     evidenced = SourceRevision(source_service="lotus-core", content_hash="sha256:a")
     stated = SourceRevisionVector(revisions=(evidenced,), coverage="complete")
     unknown = SourceRevisionVector(revisions=(evidenced,), coverage="unknown")
 
-    assert stated.digest() != unknown.digest()
+    assert stated.digest() == unknown.digest()
+    assert stated.canonical() != unknown.canonical()
+    assert stated.evidence_canonical() == unknown.evidence_canonical()
+
+    across_policy = [
+        derive_report_revision(
+            series_key=_series(),
+            source_revisions=vector,
+            factual_content_digest="sha256:facts-1",
+        )
+        for vector in (stated, unknown)
+    ]
+    assert across_policy[0] == across_policy[1]
 
 
 def test_a_revision_without_a_content_digest_is_refused() -> None:
@@ -211,7 +228,7 @@ def test_an_invented_coverage_state_is_refused() -> None:
             "app.reporting_identity", fromlist=["ReportRevisionIdentity"]
         ).ReportRevisionIdentity.model_validate(
             {
-                "report_revision_id": "rrv2_x",
+                "report_revision_id": "rrv3_x",
                 "series_digest": "a",
                 "source_revision_digest": "b",
                 "factual_content_digest": "c",
@@ -329,7 +346,7 @@ def test_the_digest_refuses_a_payload_carrying_its_own_revision_id() -> None:
     never inside its own preimage."""
 
     with pytest.raises(ValueError, match="REPORT_REVISION_CIRCULAR_IDENTITY"):
-        factual_content_digest({"report_revision_id": "rrv2_x", "portfolio_id": "P1"})
+        factual_content_digest({"report_revision_id": "rrv3_x", "portfolio_id": "P1"})
 
 
 def test_catalogue_identity_alone_never_establishes_coverage() -> None:
