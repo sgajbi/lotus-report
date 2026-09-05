@@ -1301,5 +1301,6 @@ def test_postgres_defer_work_item_keeps_the_failure_budget_untouched() -> None:
         delay_seconds=5,
     )
     assert deferred.status == "retry_pending"
-    assert deferred.attempt_count == claimed[0].attempt_count
+    # The claim charged an attempt; deferral refunds it.
+    assert deferred.attempt_count == claimed[0].attempt_count - 1
     assert deferred.last_error_category == "waiting_on_render"
