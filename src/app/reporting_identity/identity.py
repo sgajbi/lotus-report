@@ -26,11 +26,12 @@ stable reference, never a string to parse.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 REPORT_REVISION_ID_VERSION = "rrv2"
 
@@ -56,9 +57,16 @@ _SOURCE_REVISION_FIELDS = (
 
 class ReportSeriesKey(BaseModel):
     """The logical requested report: who ordered what, about which scope,
-    for which business date, with which output-affecting options."""
+    for which business date, with which output-affecting options.
 
-    model_config = ConfigDict(frozen=True)
+    Fail-closed: an unknown field is rejected, never silently discarded - a
+    producer introducing a new output-affecting option before this consumer
+    models it must break validation, not keep the old identity. Nested
+    request state is deep-copied at admission so later caller-side mutation
+    cannot change an already admitted identity.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     tenant_id: str = Field(min_length=1)
     report_family_id: str = Field(min_length=1)
@@ -70,6 +78,15 @@ class ReportSeriesKey(BaseModel):
     sections: tuple[str, ...] = ()
     allocation_dimensions: tuple[str, ...] = ()
     semantic_options: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _detach_nested_state(self) -> "ReportSeriesKey":
+        # frozen=True freezes attributes, not the dicts/lists behind them:
+        # deep-copy severs aliasing with caller state so mutation after
+        # admission cannot alter the identity this model records.
+        object.__setattr__(self, "portfolio_scope", copy.deepcopy(self.portfolio_scope))
+        object.__setattr__(self, "semantic_options", copy.deepcopy(self.semantic_options))
+        return self
 
     def canonical(self) -> dict[str, Any]:
         """Deterministic canonical form: order-insensitive collections are
@@ -127,13 +144,54 @@ class SourceRevisionVector(BaseModel):
 
     ``coverage`` states honestly how much of the vector is evidence-backed:
     ``complete`` only when every participating source stated revision
-    evidence; otherwise ``partial`` or ``unknown``. Nothing upgrades it.
+    evidence; otherwise ``partial`` or ``unknown``. Nothing upgrades it,
+    and the claim is VALIDATED against the revisions themselves - an enum
+    value alone is not evidence.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     revisions: tuple[SourceRevision, ...] = ()
     coverage: Literal["unknown", "partial", "complete"] = "unknown"
+
+    @model_validator(mode="after")
+    def _coverage_must_be_evidence_backed(self) -> "SourceRevisionVector":
+        if self.coverage == "complete":
+            if not self.revisions:
+                raise ValueError(
+                    "SOURCE_REVISION_COVERAGE_UNBACKED: an empty vector cannot "
+                    "claim complete coverage."
+                )
+            for revision in self.revisions:
+                if len(revision.canonical()) <= 1:
+                    raise ValueError(
+                        "SOURCE_REVISION_COVERAGE_UNBACKED: coverage=complete "
+                        f"requires revision evidence beyond the service name; "
+                        f"{revision.source_service} stated none."
+                    )
+        return self
+
+    @classmethod
+    def from_evidence(
+        cls, *, revisions: tuple[SourceRevision, ...], expected_sources: tuple[str, ...]
+    ) -> "SourceRevisionVector":
+        """Compute coverage from the evidence instead of trusting a label.
+
+        complete: every expected source stated a revision with at least one
+        evidence field beyond its name; partial: some did; unknown: none did.
+        """
+
+        evidenced = {
+            revision.source_service for revision in revisions if len(revision.canonical()) > 1
+        }
+        expected = set(expected_sources)
+        if expected and expected <= evidenced:
+            coverage = "complete"
+        elif evidenced:
+            coverage = "partial"
+        else:
+            coverage = "unknown"
+        return cls(revisions=revisions, coverage=coverage)
 
     def canonical(self) -> dict[str, Any]:
         return {
@@ -155,7 +213,7 @@ class SourceRevisionVector(BaseModel):
 class ReportRevisionIdentity(BaseModel):
     """The restatement-safe identity of one captured report revision."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     report_revision_id: str
     series_digest: str

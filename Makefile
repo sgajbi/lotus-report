@@ -79,7 +79,7 @@ security-audit:
 # same commit (reporting_read_service.py at 4508 lines and CC 28 in
 # package_builder's outcome-review builder are the current ceilings, not
 # aspirations).
-SOURCE_FILE_MAX_LINES ?= 4463
+SOURCE_FILE_MAX_LINES ?= 4279
 MAX_CYCLOMATIC_COMPLEXITY ?= 28
 MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 8
 
