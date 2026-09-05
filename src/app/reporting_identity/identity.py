@@ -54,6 +54,14 @@ Invariants (each pinned by tests):
   a pure rerender or replay-clone of the same snapshot -> the SAME
   report revision.
 
+Coverage-policy note: the qualifying-evidence rule (only
+``QUALIFYING_REVISION_EVIDENCE_FIELDS`` establish coverage) tightened the
+computed coverage claim after the first rrv2 mints landed. The derivation
+scheme (rrv2) and factual boundary (fb1) are unchanged; a snapshot minted
+under the looser rule keeps its stored id and its persisted vector shows
+verbatim which claim it made - stored identities are references, never
+recomputed, and historical snapshots are never rewritten.
+
 The structured fields remain authoritative everywhere; the opaque id is a
 stable reference, never a string to parse.
 """
@@ -99,6 +107,29 @@ _SOURCE_REVISION_FIELDS = (
     "methodology_version",
     "supportability_status",
     "reconciliation_state",
+)
+
+#: Fields whose stated value identifies WHICH DATA REVISION supplied the
+#: facts, per the source-owner contracts (Core's sourceProduct blocks, the
+#: lotus-ai accepted-output projection, the DPM bounded report inputs):
+#: a content hash, the source's snapshot/artifact id, a restatement
+#: version, a batch fingerprint, a run id, or the stated generation
+#: instant of the served cut. Everything else a source may state is
+#: preserved verbatim but does NOT qualify: catalogue identity
+#: (source_product, source_product_version) says which PRODUCT served,
+#: the business as_of_date is request semantics shared by every capture
+#: of the series, methodology_version names configuration, and
+#: supportability/reconciliation are quality labels - none of them says
+#: which data revision the source served.
+QUALIFYING_REVISION_EVIDENCE_FIELDS = frozenset(
+    {
+        "generated_at",
+        "source_snapshot_id",
+        "content_hash",
+        "restatement_version",
+        "source_batch_fingerprint",
+        "calculation_run_id",
+    }
 )
 
 
@@ -189,15 +220,27 @@ class SourceRevision(BaseModel):
             and (not isinstance(value, str) or value.strip())
         }
 
+    def states_revision_evidence(self) -> bool:
+        """True only when a stated field identifies WHICH data revision the
+        source served. Catalogue identity and quality labels never do."""
+
+        return any(name in QUALIFYING_REVISION_EVIDENCE_FIELDS for name in self.canonical())
+
 
 class SourceRevisionVector(BaseModel):
     """The per-source revision evidence behind one captured report.
 
     ``coverage`` states honestly how much of the vector is evidence-backed:
-    ``complete`` only when every participating source stated revision
-    evidence; otherwise ``partial`` or ``unknown``. Nothing upgrades it,
-    and the claim is VALIDATED against the revisions themselves - an enum
-    value alone is not evidence.
+    ``complete`` only when every participating source stated QUALIFYING
+    revision evidence (``QUALIFYING_REVISION_EVIDENCE_FIELDS``); otherwise
+    ``partial`` or ``unknown``. Nothing upgrades it, and the claim is
+    VALIDATED against the revisions themselves - an enum value alone is
+    not evidence, and neither is catalogue identity or a quality label.
+
+    Coverage is ONLY an evidence-presence claim. It is distinct from
+    source-cut coherence (whether the stated cuts belong together) and
+    from reconciliation (whether a policy verified the figures) - complete
+    coverage asserts neither.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -213,12 +256,20 @@ class SourceRevisionVector(BaseModel):
                     "SOURCE_REVISION_COVERAGE_UNBACKED: an empty vector cannot "
                     "claim complete coverage."
                 )
+            evidenced_by_service: dict[str, bool] = {}
             for revision in self.revisions:
-                if len(revision.canonical()) <= 1:
+                evidenced_by_service[revision.source_service] = (
+                    evidenced_by_service.get(revision.source_service, False)
+                    or revision.states_revision_evidence()
+                )
+            for service in sorted(evidenced_by_service):
+                if not evidenced_by_service[service]:
                     raise ValueError(
                         "SOURCE_REVISION_COVERAGE_UNBACKED: coverage=complete "
-                        f"requires revision evidence beyond the service name; "
-                        f"{revision.source_service} stated none."
+                        f"requires qualifying revision evidence for every "
+                        f"participating source; {service} stated none - "
+                        "catalogue identity and quality labels identify which "
+                        "product served, never which data revision."
                     )
         return self
 
@@ -228,12 +279,15 @@ class SourceRevisionVector(BaseModel):
     ) -> "SourceRevisionVector":
         """Compute coverage from the evidence instead of trusting a label.
 
-        complete: every expected source stated a revision with at least one
-        evidence field beyond its name; partial: some did; unknown: none did.
+        complete: every expected source stated QUALIFYING revision evidence
+        (a content hash, snapshot id, restatement version, batch
+        fingerprint, run id, or stated generation instant); partial: some
+        did; unknown: none did. Catalogue identity and quality labels never
+        qualify - they say which product served, not which data revision.
         """
 
         evidenced = {
-            revision.source_service for revision in revisions if len(revision.canonical()) > 1
+            revision.source_service for revision in revisions if revision.states_revision_evidence()
         }
         expected = set(expected_sources)
         if expected and expected <= evidenced:

@@ -4,6 +4,7 @@ from app.reporting_identity.capture_binding import revision_for_capture
 from app.reporting_identity.identity import (
     CAPTURE_INSTANCE_KEYS,
     FACTUAL_BOUNDARY_VERSION,
+    QUALIFYING_REVISION_EVIDENCE_FIELDS,
     REPORT_REVISION_ID_VERSION,
     ReportRevisionIdentity,
     ReportSeriesKey,
@@ -16,6 +17,7 @@ from app.reporting_identity.identity import (
 __all__ = [
     "CAPTURE_INSTANCE_KEYS",
     "FACTUAL_BOUNDARY_VERSION",
+    "QUALIFYING_REVISION_EVIDENCE_FIELDS",
     "REPORT_REVISION_ID_VERSION",
     "ReportRevisionIdentity",
     "ReportSeriesKey",
