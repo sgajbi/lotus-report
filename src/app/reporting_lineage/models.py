@@ -112,6 +112,15 @@ class ReportInputSnapshotCreateRequest(BaseModel):
             "history."
         ),
     )
+    lifecycle: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Stated lifecycle metadata for this snapshot: governing policy reference and "
+            "version, reproduction availability, and the responsible lifecycle authority "
+            "interface. Stated, never enforced - no retention automation exists here. "
+            "Absent on rows captured before the policy contract existed."
+        ),
+    )
     supportability_status: SnapshotPosture = Field(
         ...,
         description="Supportability posture for the captured snapshot.",
@@ -239,6 +248,15 @@ class ReportInputSnapshotRecord(BaseModel):
             "whether the STATED source cuts share the report's business date. Policy-derived, "
             "never part of the revision preimage; absent on failed captures and pre-policy "
             "history."
+        ),
+    )
+    lifecycle: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Stated lifecycle metadata for this snapshot: governing policy reference and "
+            "version, reproduction availability, and the responsible lifecycle authority "
+            "interface. Stated, never enforced - no retention automation exists here. "
+            "Absent on rows captured before the policy contract existed."
         ),
     )
     supportability_status: SnapshotPosture = Field(

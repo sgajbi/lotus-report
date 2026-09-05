@@ -2398,3 +2398,47 @@ async def test_a_failed_capture_carries_no_coherence_verdict(tmp_path):
     await service.capture_for_job(job)
 
     assert store.get_snapshot_by_job(job.job_id).source_cut_coherence is None
+
+
+@pytest.mark.asyncio
+async def test_every_capture_states_its_lifecycle_claim(tmp_path):
+    """report#283 finding 4: the snapshot names its governing policy
+    reference, reproduction availability, and lifecycle authority - stated
+    at capture, never enforced. A successful capture supports rerendering
+    from the snapshot; a failed capture states NO reproduction rather than
+    implying it."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs-lifecycle.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-lifecycle.sqlite3")
+    ok_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-lc-ok"
+    )
+    failed_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-lc-failed"
+    )
+
+    ok_service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            snapshot_payload=_stated_review_payload()
+        ),
+    )
+    await ok_service.capture_for_job(ok_job)
+    failing_service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            error=ReportingUpstreamError("core unavailable"),
+        ),
+    )
+    await failing_service.capture_for_job(failed_job)
+
+    ok_lifecycle = store.get_snapshot_by_job(ok_job.job_id).lifecycle
+    failed_lifecycle = store.get_snapshot_by_job(failed_job.job_id).lifecycle
+    assert ok_lifecycle is not None and failed_lifecycle is not None
+    assert ok_lifecycle["policy_ref"] == "report-input-snapshot-standard"
+    assert ok_lifecycle["reproduction_availability"] == "rerender_from_snapshot"
+    assert failed_lifecycle["policy_ref"] == "report-input-snapshot-standard"
+    assert failed_lifecycle["reproduction_availability"] == "none"
+    assert "lotus-archive" in ok_lifecycle["lifecycle_authority"]

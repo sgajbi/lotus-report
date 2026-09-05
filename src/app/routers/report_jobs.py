@@ -405,6 +405,7 @@ def _snapshot_to_diagnostics(
     vector = snapshot.source_revision_vector or {}
     coverage = vector.get("coverage")
     coherence = (snapshot.source_cut_coherence or {}).get("status")
+    lifecycle = snapshot.lifecycle or {}
     return ReportJobSnapshotDiagnostics(
         snapshot_id=snapshot.snapshot_id,
         snapshot_hash=snapshot.snapshot_hash,
@@ -418,6 +419,16 @@ def _snapshot_to_diagnostics(
         factual_boundary_version=snapshot.factual_boundary_version,
         source_revision_coverage=str(coverage) if isinstance(coverage, str) else None,
         source_cut_coherence=str(coherence) if isinstance(coherence, str) else None,
+        lifecycle_policy_ref=(
+            str(lifecycle.get("policy_ref"))
+            if isinstance(lifecycle.get("policy_ref"), str)
+            else None
+        ),
+        reproduction_availability=(
+            str(lifecycle.get("reproduction_availability"))
+            if isinstance(lifecycle.get("reproduction_availability"), str)
+            else None
+        ),
     )
 
 
