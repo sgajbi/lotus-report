@@ -11,7 +11,7 @@ purge, and no second engine exists here. The governed statement lives in
 from __future__ import annotations
 
 SNAPSHOT_LIFECYCLE_POLICY_REF = "report-input-snapshot-standard"
-SNAPSHOT_LIFECYCLE_POLICY_VERSION = "1.0.0"
+SNAPSHOT_LIFECYCLE_POLICY_VERSION = "1.1.0"
 SNAPSHOT_LIFECYCLE_AUTHORITY = (
     "lotus-archive:documents for archived-document retention, hold, purge, "
     "and access audit; lotus-report:report_input_snapshot for snapshot "
@@ -22,14 +22,21 @@ SNAPSHOT_LIFECYCLE_AUTHORITY = (
 def snapshot_lifecycle_claim(*, capture_failed: bool) -> dict[str, str]:
     """The lifecycle metadata stamped on one captured snapshot.
 
-    A successful capture supports rerendering from the immutable snapshot;
-    a failed capture records failure evidence only and supports no
-    reproduction - stated, never implied away.
+    The claim states what the SNAPSHOT holds, never what commands exist:
+    a successful capture supports recomposing the exact document semantics
+    and answering what was presented; a failed capture records failure
+    evidence only. The executable rerender COMMAND is a separate,
+    lifecycle-dependent fact (archived PDF only - rerender_eligible in the
+    rerender service) surfaced at readback, because a capture-time stamp
+    can never truthfully promise a command whose eligibility the job has
+    not yet earned. Policy 1.0.0 stamped "rerender_from_snapshot" here;
+    rows carrying it are read as the 1.1.0 capability claim - stored
+    history is never rewritten.
     """
 
     return {
         "policy_ref": SNAPSHOT_LIFECYCLE_POLICY_REF,
         "policy_version": SNAPSHOT_LIFECYCLE_POLICY_VERSION,
-        "reproduction_availability": "none" if capture_failed else "rerender_from_snapshot",
+        "reproduction_availability": ("none" if capture_failed else "snapshot_recomposition"),
         "lifecycle_authority": SNAPSHOT_LIFECYCLE_AUTHORITY,
     }
