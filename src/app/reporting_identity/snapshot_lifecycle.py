@@ -48,10 +48,26 @@ def read_reproduction_availability(stored: object) -> str | None:
     Policy 1.0.0 stamped "rerender_from_snapshot" for the same snapshot
     capability that 1.1.0 names "snapshot_recomposition"; the contract says
     those rows READ AS the capability claim while the stored bytes are never
-    rewritten - so the translation lives here, at readback, the only place
-    the legacy spelling may still appear.
+    rewritten - so every surface that hands stored vocabulary to a reader
+    translates through here.
     """
 
     if not isinstance(stored, str):
         return None
     return "snapshot_recomposition" if stored == "rerender_from_snapshot" else stored
+
+
+def read_lifecycle(stored: dict[str, str] | None) -> dict[str, str] | None:
+    """Read a stored lifecycle claim as the 1.1.0 vocabulary.
+
+    Applied at the store's row-to-record boundary, so EVERY reader - the
+    snapshot and lineage endpoints, diagnostics, replay - sees the current
+    capability vocabulary while the stored row keeps its original bytes.
+    """
+
+    if stored is None:
+        return None
+    availability = read_reproduction_availability(stored.get("reproduction_availability"))
+    if availability is None or availability == stored.get("reproduction_availability"):
+        return stored
+    return {**stored, "reproduction_availability": availability}

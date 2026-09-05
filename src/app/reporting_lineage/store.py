@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
+from app.reporting_identity.snapshot_lifecycle import read_lifecycle
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
@@ -138,7 +139,7 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
         ),
         source_revision_vector=dict(vector) if isinstance(vector, dict) else None,
         source_cut_coherence=dict(coherence) if isinstance(coherence, dict) else None,
-        lifecycle=dict(lifecycle) if isinstance(lifecycle, dict) else None,
+        lifecycle=read_lifecycle(dict(lifecycle)) if isinstance(lifecycle, dict) else None,
         supportability_status=str(row["supportability_status"]),
         completeness_status=str(row["completeness_status"]),
         lineage_summary=dict(summary),
