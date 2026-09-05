@@ -123,7 +123,6 @@ class PortfolioReviewRenderOrchestrationService:
                 # The durable record's identity - the payload does not carry
                 # it, and governed rendering fails closed without it.
                 snapshot_id=snapshot.snapshot_id,
-                report_revision_id=snapshot.report_revision_id,
             )
         except ValueError as exc:
             failed_job = self._job_ledger.mark_failed(
