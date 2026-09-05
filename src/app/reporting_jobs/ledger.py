@@ -1705,6 +1705,7 @@ class ReportJobLedger:
                 return failed
 
     def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
+        where_sql, where_params = _list_jobs_predicates(filters)
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -1756,12 +1757,16 @@ class ReportJobLedger:
                     job.archive_completed_at
                 FROM report_request req
                 JOIN report_job job ON job.report_request_id = req.report_request_id
+                {where}
                 ORDER BY job.created_at DESC, job.report_job_id DESC
                 LIMIT ?
-                """,
-                (filters.limit,),
+                """.format(where=where_sql),
+                (*where_params, filters.limit),
             ).fetchall()
         records = [_record_from_row(row) for row in rows]
+        # The Python matcher stays as the single semantic authority; the SQL
+        # predicates exist so the LIMIT applies AFTER filtering - a tenant's
+        # eligible row beyond other tenants' recent rows must still return.
         return [record for record in records if _record_matches_filters(record, filters)]
 
     def mark_collecting_data(
@@ -2669,6 +2674,32 @@ def _transition_event_payload(
     }
     payload.update({key: value for key, value in optional_fields.items() if value is not None})
     return payload
+
+
+def _list_jobs_predicates(filters: ReportJobListFilters) -> tuple[str, list[object]]:
+    """SQL predicates mirroring _record_matches_filters, applied BEFORE the
+    LIMIT so pagination never silently drops eligible rows (report#292)."""
+
+    clauses: list[str] = []
+    params: list[object] = []
+    for clause, value in (
+        ("req.tenant_id = ?", filters.tenant_id),
+        ("req.region = ?", filters.region),
+        ("job.status = ?", filters.status),
+        ("req.report_type = ?", filters.report_type),
+        ("req.as_of_date = ?", filters.as_of_date),
+        ("req.idempotency_key = ?", filters.idempotency_key),
+        ("req.correlation_id = ?", filters.correlation_id),
+    ):
+        if value:
+            clauses.append(clause)
+            params.append(value)
+    if filters.portfolio_id:
+        clauses.append("job.portfolio_scope_json LIKE ?")
+        params.append(f'%"{filters.portfolio_id}"%')
+    if not clauses:
+        return "", []
+    return "WHERE " + " AND ".join(clauses), params
 
 
 def _record_matches_filters(record: ReportJobLedgerRecord, filters: ReportJobListFilters) -> bool:

@@ -3601,3 +3601,41 @@ def test_report_job_replay_conflict_mapping() -> None:
         assert response.json()["detail"]["code"] == "report_job_cannot_be_replayed"
     finally:
         _clear_overrides()
+
+
+def test_job_search_is_fenced_to_the_admitted_caller_tenant(tmp_path):
+    """report#292: the admitted caller context is an authorization
+    constraint. A cross-tenant filter is refused before any ledger read; an
+    omitted tenant filter scopes to the caller; another tenant's search
+    never sees this tenant's jobs."""
+
+    client, _ledger, _lineage_store = _client(tmp_path)
+    try:
+        created = client.post("/reports/portfolio-reviews", json=_payload(), headers=_headers())
+        assert created.status_code == 202
+
+        conflicting = client.get(
+            "/reports/jobs?tenantId=tenant-hk&status=accepted", headers=_headers()
+        )
+        assert conflicting.status_code == 400
+        assert conflicting.json()["detail"]["code"] == "tenant_filter_conflicts_with_caller"
+
+        conflicting_region = client.get(
+            "/reports/jobs?region=EMEA&status=accepted", headers=_headers()
+        )
+        assert conflicting_region.status_code == 400
+        assert conflicting_region.json()["detail"]["code"] == "region_filter_conflicts_with_caller"
+
+        scoped = client.get("/reports/jobs?status=accepted", headers=_headers())
+        assert scoped.status_code == 200
+        body = scoped.json()
+        assert body["count"] == 1
+        assert body["applied_filters"]["tenant_id"] == "tenant-sg"
+        assert body["applied_filters"]["region"] == "APAC"
+
+        other_tenant_headers = {**_headers(), "X-Tenant-Id": "tenant-hk"}
+        other = client.get("/reports/jobs?status=accepted", headers=other_tenant_headers)
+        assert other.status_code == 200
+        assert other.json()["count"] == 0
+    finally:
+        _clear_overrides()

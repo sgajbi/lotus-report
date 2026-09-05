@@ -47,6 +47,13 @@ SECTION_REASON_CONTEXT_MISMATCH = "advisor_brief_context_mismatch"
 #: bound in lotus-ai.
 SECTION_REASON_SOURCE_UNPROVEN = "advisor_brief_source_unproven"
 
+#: The artifact exists but its bytes no longer match what the reviewer
+#: accepted - an integrity incident in the source (lotus-ai#328). The
+#: reviewed narrative is unavailable and must NEVER be regenerated or
+#: substituted; operators investigate the artifact store in lotus-ai. No
+#: retry changes the answer.
+SECTION_REASON_SOURCE_INTEGRITY_FAILED = "advisor_brief_source_integrity_failed"
+
 #: lotus-ai refused for a reason Report does not recognise. A reason Report
 #: cannot interpret is not evidence of a cause it can name, so this never
 #: masquerades as a known posture.
@@ -75,6 +82,10 @@ SOURCE_REASON_TO_SECTION_REASON: Mapping[str, str] = MappingProxyType(
         "pack_projection_unsupported": SECTION_REASON_NOT_FOUND,
         "output_artifact_missing": SECTION_REASON_NOT_FOUND,
         "output_artifact_malformed": SECTION_REASON_NOT_FOUND,
+        # Integrity: the bytes changed after acceptance. Unavailable, never
+        # regenerated - and deliberately NOT "not found": sending operators
+        # hunting for a missing run would misname an integrity incident.
+        "output_artifact_integrity_mismatch": SECTION_REASON_SOURCE_INTEGRITY_FAILED,
     }
 )
 

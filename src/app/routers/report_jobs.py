@@ -1190,7 +1190,7 @@ async def list_report_jobs(
         Header(alias="X-Region", description="Operating region for segregation and audit."),
     ] = None,
 ) -> ReportJobListResponse:
-    caller_context_from_headers(
+    caller = caller_context_from_headers(
         triggered_by=actor_id,
         caller_application=caller_application,
         tenant_id=tenant_id,
@@ -1200,10 +1200,31 @@ async def list_report_jobs(
         correlation_id=None,
         trace_id=None,
     )
+    # The admitted caller context is an AUTHORIZATION constraint, not an
+    # optional filter (report#292): the effective scope is always the
+    # admitted tenant and region, and a supplied filter that contradicts
+    # them is refused before any ledger read. A cross-tenant support read
+    # would need its own explicitly authorized operation.
+    if tenant_filter and tenant_filter != caller.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "tenant_filter_conflicts_with_caller",
+                "message": "The tenantId filter must match the admitted caller tenant.",
+            },
+        )
+    if region_filter and region_filter != caller.region:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "region_filter_conflicts_with_caller",
+                "message": "The region filter must match the admitted caller region.",
+            },
+        )
     filters = ReportJobListFilters.model_validate(
         {
-            "tenant_id": tenant_filter,
-            "region": region_filter,
+            "tenant_id": caller.tenant_id,
+            "region": caller.region,
             "status": status_filter,
             "report_type": report_type_filter,
             "portfolio_id": portfolio_id_filter,
@@ -1217,8 +1238,6 @@ async def list_report_jobs(
     )
     if not any(
         [
-            filters.tenant_id,
-            filters.region,
             filters.status,
             filters.report_type,
             filters.portfolio_id,
