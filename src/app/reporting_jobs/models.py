@@ -2055,9 +2055,9 @@ class ReportJobSnapshotDiagnostics(BaseModel):
         description=(
             "Evidence-computed coverage of the source revision vector: complete only when "
             "every participating source stated QUALIFYING revision evidence (a content "
-            "hash, snapshot id, restatement version, batch fingerprint, run id, or stated "
-            "generation instant), otherwise partial or unknown - never asserted, never "
-            "upgraded. Catalogue identity and quality labels never qualify, and complete "
+            "hash, snapshot id, restatement version, batch fingerprint, or run id), "
+            "otherwise partial or unknown - never asserted, never upgraded. Catalogue "
+            "identity, quality labels, and bare timestamps never qualify, and complete "
             "coverage asserts neither source-cut coherence nor reconciliation."
         ),
         examples=["partial"],

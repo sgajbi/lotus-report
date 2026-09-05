@@ -129,8 +129,8 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    inherit it verbatim; failed captures and pre-identity history stay NULL.
    Coverage is computed per source from QUALIFYING revision evidence only
    (content hash, snapshot id, restatement version, batch fingerprint, run
-   id, stated generation instant) — catalogue identity and quality labels
-   never establish it, and complete coverage asserts neither source-cut
+   id) — catalogue identity, quality labels, and bare timestamps never
+   establish it, and complete coverage asserts neither source-cut
    coherence nor reconciliation.
    Remaining, in order: hand the revision off downstream (render metadata,
    Archive lineage) and retire the portfolio/date bundle labels in the
