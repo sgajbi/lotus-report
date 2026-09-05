@@ -677,22 +677,24 @@ class ReportBatchScheduler:
                     cycle=cycle,
                     selector_identity=_selector_identity(schedule, portfolio_ids),
                 )
-                if (
-                    cycle.legacy_idempotency_scope
-                    and self._batch_ledger.has_batch_for_idempotency_key(
-                        scheduled_batch_idempotency_key(
-                            caller_context=caller_context,
-                            selector_mode=request.selector_mode,
-                            cycle=cycle.model_copy(
-                                update={"idempotency_scope": cycle.legacy_idempotency_scope}
-                            ),
-                            selector_identity=_selector_identity(schedule, portfolio_ids),
-                        )
+                legacy_keys = [
+                    scheduled_batch_idempotency_key(
+                        caller_context=caller_context,
+                        selector_mode=request.selector_mode,
+                        cycle=cycle.model_copy(update={"idempotency_scope": legacy_scope}),
+                        selector_identity=_selector_identity(schedule, portfolio_ids),
                     )
+                    for legacy_scope in cycle.legacy_idempotency_scopes
+                ]
+                if any(
+                    self._batch_ledger.has_batch_for_idempotency_key(legacy_key)
+                    for legacy_key in legacy_keys
                 ):
-                    # Materialized before the cycle-identity change under the
-                    # template-bearing legacy scope: one business cycle keeps
-                    # one batch - mint nothing.
+                    # Materialized before the cycle-identity change under a
+                    # template-bearing legacy scope (checked over every
+                    # plausible historical triple - a schedule reconfigured
+                    # after materializing must still be recognised): one
+                    # business cycle keeps one batch - mint nothing.
                     skipped.append(schedule.schedule_id)
                     continue
             try:
@@ -880,9 +882,12 @@ def _batch_options(schedule: BatchScheduleDefinition, cycle: Any) -> dict[str, A
         "batch_frequency": cycle.frequency,
         "batch_period_start": cycle.period_start.isoformat(),
         "batch_period_end": cycle.period_end.isoformat(),
-        "template_id": cycle.template_id,
-        "template_version": cycle.template_version,
-        "render_package_version": cycle.render_package_version,
+        # Template/package versions deliberately absent: they are
+        # presentation contracts resolved at job acceptance, nothing
+        # downstream consumes them from options, and hashing them here made
+        # a mid-cycle presentation deployment CONFLICT the scheduler pass
+        # (same template-free key, different request hash) instead of
+        # converging idempotently.
     }
     if schedule.selector_mode == "batch_manifest":
         options["batch_manifest_source"] = schedule.manifest_source or "inline-schedule-manifest"

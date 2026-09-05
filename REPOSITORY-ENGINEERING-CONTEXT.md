@@ -113,36 +113,43 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ## 7. Active priorities
 
-1. **Analytics roadmap: decomposed and closed (#209).** Its comments remain the canonical
-   coverage matrix; the work queues are the successor issues. **#249 earnings statement is
-   DELIVERED end to end** (render#238 drew it in the transaction page's empty half; the page
-   left Render's worst-list and their page-economy ratchet re-banked downward). Active:
-   **#254** attribution bridge - Report's half is SHIPPED (#258 client with shared stated-
-   cadence polling, #259 capture with the first async posture and deterministic calculation
-   ids, #260 the AttributionBridge semantic); Render's waterfall primitive consumes it next,
-   then Report's evidenced default-on flip for the opt-in PERFORMANCE_ATTRIBUTION section.
-   **#255** rolling risk trend is next in value order once Render's queue allows. **#247**
-   fee-drag line: field live, Render's line lands in the earnings note voice. Selection stays by client/advisor value, never field
-   availability; every analytic gets an agreed Render contract before implementation.
-2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios` scheduling is refused
-   (fail-closed) rather than stamped. Remaining: verify a *source-attributed* tenant once
-   `lotus-core` projects it. The deleted stamping path must not be recreated.
-3. **#166 is closed.** Advisor commentary is complete on Report's side (JSON + governed PDF,
-   admissibility incl. validation verdict, grounding, one shared refusal vocabulary).
-   Downstream realization is tracked where it is owned: lotus-workbench#990.
+1. **#283 — canonical report revision and evidence identity v2 (P0, governing).**
+   Make every report explainable through one chain: admitted tenant → accepted
+   request → source revisions → immutable snapshot → accepted document contract
+   → render execution → archived artifact. Landed so far: the identity seam
+   (`src/app/reporting_identity/`, fail-closed and mutation-stable), truthful
+   evidence claims (admitted tenant, `evidence_posture`, unknown
+   reconciliation — `src/app/services/review_evidence.py`), replay inheriting
+   the accepted template contract, and business-cycle-only batch identity.
+   Remaining, in order: wire `ReportRevisionIdentity` through durable capture
+   → persistence → readback → handoff (retire portfolio/date bundle labels);
+   persist one `AcceptedDocumentContract` covering ALL contract axes
+   (report-data, envelope, locale/brand/disclosure — template identity is
+   already persisted); trust-state separation incl. source-cut coherence;
+   snapshot lifecycle metadata; the 17-point integrated proof. Design
+   decisions (hash boundary, no circular identity, historical mapping) are
+   recorded in the 2026-09-05 audit and on #283.
+2. **#177 — tenant-safe materialization.** Broad `all_active_portfolios`
+   scheduling stays refused (fail-closed). Remaining: verify a
+   *source-attributed* tenant once `lotus-core` projects tenant identity on
+   discovery/detail. Caller admission (shipped) answers who asked — not
+   ownership. The deleted stamping path must not be recreated.
+3. **Product queue (opens after #283 closure):** #288 source-stated benchmark
+   series for the cumulative chart (highest render-blocked value; contract to
+   include the stated valuation-vs-source date pair), then #289 drawdown
+   series + recovery episodes. #254's producer halves are SHIPPED (return
+   attribution + risk attribution; template v3 renders it); its remaining
+   scope is only the evidence-gated default-on decision. #271 fallback
+   deletion stays evidence-gated on the Render deployment window.
 
 ## 8. Known blockers
 
 | Blocked | On | Why |
 |---|---|---|
-| #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
-| #254 remaining halves | Render's waterfall primitive; then real-order evidence | Default-on flip is an evidenced decision, not a schedule |
-| #255 risk trend | Render queue + its own contract | One analytic at a time through design |
-
----|---|---|
-| #177 source-attributed tenant | `lotus-core#798` S2+ | Core owns `Portfolio.tenant_id` (core#1076) but its discovery route projects no tenant |
-| #166 PDF leg | `lotus-render#218` | The template exists (render#223) but does not draw the per-claim `grounding` posture, so an ungrounded AI claim would be indistinguishable from a checkable one in an archived document. Report's PDF gate refuses the section until it does |
-| #166 Workbench rendering | `lotus-workbench#795` | Their lane; contract and reason vocabulary delivered |
+| #177 source-attributed tenant | `lotus-core` discovery projecting tenant | Core owns `Portfolio.tenant_id` but the discovery route/DTO project no tenant field |
+| #254 default-on flip | Named real order/pending evidence | An evidenced decision, not a schedule |
+| #271 derivation cleanup | Render deployment window provably closed | Source alone cannot prove every deployed responder upgraded |
+| v4 template switch | User publication decision | v3/v4 are development; availability ≠ publication authority |
 
 ---
 
