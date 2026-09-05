@@ -57,3 +57,18 @@ def test_a_policy_1_0_0_row_reads_as_the_capability_claim() -> None:
     # The command fact stays independently derived - a failed JSON-only job
     # advertises no rerender path even while the snapshot capability stands.
     assert diagnostics.rerender_available is False
+
+
+def test_a_pre_lifecycle_snapshot_projects_no_invented_claim() -> None:
+    """Historical NULL-metadata leg: a snapshot captured before lifecycle
+    stamping existed projects honestly - no capability claim is invented,
+    no policy ref appears, and the command fact stays derived purely from
+    the job's own lifecycle."""
+
+    snapshot = _legacy_snapshot()
+    snapshot = snapshot.model_copy(update={"lifecycle": None})
+    diagnostics = _snapshot_to_diagnostics(snapshot, _unarchived_record())
+
+    assert diagnostics.reproduction_availability is None
+    assert diagnostics.lifecycle_policy_ref is None
+    assert diagnostics.rerender_available is False

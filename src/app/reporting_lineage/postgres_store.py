@@ -21,6 +21,7 @@ from app.reporting_lineage.store import (
     _normalize_json_value,
     _record_from_row,
     _snapshot_lineage_matches,
+    _stored_lifecycle_from_row,
     _upstream_call_from_row,
     _upstream_calls_match,
     compute_snapshot_hash,
@@ -226,6 +227,20 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
         ).fetchone()
         assert row is not None
         return _record_from_row(row)
+
+    def get_stored_lifecycle(self, snapshot_id: str) -> dict[str, Any] | None:
+        """The lifecycle claim EXACTLY as the row stores it - see the SQLite
+        store: internal re-persistence inherits these bytes verbatim while
+        readers get the translated record."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT lifecycle_json FROM report_input_snapshot WHERE snapshot_id = %s",
+                (snapshot_id,),
+            ).fetchone()
+        if not row:
+            raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
+        return _stored_lifecycle_from_row(row["lifecycle_json"])
 
     def get_snapshot(self, snapshot_id: str) -> ReportInputSnapshotRecord:
         with self._connect() as connection:

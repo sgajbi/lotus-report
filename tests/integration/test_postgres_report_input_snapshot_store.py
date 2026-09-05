@@ -418,3 +418,38 @@ def test_postgres_report_input_snapshot_store_service_returns_postgres_store() -
 def test_postgres_report_input_snapshot_store_reports_missing_snapshot() -> None:
     with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
         _store().get_snapshot(f"rsnap_missing_{uuid4().hex}")
+
+
+def test_postgres_legacy_lifecycle_reads_translated_and_stores_verbatim() -> None:
+    """PostgreSQL parity for the legacy-vocabulary read boundary: a policy
+    1.0.0 row reads as the 1.1.0 capability claim while get_stored_lifecycle
+    returns the original bytes for internal re-persistence (replay clones)."""
+
+    store = _store()
+    store.check_ready()
+    unique_suffix = uuid4().hex
+    created = store.create_snapshot(
+        _request(
+            unique_suffix,
+            report_job_id=_seed_job(unique_suffix),
+            lifecycle={
+                "policy_ref": "report-input-snapshot-standard",
+                "policy_version": "1.0.0",
+                "reproduction_availability": "rerender_from_snapshot",
+                "lifecycle_authority": "test",
+            },
+        )
+    )
+
+    loaded = store.get_snapshot(created.snapshot_id)
+    assert loaded.lifecycle is not None
+    assert loaded.lifecycle["reproduction_availability"] == "snapshot_recomposition"
+    assert loaded.lifecycle["policy_version"] == "1.0.0"
+    assert store.get_stored_lifecycle(created.snapshot_id) == {
+        "policy_ref": "report-input-snapshot-standard",
+        "policy_version": "1.0.0",
+        "reproduction_availability": "rerender_from_snapshot",
+        "lifecycle_authority": "test",
+    }
+    with pytest.raises(ReportInputSnapshotNotFoundError, match="report_input_snapshot_not_found"):
+        store.get_stored_lifecycle(f"rsnap_missing_{uuid4().hex}")

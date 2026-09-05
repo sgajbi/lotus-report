@@ -150,6 +150,11 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
     )
 
 
+def _stored_lifecycle_from_row(value: Any) -> dict[str, Any] | None:
+    lifecycle = json.loads(value) if isinstance(value, str) else value
+    return dict(lifecycle) if isinstance(lifecycle, dict) else None
+
+
 def _upstream_call_from_row(row: Mapping[str, Any]) -> ReportUpstreamCallRecord:
     return ReportUpstreamCallRecord(
         upstream_call_id=str(row["upstream_call_id"]),
@@ -520,6 +525,22 @@ class ReportInputSnapshotStore:
         ).fetchone()
         assert row is not None
         return _record_from_row(row)
+
+    def get_stored_lifecycle(self, snapshot_id: str) -> dict[str, Any] | None:
+        """The lifecycle claim EXACTLY as the row stores it - no readback
+        translation. Internal re-persistence (the replay clone) inherits
+        these bytes verbatim so a clone of a policy 1.0.0 source stays a
+        faithful copy; readers everywhere else get the translated record.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT lifecycle_json FROM report_input_snapshot WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        if row is None:
+            raise ReportInputSnapshotNotFoundError("report_input_snapshot_not_found")
+        return _stored_lifecycle_from_row(row[0])
 
     def get_snapshot(self, snapshot_id: str) -> ReportInputSnapshotRecord:
         with self._connect() as connection:
