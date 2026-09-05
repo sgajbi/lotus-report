@@ -330,3 +330,113 @@ def test_the_digest_refuses_a_payload_carrying_its_own_revision_id() -> None:
 
     with pytest.raises(ValueError, match="REPORT_REVISION_CIRCULAR_IDENTITY"):
         factual_content_digest({"report_revision_id": "rrv2_x", "portfolio_id": "P1"})
+
+
+def test_catalogue_identity_alone_never_establishes_coverage() -> None:
+    """Product name and version say WHICH PRODUCT served - never which data
+    revision supplied the facts."""
+
+    catalogue_only = SourceRevision(
+        source_service="lotus-core",
+        source_product="HoldingsAsOf",
+        source_product_version="v1",
+    )
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(catalogue_only,), expected_sources=("lotus-core",)
+    )
+
+    assert vector.coverage == "unknown"
+    assert not catalogue_only.states_revision_evidence()
+
+
+def test_quality_labels_alone_never_establish_coverage() -> None:
+    """Supportability and reconciliation labels grade the data - they do not
+    identify its revision. Neither do request semantics or configuration."""
+
+    quality_only = SourceRevision(
+        source_service="lotus-core",
+        as_of_date="2026-08-31",
+        methodology_version="m1",
+        supportability_status="complete",
+        reconciliation_state="reconciled",
+    )
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(quality_only,), expected_sources=("lotus-core",)
+    )
+
+    assert vector.coverage == "unknown"
+    assert not quality_only.states_revision_evidence()
+
+
+def test_a_complete_claim_backed_only_by_catalogue_identity_is_refused() -> None:
+    with pytest.raises(ValueError, match="SOURCE_REVISION_COVERAGE_UNBACKED"):
+        SourceRevisionVector(
+            revisions=(
+                SourceRevision(
+                    source_service="lotus-core",
+                    source_product="HoldingsAsOf",
+                    source_product_version="v1",
+                ),
+            ),
+            coverage="complete",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("content_hash", "sha256:holdings-r1"),
+        ("source_snapshot_id", "core-snap-9"),
+        ("restatement_version", "r1"),
+        ("source_batch_fingerprint", "core-batch-77"),
+        ("calculation_run_id", "run_accept_1"),
+        ("generated_at", "2026-08-31T08:59:59Z"),
+    ],
+)
+def test_each_qualifying_field_establishes_stated_revision_evidence(field, value) -> None:
+    revision = SourceRevision(source_service="lotus-core", **{field: value})
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(revision,), expected_sources=("lotus-core",)
+    )
+
+    assert revision.states_revision_evidence()
+    assert vector.coverage == "complete"
+
+
+def test_mixed_sources_with_one_catalogue_only_participant_stay_partial() -> None:
+    """One source stating a real revision plus one stating only catalogue
+    identity is PARTIAL coverage - the catalogue-only participant remains
+    unevidenced even though it stated fields."""
+
+    evidenced = SourceRevision(source_service="lotus-core", content_hash="sha256:a")
+    catalogue_only = SourceRevision(
+        source_service="lotus-performance",
+        source_product="WorkspaceSummary",
+        source_product_version="v1",
+    )
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(evidenced, catalogue_only),
+        expected_sources=("lotus-core", "lotus-performance"),
+    )
+
+    assert vector.coverage == "partial"
+
+
+def test_a_catalogue_only_row_beside_a_qualifying_row_of_the_same_source_is_valid() -> None:
+    """Coverage is a PER-SOURCE claim: a source that stated qualifying
+    evidence in one product block may state only catalogue identity in
+    another without invalidating the complete claim."""
+
+    vector = SourceRevisionVector(
+        revisions=(
+            SourceRevision(source_service="lotus-core", content_hash="sha256:a"),
+            SourceRevision(
+                source_service="lotus-core",
+                source_product="TransactionLedgerWindow",
+                source_product_version="v1",
+            ),
+        ),
+        coverage="complete",
+    )
+
+    assert vector.coverage == "complete"
