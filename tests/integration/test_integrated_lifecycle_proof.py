@@ -43,6 +43,7 @@ from app.reporting_jobs.models import (
     ReportJobRerenderRequest,
 )
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
+from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 from app.reporting_jobs.worker import ReportJobWorker
 from app.reporting_lineage.capture_service import (
     PortfolioReviewInputCapture,
@@ -198,6 +199,7 @@ class _CustodyRenderClient:
     def __init__(self) -> None:
         self.payloads: list[dict] = []
         self.documents: dict[str, str] = {}
+        self.template_publication = "published"
 
     async def submit_render_package(self, payload, **kwargs):
         self.payloads.append(copy.deepcopy(payload))
@@ -208,7 +210,7 @@ class _CustodyRenderClient:
             "render_job_id": render_job_id,
             "template_id": payload["template_id"],
             "template_version": payload["template_version"],
-            "template_publication": "published",
+            "template_publication": self.template_publication,
             "artifact_sha256": f"sha256:artifact-{render_job_id}",
             "bounded_determinism_fingerprint": f"fingerprint-{render_job_id}",
             "runtime_engine": "typst",
@@ -283,6 +285,7 @@ class _World:
                 capture_service=self.capture,
                 render_service=self.render,
             ),
+            retry_policy=ReportJobWorkRetryPolicy(base_delay_seconds=0, max_delay_seconds=0),
         )
         asyncio.run(
             worker.run_once(
@@ -938,3 +941,243 @@ def test_a13_requested_policy_and_resolved_contract_agree_and_stay_distinct():
     assert contract is not None
     assert contract["template_version"] == job.render_template_version
     assert contract["report_data_contract_version"] == "portfolio_review.v1"
+
+
+# ---------------------------------------------------------------------------
+# Assertion 14: a commit followed by a lost response and process restart
+# converges without duplicate client artifacts or guessed custody.
+# ---------------------------------------------------------------------------
+
+
+class _LostResponseRenderClient(_CustodyRenderClient):
+    """The owner COMMITS the render and archives the document, but the
+    response never reaches Report - then answers the restart's status
+    lookup with the committed outcome."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lost_once = False
+        self.committed: dict | None = None
+        self.status_lookups: list[str] = []
+
+    async def submit_render_package(self, payload, **kwargs):
+        status, response = await super().submit_render_package(payload, **kwargs)
+        if not self.lost_once:
+            self.lost_once = True
+            self.committed = response
+            raise RuntimeError("connection_lost_after_owner_commit")
+        return status, response
+
+    async def get_render_status(self, render_job_id, **kwargs):
+        self.status_lookups.append(render_job_id)
+        assert self.committed is not None
+        committed = dict(self.committed)
+        committed.pop("artifact_base64", None)
+        return 200, committed
+
+
+def test_a14_lost_response_and_restart_converge_without_duplicate_artifacts():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    world.render_client = _LostResponseRenderClient()
+    world.render = PortfolioReviewRenderOrchestrationService(
+        render_client=world.render_client,
+        snapshot_store=world.store,
+        job_ledger=world.ledger,
+    )
+    job = world.submit(tenant=TENANT_A, suffix=f"a14-{suffix}")
+    world.provider.stage(
+        job.job_id, _source_payload(tenant=TENANT_A, restatement="r1", suffix=f"a14-{suffix}")
+    )
+
+    # First attempt: the process CRASHES mid-execution - the owner has
+    # committed, the response is lost, no failure bookkeeping ever runs,
+    # and the work lease simply expires (lease_seconds=0).
+    claimed = world.ledger.claim_work_items(
+        worker_id=f"crashing-worker-{suffix}", limit=10, lease_seconds=0
+    )
+    assert len(claimed) == 1
+    execution = ReportJobExecutionService(
+        report_job_ledger=world.ledger,
+        capture_service=world.capture,
+        render_service=world.render,
+    )
+    with pytest.raises(RuntimeError, match="connection_lost_after_owner_commit"):
+        asyncio.run(execution.execute_job(job_id=job.job_id))
+    interrupted = world.ledger.get_job(job.job_id)
+    assert interrupted.status != "archived"
+    assert interrupted.render_job_id is not None
+
+    # Process restart: a fresh worker resumes the SAME persisted render -
+    # resolution before recomposition adopts the owner's committed outcome.
+    world.run_pipeline()
+
+    record = world.ledger.get_job(job.job_id)
+    assert record.status == "archived"
+    assert record.render_job_id == interrupted.render_job_id
+    # Exactly one client artifact exists, and custody is the owner's
+    # recorded fact, never a guess: one submitted package, one document,
+    # and the adoption went through the status lookup.
+    assert len(world.render_client.payloads) == 1
+    assert len(world.render_client.documents) == 1
+    assert record.archive_document_id == world.render_client.documents[record.render_job_id]
+    assert world.render_client.status_lookups != []
+
+
+# ---------------------------------------------------------------------------
+# Assertion 15: transient supersession failure recovers through bounded
+# reconciliation without a new client correction request.
+# ---------------------------------------------------------------------------
+
+
+class _FlakyLifecycleArchiveClient(_CustodyArchiveClient):
+    """Archive's lifecycle boundary is down for the first transition
+    attempt, healthy afterwards."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    async def record_lifecycle_transition(self, **kwargs):
+        self.attempts += 1
+        if self.attempts == 1:
+            return 503, {"detail": "archive lifecycle temporarily unavailable"}
+        return await super().record_lifecycle_transition(**kwargs)
+
+
+def test_a15_transient_supersession_failure_self_heals_without_new_commands():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    record, _snapshot = _archived_cycle(world, tenant=TENANT_A, suffix=f"a15-{suffix}")
+    archive_client = _FlakyLifecycleArchiveClient()
+
+    from app.reporting_render.archive_lineage import reconcile_pending_archive_lineage
+    from app.reporting_render.regenerate_service import PortfolioReviewRegenerateService
+
+    world.provider.default_payload = _source_payload(
+        tenant=TENANT_A, restatement="r2", suffix=f"a15n-{suffix}"
+    )
+    regenerate_service = PortfolioReviewRegenerateService(
+        ledger=world.ledger,
+        snapshot_store=world.store,
+        capture_service=world.capture,
+        render_service=world.render,
+        archive_lineage_client=archive_client,
+    )
+    result = asyncio.run(
+        regenerate_service.regenerate_job(
+            job_id=record.job_id,
+            command=ReportJobRegenerateRequest(reason="Integrated proof assertion 15."),
+            caller_context=_caller(tenant=TENANT_A, suffix=f"a15r-{suffix}"),
+            idempotency_key=f"proof-a15-regenerate-{suffix}",
+        )
+    )
+    assert archive_client.attempts == 1
+    assert archive_client.lifecycle_transitions == []
+
+    # The replacement document exists; only the lifecycle pair is pending.
+    pending = [
+        entry
+        for entry in world.ledger.list_pending_archive_lineage(limit=200)
+        if entry.job_id in {record.job_id, result.regenerated_job.job_id}
+    ]
+    assert len(pending) == 1
+
+    # One bounded reconciliation pass after Archive recovers settles the
+    # pair - nobody orders another correction or regenerate.
+    outcome = asyncio.run(
+        reconcile_pending_archive_lineage(
+            archive_client=archive_client,
+            ledger=world.ledger,
+            limit=200,
+        )
+    )
+    assert outcome["attempted_jobs"] >= 1
+    assert archive_client.attempts == 2
+    assert len(archive_client.lifecycle_transitions) == 1
+    still_pending = [
+        entry
+        for entry in world.ledger.list_pending_archive_lineage(limit=200)
+        if entry.job_id in {record.job_id, result.regenerated_job.job_id}
+    ]
+    assert still_pending == []
+
+
+# ---------------------------------------------------------------------------
+# Assertion 16: publication evidence and custody are independently recorded;
+# development-template availability does not imply client distribution
+# authority.
+# ---------------------------------------------------------------------------
+
+
+def test_a16_custody_and_publication_evidence_are_independent_facts():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    world.render_client.template_publication = "development"
+    record, _snapshot = _archived_cycle(world, tenant=TENANT_A, suffix=f"a16-{suffix}")
+
+    # Custody IS recorded - the document exists durably in Archive...
+    assert record.status == "archived"
+    assert record.archive_document_id is not None
+    # ...while the publication evidence persists the owner's stated posture
+    # VERBATIM: development availability is an evidence fact on the job,
+    # never an implied distribution authority.
+    assert record.render_template_publication == "development"
+
+
+# ---------------------------------------------------------------------------
+# Assertion 17: legacy incomplete identities/contracts, historical profile
+# limitations and snapshot reproduction availability remain explicit; no
+# historical record is rewritten to manufacture certainty.
+# ---------------------------------------------------------------------------
+
+
+def test_a17_legacy_rows_stay_explicit_and_are_never_rewritten():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    # A pre-identity, policy-1.0.0 snapshot: no revision binding, the
+    # command-shaped lifecycle spelling - exactly what history holds.
+    legacy_job = world.submit(tenant=TENANT_A, suffix=f"a17-{suffix}")
+    from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
+
+    created = world.store.create_snapshot(
+        ReportInputSnapshotCreateRequest(
+            report_job_id=legacy_job.job_id,
+            report_type="portfolio_review",
+            report_data_contract_version="v1",
+            portfolio_scope={"portfolio_ids": [SHARED_PORTFOLIO]},
+            as_of_date=SHARED_AS_OF,
+            snapshot_payload={"report_id": f"legacy-{suffix}"},
+            supportability_status="complete",
+            completeness_status="complete",
+            lineage_summary={"source_services": ["lotus-core"]},
+            lifecycle={
+                "policy_ref": "report-input-snapshot-standard",
+                "policy_version": "1.0.0",
+                "reproduction_availability": "rerender_from_snapshot",
+                "lifecycle_authority": "report-input-snapshot",
+            },
+            captured_at=datetime(2026, 1, 5, 9, 0, 0, tzinfo=UTC),
+            correlation_id=f"corr-proof-a17-{suffix}",
+            trace_id=f"trace-proof-a17-{suffix}",
+        )
+    )
+
+    loaded = world.store.get_snapshot_by_job(legacy_job.job_id)
+    # Incomplete identity stays EXPLICITLY absent - never backfilled.
+    assert loaded.report_revision_id is None
+    assert loaded.factual_content_digest is None
+    assert loaded.source_revision_vector is None
+    # The capability claim reads in current vocabulary...
+    assert loaded.lifecycle is not None
+    assert loaded.lifecycle["reproduction_availability"] == "snapshot_recomposition"
+    assert loaded.lifecycle["policy_version"] == "1.0.0"
+    # ...while the stored row keeps its historical bytes verbatim.
+    stored = world.store.get_stored_lifecycle(created.snapshot_id)
+    assert stored is not None
+    assert stored["reproduction_availability"] == "rerender_from_snapshot"
+    # And the command surface stays truthful for the legacy job: never
+    # archived, so no rerender path is advertised or accepted.
+    from app.reporting_render.rerender_service import rerender_eligible
+
+    assert rerender_eligible(world.ledger.get_job(legacy_job.job_id)) is False
