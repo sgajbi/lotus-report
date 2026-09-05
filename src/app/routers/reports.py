@@ -168,7 +168,10 @@ async def get_portfolio_review(
                 request.model_dump(exclude_none=True, mode="json"), section_limit
             ),
             correlation_id=correlation_id,
-            admitted_tenant_id=tenant_id,
+            # Normalized at the boundary: whitespace-padded or blank header
+            # values must not become admitted evidence that fails exact
+            # matching against the canonical tenant.
+            admitted_tenant_id=(tenant_id.strip() or None) if tenant_id else None,
         )
     except ReportingApplicationError as exc:
         raise _reporting_application_error_to_http(exc) from exc

@@ -1756,3 +1756,26 @@ async def test_evidence_trust_claims_state_only_what_is_proven():
     trust = unattributed["evidence"]["trust_metadata"]
     assert "tenant_id" not in trust
     assert trust["tenant_admission"] == "unattributed_caller"
+
+
+@pytest.mark.asyncio
+async def test_a_blank_or_padded_tenant_header_never_becomes_admitted_evidence():
+    """Boundary normalization: whitespace-padded values are stripped before
+    admission and a blank value yields no tenant claim - admitted evidence
+    must match the canonical tenant exactly."""
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_RiskClientSuccess(),
+    )
+
+    blank = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["OVERVIEW"]},
+        "CID-3",
+        admitted_tenant_id="",
+    )
+    trust = blank["evidence"]["trust_metadata"]
+    assert "tenant_id" not in trust
+    assert trust["tenant_admission"] == "unattributed_caller"
