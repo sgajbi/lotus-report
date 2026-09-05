@@ -341,7 +341,6 @@ def test_defer_is_lease_fenced(tmp_path):
 @pytest.mark.parametrize(
     ("recovery_action", "expected_category", "expected_retryable"),
     [
-        ("resubmit_identical_package_or_escalate_runtime", "render_execution_failed", True),
         ("fix_upstream_render_package", "render_validation_failed", False),
         ("fix_template_registry_or_package", "render_validation_failed", False),
         ("escalate_render_runtime", "render_execution_failed", False),
@@ -412,3 +411,78 @@ async def test_an_unanswerable_diagnostics_lookup_waits(tmp_path, monkeypatch):
 
     assert result.outcomes[0].failure_category == "waiting_on_render"
     assert ledger.get_job(rendering.job_id).status == "rendering"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_render_resubmits_convergently_under_the_persisted_id(tmp_path, monkeypatch):
+    """The owner's named remedy for a stale in-progress render: an identical
+    resubmission under the SAME render id converges by construction
+    (create-or-get takeover), dead executor or merely slow - replay's fresh
+    render id is never needed."""
+
+    ledger, store, rendering = _seed_rendering_job(tmp_path, suffix="stale-resubmit")
+    client = _ScriptedRenderClient(
+        status_responses=[(200, {"render_job_id": rendering.render_job_id, "status": "rendering"})],
+        diagnostics=(
+            200,
+            {
+                "recovery_action": "resubmit_identical_package_or_escalate_runtime",
+                "retryable": True,
+                "stale_state": "stale",
+            },
+        ),
+    )
+    worker = _worker(ledger, store, client)
+
+    _advance_clock(monkeypatch, seconds=10)
+    result = await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+
+    assert result.completed_count == 1
+    assert len(client.submitted) == 1
+    assert client.submitted[0]["render_job_id"] == rendering.render_job_id
+    assert ledger.get_job(rendering.job_id).status == "archived"
+
+
+@pytest.mark.asyncio
+async def test_stale_resubmit_never_overrides_ledger_completion_evidence(tmp_path, monkeypatch):
+    """A completed job with an owner in-progress anomaly routes to the
+    designed loss recovery - completion evidence outranks the anomaly, and
+    nothing resubmits."""
+
+    ledger, store, rendering = _seed_rendering_job(tmp_path, suffix="stale-anomaly")
+    ledger.mark_completed(
+        job_id=rendering.job_id,
+        actor=rendering.triggered_by,
+        correlation_id=rendering.correlation_id,
+        trace_id=rendering.trace_id,
+        render_job_id=rendering.render_job_id,
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v2",
+        template_publication="development",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    client = _ScriptedRenderClient(
+        status_responses=[(200, {"render_job_id": rendering.render_job_id, "status": "rendering"})],
+        diagnostics=(
+            200,
+            {
+                "recovery_action": "resubmit_identical_package_or_escalate_runtime",
+                "retryable": True,
+                "stale_state": "stale",
+            },
+        ),
+    )
+    worker = _worker(ledger, store, client)
+
+    _advance_clock(monkeypatch, seconds=10)
+    await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+
+    failed = ledger.get_job(rendering.job_id)
+    assert failed.status == "failed"
+    assert failed.failure_category == "render_artifact_unrecoverable"
+    assert client.submitted == []
