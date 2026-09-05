@@ -40,3 +40,18 @@ def snapshot_lifecycle_claim(*, capture_failed: bool) -> dict[str, str]:
         "reproduction_availability": ("none" if capture_failed else "snapshot_recomposition"),
         "lifecycle_authority": SNAPSHOT_LIFECYCLE_AUTHORITY,
     }
+
+
+def read_reproduction_availability(stored: object) -> str | None:
+    """Read a stored reproduction_availability as the 1.1.0 vocabulary.
+
+    Policy 1.0.0 stamped "rerender_from_snapshot" for the same snapshot
+    capability that 1.1.0 names "snapshot_recomposition"; the contract says
+    those rows READ AS the capability claim while the stored bytes are never
+    rewritten - so the translation lives here, at readback, the only place
+    the legacy spelling may still appear.
+    """
+
+    if not isinstance(stored, str):
+        return None
+    return "snapshot_recomposition" if stored == "rerender_from_snapshot" else stored

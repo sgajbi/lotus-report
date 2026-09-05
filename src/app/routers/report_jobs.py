@@ -3,6 +3,7 @@ from typing import Annotated, Any, Protocol, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
 
+from app.reporting_identity.snapshot_lifecycle import read_reproduction_availability
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
@@ -428,10 +429,8 @@ def _snapshot_to_diagnostics(
             if isinstance(lifecycle.get("policy_ref"), str)
             else None
         ),
-        reproduction_availability=(
-            str(lifecycle.get("reproduction_availability"))
-            if isinstance(lifecycle.get("reproduction_availability"), str)
-            else None
+        reproduction_availability=read_reproduction_availability(
+            lifecycle.get("reproduction_availability")
         ),
         rerender_available=rerender_eligible(record),
     )
