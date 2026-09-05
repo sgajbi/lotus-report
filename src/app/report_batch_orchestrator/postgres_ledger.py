@@ -95,6 +95,25 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 missing_names = ",".join(sorted(missing))
                 raise RuntimeError(f"report_batch_ledger_schema_missing:{missing_names}")
 
+    def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
+        """Whether ANY batch was materialized under this key.
+
+        Used only for the legacy cycle-scope transition (report#283 finding
+        E): a cycle materialized under the old template-bearing identity is
+        recognised and skipped instead of re-materialized under the new
+        business-cycle identity.
+        """
+
+        normalized_key = idempotency_key.strip()
+        if not normalized_key:
+            return False
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM report_batch WHERE idempotency_key = %s",
+                (normalized_key,),
+            ).fetchone()
+        return row is not None
+
     def create_batch(
         self,
         *,

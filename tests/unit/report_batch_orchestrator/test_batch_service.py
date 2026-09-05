@@ -180,3 +180,12 @@ def test_get_report_batch_scheduler_constructs_configured_portfolio_source(monke
         "max_retries": 3,
         "retry_backoff_seconds": 0.5,
     }
+
+
+def test_has_batch_for_idempotency_key_answers_existence_only(tmp_path) -> None:
+    from app.report_batch_orchestrator.ledger import ReportBatchLedger
+
+    ledger = ReportBatchLedger(tmp_path / "existence.sqlite3")
+
+    assert ledger.has_batch_for_idempotency_key("") is False
+    assert ledger.has_batch_for_idempotency_key("scheduled-batch-none") is False

@@ -150,7 +150,13 @@ def test_schedule_validation_rejects_frequency_without_period_semantics(monkeypa
     assert exc_info.value.code == "unsupported_batch_frequency"
 
 
-def test_scheduled_batch_idempotency_key_is_stable_and_template_sensitive() -> None:
+def test_cycle_identity_is_the_business_cycle_not_the_template() -> None:
+    """report#283 finding E, inverted into the invariant: template and
+    package versions are presentation contracts resolved at job acceptance -
+    a deployment that moves a default must NOT mint a second batch for the
+    same business cycle. The legacy scope keeps the old sensitivity solely
+    so pre-change batches are recognised and skipped."""
+
     caller = _caller()
     cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
     same_cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
@@ -161,38 +167,22 @@ def test_scheduled_batch_idempotency_key_is_stable_and_template_sensitive() -> N
             template_version="v2",
         )
     )
-    changed_package = materialize_cycle(
-        BatchCycleRequest(
-            frequency="monthly",
-            as_of_date="2026-04-30",
-            render_package_version="portfolio-review.v2",
+    other_cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-05-31"))
+
+    def key(target):
+        return scheduled_batch_idempotency_key(
+            caller_context=caller,
+            selector_mode="explicit_portfolio_list",
+            cycle=target,
         )
-    )
 
-    first = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=cycle,
-    )
-    second = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=same_cycle,
-    )
-    changed = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=changed_template,
-    )
-    changed_package_key = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=changed_package,
-    )
-
-    assert first == second
-    assert first != changed
-    assert first != changed_package_key
+    assert key(cycle) == key(same_cycle)
+    # One business cycle, one batch - whatever the current template default.
+    assert key(cycle) == key(changed_template)
+    assert key(cycle) != key(other_cycle)
+    # The legacy scope retains template sensitivity for pre-change lookup.
+    assert cycle.legacy_idempotency_scope != changed_template.legacy_idempotency_scope
+    assert cycle.idempotency_scope == changed_template.idempotency_scope
 
 
 def test_scheduled_cycle_key_supports_idempotent_batch_materialization(tmp_path) -> None:
@@ -289,3 +279,49 @@ def test_scheduled_manifest_scope_materializes_explicit_manifest_entries(tmp_pat
     assert batch.selector_mode == "batch_manifest"
     assert batch.materialized_portfolio_ids == ["PB_SG_GLOBAL_BAL_001"]
     assert batch.items[0].source_system == "lotus-operations"
+
+
+def test_a_cycle_materialized_under_the_legacy_identity_is_not_rerun(tmp_path) -> None:
+    """The transition guarantee: a batch created under the old
+    template-bearing key is recognised via the legacy scope and skipped -
+    the identity-formula change itself must not manufacture a second run
+    of the same business cycle."""
+
+    caller = _caller()
+    cycle = materialize_cycle(
+        BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30", template_version="v1")
+    )
+    legacy_key = scheduled_batch_idempotency_key(
+        caller_context=caller,
+        selector_mode="explicit_portfolio_list",
+        cycle=cycle.model_copy(update={"idempotency_scope": cycle.legacy_idempotency_scope}),
+    )
+    new_key = scheduled_batch_idempotency_key(
+        caller_context=caller,
+        selector_mode="explicit_portfolio_list",
+        cycle=cycle,
+    )
+    assert legacy_key != new_key
+
+    ledger = ReportBatchLedger(tmp_path / "batches.sqlite3")
+    ledger.create_batch(
+        request=BatchCreateRequest(
+            selector_mode="explicit_portfolio_list",
+            portfolio_ids=["PB_SG_GLOBAL_BAL_001"],
+            source_candidates=[
+                PortfolioBatchCandidate(
+                    portfolio_id="PB_SG_GLOBAL_BAL_001",
+                    tenant_id="tenant-sg",
+                    region="APAC",
+                    active=True,
+                )
+            ],
+            as_of_date=cycle.as_of_date,
+            options={},
+        ),
+        caller_context=caller,
+        idempotency_key=legacy_key,
+    )
+
+    assert ledger.has_batch_for_idempotency_key(legacy_key) is True
+    assert ledger.has_batch_for_idempotency_key(new_key) is False

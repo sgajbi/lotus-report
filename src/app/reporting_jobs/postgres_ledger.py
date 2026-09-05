@@ -10,7 +10,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
 from app.postgres import PostgresConnectionProvider
-from app.report_ordering_catalogue.template_resolution import accepted_template_identity
+from app.report_ordering_catalogue.template_resolution import job_template_identity
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -217,6 +217,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         replacement document.
         """
 
+        source_job = self.get_job(source_job_id)
         return self._create_report_job(
             report_type="portfolio_review",
             accepted_message="Portfolio review report job accepted.",
@@ -225,6 +226,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             idempotency_key=idempotency_key,
             replay_source_job_id=source_job_id,
             replay_reason=reason,
+            inherited_template=(
+                source_job.render_template_id,
+                source_job.render_template_version,
+            ),
         )
 
     def submit_portfolio_review_job(
@@ -302,6 +307,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         enqueue: bool = False,
         replay_source_job_id: str | None = None,
         replay_reason: str = "Replay of failed report work.",
+        inherited_template: tuple[str | None, str | None] | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -312,8 +318,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         )
         # Template selection is an immutable job fact, stamped at acceptance
         # for PDF-capable jobs - identical to the SQLite ledger's discipline.
-        render_template_id, render_template_version = accepted_template_identity(
-            report_type, output_formats
+        render_template_id, render_template_version = job_template_identity(
+            report_type, output_formats, inherited_template
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(

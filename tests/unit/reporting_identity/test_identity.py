@@ -263,3 +263,16 @@ def test_from_evidence_computes_coverage_instead_of_trusting_a_label() -> None:
     assert complete.coverage == "complete"
     assert partial.coverage == "partial"
     assert unknown.coverage == "unknown"
+
+
+def test_blank_revision_fields_are_not_evidence() -> None:
+    """A source supplying "" or whitespace has stated nothing: the canonical
+    form omits it and coverage cannot claim complete over blanks."""
+
+    blank = SourceRevision(source_service="lotus-core", content_hash="   ")
+
+    assert blank.canonical() == {"source_service": "lotus-core"}
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(blank,), expected_sources=("lotus-core",)
+    )
+    assert vector.coverage == "unknown"

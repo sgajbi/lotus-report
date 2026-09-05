@@ -132,10 +132,14 @@ class SourceRevision(BaseModel):
     reconciliation_state: str | None = None
 
     def canonical(self) -> dict[str, Any]:
+        # A blank or whitespace value is NOT stated evidence: excluding it
+        # here keeps canonical forms honest and stops from_evidence() from
+        # declaring coverage complete over empty strings.
         return {
             name: value
             for name in _SOURCE_REVISION_FIELDS
             if (value := getattr(self, name)) is not None
+            and (not isinstance(value, str) or value.strip())
         }
 
 
