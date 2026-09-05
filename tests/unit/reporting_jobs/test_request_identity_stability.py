@@ -11,6 +11,8 @@ path creates duplicate work.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from app.idea_evidence_intake.materialization_contract import (
@@ -20,6 +22,7 @@ from app.reporting_jobs.ledger import (
     SERVER_DERIVED_REQUEST_OPTION_KEYS,
     IdempotencyConflictError,
     ReportJobLedger,
+    canonical_json,
     compute_request_hash,
 )
 from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
@@ -204,3 +207,55 @@ def test_legacy_records_survive_enrichment_schema_evolution(tmp_path) -> None:
     )
 
     assert retried.job_id == original.job_id
+
+
+def test_legacy_records_with_unsorted_set_lists_accept_the_identical_retry(tmp_path) -> None:
+    """The normalization-asymmetry vector: a record stored with
+    multi-element UNSORTED sections under the order-sensitive legacy hash.
+    The identical retry (either order) must converge through the
+    record-based comparison - which only holds if BOTH identity functions
+    share the declared-set normalization."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    unsorted_request = _request(options={"sections": ["PERFORMANCE", "OVERVIEW"]})
+    original = ledger.submit_portfolio_review_job(
+        request=unsorted_request,
+        caller_context=_caller(),
+        idempotency_key="idem-unsorted-legacy",
+    )
+    # The pre-normalization deployments hashed the declared lists in
+    # declaration order: fabricate that stored form faithfully.
+    legacy_payload = {
+        "report_type": "portfolio_review",
+        "portfolio_scope": {"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]},
+        "as_of_date": "2026-04-22",
+        "requested_output_formats": ["pdf"],
+        "reporting_currency": "USD",
+        "options": {"sections": ["PERFORMANCE", "OVERVIEW"]},
+        "tenant_id": "tenant-sg",
+        "region": "APAC",
+    }
+    legacy_hash = hashlib.sha256(canonical_json(legacy_payload).encode("utf-8")).hexdigest()
+    assert legacy_hash != compute_request_hash(
+        report_type="portfolio_review", request=unsorted_request, caller_context=_caller()
+    )
+    with ledger._connect() as connection:
+        connection.execute(
+            "UPDATE report_request SET request_hash = ? WHERE idempotency_key = ?",
+            (legacy_hash, "idem-unsorted-legacy"),
+        )
+
+    for retry_sections in (["PERFORMANCE", "OVERVIEW"], ["OVERVIEW", "PERFORMANCE"]):
+        retried = ledger.submit_portfolio_review_job(
+            request=_request(options={"sections": retry_sections}),
+            caller_context=_caller(),
+            idempotency_key="idem-unsorted-legacy",
+        )
+        assert retried.job_id == original.job_id
+
+    with pytest.raises(IdempotencyConflictError):
+        ledger.submit_portfolio_review_job(
+            request=_request(options={"sections": ["PERFORMANCE", "OVERVIEW", "RISK"]}),
+            caller_context=_caller(),
+            idempotency_key="idem-unsorted-legacy",
+        )
