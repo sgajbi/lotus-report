@@ -150,8 +150,8 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    legacy jobs resolve current definitions with no accepted-contract claim.
    The scheduler's duplicated template selection is retired: scheduling is
    portfolio-review-only (the family is bound in the definition validator
-   and dispatch), schedules state only output formats and composition
-   options, and the accepted document contract is the one resolved record
+   and dispatch), schedules state only output formats, reporting
+   currency, and composition options, and the accepted document contract is the one resolved record
    per job.
    Remaining, in order: revision identity on portfolio-memory events
    (blocked on an event-identity stability treatment: the payload hash IS
