@@ -59,3 +59,21 @@ def accepted_template_identity(
     if "pdf" not in (output_formats or ()):
         return None, None
     return resolve_report_template(report_type)
+
+
+def job_template_identity(
+    report_type: str,
+    output_formats: Collection[str] | None,
+    inherited: tuple[str | None, str | None] | None = None,
+) -> tuple[str | None, str | None]:
+    """The template pair a job is accepted under.
+
+    A replay RECOVERS an accepted job and inherits the source job's exact
+    pair - a deployment that moved the family default between acceptance and
+    replay must not reinterpret the document. Every other acceptance
+    resolves the current governed default.
+    """
+
+    if inherited is not None:
+        return inherited
+    return accepted_template_identity(report_type, output_formats)

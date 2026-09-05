@@ -75,8 +75,10 @@ def test_a_deployment_cannot_change_an_accepted_jobs_template(tmp_path, monkeypa
 
     monkeypatch.setattr(
         ledger_module,
-        "accepted_template_identity",
-        lambda report_type, output_formats: ("portfolio-review", "v0-frozen"),
+        "job_template_identity",
+        lambda report_type, output_formats, inherited=None: (
+            inherited if inherited is not None else ("portfolio-review", "v0-frozen")
+        ),
     )
     _ledger, store, ready = _seed_data_ready_job(tmp_path)
     monkeypatch.undo()
@@ -101,8 +103,10 @@ def test_a_deployment_cannot_change_an_accepted_jobs_template(tmp_path, monkeypa
 def test_a_new_job_resolves_the_current_family_default(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         ledger_module,
-        "accepted_template_identity",
-        lambda report_type, output_formats: ("portfolio-review", "v99"),
+        "job_template_identity",
+        lambda report_type, output_formats, inherited=None: (
+            inherited if inherited is not None else ("portfolio-review", "v99")
+        ),
     )
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
 
@@ -273,3 +277,69 @@ async def test_the_render_stated_publication_posture_is_persisted_verbatim(
     record = ledger.get_job(ready.job_id)
     assert record.render_template_publication == publication
     assert outcome.status in {"archived", "completed", "archiving"}
+
+
+def test_failed_work_replay_preserves_the_source_jobs_accepted_contract(
+    tmp_path, monkeypatch
+) -> None:
+    """The audit's reproduced defect, inverted into a regression: a job
+    accepted under one template version, replayed after the family default
+    moves, must retain its original accepted contract - a replay RECOVERS
+    the accepted document; only regenerate resolves the current default."""
+
+    monkeypatch.setattr(
+        ledger_module,
+        "job_template_identity",
+        lambda report_type, output_formats, inherited=None: (
+            inherited if inherited is not None else ("portfolio-review", "v1-accepted")
+        ),
+    )
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-replay-source",
+    )
+    assert source.render_template_version == "v1-accepted"
+    ledger.mark_data_ready(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="render_execution_failed",
+        failure_message="render runtime crashed",
+        retry_eligible=True,
+    )
+
+    # The deployment moves the family default before the replay.
+    monkeypatch.setattr(
+        ledger_module,
+        "job_template_identity",
+        lambda report_type, output_formats, inherited=None: (
+            inherited if inherited is not None else ("portfolio-review", "v2-current")
+        ),
+    )
+    derived = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-replay-derived",
+        reason="Replay of failed report work.",
+    )
+
+    assert derived.render_template_version == "v1-accepted"
+    assert derived.render_template_id == "portfolio-review"
+
+    # A NEW ordinary job still resolves the current default.
+    fresh = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-fresh-after-move",
+    )
+    assert fresh.render_template_version == "v2-current"

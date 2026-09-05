@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
-from app.report_ordering_catalogue.template_resolution import accepted_template_identity
+from app.report_ordering_catalogue.template_resolution import job_template_identity
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -463,6 +463,7 @@ class ReportJobLedger:
         replacement document.
         """
 
+        source_job = self.get_job(source_job_id)
         return self._create_report_job(
             report_type="portfolio_review",
             accepted_message="Portfolio review report job accepted.",
@@ -471,6 +472,10 @@ class ReportJobLedger:
             idempotency_key=idempotency_key,
             replay_source_job_id=source_job_id,
             replay_reason=reason,
+            inherited_template=(
+                source_job.render_template_id,
+                source_job.render_template_version,
+            ),
         )
 
     def submit_portfolio_review_job(
@@ -545,6 +550,7 @@ class ReportJobLedger:
         enqueue: bool = False,
         replay_source_job_id: str | None = None,
         replay_reason: str = "Replay of failed report work.",
+        inherited_template: tuple[str | None, str | None] | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -557,8 +563,8 @@ class ReportJobLedger:
         # stamped with its governed template id/version at ACCEPTANCE, so a
         # later deployment that changes the family default cannot change the
         # presentation contract this job was accepted under.
-        render_template_id, render_template_version = accepted_template_identity(
-            report_type, output_formats
+        render_template_id, render_template_version = job_template_identity(
+            report_type, output_formats, inherited_template
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(

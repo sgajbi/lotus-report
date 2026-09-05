@@ -439,6 +439,8 @@ class BatchScheduleLedger(Protocol):
         idempotency_key: str | None,
     ) -> ReportBatchRecord: ...
 
+    def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool: ...
+
 
 def batch_scheduler_config_from_settings(source: Settings = settings) -> BatchSchedulerConfig:
     schedules = _parse_schedule_definitions(source.batch_schedules_json)
@@ -675,6 +677,24 @@ class ReportBatchScheduler:
                     cycle=cycle,
                     selector_identity=_selector_identity(schedule, portfolio_ids),
                 )
+                if (
+                    cycle.legacy_idempotency_scope
+                    and self._batch_ledger.has_batch_for_idempotency_key(
+                        scheduled_batch_idempotency_key(
+                            caller_context=caller_context,
+                            selector_mode=request.selector_mode,
+                            cycle=cycle.model_copy(
+                                update={"idempotency_scope": cycle.legacy_idempotency_scope}
+                            ),
+                            selector_identity=_selector_identity(schedule, portfolio_ids),
+                        )
+                    )
+                ):
+                    # Materialized before the cycle-identity change under the
+                    # template-bearing legacy scope: one business cycle keeps
+                    # one batch - mint nothing.
+                    skipped.append(schedule.schedule_id)
+                    continue
             try:
                 batch = self._batch_ledger.create_batch(
                     request=request,

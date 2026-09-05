@@ -956,6 +956,7 @@ class BatchCycle(BaseModel):
     template_id: str
     template_version: str
     render_package_version: str
+    legacy_idempotency_scope: str | None = None
     idempotency_scope: str
 
 

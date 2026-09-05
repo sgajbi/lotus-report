@@ -58,6 +58,12 @@ def materialize_cycle(request: BatchCycleRequest) -> BatchCycle:
             period_start=period_start,
             period_end=period_end,
             as_of_date=request.as_of_date,
+        ),
+        legacy_idempotency_scope=_legacy_cycle_scope(
+            frequency=request.frequency,
+            period_start=period_start,
+            period_end=period_end,
+            as_of_date=request.as_of_date,
             template_id=request.template_id,
             template_version=request.template_version,
             render_package_version=request.render_package_version,
@@ -109,10 +115,42 @@ def _cycle_scope(
     period_start: date,
     period_end: date,
     as_of_date: date,
+) -> str:
+    """Cycle identity is the BUSINESS cycle - frequency, period, as-of.
+
+    Template and package versions are presentation contracts resolved at job
+    acceptance; hashing them here meant a deployment that moved a default
+    could mint a second batch for the same business cycle (report#283
+    finding E). They no longer participate.
+    """
+
+    payload = {
+        "frequency": frequency,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "as_of_date": as_of_date.isoformat(),
+    }
+    digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:24]
+    return f"{frequency}:{period_start.isoformat()}:{period_end.isoformat()}:{digest}"
+
+
+def _legacy_cycle_scope(
+    *,
+    frequency: str,
+    period_start: date,
+    period_end: date,
+    as_of_date: date,
     template_id: str,
     template_version: str,
     render_package_version: str,
 ) -> str:
+    """The pre-#283 scope formula, template values included.
+
+    Kept ONLY so the scheduler can recognise batches materialized under the
+    old identity and skip them instead of minting a duplicate for the same
+    business cycle. New batches never use it.
+    """
+
     payload = {
         "frequency": frequency,
         "period_start": period_start.isoformat(),
