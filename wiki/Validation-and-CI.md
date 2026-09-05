@@ -108,7 +108,11 @@ The configured role must be allowed to create and drop databases. The helper der
 unique database name, never runs stateful test suites against the source database, suppresses DSN
 output, terminates only connections to the database it owns, and drops that exact database in a
 guaranteed cleanup path. `make ci` remains the automation primitive for GitHub Actions and other
-callers that already own an isolated database.
+callers that already own an isolated database. Never point `make ci` at a database used by
+running services: the lane marks the caller's isolation promise via
+`REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED`, so the integration-test session trusts the given
+database. Bare `pytest tests/integration` (or `make test-integration`) instead provisions its own
+ephemeral `lotus_report_ci_<token>` database, so it is safe alongside the running local stack.
 
 ## Contract emphasis
 

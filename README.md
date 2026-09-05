@@ -1,267 +1,76 @@
 # lotus-report
 
-Reporting and aggregation service for Lotus portfolio summary, portfolio review, and evidence
-payloads.
+Governed report composition for Lotus wealth applications.
 
-Repository-local engineering context:
-[REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md)
+`lotus-report` assembles authoritative portfolio information, analytics, and reviewed material
+into traceable report packages for clients and advisors. It coordinates rendering and archival
+through the services that own them — it composes and explains; it never recomputes a number an
+authoritative service owns, never decides how a document looks, and never stores the archived
+document itself.
 
-Local ownership guidance:
-[docs/standards/data-model-ownership.md](docs/standards/data-model-ownership.md)
+## What it enables
 
-## Purpose And Scope
+- **Advisor-ready portfolio reviews** — a client meeting pack assembled from sourced portfolio,
+  performance, and risk truth, with client-safe and advisor-only content strictly separated and
+  every section honest about what is sourced, partial, or unavailable.
+- **Traceable client documents** — every report is reproducible and explainable after the fact:
+  an immutable evidence snapshot, append-only source lineage, a canonical revision identity, and
+  a custody chain from render through archive.
+- **Governed report operations** — durable, idempotent report jobs with operator-safe search,
+  diagnostics, recovery paths, recurring schedules, and batch runs that converge instead of
+  duplicating client documents.
+- **Reviewed-content inclusion under authority** — accepted advisor briefs, reviewed proposal
+  narratives, and reviewed opportunity evidence enter reports only through explicit acceptance
+  contracts; nothing is rewritten, summarized, or invented on the way in.
 
-`lotus-report` owns reporting-oriented composition:
+## Report families
 
-- reporting read-model aggregation
-- portfolio summary payload shaping
-- portfolio review report payload shaping for client/advisor meetings
-- PostgreSQL-backed durable portfolio review report job and work-queue ledgers for gateway-first
-  acceptance, asynchronous execution, operational search, status tracking, event history, and
-  bounded cancellation
-- reporting capability publication for downstream consumers
+| Family | What the reader gets | Availability |
+| --- | --- | --- |
+| Portfolio review | A client/advisor meeting pack: profile, key figures, allocation, performance, risk, income and activity, holdings, and optional reviewed commentary | Implemented end to end (JSON and governed PDF); the primary front-office capability |
+| Outcome review | A review-window document for a completed portfolio outcome, composed from the manage-owned bounded report input | Implemented on the shared job pipeline; consumes DPM evidence, never recomputes it |
+| Proof pack | A rebalance proof document from the manage- or idea-owned proof-pack report input | Implemented on the shared job pipeline |
+| Rebalance wave | A wave execution document from the manage-owned wave report input | Implemented on the shared job pipeline |
+| Idea evidence pack | Intake and materialization receipts for reviewed opportunity evidence | Implemented foundation, **not certified**: no render, archive, client-publication, or supported-feature promotion |
 
-It does not own core portfolio data, performance truth, or risk methodology. Those remain in the
-authoritative upstream services.
+Implemented is not certified: the
+[supported features registry](docs/supported-features.md) is the authoritative,
+implementation-backed statement of what is a product capability versus a foundation, and the
+[report ordering catalogue](wiki/Report-Ordering.md) governs what a caller may order.
 
-## Ownership And Boundaries
+## How a report moves through the platform
 
-`lotus-report` is an orchestration-heavy reporting service.
-
-It depends on:
-
-- `lotus-core`
-  portfolio summary, asset allocation, positions, and transaction source-data contracts
-- `lotus-performance`
-  workspace summary and performance analytics inputs used for reporting views
-- `lotus-risk`
-  risk analytics derived from reporting review flows
-- `lotus-render`
-  deterministic PDF rendering for governed report packages
-- `lotus-archive`
-  rendered document archival after successful PDF render completion
-- `lotus-gateway`
-  primary product-facing consumer for front-office reporting workflows
-- `lotus-idea`
-  approved producer of reviewed opportunity evidence packets for report evidence-pack intake;
-  `POST /reports/idea-evidence-packs` proves the route foundation only, while report
-  materialization, render, archive, client-publication authority, and supported-feature promotion
-  remain not certified
-
-Boundary rules that matter:
-
-1. upstream domain truth stays in the authoritative services
-2. `lotus-report` owns reporting aggregation, response shape, and reporting job lifecycle state, not
-   portfolio, performance, or risk analytics authority
-3. cross-app reporting payloads must stay faithful to upstream evidence
-4. canonical service identity for cross-app validation is `http://report.dev.lotus`
-
-## Current Operational Posture
-
-1. `lotus-report` composes portfolio summary and review payloads from `lotus-core`,
-   `lotus-performance`, and `lotus-risk`.
-2. It is part of the canonical front-office stack and is exposed through `report.dev.lotus`.
-3. `POST /reports/portfolios/{portfolio_id}/review` is the portfolio review report contract with
-   typed request/response models, normalized machine-readable JSON,
-   client/advisor section separation, explicit section readiness, evidence lineage, source-backed
-   key figures, deterministic advisor briefing, report-structure guidance, and guarded AI-readiness
-   metadata.
-4. `POST /reports/portfolio-reviews`, `POST /reports/outcome-reviews`,
-   `POST /reports/proof-packs`, `POST /reports/rebalance-waves`, `GET /reports/jobs`,
-   `GET /reports/jobs/{job_id}`, `GET /reports/jobs/{job_id}/events`, and
-   `POST /reports/jobs/{job_id}/cancel` provide the
-   durable job-ledger foundation for gateway-first report acceptance, operator-safe job search,
-   product-safe status, append-only event history, database-backed idempotency, and bounded
-   cancellation before the job reaches `rendering`. Job creation atomically enqueues durable work
-   and returns `202 Accepted`; the separate `lotus-report-job-worker` performs immutable snapshot
-   and lineage capture, lotus-render submission for PDF output, and `lotus-archive` handoff after
-   successful render completion.
-   Outcome-review, proof-pack, and rebalance-wave job routes consume manage-owned bounded report
-   inputs and do not recompute DPM evidence. Archive retrieval, retention execution, legal hold,
-   purge, and document distribution remain owned by `lotus-archive`.
-5. CI is standardized under the Lotus lane model, though lighter than some domain-authoritative
-   services.
-6. Request conventions are governed by the Lotus API vocabulary standard. Public query,
-   request-body, and response fields use canonical snake_case names and do not publish camelCase
-   compatibility aliases.
-7. `contracts/idea-evidence-intake/lotus-report-idea-evidence-pack-intake.v1.json` records the
-   implemented, not-certified `lotus-idea` evidence-pack intake route boundary for
-   `ClientReportEvidencePack`. It proves only source-safe route intake through
-   `POST /reports/idea-evidence-packs`; it is not report materialization, render, archive,
-   client-publication authority, or supported-feature proof. Intake idempotency is persisted in a
-   SQLite ledger configured by `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`; records store support-safe
-   fingerprints, source identifiers, caller context, correlation id, and trace id, not raw evidence
-   payloads. Report resolves `retention_policy_ref` against the versioned policy contract before
-   intake or materialization; unknown, inactive, unauthorized, and tenant-mismatched references
-   fail before persistence, while active legal holds propagate to the report job and Archive
-   handoff metadata.
-8. `contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json`
-   records the implemented, not-certified report materialization boundary for reviewed
-   `lotus-idea` evidence packs. `POST /reports/idea-evidence-packs/materializations` now returns a
-   typed source-safe materialization receipt with report-package identity, source-authority
-   lineage, report-job creation posture, render/archive outcome flags and identifiers, and
-   explicit remaining blockers. It does not grant client-publication authority, suitability,
-   mandate approval, execution, distribution, or supported-feature promotion.
-
-## First-Class Portfolio Review
-
-The portfolio review endpoint is the main front-office reporting capability in this repository. It
-is designed for client advisor review meetings where the output must be useful to a human advisor,
-machine-readable for Workbench/gateway consumers, and honest about what is sourced versus not
-sourced.
-
-The response includes:
-
-- `client_profile`
-  source-backed client, advisor, booking-center, mandate, objective, risk exposure, horizon,
-  leverage, status, and cost-basis context from `lotus-core`
-- `key_figures`
-  normalized portfolio value, allocation, performance, risk, income/activity, holdings,
-  unrealized P&L, transaction-level realized P&L, position contribution, and client-profile figures
-- `client_sections`
-  ordered client-ready report sections with explicit readiness states
-- `advisor_sections`
-  advisor-only deterministic prompts and route targets that must not be rendered as client report
-  content without an explicit product decision
-- `report_coverage`, `upstream_capability_audit`, and `review_observations`
-  sourced, partial, and missing coverage so unsupported gold-standard material is visible instead
-  of silently omitted
-- `report_structure` and `advisor_briefing`
-  deterministic meeting-pack organization and advisor-useful talking points
-- `ai_readiness`
-  guarded metadata for grounded AI assistance, with trade recommendations, suitability
-  determinations, and inferred client profiles explicitly blocked
-- `evidence`
-  lineage and trust metadata for downstream governance and auditability
-
-Current live-proof portfolio:
-
-- governed portfolio id: `PB_SG_GLOBAL_BAL_001`
-- governed local endpoint:
-  `POST http://127.0.0.1:8300/reports/portfolios/PB_SG_GLOBAL_BAL_001/review?section_limit=20`
-- full example and operating guidance:
-  [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
-
-Important limitation: `lotus-report` does not invent suitability, target allocation, product
-restriction, liquidity-need, open tax-lot attribution, or jurisdiction-specific tax treatment.
-Transaction-level realized gain/loss is sourced from `lotus-core` transaction rows where present;
-tax-lot and jurisdiction-specific reporting must come from the authoritative upstream owner before
-they become report-backed product features.
-
-## Architecture At A Glance
-
-Main runtime surfaces come from [src/app/main.py](src/app/main.py):
-
-- integration capabilities
-  `GET /integration/capabilities`
-- report ordering catalogue
-  `GET /integration/report-ordering-catalogue`
-- aggregations
-  `GET /aggregations/portfolios/{portfolio_id}`
-- reporting read endpoints
-  `POST /reports/portfolios/{portfolio_id}/summary`
-  `POST /reports/portfolios/{portfolio_id}/review`
-- report job lifecycle endpoints
-  `POST /reports/portfolio-reviews`
-  `GET /reports/jobs`
-  `GET /reports/jobs/{job_id}`
-  `GET /reports/jobs/{job_id}/events`
-  `POST /reports/jobs/{job_id}/cancel`
-- platform surfaces
-  `/health`, `/health/live`, `/health/ready`, `/metrics`, `/docs`
-
-Key code areas:
-
-- `src/app/routers/`
-  FastAPI route surfaces for health, integration, aggregations, and reports
-- `src/app/services/reporting_read_service.py`
-  upstream composition for summary and review payloads
-- `src/app/services/portfolio_review_advisor.py`
-  deterministic advisor-only discussion prompts and route targets for review meetings
-- `src/app/services/aggregation_service.py`
-  aggregation read-model composition and live/static aggregation flows
-- `src/app/reporting_jobs/`
-  durable report request/job/status-event and work-item ledgers, idempotency, leased asynchronous
-  execution with one-item claim-before-execute semantics, bounded explicit-failure and expired-lease
-  retry, coherent source-job terminalization, render metadata, archive metadata, rerender attempt
-  state, and bounded cancellation
-- `src/app/reporting_render/`
-  governed render-package assembly, lotus-render orchestration, post-render archive handoff, and
-  archived-report rerender from immutable snapshot, upstream regeneration, and failed-work replay
-- `src/app/reporting_jobs/process.py`
-  daemonized `lotus-report-job-worker` process that claims each work-item lease immediately before
-  execution and resumes the source-capture, render, and archive pipeline after process interruption;
-  capture readiness requires a transactionally complete snapshot and upstream-call ledger, not
-  snapshot presence alone
-- `src/app/reporting_metrics.py`
-  RFC-0105 first-wave Prometheus metric vocabulary for implemented report job, snapshot, render,
-  archive, rerender-from-snapshot, regenerate-from-upstream, failed-work replay command, batch
-  worker, scheduler, report-work lease recovery/exhaustion/conflict, and source-backed operations
-  attention scan behavior, with reserved dedicated broader replay posture and high-cardinality
-  label rejection
-- `src/app/report_batch_orchestrator/`
-  RFC-0104 batch reporting module boundary, planned vocabulary, and internal durable
-  batch/batch-item, deterministic schedule-cycle, dispatch, lease, back-pressure, bounded retry,
-  pause/resume, cancellation-boundary, expired-lease recovery primitives, and certified
-  materialization/status/control APIs. Internal item execution can reuse the existing report-job,
-  snapshot, render, and archive handoff path, and an internal bounded worker run primitive can
-  combine recovery, dispatch, and waiting-item execution for one batch. `POST
-  /reports/batches/{batch_id}:run-once` exposes that bounded worker pass as an internal
-  operator-controlled API. A bounded internal runtime pass can scan durable runnable batches and
-  invoke that worker primitive for a limited number of batches. The
-  `lotus-report-batch-worker` Docker Compose service runs that pass as a daemonized internal
-  background worker process. The `lotus-report-batch-scheduler` Docker Compose service reads
-  governed `REPORT_BATCH_SCHEDULES_JSON`, resolves explicit, all-active, and inline manifest
-  schedule selectors through `lotus-core` or governed schedule manifest metadata, and creates
-  durable idempotent scheduled batches for the worker to execute. `GET /reports/batch-schedules`
-  and `POST /reports/batch-schedules:run-due` expose scheduler inspection and a bounded
-  materialization pass. Recurring report-pack definitions are a governed API surface:
-  `POST/GET/PATCH /reports/batch-schedules[/{schedule_id}]` create, inspect, update, enable and
-  disable tenant-fenced stored schedules (explicit portfolio lists, month-end or quarter-end
-  cadence) that materialize through the same scheduler loop with full audit and
-  `batch_schedule_id` lineage; entitlement-certified public scheduler runtime remains future
-  scope
-- `src/app/report_ordering_catalogue/`
-  Report-owned, versioned business catalogue for supported report families, ordering modes,
-  formats, configuration fields, sections, and live Render supportability. The same definitions
-  validate product-facing single-portfolio, batch, source-workflow, and governed-schedule choices
-  before durable mutation. Gateway owns entitlement and selected-scope eligibility; Workbench must
-  consume the Gateway projection rather than hard-code report choices.
-- `src/app/clients/`
-  lotus-core, lotus-performance, lotus-risk, lotus-render, and HTTP resilience clients
-- `docs/standards/`
-  ownership, readiness, migration, precision, and scalability guidance
-- `docs/supported-features.md`
-  implementation-backed product capability registry
-
-## Repository Layout
-
-- `src/app/main.py`
-  FastAPI entrypoint and router registration
-- `src/app/routers/`
-  public HTTP surfaces for health, integration, aggregations, and reports
-- `src/app/services/`
-  reporting composition and aggregation orchestration logic
-- `src/app/clients/`
-  upstream lotus-core, lotus-performance, and lotus-risk clients
-- `tests/`
-  unit, integration, and e2e coverage for reporting behavior
-- `scripts/`
-  OpenAPI, migration, and monetary-float governance checks
-- `docs/supported-features.md`
-  implementation-backed product capability registry
-- `wiki/`
-  canonical authored source for the GitHub wiki page set
-
-## Quick Start
-
-Install dependencies:
-
-```bash
-make install
+```
+request (lotus-gateway: entitlement, ordering)
+  -> acceptance   lotus-report   durable idempotent job
+  -> capture      lotus-report   authoritative reads -> IMMUTABLE SNAPSHOT + source lineage
+                                 (lotus-core, lotus-performance, lotus-risk, lotus-ai)
+  -> compose      lotus-report   governed semantic report package
+  -> render       lotus-render   exact artifact, deterministic PDF production
+  -> archive      lotus-archive  durable document custody, retention, access audit
+  -> consume      Workbench / gateway consumers
 ```
 
-Run the service locally:
+Ownership is explicit at every hop: Report owns what the document communicates and the evidence
+behind it; Render owns how it looks and is the one archive transmit authority; Archive owns the
+stored document and its lifecycle; Gateway owns who may order and retrieve.
+
+Every successful capture also mints a canonical report revision identity that is persisted with
+the snapshot and carried through the render package into archive custody. Durable revision
+capture does **not** by itself close the full identity chain: the accepted document contract,
+trust-state separation, snapshot lifecycle metadata, and the integrated proof remain open under
+the governing canonical-identity work
+([#283](https://github.com/sgajbi/lotus-report/issues/283), tracked in
+[REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md)).
+
+## Getting started
+
+Prerequisites first:
+
+1. Python toolchain and dependencies: `make install`
+2. A running PostgreSQL for the report ledgers — the repository Docker Compose provides
+   `lotus-report-postgres` on host port `5439`. File databases are not valid runtime evidence.
+3. Environment for a local run (PowerShell):
 
 ```powershell
 $env:ENTERPRISE_RUNTIME_PROFILE="local"
@@ -270,236 +79,36 @@ $env:PYTHONPATH="src"
 uvicorn app.main:app --reload --port 8300
 ```
 
-For local runtime parity, start a PostgreSQL database before launching the process. The repository
-Docker Compose file provides `lotus-report-postgres` on host port `5439`;
-`REPORT_JOB_LEDGER_DATABASE_URL` must point to PostgreSQL for runtime, integration, migration, and
-live-evidence proof.
-
-Existing supported Report volumes are upgraded in place before the API, report job worker, batch
-worker, or scheduler starts. Validate both current-schema and prior-schema compatibility with
-`make migration-smoke`.
-Use `make migration-upgrade-smoke` when you need only the isolated prior-schema proof. Do not delete
-the volume as the default response to a startup failure: preserve it and capture the stable
-`lotus_report_schema_startup_failed` diagnostic described in
-`docs/standards/migration-contract.md`.
-
-Canonical local service identity:
-
-- cross-app validation: `http://report.dev.lotus`
-- direct process debugging: `http://127.0.0.1:8300`
-
-Quick health probes:
+Expected health result:
 
 ```bash
 curl http://127.0.0.1:8300/health
-curl "http://127.0.0.1:8300/integration/capabilities?consumer_system=lotus-gateway&tenant_id=default"
+# {"status":"ok"}
 ```
 
-## Common Commands
+Existing supported Report database volumes upgrade in place at startup. If startup fails with a
+schema diagnostic, preserve the volume and follow the governed recovery path — see
+[Schema Upgrade And Startup Recovery](wiki/Operations-Runbook.md) and
+[docs/standards/migration-contract.md](docs/standards/migration-contract.md).
 
-- `make install`
-  install dependencies and pre-commit hooks
-- `make check`
-  fast local gate: lint, typecheck, OpenAPI gate, and unit tests
-- `make ci`
-  PR-grade automation proof against a caller-owned isolated PostgreSQL database: migration smoke,
-  integration, e2e, coverage, and security audit
-- `make migration-upgrade-smoke`
-  real PostgreSQL proof that the supported pre-contract status-event schema upgrades in place,
-  preserves the legacy row, and can safely rerun without touching the public schema
-- `make ci-local`
-  safe workstation proof that creates one temporary database, runs the repo CI contract, and drops
-  only that database on success or failure
-- `make docker-build`
-  container build validation
+For validation that is safe beside a running local stack, use `make check` (fast local gate) and
+`make ci-local` (isolated PR-grade proof against a temporary database) — details and the full
+lane model in [Validation and CI](wiki/Validation-and-CI.md). Safe first-response steps for
+runtime trouble live in [Troubleshooting](wiki/Troubleshooting.md).
 
-## Validation And CI Lanes
+## Where everything else lives
 
-`lotus-report` follows the Lotus multi-lane model:
+| I want to... | Go to |
+| --- | --- |
+| See request/response examples for every surface | [wiki/API-Surface.md](wiki/API-Surface.md) |
+| Understand the portfolio review contract in depth | [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md) |
+| Order reports and integrate as a consumer | [wiki/Report-Ordering.md](wiki/Report-Ordering.md), [wiki/Integrations.md](wiki/Integrations.md) |
+| Know what is a certified product capability | [docs/supported-features.md](docs/supported-features.md) |
+| Understand the architecture and current priorities | [wiki/Architecture.md](wiki/Architecture.md), [REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md) |
+| Follow a document through its full lifecycle, identities, and failure semantics | [wiki/End-to-End-Report-Lifecycle.md](wiki/End-to-End-Report-Lifecycle.md) |
+| Operate, configure, diagnose, and recover the service | [wiki/Operations-Runbook.md](wiki/Operations-Runbook.md) |
+| Contribute: workflow, gates, and standards | [wiki/Development-Workflow.md](wiki/Development-Workflow.md), [docs/standards](docs/standards) |
+| Security and governance posture | [wiki/Security-and-Governance.md](wiki/Security-and-Governance.md) |
 
-1. `Remote Feature Lane`
-2. `Pull Request Merge Gate`
-3. `Main Releasability Gate`
-
-Repo-native gate mapping:
-
-- `make check`
-  lint, typecheck, OpenAPI gate, and unit tests
-- `make ci`
-  merge-gate automation proof with migration smoke, integration tests, e2e tests, coverage, and
-  security audit. The caller must provide an isolated PostgreSQL database through
-  `REPORT_JOB_LEDGER_DATABASE_URL`; never point this target at a database used by running services.
-  The lane marks that contract via `REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED`, so the
-  integration-test session trusts the given database. Bare `pytest tests/integration` (or
-  `make test-integration`) instead provisions its own ephemeral `lotus_report_ci_<token>`
-  database, so it is safe alongside the running local stack.
-- `make ci-local`
-  preferred workstation command. It uses the configured PostgreSQL server and credentials to
-  create a uniquely named database, runs `make ci` against that database, and drops only the
-  helper-owned database in a guaranteed cleanup path.
-- `make docker-build`
-  container build validation
-
-For safe PR-grade proof while the canonical Report stack remains running:
-
-```powershell
-$env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
-make ci-local
-```
-
-The configured PostgreSQL role must be allowed to create and drop databases. The source database
-name is used only to derive a bounded temporary name; `ci-local` does not run migrations or tests
-against the source database, does not delete the canonical volume, and does not print the DSN.
-
-## API Contract Notes
-
-Important current request conventions:
-
-1. `GET /integration/capabilities` expects canonical snake_case query parameters
-   `consumer_system` and `tenant_id`
-2. `GET /aggregations/portfolios/{portfolio_id}` expects canonical snake_case query parameter
-   `as_of_date`
-3. `POST /reports/portfolios/{portfolio_id}/summary` and `/review` use canonical snake_case
-   `section_limit`
-4. `POST /reports/portfolios/{portfolio_id}/review` publishes snake_case request and response
-   fields only; camelCase aliases are rejected by the typed request model
-
-Do not add compatibility aliases for alternate case styles. If a public field name needs to
-change, treat it as a governed contract change with tests, OpenAPI updates, and downstream
-coordination.
-
-Copy-paste request examples live in [wiki/API-Surface.md](wiki/API-Surface.md).
-The portfolio review contract is explained in
-[wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md).
-
-## Upstream Defaults
-
-Cross-app upstream defaults in local runtime:
-
-- `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
-- `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
-- `RISK_BASE_URL=http://risk.dev.lotus`
-- `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
-- `LOTUS_AI_BASE_URL=http://ai.dev.lotus`
-- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
-- `REPORT_POSTGRES_POOL_MIN_SIZE=1`
-- `REPORT_POSTGRES_POOL_MAX_SIZE=10`
-- `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS=5`
-- `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS=5`
-- `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS=30000`
-- `REPORT_POSTGRES_APPLICATION_NAME=lotus-report`
-
-When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
-container uses host-reachable upstream URLs instead:
-
-- `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
-- `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
-- `RISK_BASE_URL=http://host.docker.internal:8130`
-- `LOTUS_ARCHIVE_BASE_URL=http://host.docker.internal:8150`
-- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report`
-
-This keeps `report.dev.lotus` stable for callers while allowing the containerized report service to
-reach the host-published canonical upstream ports. The report job ledger uses the separate
-`lotus-report-postgres` container; file databases are not valid runtime evidence.
-
-Current orchestration model:
-
-1. summary/reporting views use lotus-core portfolio summary, asset allocation, positions, and
-   transaction contracts
-2. review performance uses `POST /performance/workspace-summary` in stateful mode
-3. review risk analytics derive from the resulting daily return stream and are then forwarded into
-   lotus-risk
-
-## Integration Boundaries
-
-- primary downstream consumer:
-  `lotus-gateway` for front-office reporting workflows
-- upstream evidence producer:
-  `lotus-idea` for reviewed opportunity evidence packets through the implemented
-  `POST /reports/idea-evidence-packs` route foundation; materialization, render, archive, and
-  client-publication proof remain separate certification work
-- upstream dependencies:
-  `lotus-core`, `lotus-performance`, `lotus-risk`
-- contract rule:
-  reporting payloads may reshape and aggregate upstream data, but they must not reinterpret domain
-  ownership or invent unsupported business truth
-
-## Operations And Runtime Posture
-
-- use `report.dev.lotus` for canonical cross-app validation and ingress-aware checks
-- use `127.0.0.1:8300` only for direct local debugging with
-  `ENTERPRISE_RUNTIME_PROFILE=local`
-- production-like runtime profiles (`prod`, `production`, `preprod`, `staging`, and `uat`) fail
-  closed for direct service access: write and read authorization are enforced even when authz
-  toggles are omitted, and startup validation fails unless `ENTERPRISE_ENFORCE_AUTHZ=true`,
-  `ENTERPRISE_ENFORCE_READ_AUTHZ=true`, and `ENTERPRISE_PRIMARY_KEY_ID` are configured
-- treat reporting errors as orchestration issues first: verify upstream responses and request-shape
-  compatibility before changing response formatting
-- preserve observability, correlation, request, and trace behavior on reporting endpoints,
-  especially when debugging summary, review, batch, render, or archive flows
-- use `ENTERPRISE_ENFORCE_AUTHZ=true` and `ENTERPRISE_ENFORCE_READ_AUTHZ=true` outside local
-  debug to require service identity or authorization on write and `GET`/`HEAD` surfaces; use
-  `ENTERPRISE_AUDIT_READS=true` to emit identifier-only read audit events through the enterprise
-  readiness middleware
-- treat `docs/operations/reporting-observability-metrics.md` as the current RFC-0105 metrics,
-  dashboard, alert, and label-governance contract; dedicated broader replay dashboards remain
-  reserved until those command paths are implementation-backed
-- treat `/health/ready` as a database-aware readiness probe; it returns unavailable when the
-  PostgreSQL ledger or mandatory schema is not reachable
-- treat `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported` as an operator
-  migration/version diagnostic: preserve the database volume and use the governed upgrade or
-  recovery path rather than resetting durable report history
-- PostgreSQL-backed report-job, report-work, batch, and snapshot/upstream-call stores share one bounded
-  process-local connection provider; tune `REPORT_POSTGRES_POOL_MAX_SIZE`,
-  `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS`, `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS`,
-  `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS`, and `REPORT_POSTGRES_APPLICATION_NAME` before raising
-  report-job worker, batch-worker, or scheduler concurrency
-- use `GET /reports/jobs/{job_id}/diagnostics` as the first RFC-0105 operator view for one report
-  job; it composes source-backed status, lifecycle-event, snapshot, lineage, render, and archive
-  handoff posture while omitting raw payloads, storage references, and database internals
-- use `POST /reports/jobs/{job_id}/rerender` only for already archived PDF jobs when operations
-  need a correction document from the same immutable snapshot; the response proves the same
-  snapshot id/hash and a new rerender/render/archive identity
-- use `POST /reports/jobs/{job_id}/regenerate` only for already archived PDF jobs when operations
-  need to refresh upstream data and create a replacement document; the response proves the old and
-  new report job, snapshot, snapshot hash, and archive document identities
-- use `POST /reports/jobs/{job_id}/replay` only for failed retry-eligible report jobs; it creates
-  or reuses a replay-scoped report job and rejects completed, archived, cancelled, or non-retryable
-  source jobs
-- portfolio review and summary transaction windows are bounded by
-  `REPORT_TRANSACTION_MAX_ROWS` and `REPORT_TRANSACTION_MAX_PAGES`; oversized windows return a
-  partial transaction supportability state instead of issuing unbounded lotus-core pagination calls
-- use `POST /reports/batches/{batch_id}/items/{batch_item_id}/replay` only for failed
-  retry-eligible implementation-backed batch items linked to failed report jobs; it relinks the
-  item to replay work without scheduler CRUD, registry mutation, distribution, or archive
-  housekeeping behavior
-- use `GET /reports/jobs/{job_id}/events` for deeper lifecycle diagnostics before inspecting
-  database rows directly
-- use `POST /reports/batches` and `GET /reports/batches/{batch_id}` only for the certified
-  internal batch materialization/status subset; pause, resume, cancel, retry-failed, and
-  recover-expired-leases controls plus the bounded `run-once` operator action are direct
-  `lotus-report` APIs and are not yet gateway or Workbench surfaces. The internal runtime pass and
-  daemonized worker/scheduler processes are `lotus-report` service primitives, not public APIs
-
-## Documentation Map
-
-- local ownership guidance:
-  [docs/standards/data-model-ownership.md](docs/standards/data-model-ownership.md)
-- local operations workflow:
-  [docs/operations/development-workflow-and-ci-strategy.md](docs/operations/development-workflow-and-ci-strategy.md)
-- supported features:
-  [docs/supported-features.md](docs/supported-features.md)
-- portfolio review report guide:
-  [wiki/Portfolio-Review-Report.md](wiki/Portfolio-Review-Report.md)
-- local standards:
-  [docs/standards](docs/standards)
-- wiki home:
-  [wiki/Home.md](wiki/Home.md)
-- API request examples:
-  [wiki/API-Surface.md](wiki/API-Surface.md)
-
-## Wiki Source
-
-Repository-authored wiki pages live under [wiki/](wiki). If the GitHub wiki is published later,
-keep `wiki/` as the canonical source and treat any separate `*.wiki.git` clone as publication
-plumbing only.
+Repository-authored wiki pages under [wiki/](wiki) are the canonical source; the published GitHub
+wiki is publication plumbing only.

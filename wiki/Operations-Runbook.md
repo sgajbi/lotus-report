@@ -16,9 +16,10 @@ for the implementation-backed `lotus-report` runtime.
 9. [RFC-0104 batch reporting posture](#rfc-0104-batch-reporting-posture)
 10. [RFC-0100 gateway-first job flow](#rfc-0100-gateway-first-job-flow)
 11. [RFC-0101 snapshot and lineage flow](#rfc-0101-snapshot-and-lineage-flow)
-12. [PostgreSQL ledger operations](#postgresql-ledger-operations)
-13. [Practical probes](#practical-probes)
-14. [Key references](#key-references)
+12. [Runtime configuration defaults](#runtime-configuration-defaults)
+13. [PostgreSQL ledger operations](#postgresql-ledger-operations)
+14. [Practical probes](#practical-probes)
+15. [Key references](#key-references)
 
 ## First Response Matrix
 
@@ -607,6 +608,38 @@ Operational truths for this wave:
    conflicting lineage fails closed as `data_incomplete`,
 8. a stored failed capture resumes as failed and is never promoted to `data_ready`,
 9. support-safe APIs return hashes, posture, and lineage metadata instead of raw upstream payloads.
+
+## Runtime configuration defaults
+
+Cross-app upstream defaults in local runtime:
+
+- `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
+- `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
+- `RISK_BASE_URL=http://risk.dev.lotus`
+- `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
+- `LOTUS_AI_BASE_URL=http://ai.dev.lotus`
+- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
+- `REPORT_POSTGRES_POOL_MIN_SIZE=1`
+- `REPORT_POSTGRES_POOL_MAX_SIZE=10`
+- `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS=5`
+- `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS=5`
+- `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS=30000`
+- `REPORT_POSTGRES_APPLICATION_NAME=lotus-report`
+
+When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
+container uses host-reachable upstream URLs instead:
+
+- `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
+- `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
+- `RISK_BASE_URL=http://host.docker.internal:8130`
+- `LOTUS_ARCHIVE_BASE_URL=http://host.docker.internal:8150`
+- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report`
+
+This keeps `report.dev.lotus` stable for callers while the containerized service reaches the
+host-published canonical upstream ports. The report job ledger uses the separate
+`lotus-report-postgres` container; file databases are not valid runtime evidence. Canonical
+service identity for cross-app validation is `http://report.dev.lotus`; use `127.0.0.1:8300`
+only for direct local debugging with `ENTERPRISE_RUNTIME_PROFILE=local`.
 
 ## PostgreSQL ledger operations
 
