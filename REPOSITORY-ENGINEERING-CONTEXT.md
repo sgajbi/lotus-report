@@ -134,9 +134,16 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    id) — catalogue identity, quality labels, and bare timestamps never
    establish it, and complete coverage asserts neither source-cut
    coherence nor reconciliation.
-   Remaining, in order: hand the revision off downstream (render metadata,
-   Archive lineage) and retire the portfolio/date bundle labels in the
-   evidence pack; persist one `AcceptedDocumentContract` covering ALL
+   The revision hands off downstream: the render package carries it in
+   `render_context` and the custody block passes it verbatim into Archive's
+   document record (archive migration 011), with resumed renders resolving
+   the persisted render job before any resubmission so package-shape
+   evolution can never strand an in-flight job as a conflict.
+   Remaining, in order: retire the portfolio/date bundle labels in the
+   evidence pack (consumer declarations checked first - the tenant_id
+   lesson) and revision identity on portfolio-memory events (blocked on an
+   event-identity stability treatment: the payload hash IS the event
+   identity); persist one `AcceptedDocumentContract` covering ALL
    contract axes (report-data, envelope, locale/brand/disclosure — template
    identity is already persisted); trust-state separation incl. source-cut
    coherence; snapshot lifecycle metadata; the 17-point integrated proof.

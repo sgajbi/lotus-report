@@ -123,6 +123,7 @@ class PortfolioReviewRenderOrchestrationService:
                 # The durable record's identity - the payload does not carry
                 # it, and governed rendering fails closed without it.
                 snapshot_id=snapshot.snapshot_id,
+                report_revision_id=snapshot.report_revision_id,
             )
         except ValueError as exc:
             failed_job = self._job_ledger.mark_failed(
@@ -153,11 +154,29 @@ class PortfolioReviewRenderOrchestrationService:
                 template_version=str(payload["template_version"]),
             )
 
-        status_code, response_payload = await self._render_client.submit_render_package(
-            payload,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
+        if job.status in {"rendering", "completed", "archiving"}:
+            # A persisted render_job_id may already carry a package captured
+            # by OLDER code: rebuild-and-resubmit would collide with Render's
+            # create-or-get package-hash idempotency as a non-retryable
+            # conflict even though nothing is wrong. Resolve the persisted
+            # render's outcome FIRST and adopt it; submit only when Render
+            # verifiably holds no job for this id (the repo invariant:
+            # uncertain outcomes resolve before acting).
+            resolution = await self._resolve_persisted_render(
+                job=job,
+                render_job_id=render_job_id,
+                package=payload,
+                started_at=started_at,
+            )
+            if isinstance(resolution, ReportJobLedgerRecord):
+                return resolution
+            status_code, response_payload = resolution
+        else:
+            status_code, response_payload = await self._render_client.submit_render_package(
+                payload,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
             # The template Render used must equal what Report ordered - the
             # persisted acceptance fact the document_reference binds. A
@@ -241,6 +260,84 @@ class PortfolioReviewRenderOrchestrationService:
             failure_category=failure_category,
             failure_message=failure_message or "lotus-render execution failed.",
             retry_eligible=retry_eligible,
+        )
+        record_report_operation(
+            operation="render_handoff",
+            status=failed_job.status,
+            failure_category=failed_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return failed_job
+
+    async def _resolve_persisted_render(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        render_job_id: str,
+        package: dict[str, Any],
+        started_at: float,
+    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
+        """Resolve a persisted render before any resubmission.
+
+        A terminal outcome (rendered or failed) is ADOPTED verbatim - the
+        status projection carries every field the submit response does
+        except the artifact bytes, which Report never consumes. A verified
+        404 means the original submission never landed, so submitting the
+        current package is safe: no prior package exists to conflict with.
+        Anything else - the render still in progress, or an unanswerable
+        lookup - fails RETRYABLE without a blind resubmission, because a
+        blind resubmission under a shape-evolved builder is exactly the
+        non-retryable conflict this resolution exists to prevent.
+        """
+
+        lookup_status, lookup_payload = await self._render_client.get_render_status(
+            render_job_id,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        if lookup_status == 200:
+            if lookup_payload.get("status") in {"rendered", "failed"}:
+                return 200, lookup_payload
+            return self._fail_render_resolution(
+                job=job,
+                started_at=started_at,
+                failure_message=(
+                    "The persisted render job is still in progress at lotus-render; "
+                    "a retry adopts its outcome once terminal."
+                ),
+            )
+        if lookup_status == 404:
+            submitted: tuple[int, dict[str, Any]] = await self._render_client.submit_render_package(
+                package,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            return submitted
+        return self._fail_render_resolution(
+            job=job,
+            started_at=started_at,
+            failure_message=(
+                "The persisted render job's posture could not be resolved with "
+                "lotus-render; refusing a blind resubmission that could conflict "
+                "with the package the render id already carries."
+            ),
+        )
+
+    def _fail_render_resolution(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+        failure_message: str,
+    ) -> ReportJobLedgerRecord:
+        failed_job = self._job_ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category="render_execution_failed",
+            failure_message=failure_message,
+            retry_eligible=True,
         )
         record_report_operation(
             operation="render_handoff",

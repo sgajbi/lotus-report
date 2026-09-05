@@ -37,6 +37,29 @@ class RenderClient:
         )
         return result
 
+    async def get_render_status(
+        self,
+        render_job_id: str,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """GET /renders/{render_job_id} - the persisted render job's posture:
+        status, template identity, artifact hash metadata, and the archive
+        custody outcome when available; governed 404 for an unknown id. Used
+        to RESOLVE an in-flight render before any resubmission, so a package
+        rebuilt by newer code never collides with the one the id already
+        carries."""
+
+        result: tuple[int, dict[str, Any]] = await get_with_retry(
+            url=f"{self._base_url}/renders/{render_job_id}",
+            timeout_seconds=self._timeout_seconds,
+            params={},
+            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+        return result
+
     async def get_template_projection(
         self,
         correlation_id: str | None = None,

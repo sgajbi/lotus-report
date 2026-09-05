@@ -25,6 +25,7 @@ def _build_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
     snapshot_id: str,
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     if job.report_type == "proof_pack":
         return _build_proof_pack_render_package(
@@ -32,6 +33,7 @@ def _build_render_package(
             snapshot=snapshot,
             render_job_id=render_job_id,
             snapshot_id=snapshot_id,
+            report_revision_id=report_revision_id,
         )
     if job.report_type == "outcome_review":
         return _build_outcome_review_render_package(
@@ -39,6 +41,7 @@ def _build_render_package(
             snapshot=snapshot,
             render_job_id=render_job_id,
             snapshot_id=snapshot_id,
+            report_revision_id=report_revision_id,
         )
     if job.report_type == "rebalance_wave":
         return _build_wave_render_package(
@@ -46,6 +49,7 @@ def _build_render_package(
             snapshot=snapshot,
             render_job_id=render_job_id,
             snapshot_id=snapshot_id,
+            report_revision_id=report_revision_id,
         )
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
@@ -186,6 +190,7 @@ def _build_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
+        report_revision_id=report_revision_id,
         report_data_contract_version=resolve_report_data_contract("portfolio_review"),
         report_data=report_data,
         lineage_refs=_dedupe_strings(lineage_refs),
@@ -867,6 +872,7 @@ def _render_package_envelope(
     report_data: dict[str, Any],
     lineage_refs: list[str],
     disclosure_refs: list[str],
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     """The envelope every render package shares; only the typed content varies.
 
@@ -903,6 +909,11 @@ def _render_package_envelope(
         "output_format": "pdf",
         "render_context": {
             "timezone": "Asia/Singapore",
+            # The canonical revision identity of the facts this document
+            # presents, from the durable snapshot record - the same identity
+            # Archive stores. Absent (never synthesised) for snapshots
+            # captured before revision identity existed.
+            **({"report_revision_id": report_revision_id} if report_revision_id else {}),
             # The governed identity every client document carries in its
             # footer. Minted here - in the ONE envelope all four families
             # share - from the financial question (job, snapshot, template),
@@ -920,7 +931,9 @@ def _render_package_envelope(
             # overlays identity, provenance, and the declared digest LAST, so
             # nothing stated here can override what Render actually did -
             # which is also why none of those overlaid fields appear here.
-            "archive": _archive_custody_block(job=job, snapshot=snapshot),
+            "archive": _archive_custody_block(
+                job=job, snapshot=snapshot, report_revision_id=report_revision_id
+            ),
         },
         "report_data": report_data,
         "lineage_refs": lineage_refs,
@@ -981,6 +994,7 @@ def _archive_custody_block(
     *,
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     """Report-owned custody metadata for the render#120 archive handoff.
 
@@ -1020,6 +1034,11 @@ def _archive_custody_block(
         "tenant_id": job.tenant_id,
         "retention_start_date": job.as_of_date.isoformat(),
     }
+    if report_revision_id:
+        # Archive stores this opaque reference verbatim (archive migration
+        # 011); a pre-identity snapshot states nothing rather than a
+        # fabricated identity.
+        custody["report_revision_id"] = report_revision_id
     client_reference = _optional_str(identity.get("client_reference")) or _optional_str(
         identity.get("client_id")
     )
@@ -1096,6 +1115,7 @@ def _build_proof_pack_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
     snapshot_id: str,
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -1154,6 +1174,7 @@ def _build_proof_pack_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
+        report_revision_id=report_revision_id,
         report_data_contract_version=resolve_report_data_contract("proof_pack"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
@@ -1172,6 +1193,7 @@ def _build_outcome_review_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
     snapshot_id: str,
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -1245,6 +1267,7 @@ def _build_outcome_review_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
+        report_revision_id=report_revision_id,
         report_data_contract_version=resolve_report_data_contract("outcome_review"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
@@ -1263,6 +1286,7 @@ def _build_wave_render_package(
     snapshot: dict[str, Any],
     render_job_id: str,
     snapshot_id: str,
+    report_revision_id: str | None = None,
 ) -> dict[str, Any]:
     _validate_dpm_common_snapshot(
         snapshot=snapshot,
@@ -1337,6 +1361,7 @@ def _build_wave_render_package(
         snapshot=snapshot,
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
+        report_revision_id=report_revision_id,
         report_data_contract_version=resolve_report_data_contract("rebalance_wave"),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
