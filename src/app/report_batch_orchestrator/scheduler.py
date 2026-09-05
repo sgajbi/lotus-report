@@ -704,11 +704,12 @@ class ReportBatchScheduler:
                     idempotency_key=idempotency_key,
                 )
             except BatchIdempotencyConflictError:
-                if not schedule.stable_cycle_identity:
-                    raise
-                # This cycle already materialized under the schedule's earlier
-                # content. One cycle yields one batch: the updated definition
-                # applies from the next period, and this pass mints nothing.
+                # The idempotency key IS the business-cycle identity, so a
+                # conflict means THIS cycle already has a batch - whatever
+                # options hash it was created under (including batches minted
+                # in the window when template values still rode the options).
+                # One cycle yields one batch: updated content applies from
+                # the next period, and this pass mints nothing.
                 skipped.append(schedule.schedule_id)
                 continue
             except ValueError:

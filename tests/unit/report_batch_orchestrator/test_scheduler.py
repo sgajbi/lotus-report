@@ -536,3 +536,50 @@ def test_portfolio_rows_reads_both_payload_shapes() -> None:
     assert _portfolio_rows({"items": [{"portfolio_id": "P2"}]}) == [{"portfolio_id": "P2"}]
     assert _portfolio_rows({"portfolios": "not-a-list"}) == []
     assert _portfolio_rows({}) == []
+
+
+async def test_option_hash_drift_on_the_same_cycle_converges_to_skip(tmp_path) -> None:
+    """The transition window's second shape: a batch created under the NEW
+    template-free key but the OLD template-bearing options hash. The next
+    pass conflicts on the key - and converges by skipping, because the key
+    IS the business-cycle identity: one cycle, one batch, never an aborted
+    pass and never a duplicate."""
+
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+            )
+        }
+    )
+    schedule = _schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])
+    caller = _caller_context()
+
+    class _WindowLedger:
+        """Simulates the mid-window batch: same key, different stored hash."""
+
+        def __init__(self, inner):
+            self._inner = inner
+            self.attempts = 0
+
+        def create_batch(self, **kwargs):
+            self.attempts += 1
+            from app.report_batch_orchestrator.ledger import BatchIdempotencyConflictError
+
+            raise BatchIdempotencyConflictError(
+                "batch_idempotency_key_reused_with_different_request"
+            )
+
+        def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
+            return False
+
+    guard = _WindowLedger(ledger)
+    scheduler = ReportBatchScheduler(batch_ledger=guard, portfolio_source=source)
+
+    result = await scheduler.run_due_schedules(config=_config(schedule), caller_context=caller)
+
+    assert guard.attempts == 1
+    assert len(result.materialized) == 0
+    assert schedule.schedule_id in result.skipped_schedule_ids
