@@ -118,11 +118,15 @@ def _recorded_call(
     )
 
 
-def _source_payload(*, tenant: str, restatement: str, suffix: str) -> dict:
+def _source_payload(
+    *, tenant: str, restatement: str, suffix: str, content_tag: str | None = None
+) -> dict:
     """Owner-shaped captured payload: source-stated revision evidence beside
-    composition-instance metadata, per-tenant content so evidence cannot be
-    mistaken across tenants by value coincidence."""
+    composition-instance metadata. Content varies by ``content_tag``
+    (defaulting to the tenant) - assertion 1 passes a SHARED tag so that
+    tenant identity alone, never content coincidence, carries its fence."""
 
+    tag = content_tag if content_tag is not None else tenant
     return {
         "report_id": f"portfolio-review:{SHARED_PORTFOLIO}:{SHARED_AS_OF}",
         "portfolio_id": SHARED_PORTFOLIO,
@@ -131,7 +135,7 @@ def _source_payload(*, tenant: str, restatement: str, suffix: str) -> dict:
         "generated_at": "2026-04-22T09:00:01Z",
         "correlation_id": f"corr-proof-{suffix}",
         "holdings": {
-            "rows": [{"security_id": "SEC1", "market_value": f"100.25-{tenant}"}],
+            "rows": [{"security_id": "SEC1", "market_value": f"100.25-{tag}"}],
             "sourceProduct": {
                 "source_service": "lotus-core",
                 "product_name": "HoldingsAsOf",
@@ -139,9 +143,9 @@ def _source_payload(*, tenant: str, restatement: str, suffix: str) -> dict:
                 "as_of_date": SHARED_AS_OF,
                 "generated_at": "2026-04-22T08:59:59Z",
                 "restatement_version": restatement,
-                "source_batch_fingerprint": f"core-batch-{tenant}",
-                "snapshot_id": f"core-snap-{tenant}-{restatement}",
-                "content_hash": f"sha256:holdings-{tenant}-{restatement}",
+                "source_batch_fingerprint": f"core-batch-{tag}",
+                "snapshot_id": f"core-snap-{tag}-{restatement}",
+                "content_hash": f"sha256:holdings-{tag}-{restatement}",
                 "reconciliation_status": "reconciled",
             },
         },
@@ -317,13 +321,23 @@ class _World:
         )
 
 
-def _archived_cycle(world: _World, *, tenant: str, suffix: str, restatement: str = "r1"):
+def _archived_cycle(
+    world: _World,
+    *,
+    tenant: str,
+    suffix: str,
+    restatement: str = "r1",
+    content_tag: str | None = None,
+):
     """Submit one job for the tenant, stage its source facts, run the real
     pipeline to archived, and return the (job record, snapshot record)."""
 
     job = world.submit(tenant=tenant, suffix=suffix)
     world.provider.stage(
-        job.job_id, _source_payload(tenant=tenant, restatement=restatement, suffix=suffix)
+        job.job_id,
+        _source_payload(
+            tenant=tenant, restatement=restatement, suffix=suffix, content_tag=content_tag
+        ),
     )
     world.run_pipeline()
     record = world.ledger.get_job(job.job_id)
@@ -340,14 +354,23 @@ def _archived_cycle(world: _World, *, tenant: str, suffix: str, restatement: str
 def test_a1_tenants_sharing_portfolio_and_date_cannot_cross_resolve_evidence():
     suffix = uuid4().hex[:12]
     world = _World()
-    record_a, snapshot_a = _archived_cycle(world, tenant=TENANT_A, suffix=f"a1a-{suffix}")
-    record_b, snapshot_b = _archived_cycle(world, tenant=TENANT_B, suffix=f"a1b-{suffix}")
+    # Both tenants receive IDENTICAL source facts for the shared portfolio
+    # and date - so nothing below can pass by content coincidence: tenant
+    # identity alone must carry the fence.
+    record_a, snapshot_a = _archived_cycle(
+        world, tenant=TENANT_A, suffix=f"a1a-{suffix}", content_tag=f"shared-{suffix}"
+    )
+    record_b, snapshot_b = _archived_cycle(
+        world, tenant=TENANT_B, suffix=f"a1b-{suffix}", content_tag=f"shared-{suffix}"
+    )
 
     assert record_a.job_id != record_b.job_id
     assert snapshot_a.snapshot_id != snapshot_b.snapshot_id
-    # The evidence itself is tenant-distinct because the SOURCES stated
-    # different facts - digests cannot coincide by construction.
-    assert snapshot_a.factual_content_digest != snapshot_b.factual_content_digest
+    # The captured FACTS are identical - the factual digest agrees...
+    assert snapshot_a.factual_content_digest == snapshot_b.factual_content_digest
+    # ...and the revision identity still differs, because the admitted
+    # tenant is part of the series identity: one tenant's evidence can
+    # never resolve as the other's revision.
     assert snapshot_a.report_revision_id != snapshot_b.report_revision_id
 
     # Cross-resolution is fenced at the search boundary: tenant A's admitted
@@ -434,27 +457,42 @@ def test_a3_canonicalization_is_set_stable_and_order_preserving():
     )
     assert hash_pdf_json == hash_json_pdf
 
-    # sections is an ordered SEQUENCE: the document presents them in the
-    # declared order, so reordering IS a different request.
-    def _with_sections(sections: list[str]):
+    # sections is a declared SET across the whole contract - the series
+    # key sorts it and composition consumes it as a set - so a reordered
+    # retry is the SAME client intent and converges.
+    def _with_options(options: dict):
         return PortfolioReviewJobRequest.model_validate(
             {
                 "portfolio_scope": {"portfolio_ids": [SHARED_PORTFOLIO]},
                 "as_of_date": SHARED_AS_OF,
                 "requested_output_formats": ["pdf"],
                 "reporting_currency": "USD",
-                "options": {"sections": sections},
+                "options": options,
             }
         )
 
+    hash_sections = compute_request_hash(
+        report_type="portfolio_review",
+        request=_with_options({"sections": ["OVERVIEW", "PERFORMANCE"]}),
+        caller_context=caller,
+    )
+    hash_sections_reordered = compute_request_hash(
+        report_type="portfolio_review",
+        request=_with_options({"sections": ["PERFORMANCE", "OVERVIEW"]}),
+        caller_context=caller,
+    )
+    assert hash_sections == hash_sections_reordered
+
+    # A list the contract does NOT declare a set keeps its order - it may
+    # carry output-affecting semantics, so reordering IS a new request.
     hash_ordered = compute_request_hash(
         report_type="portfolio_review",
-        request=_with_sections(["OVERVIEW", "PERFORMANCE"]),
+        request=_with_options({"sections": ["OVERVIEW"], "ranking": ["twr", "fees"]}),
         caller_context=caller,
     )
     hash_reordered = compute_request_hash(
         report_type="portfolio_review",
-        request=_with_sections(["PERFORMANCE", "OVERVIEW"]),
+        request=_with_options({"sections": ["OVERVIEW"], "ranking": ["fees", "twr"]}),
         caller_context=caller,
     )
     assert hash_ordered != hash_reordered

@@ -162,15 +162,38 @@ def compute_request_hash(
         }
     hash_payload = {
         "report_type": report_type,
-        "portfolio_scope": portfolio_scope,
+        "portfolio_scope": _set_normalized(portfolio_scope, "portfolio_ids"),
         "as_of_date": as_of_date.isoformat(),
         "requested_output_formats": sorted(output_formats),
         "reporting_currency": reporting_currency,
-        "options": options,
+        "options": _set_normalized(options, "sections", "allocation_dimensions"),
         "tenant_id": caller_context.tenant_id,
         "region": caller_context.region,
     }
     return hashlib.sha256(canonical_json(hash_payload).encode("utf-8")).hexdigest()
+
+
+def _set_normalized(payload: dict[str, Any], *set_keys: str) -> dict[str, Any]:
+    """The request-identity twin of the series key's declared-set rule.
+
+    The identity contract (ReportSeriesKey.canonical) knows exactly which
+    request lists are SETS - sections and allocation_dimensions at the top
+    level, portfolio_ids inside the scope - and composition consumes them
+    as sets, so a reordered retry is the SAME client intent and must
+    converge on the original job instead of raising a false idempotency
+    conflict. Every other list keeps its order: a list in a request may be
+    semantically ordered, and a generic sort would erase output-affecting
+    semantics. Records stored under the order-sensitive hash still accept
+    identical retries through the record-based comparison, which recomputes
+    the client identity from the stored request under THIS policy.
+    """
+
+    normalized = dict(payload)
+    for key in set_keys:
+        value = normalized.get(key)
+        if isinstance(value, (list, tuple)):
+            normalized[key] = sorted({str(item) for item in value})
+    return normalized
 
 
 def _request_parts(
