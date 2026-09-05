@@ -30,7 +30,6 @@
         "reconciliation_status",
         "reconciliation_reason_code",
         "data_quality_status",
-        "source_batch_fingerprint",
         "lineage_bundle_id",
         "correlation_id"
       ],

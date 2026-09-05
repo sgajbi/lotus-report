@@ -14,9 +14,14 @@ Trust claims state only what is PROVEN:
   from a durably captured snapshot: the two flows must not publish
   indistinguishable evidence claims.
 
-The portfolio/date-derived bundle labels below are legacy SERIES-grade
-identifiers, not revision identifiers - replacing them with the canonical
-report-revision identity is the #283 wiring slice.
+The portfolio/date-derived bundle labels below are SERIES-grade
+correlation handles, not revision or evidence identifiers: every capture
+of the same logical request shares them. The canonical report-revision
+identity is minted at capture and persisted BESIDE the durable snapshot
+(report#283) - it can never live inside this pack, because the pack is
+part of the hashed payload the identity derives from. The synthetic
+source_batch_fingerprint the pack once fabricated is retired; a source
+fingerprint appears only where a source actually states one.
 """
 
 from __future__ import annotations
@@ -61,7 +66,12 @@ def build_review_evidence(
         "reconciliation_status": "unknown",
         "reconciliation_reason_code": "no_reconciliation_policy_established",
         "data_quality_status": data_quality_status,
-        "source_batch_fingerprint": f"portfolio-review:{portfolio_id}:{as_of_date}",
+        # source_batch_fingerprint is RETIRED here: the pack used to carry a
+        # portfolio/date label under that name, which fabricated a source
+        # claim no source ever stated. Genuine source-stated fingerprints
+        # remain wherever a source states them (sourceProduct blocks); the
+        # canonical revision identity lives BESIDE the durable snapshot,
+        # never inside the pack (no circular identity).
         "lineage_bundle_id": lineage_bundle_id,
         "correlation_id": correlation_id,
     }
