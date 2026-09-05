@@ -138,7 +138,11 @@ def test_an_expected_but_unsourced_series_states_the_sources_sentence() -> None:
     )
 
 
-def test_unavailable_without_a_source_sentence_uses_the_stated_note() -> None:
+def test_unavailable_without_a_source_sentence_uses_report_document_copy() -> None:
+    """When the source stated nothing, the caption is REPORT-authored
+    document copy - never API voice - because the same field carries
+    verbatim source sentences and ours must read no worse."""
+
     block = _benchmark_series_section(
         _snapshot(
             {
@@ -148,28 +152,12 @@ def test_unavailable_without_a_source_sentence_uses_the_stated_note() -> None:
                     "source_statement": None,
                 },
                 "benchmark_monthly_history": [],
-                "supportability": {
-                    "status": "partial",
-                    "notes": [
-                        {
-                            "code": "benchmark_comparison_unavailable",
-                            "severity": "warning",
-                            "message": (
-                                "Benchmark comparison is unavailable because benchmark "
-                                "return series is not sourced in this report response."
-                            ),
-                        }
-                    ],
-                },
             }
         )
     )
 
     assert block["posture"] == "unavailable"
-    assert block["source_statement"] == (
-        "Benchmark comparison is unavailable because benchmark "
-        "return series is not sourced in this report response."
-    )
+    assert block["source_statement"] == "Benchmark return series was not sourced for this report."
 
 
 def test_an_available_claim_with_no_points_reads_unavailable_never_an_empty_line() -> None:
