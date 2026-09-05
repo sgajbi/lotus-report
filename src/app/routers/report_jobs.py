@@ -1120,11 +1120,27 @@ async def list_report_jobs(
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
     tenant_filter: Annotated[
         str | None,
-        Query(alias="tenantId", description="Return only jobs for this tenant identifier."),
+        Query(
+            alias="tenantId",
+            description=(
+                "Optional assertion that must EQUAL the admitted caller tenant "
+                "(X-Tenant-Id); a different value is refused 400 "
+                "tenant_filter_conflicts_with_caller. The search is always "
+                "scoped to the admitted tenant whether or not this is supplied."
+            ),
+        ),
     ] = None,
     region_filter: Annotated[
         str | None,
-        Query(alias="region", description="Return only jobs for this operating region."),
+        Query(
+            alias="region",
+            description=(
+                "Optional assertion that must EQUAL the admitted caller region "
+                "(X-Region); a different value is refused 400 "
+                "region_filter_conflicts_with_caller. The search is always "
+                "scoped to the admitted region."
+            ),
+        ),
     ] = None,
     status_filter: Annotated[
         str | None,

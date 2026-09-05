@@ -87,7 +87,7 @@ boundaries, and copy-paste request examples for direct service and support workf
   for `lotus-render`, and uses the governed render/archive lifecycle for PDF artifacts
   without recomputing wave state, proof-pack linkage, internal handoff evidence, or external
   execution posture
-- `GET /reports/jobs`
+- `GET /reports/jobs` — scoped to the ADMITTED caller tenant and region (X-Tenant-Id/X-Region); a contradicting tenantId/region filter is refused 400 (tenant_filter_conflicts_with_caller / region_filter_conflicts_with_caller)
   internal operator-safe bounded search for report jobs by tenant, region, status, report type,
   portfolio id, as-of date, idempotency key, correlation id, and created-at window
 - `GET /reports/jobs/{job_id}`
