@@ -114,7 +114,14 @@ WAITING_ON_RENDER = _WaitingOnRender()
 #: wait_for_completion and read_artifact_metadata are not failures at all
 #: (WAIT - the next resolution adopts); an unmapped value fails closed.
 RENDER_RECOVERY_ACTION_MAP: dict[str, tuple[str, bool]] = {
-    "resubmit_identical_package_or_escalate_runtime": ("render_execution_failed", True),
+    # resubmit_identical_package_or_escalate_runtime is deliberately ABSENT:
+    # the owner's named remedy is handled structurally (a convergent
+    # resubmission under the persisted render id), never as a failure.
+    # The remaining rows are defensive completeness - Render's shipped
+    # diagnostics emit only wait_for_completion or the stale resubmit
+    # action for an in-progress render, so these map owner vocabulary that
+    # cannot currently reach this branch; an unmapped value still fails
+    # closed below.
     "fix_upstream_render_package": ("render_validation_failed", False),
     "fix_template_registry_or_package": ("render_validation_failed", False),
     "escalate_render_runtime": ("render_execution_failed", False),
@@ -456,7 +463,7 @@ class PortfolioReviewRenderOrchestrationService:
         job: ReportJobLedgerRecord,
         render_job_id: str,
         started_at: float,
-    ) -> ReportJobLedgerRecord | _WaitingOnRender:
+    ) -> ReportJobLedgerRecord | _WaitingOnRender | None:
         """The owner decides whether in-progress means wait or escalate.
 
         Render's diagnostics contract states recovery_action against the
@@ -479,6 +486,19 @@ class PortfolioReviewRenderOrchestrationService:
                 reason="render_resolution_in_progress",
             )
         recovery_action = _optional_str(diag_payload.get("recovery_action")) or ""
+        if recovery_action == "resubmit_identical_package_or_escalate_runtime":
+            # The owner's named remedy for a STALE in-progress render: an
+            # identical resubmission under the SAME render id converges BY
+            # CONSTRUCTION (create-or-get takeover), dead executor or merely
+            # slow - construction over a threshold-sanity argument about
+            # owner settings, and replay's fresh render id is never needed.
+            # If this deployment's builder moved shape since the original
+            # package, create-or-get refuses as render_conflict - loud to an
+            # operator, never a silent duplicate. Ledger completion evidence
+            # still outranks an owner in-progress anomaly.
+            if job.status == "rendering":
+                return None
+            return self._fail_completed_render_lost(job=job, started_at=started_at)
         if recovery_action in RENDER_RECOVERY_WAIT_ACTIONS:
             return self._leave_resolution_pending(
                 job=job,
