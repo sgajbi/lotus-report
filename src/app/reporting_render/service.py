@@ -299,20 +299,30 @@ class PortfolioReviewRenderOrchestrationService:
     ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
         """Resolve a persisted render before any resubmission.
 
-        A terminal outcome (rendered or failed) is ADOPTED verbatim - the
-        status projection carries every field the submit response does
-        except the artifact bytes, which Report never consumes. A verified
-        404 means the original submission never landed, so submitting the
-        current package is safe: no prior package exists to conflict with.
-        That reading RELIES on an owner fact: lotus-render's store has no
-        purge or retention surface, so a 404 today genuinely means
+        A rendered outcome is ADOPTED verbatim - the status projection
+        carries every field the submit response does except the artifact
+        bytes, which Report never consumes. A persisted FAILURE is adopted
+        with Render's own failure vocabulary mapped explicitly, so a
+        transient engine failure stays retryable across a worker restart.
+
+        A render still in progress, or an unanswerable lookup, leaves the
+        report job NONTERMINAL: the work queue's retry policy re-enters
+        this resolution and adopts the outcome once terminal. Marking the
+        job failed here would be TERMINAL for the queue - only replay could
+        act, and replay mints a fresh render id while the original render
+        can still finish and archive: a duplicate-document path.
+
+        A verified 404 means the original submission never landed - safe
+        to submit - but ONLY while the job's own ledger agrees nothing
+        completed (status ``rendering``). Local completion evidence
+        (``completed``/``archiving``) outranks a 404: the render DID
+        happen, so the job routes to the designed recovery categories
+        instead of re-rendering different bytes into a duplicate document.
+        The 404 reading RELIES on an owner fact: lotus-render's store has
+        no purge or retention surface, so a 404 today genuinely means
         never-submitted, not expired. Render records this as a versioned
         consumer contract - a future retention feature must coordinate
         with Report before 404 can mean anything else.
-        Anything else - the render still in progress, or an unanswerable
-        lookup - fails RETRYABLE without a blind resubmission, because a
-        blind resubmission under a shape-evolved builder is exactly the
-        non-retryable conflict this resolution exists to prevent.
         """
 
         lookup_status, lookup_payload = await self._render_client.get_render_status(
@@ -321,46 +331,138 @@ class PortfolioReviewRenderOrchestrationService:
             trace_id=job.trace_id,
         )
         if lookup_status == 200:
-            if lookup_payload.get("status") in {"rendered", "failed"}:
+            render_status = lookup_payload.get("status")
+            if render_status == "rendered":
                 return 200, lookup_payload
-            return self._fail_render_resolution(
+            if render_status == "failed":
+                return self._adopt_persisted_render_failure(
+                    job=job,
+                    lookup_payload=lookup_payload,
+                    started_at=started_at,
+                )
+            return self._leave_resolution_pending(
                 job=job,
                 started_at=started_at,
-                failure_message=(
-                    "The persisted render job is still in progress at lotus-render; "
-                    "a retry adopts its outcome once terminal."
-                ),
+                reason="render_resolution_in_progress",
             )
         if lookup_status == 404:
-            submitted: tuple[int, dict[str, Any]] = await self._render_client.submit_render_package(
-                package,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
-            return submitted
-        return self._fail_render_resolution(
+            if job.status == "rendering":
+                submitted: tuple[
+                    int, dict[str, Any]
+                ] = await self._render_client.submit_render_package(
+                    package,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+                return submitted
+            return self._fail_completed_render_lost(job=job, started_at=started_at)
+        return self._leave_resolution_pending(
             job=job,
             started_at=started_at,
-            failure_message=(
-                "The persisted render job's posture could not be resolved with "
-                "lotus-render; refusing a blind resubmission that could conflict "
-                "with the package the render id already carries."
-            ),
+            reason="render_resolution_unavailable",
         )
 
-    def _fail_render_resolution(
+    def _leave_resolution_pending(
         self,
         *,
         job: ReportJobLedgerRecord,
         started_at: float,
-        failure_message: str,
+        reason: str,
     ) -> ReportJobLedgerRecord:
+        """Nonterminal by design: the work queue retries the SAME job and
+        render id, so the eventual terminal outcome is adopted rather than
+        replayed under a fresh identity."""
+
+        record_report_operation(
+            operation="render_handoff",
+            status=job.status,
+            failure_category=reason,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return job
+
+    #: Render-owned failure categories that a live submission would have
+    #: surfaced as retryable transport/engine trouble; everything else in
+    #: the owner vocabulary is deterministic for the same package.
+    _RETRYABLE_RENDER_FAILURE_CATEGORIES = frozenset({"engine_unavailable", "timeout"})
+    _VALIDATION_RENDER_FAILURE_CATEGORIES = frozenset(
+        {"package_validation_failed", "template_not_supported", "artifact_validation_failed"}
+    )
+
+    def _adopt_persisted_render_failure(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        lookup_payload: dict[str, Any],
+        started_at: float,
+    ) -> ReportJobLedgerRecord:
+        """Adopt a persisted render failure with its own vocabulary intact:
+        the projection's 200 transport status must not overwrite what the
+        failure actually was."""
+
+        render_category = _optional_str(lookup_payload.get("failure_category")) or ""
+        if render_category in self._VALIDATION_RENDER_FAILURE_CATEGORIES:
+            failure_category = "render_validation_failed"
+            retry_eligible = False
+        else:
+            failure_category = "render_execution_failed"
+            retry_eligible = render_category in self._RETRYABLE_RENDER_FAILURE_CATEGORIES
+        failure_message = _optional_str(lookup_payload.get("failure_message")) or (
+            "lotus-render recorded the persisted render as failed"
+            + (f" ({render_category})." if render_category else ".")
+        )
         failed_job = self._job_ledger.mark_failed(
             job_id=job.job_id,
             actor=job.triggered_by,
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
-            failure_category="render_execution_failed",
+            failure_category=failure_category,
+            failure_message=failure_message,
+            retry_eligible=retry_eligible,
+        )
+        record_report_operation(
+            operation="render_handoff",
+            status=failed_job.status,
+            failure_category=failed_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return failed_job
+
+    def _fail_completed_render_lost(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        started_at: float,
+    ) -> ReportJobLedgerRecord:
+        """Local durable truth says this render completed; Render answering
+        404 cannot un-happen it. Route to the recovery category whose
+        replay semantics avoid a duplicate document: an archiving job's
+        custody may already have committed (archive_outcome_unknown -
+        replay resolves the recorded request id against Archive FIRST); a
+        completed job's artifact is unrecoverable at Render
+        (render_artifact_unrecoverable - replay clones the retained
+        snapshot under a FRESH render id)."""
+
+        if job.status == "archiving":
+            failure_category = "archive_outcome_unknown"
+            failure_message = (
+                "lotus-render no longer holds the persisted render job while this "
+                "job's custody outcome is unresolved; replay resolves the recorded "
+                "archive request id against Archive before any re-render."
+            )
+        else:
+            failure_category = "render_artifact_unrecoverable"
+            failure_message = (
+                "lotus-render no longer holds the persisted render job although this "
+                "job durably recorded its completion; replay clones the retained "
+                "snapshot and re-renders under a fresh render id."
+            )
+        failed_job = self._job_ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category=failure_category,
             failure_message=failure_message,
             retry_eligible=True,
         )
