@@ -108,8 +108,9 @@ class PortfolioReviewRenderOrchestrationService:
         started_at = perf_counter()
         if "pdf" not in job.requested_output_formats:
             return job
-        if job.status in {"archived", "completed_with_warnings", "failed", "cancelled"}:
-            return job
+        # One guard: terminal statuses (archived, completed_with_warnings,
+        # failed, cancelled) and anything else non-actionable fall through
+        # identically - only these four statuses have render work to do.
         if job.status not in {"data_ready", "rendering", "completed", "archiving"}:
             return job
 
@@ -154,29 +155,15 @@ class PortfolioReviewRenderOrchestrationService:
                 template_version=str(payload["template_version"]),
             )
 
-        if job.status in {"rendering", "completed", "archiving"}:
-            # A persisted render_job_id may already carry a package captured
-            # by OLDER code: rebuild-and-resubmit would collide with Render's
-            # create-or-get package-hash idempotency as a non-retryable
-            # conflict even though nothing is wrong. Resolve the persisted
-            # render's outcome FIRST and adopt it; submit only when Render
-            # verifiably holds no job for this id (the repo invariant:
-            # uncertain outcomes resolve before acting).
-            resolution = await self._resolve_persisted_render(
-                job=job,
-                render_job_id=render_job_id,
-                package=payload,
-                started_at=started_at,
-            )
-            if isinstance(resolution, ReportJobLedgerRecord):
-                return resolution
-            status_code, response_payload = resolution
-        else:
-            status_code, response_payload = await self._render_client.submit_render_package(
-                payload,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-            )
+        outcome = await self._obtain_render_outcome(
+            job=job,
+            render_job_id=render_job_id,
+            payload=payload,
+            started_at=started_at,
+        )
+        if isinstance(outcome, ReportJobLedgerRecord):
+            return outcome
+        status_code, response_payload = outcome
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
             # The template Render used must equal what Report ordered - the
             # persisted acceptance fact the document_reference binds. A
@@ -268,6 +255,39 @@ class PortfolioReviewRenderOrchestrationService:
             duration_seconds=perf_counter() - started_at,
         )
         return failed_job
+
+    async def _obtain_render_outcome(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        render_job_id: str,
+        payload: dict[str, Any],
+        started_at: float,
+    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
+        """One render outcome per call, obtained the deployment-safe way.
+
+        A persisted render_job_id may already carry a package captured by
+        OLDER code: rebuild-and-resubmit would collide with Render's
+        create-or-get package-hash idempotency as a non-retryable conflict
+        even though nothing is wrong. So a resumed job resolves the
+        persisted render's outcome first, and only a fresh job submits
+        unconditionally (the repo invariant: uncertain outcomes resolve
+        before acting).
+        """
+
+        if job.status in {"rendering", "completed", "archiving"}:
+            return await self._resolve_persisted_render(
+                job=job,
+                render_job_id=render_job_id,
+                package=payload,
+                started_at=started_at,
+            )
+        submitted: tuple[int, dict[str, Any]] = await self._render_client.submit_render_package(
+            payload,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        return submitted
 
     async def _resolve_persisted_render(
         self,
