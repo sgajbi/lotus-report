@@ -188,8 +188,12 @@ def _revision_from_advisor_commentary(snapshot_payload: dict[str, Any]) -> Sourc
 
 
 #: Keys under which a bounded report-input object (proof pack, outcome
-#: review, rebalance wave) states the identity of the served artifact.
-_BOUNDED_INPUT_ID_KEYS = ("proof_pack_id", "outcome_review_id", "wave_id")
+#: review, rebalance wave) states the identity of the served artifact -
+#: ordered MOST-DERIVED FIRST, because a bounded input may LINK the
+#: artifacts it was built from (an outcome review states the proof_pack_id
+#: it reviewed): the served artifact's own id must win over a link to an
+#: upstream one.
+_BOUNDED_INPUT_ID_KEYS = ("wave_id", "outcome_review_id", "proof_pack_id")
 
 
 def _revision_from_bounded_input(
@@ -220,11 +224,18 @@ def _revision_from_bounded_input(
             break
     evidence_ref = snapshot_payload.get("evidence_ref")
     if isinstance(evidence_ref, dict):
-        source_type = _stated_str(evidence_ref.get("source_type"))
+        # The DpmSourceRef contract permits source_type/source_id OR the
+        # alternative ref_type/ref_id representation; honour both exactly
+        # as the input contract does.
+        source_type = _stated_str(evidence_ref.get("source_type")) or _stated_str(
+            evidence_ref.get("ref_type")
+        )
         if source_type is not None:
             fields["source_product"] = source_type
         if "source_snapshot_id" not in fields:
-            source_id = _stated_str(evidence_ref.get("source_id"))
+            source_id = _stated_str(evidence_ref.get("source_id")) or _stated_str(
+                evidence_ref.get("ref_id")
+            )
             if source_id is not None:
                 fields["source_snapshot_id"] = source_id
     return SourceRevision(source_service=participants.pop(), **fields)
