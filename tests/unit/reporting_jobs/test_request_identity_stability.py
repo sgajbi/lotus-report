@@ -164,3 +164,43 @@ def test_changed_business_intent_still_conflicts(tmp_path, stored_form) -> None:
             caller_context=_caller(),
             idempotency_key="idem-conflict",
         )
+
+
+def test_legacy_records_survive_enrichment_schema_evolution(tmp_path) -> None:
+    """The stop/evolve case: a record stored under the OLD enrichment
+    participates-in-hash policy, retried after the enrichment schema
+    changed - the comparison recomputes the CLIENT identity from the
+    record's own persisted request, so no deployment ever needs to
+    reproduce historical enrichment byte-for-byte."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    original = ledger.submit_portfolio_review_job(
+        request=_request(options=_INJECTED),
+        caller_context=_caller(),
+        idempotency_key="idem-evolved",
+    )
+    legacy_hash = compute_request_hash(
+        report_type="portfolio_review",
+        request=_request(options=_INJECTED),
+        caller_context=_caller(),
+        include_server_derived_options=True,
+    )
+    with ledger._connect() as connection:
+        connection.execute(
+            "UPDATE report_request SET request_hash = ? WHERE idempotency_key = ?",
+            (legacy_hash, "idem-evolved"),
+        )
+
+    evolved_enrichment = {
+        IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION: {
+            "identity_version": "v2",
+            "candidate_ref": "totally-new-schema",
+        }
+    }
+    retried = ledger.submit_portfolio_review_job(
+        request=_request(options=evolved_enrichment),
+        caller_context=_caller(),
+        idempotency_key="idem-evolved",
+    )
+
+    assert retried.job_id == original.job_id
