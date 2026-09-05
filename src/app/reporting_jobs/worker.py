@@ -26,6 +26,15 @@ class ReportJobWorkLedger(Protocol):
         lease_token: str,
     ) -> ReportJobWorkItem: ...
 
+    def defer_work_item(
+        self,
+        *,
+        work_item_id: str,
+        lease_token: str,
+        wait_reason: str,
+        delay_seconds: int,
+    ) -> ReportJobWorkItem: ...
+
     def fail_work_item(
         self,
         *,
@@ -124,6 +133,27 @@ class ReportJobWorker:
             )
 
         if not _is_terminal_job(job):
+            if job.status == "rendering":
+                # Waiting on owner-side work: after a clean pass every other
+                # path terminalizes or advances, so a job still at rendering
+                # means the persisted render is in progress at lotus-render.
+                # DEFER without burning the failure budget - the eventual
+                # outcome is adopted under the same render id, and stale
+                # escalation is the owner's diagnostics contract, not a
+                # local poll count (report#303).
+                deferred_work = self._work_ledger.defer_work_item(
+                    work_item_id=work_item.work_item_id,
+                    lease_token=lease_token,
+                    wait_reason="waiting_on_render",
+                    delay_seconds=self._retry_policy.base_delay_seconds,
+                )
+                return ReportJobWorkOutcome(
+                    work_item_id=work_item.work_item_id,
+                    report_job_id=work_item.report_job_id,
+                    work_status=deferred_work.status,
+                    job_status=job.status,
+                    failure_category="waiting_on_render",
+                )
             failed_work = self._work_ledger.fail_work_item(
                 work_item_id=work_item.work_item_id,
                 lease_token=lease_token,

@@ -972,6 +972,62 @@ class ReportJobLedger:
                 raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
             return _work_item_from_row(row)
 
+    def defer_work_item(
+        self,
+        *,
+        work_item_id: str,
+        lease_token: str,
+        wait_reason: str,
+        delay_seconds: int,
+        now: datetime | None = None,
+    ) -> ReportJobWorkItem:
+        """Reschedule a lease WITHOUT burning the failure budget.
+
+        Waiting on owner-side work (a render still in progress at
+        lotus-render) is not failure: the attempt counter is untouched, so
+        the failure budget stays scoped to real failures, while lease
+        fencing is enforced exactly like fail_work_item. Stale-work
+        escalation is the OWNER's diagnostics contract, not a local poll
+        count (report#303).
+        """
+
+        deferred_at = now or utc_now()
+        with self._connect() as connection:
+            current = connection.execute(
+                """
+                SELECT attempt_count, lease_owner FROM report_job_work_item
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
+                """,
+                (work_item_id, lease_token),
+            ).fetchone()
+            if not current:
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
+            connection.execute(
+                """
+                UPDATE report_job_work_item
+                SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
+                    lease_acquired_at = NULL, lease_expires_at = NULL,
+                    available_at = ?, last_error_category = ?, last_error_summary = ?,
+                    updated_at = ?
+                WHERE work_item_id = ?
+                """,
+                (
+                    _dt_to_text(deferred_at + timedelta(seconds=max(delay_seconds, 1))),
+                    wait_reason[:80],
+                    "Waiting on owner-side work; the failure budget is untouched.",
+                    _dt_to_text(deferred_at),
+                    work_item_id,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
+                (work_item_id,),
+            ).fetchone()
+            if not row:
+                raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+            return _work_item_from_row(row)
+
     def fail_work_item(
         self,
         *,

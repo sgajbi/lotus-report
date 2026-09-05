@@ -1260,3 +1260,46 @@ def test_postgres_bounded_relationship_reason_normalizes_blank() -> None:
 
     assert _bounded_relationship_reason("   ") == "not_provided"
     assert _bounded_relationship_reason("b" * 300) == "b" * 240
+
+
+def test_postgres_defer_work_item_keeps_the_failure_budget_untouched() -> None:
+    """report#303 on the production store: deferral is lease-fenced like
+    failure but never increments the attempt counter."""
+
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    _job = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"idem-defer-{unique_suffix}",
+    )
+    claimed = [
+        item
+        for item in ledger.claim_work_items(
+            worker_id=f"worker-{unique_suffix}",
+            limit=50,
+            lease_seconds=60,
+            retry_policy=ReportJobWorkRetryPolicy(),
+        )
+        if item.report_job_id == _job.job_id
+    ]
+    assert len(claimed) == 1
+
+    with pytest.raises(InvalidReportJobWorkTransitionError):
+        ledger.defer_work_item(
+            work_item_id=claimed[0].work_item_id,
+            lease_token="not-the-lease",
+            wait_reason="waiting_on_render",
+            delay_seconds=5,
+        )
+
+    deferred = ledger.defer_work_item(
+        work_item_id=claimed[0].work_item_id,
+        lease_token=claimed[0].lease_token,
+        wait_reason="waiting_on_render",
+        delay_seconds=5,
+    )
+    assert deferred.status == "retry_pending"
+    assert deferred.attempt_count == claimed[0].attempt_count
+    assert deferred.last_error_category == "waiting_on_render"
