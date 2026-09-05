@@ -1779,3 +1779,28 @@ async def test_a_blank_or_padded_tenant_header_never_becomes_admitted_evidence()
     trust = blank["evidence"]["trust_metadata"]
     assert "tenant_id" not in trust
     assert trust["tenant_admission"] == "unattributed_caller"
+
+
+@pytest.mark.asyncio
+async def test_the_pack_never_fabricates_a_source_fingerprint():
+    """report#283: the pack once published a portfolio/date label as
+    source_batch_fingerprint - a source claim no source ever stated. It is
+    retired permanently: a fingerprint appears only where a source states
+    one (sourceProduct blocks), and the canonical revision identity lives
+    beside the durable snapshot, never inside the pack."""
+
+    service = ReportingReadService(
+        core_query_client=_CoreQueryClientSuccess(),
+        performance_client=_PerformanceClientSuccess(),
+        risk_client=_RiskClientSuccess(),
+    )
+
+    response = await service.get_portfolio_review(
+        "P1",
+        {"as_of_date": "2026-02-24", "sections": ["OVERVIEW"]},
+        "CID-4",
+        admitted_tenant_id="tenant-sg",
+    )
+
+    assert "source_batch_fingerprint" not in response["evidence"]["trust_metadata"]
+    assert "report_revision_id" not in response["evidence"]
