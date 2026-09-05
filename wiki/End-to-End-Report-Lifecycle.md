@@ -45,7 +45,8 @@ and runtime identity - evidence is never destroyed by a failure.
 | Idempotency key | Caller (Gateway/Workbench) | Identical retries converge on one job; this is the ONLY identity a caller supplies |
 | `report_request_id` (`rrq_...`) | Report acceptance | Server-minted per request record; never reuse it as an idempotency key - that creates a NEW job instead of converging |
 | `report_job_id` | Report acceptance | Fresh per job |
-| `snapshot_id` + `snapshot_hash` | Capture | One immutable snapshot per job; hash pins content |
+| `snapshot_id` + `snapshot_hash` | Capture | One immutable snapshot per job (the capture INSTANCE); the hash pins the complete stored bytes, capture timestamps included |
+| `report_revision_id` (`rrv2_...`) | Capture (identity binding) | Deterministic over the semantic request + stated source revisions + factual content under the versioned `fb1` boundary: re-captures of identical facts share it, a restated source cut changes it, a replay-clone inherits it verbatim. NULL on failed captures and on pre-identity history - never backfilled |
 | Upstream call records | Capture recording clients | Request/response hashes, latencies, postures per source read |
 | `render_job_id` | Report (`rdr_{job_id}_pdf`) | Deterministic per job; render converges identical retries via package-hash idempotency |
 | `artifact_sha256` | Render | Bytes of ONE render; NOT stable across re-renders (PDF metadata differs) - never compare across renders |

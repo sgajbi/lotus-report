@@ -104,6 +104,9 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
     scope = row["portfolio_scope_json"]
     if isinstance(scope, str):
         scope = json.loads(scope)
+    vector = row["source_revision_vector_json"]
+    if isinstance(vector, str):
+        vector = json.loads(vector)
     return ReportInputSnapshotRecord(
         snapshot_id=str(row["snapshot_id"]),
         report_job_id=str(row["report_job_id"]),
@@ -116,6 +119,18 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
         snapshot_storage_ref=(
             str(row["snapshot_storage_ref"]) if row["snapshot_storage_ref"] else None
         ),
+        report_revision_id=(str(row["report_revision_id"]) if row["report_revision_id"] else None),
+        series_digest=str(row["series_digest"]) if row["series_digest"] else None,
+        source_revision_digest=(
+            str(row["source_revision_digest"]) if row["source_revision_digest"] else None
+        ),
+        factual_content_digest=(
+            str(row["factual_content_digest"]) if row["factual_content_digest"] else None
+        ),
+        factual_boundary_version=(
+            str(row["factual_boundary_version"]) if row["factual_boundary_version"] else None
+        ),
+        source_revision_vector=dict(vector) if isinstance(vector, dict) else None,
         supportability_status=str(row["supportability_status"]),
         completeness_status=str(row["completeness_status"]),
         lineage_summary=dict(summary),
@@ -232,6 +247,12 @@ class ReportInputSnapshotStore:
                     snapshot_payload_json TEXT NOT NULL,
                     snapshot_hash TEXT NOT NULL,
                     snapshot_storage_ref TEXT,
+                    report_revision_id TEXT,
+                    series_digest TEXT,
+                    source_revision_digest TEXT,
+                    factual_content_digest TEXT,
+                    factual_boundary_version TEXT,
+                    source_revision_vector_json TEXT,
                     supportability_status TEXT NOT NULL,
                     completeness_status TEXT NOT NULL,
                     lineage_summary_json TEXT NOT NULL,
@@ -242,6 +263,26 @@ class ReportInputSnapshotStore:
                 )
                 """
             )
+            # Revision columns arrived after the table (report#283); a
+            # database created before them evolves additively in place.
+            existing_columns = {
+                str(column_row["name"])
+                for column_row in connection.execute(
+                    "PRAGMA table_info(report_input_snapshot)"
+                ).fetchall()
+            }
+            for column_name in (
+                "report_revision_id",
+                "series_digest",
+                "source_revision_digest",
+                "factual_content_digest",
+                "factual_boundary_version",
+                "source_revision_vector_json",
+            ):
+                if column_name not in existing_columns:
+                    connection.execute(
+                        f"ALTER TABLE report_input_snapshot ADD COLUMN {column_name} TEXT"
+                    )
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_report_input_snapshot_created
@@ -258,6 +299,12 @@ class ReportInputSnapshotStore:
                 """
                 CREATE INDEX IF NOT EXISTS idx_report_input_snapshot_report_type_created
                 ON report_input_snapshot(report_type, created_at)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_report_input_snapshot_revision
+                ON report_input_snapshot(report_revision_id)
                 """
             )
             connection.execute(
@@ -378,10 +425,12 @@ class ReportInputSnapshotStore:
                 INSERT INTO report_input_snapshot (
                     snapshot_id, report_job_id, report_type, report_data_contract_version,
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
-                    snapshot_storage_ref, supportability_status, completeness_status,
+                    snapshot_storage_ref, report_revision_id, series_digest,
+                    source_revision_digest, factual_content_digest, factual_boundary_version,
+                    source_revision_vector_json, supportability_status, completeness_status,
                     lineage_summary_json, captured_at, created_at, correlation_id, trace_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             (
                 snapshot_id,
@@ -393,6 +442,16 @@ class ReportInputSnapshotStore:
                 canonical_json_dumps(request.snapshot_payload),
                 snapshot_hash,
                 request.snapshot_storage_ref,
+                request.report_revision_id,
+                request.series_digest,
+                request.source_revision_digest,
+                request.factual_content_digest,
+                request.factual_boundary_version,
+                (
+                    canonical_json_dumps(request.source_revision_vector)
+                    if request.source_revision_vector is not None
+                    else None
+                ),
                 request.supportability_status,
                 request.completeness_status,
                 canonical_json_dumps(request.lineage_summary),

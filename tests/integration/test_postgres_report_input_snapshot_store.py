@@ -122,12 +122,33 @@ def test_postgres_report_input_snapshot_store_persists_and_loads_snapshot() -> N
     store.check_ready()
 
     unique_suffix = uuid4().hex
-    request = _request(unique_suffix, report_job_id=_seed_job(unique_suffix))
+    request = _request(
+        unique_suffix,
+        report_job_id=_seed_job(unique_suffix),
+        report_revision_id="rrv2_roundtrip",
+        series_digest="series-digest-rt",
+        source_revision_digest="vector-digest-rt",
+        factual_content_digest="sha256:facts-rt",
+        factual_boundary_version="fb1",
+        source_revision_vector={
+            "coverage": "partial",
+            "revisions": [{"source_service": "lotus-core", "restatement_version": "r1"}],
+        },
+    )
     created = store.create_snapshot(request)
 
     assert created.snapshot_hash == compute_snapshot_hash(request.snapshot_payload)
     assert store.get_snapshot(created.snapshot_id).snapshot_id == created.snapshot_id
-    assert store.get_snapshot_by_job(request.report_job_id).report_job_id == request.report_job_id
+    loaded = store.get_snapshot_by_job(request.report_job_id)
+    assert loaded.report_job_id == request.report_job_id
+    # The revision binding roundtrips verbatim through the JSONB column set.
+    assert loaded.report_revision_id == "rrv2_roundtrip"
+    assert loaded.factual_content_digest == "sha256:facts-rt"
+    assert loaded.factual_boundary_version == "fb1"
+    assert loaded.source_revision_vector == {
+        "coverage": "partial",
+        "revisions": [{"source_service": "lotus-core", "restatement_version": "r1"}],
+    }
 
 
 def test_postgres_report_input_snapshot_store_persists_and_lists_upstream_calls() -> None:

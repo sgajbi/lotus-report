@@ -68,6 +68,41 @@ class ReportInputSnapshotCreateRequest(BaseModel):
         ),
         examples=["s3://lotus-report/snapshots/rjob_83ca965c50334c40a17d2b8cc94873a5.json"],
     )
+    report_revision_id: str | None = Field(
+        default=None,
+        description=(
+            "Canonical report-revision identity minted for a successful capture; absent for "
+            "failed captures, which record no report facts."
+        ),
+        examples=["rrv2_7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    series_digest: str | None = Field(
+        default=None,
+        description="Digest of the canonical report series key behind the revision.",
+    )
+    source_revision_digest: str | None = Field(
+        default=None,
+        description="Digest of the source revision vector behind the revision.",
+    )
+    factual_content_digest: str | None = Field(
+        default=None,
+        description=(
+            "Digest of the payload's factual content under the versioned capture-instance "
+            "boundary; distinct from snapshot_hash, which covers the complete stored bytes."
+        ),
+    )
+    factual_boundary_version: str | None = Field(
+        default=None,
+        description="Version of the factual-content boundary the digest was computed under.",
+        examples=["fb1"],
+    )
+    source_revision_vector: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The canonical source revision vector persisted verbatim: per-source stated "
+            "evidence plus the evidence-computed coverage claim."
+        ),
+    )
     supportability_status: SnapshotPosture = Field(
         ...,
         description="Supportability posture for the captured snapshot.",
@@ -151,6 +186,42 @@ class ReportInputSnapshotRecord(BaseModel):
             "Optional governed external storage reference for large or sensitive raw payloads."
         ),
         examples=["s3://lotus-report/snapshots/rjob_83ca965c50334c40a17d2b8cc94873a5.json"],
+    )
+    report_revision_id: str | None = Field(
+        default=None,
+        description=(
+            "Canonical report-revision identity minted at capture. NULL on failed captures "
+            "and on rows captured before revision identity existed - history is never "
+            "relabelled with identities it did not state."
+        ),
+        examples=["rrv2_7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    series_digest: str | None = Field(
+        default=None,
+        description="Digest of the canonical report series key behind the revision.",
+    )
+    source_revision_digest: str | None = Field(
+        default=None,
+        description="Digest of the source revision vector behind the revision.",
+    )
+    factual_content_digest: str | None = Field(
+        default=None,
+        description=(
+            "Digest of the payload's factual content under the versioned capture-instance "
+            "boundary; distinct from snapshot_hash, which covers the complete stored bytes."
+        ),
+    )
+    factual_boundary_version: str | None = Field(
+        default=None,
+        description="Version of the factual-content boundary the digest was computed under.",
+        examples=["fb1"],
+    )
+    source_revision_vector: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The canonical source revision vector persisted verbatim: per-source stated "
+            "evidence plus the evidence-computed coverage claim."
+        ),
     )
     supportability_status: SnapshotPosture = Field(
         ...,

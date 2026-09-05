@@ -2019,6 +2019,46 @@ class ReportJobSnapshotDiagnostics(BaseModel):
         description="UTC timestamp when snapshot capture completed.",
         examples=["2026-04-22T09:00:03Z"],
     )
+    report_revision_id: str | None = Field(
+        default=None,
+        description=(
+            "Canonical report-revision identity minted at capture: deterministic over the "
+            "semantic request, the stated source revisions and the factual snapshot content, "
+            "so re-captures of identical facts share it while snapshot_hash still "
+            "distinguishes capture instances. Null on failed captures and on snapshots "
+            "captured before revision identity existed."
+        ),
+        examples=["rrv2_7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+    )
+    series_digest: str | None = Field(
+        default=None,
+        description="Digest of the canonical report series key behind the revision.",
+    )
+    source_revision_digest: str | None = Field(
+        default=None,
+        description="Digest of the stated source revision vector behind the revision.",
+    )
+    factual_content_digest: str | None = Field(
+        default=None,
+        description=(
+            "Digest of the payload's factual content under the versioned capture-instance "
+            "boundary; distinct from snapshot_hash, which covers the complete stored bytes."
+        ),
+    )
+    factual_boundary_version: str | None = Field(
+        default=None,
+        description="Version of the factual-content boundary the digest was computed under.",
+        examples=["fb1"],
+    )
+    source_revision_coverage: str | None = Field(
+        default=None,
+        description=(
+            "Evidence-computed coverage of the source revision vector: complete only when "
+            "every participating source stated revision evidence, otherwise partial or "
+            "unknown - never asserted, never upgraded."
+        ),
+        examples=["partial"],
+    )
 
 
 class ReportJobLineageDiagnostics(BaseModel):
