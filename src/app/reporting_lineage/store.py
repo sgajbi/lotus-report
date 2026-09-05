@@ -107,6 +107,9 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
     vector = row["source_revision_vector_json"]
     if isinstance(vector, str):
         vector = json.loads(vector)
+    coherence = row["source_cut_coherence_json"]
+    if isinstance(coherence, str):
+        coherence = json.loads(coherence)
     return ReportInputSnapshotRecord(
         snapshot_id=str(row["snapshot_id"]),
         report_job_id=str(row["report_job_id"]),
@@ -131,6 +134,7 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
             str(row["factual_boundary_version"]) if row["factual_boundary_version"] else None
         ),
         source_revision_vector=dict(vector) if isinstance(vector, dict) else None,
+        source_cut_coherence=dict(coherence) if isinstance(coherence, dict) else None,
         supportability_status=str(row["supportability_status"]),
         completeness_status=str(row["completeness_status"]),
         lineage_summary=dict(summary),
@@ -253,6 +257,7 @@ class ReportInputSnapshotStore:
                     factual_content_digest TEXT,
                     factual_boundary_version TEXT,
                     source_revision_vector_json TEXT,
+                    source_cut_coherence_json TEXT,
                     supportability_status TEXT NOT NULL,
                     completeness_status TEXT NOT NULL,
                     lineage_summary_json TEXT NOT NULL,
@@ -278,6 +283,7 @@ class ReportInputSnapshotStore:
                 "factual_content_digest",
                 "factual_boundary_version",
                 "source_revision_vector_json",
+                "source_cut_coherence_json",
             ):
                 if column_name not in existing_columns:
                     connection.execute(
@@ -427,10 +433,11 @@ class ReportInputSnapshotStore:
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
                     snapshot_storage_ref, report_revision_id, series_digest,
                     source_revision_digest, factual_content_digest, factual_boundary_version,
-                    source_revision_vector_json, supportability_status, completeness_status,
+                    source_revision_vector_json, source_cut_coherence_json,
+                    supportability_status, completeness_status,
                     lineage_summary_json, captured_at, created_at, correlation_id, trace_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             (
                 snapshot_id,
@@ -450,6 +457,11 @@ class ReportInputSnapshotStore:
                 (
                     canonical_json_dumps(request.source_revision_vector)
                     if request.source_revision_vector is not None
+                    else None
+                ),
+                (
+                    canonical_json_dumps(request.source_cut_coherence)
+                    if request.source_cut_coherence is not None
                     else None
                 ),
                 request.supportability_status,

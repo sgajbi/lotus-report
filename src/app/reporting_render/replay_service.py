@@ -539,6 +539,7 @@ class PortfolioReviewReplayService:
                     factual_content_digest=source_snapshot.factual_content_digest,
                     factual_boundary_version=source_snapshot.factual_boundary_version,
                     source_revision_vector=source_snapshot.source_revision_vector,
+                    source_cut_coherence=source_snapshot.source_cut_coherence,
                     supportability_status=source_snapshot.supportability_status,
                     completeness_status=source_snapshot.completeness_status,
                     lineage_summary=_cloned_lineage_summary(

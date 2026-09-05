@@ -103,6 +103,15 @@ class ReportInputSnapshotCreateRequest(BaseModel):
             "evidence plus the evidence-computed coverage claim."
         ),
     )
+    source_cut_coherence: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The evaluated source-cut coherence verdict (status, policy_version, detail): "
+            "whether the STATED source cuts share the report's business date. Policy-derived, "
+            "never part of the revision preimage; absent on failed captures and pre-policy "
+            "history."
+        ),
+    )
     supportability_status: SnapshotPosture = Field(
         ...,
         description="Supportability posture for the captured snapshot.",
@@ -221,6 +230,15 @@ class ReportInputSnapshotRecord(BaseModel):
         description=(
             "The canonical source revision vector persisted verbatim: per-source stated "
             "evidence plus the evidence-computed coverage claim."
+        ),
+    )
+    source_cut_coherence: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The evaluated source-cut coherence verdict (status, policy_version, detail): "
+            "whether the STATED source cuts share the report's business date. Policy-derived, "
+            "never part of the revision preimage; absent on failed captures and pre-policy "
+            "history."
         ),
     )
     supportability_status: SnapshotPosture = Field(

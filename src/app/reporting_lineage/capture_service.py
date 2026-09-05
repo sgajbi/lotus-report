@@ -20,6 +20,7 @@ from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.capture_binding import revision_for_capture
+from app.reporting_identity.source_cut_coherence import evaluate_source_cut_coherence
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.advisor_commentary import (
     AcceptedOutputClient,
@@ -1412,6 +1413,10 @@ def _bind_revision_identity(
     if minted is None:
         return snapshot_request
     identity, vector = minted
+    coherence = evaluate_source_cut_coherence(
+        source_revisions=vector,
+        business_as_of_date=job.as_of_date.isoformat(),
+    )
     bound: ReportInputSnapshotCreateRequest = snapshot_request.model_copy(
         update={
             "report_revision_id": identity.report_revision_id,
@@ -1420,6 +1425,7 @@ def _bind_revision_identity(
             "factual_content_digest": identity.factual_content_digest,
             "factual_boundary_version": identity.factual_boundary_version,
             "source_revision_vector": vector.canonical(),
+            "source_cut_coherence": coherence.model_dump(),
         }
     )
     return bound

@@ -2062,6 +2062,17 @@ class ReportJobSnapshotDiagnostics(BaseModel):
         ),
         examples=["partial"],
     )
+    source_cut_coherence: str | None = Field(
+        default=None,
+        description=(
+            "Evaluated source-cut coherence: coherent (every stated source cut matches the "
+            "report business date), incoherent (offenders named in capture evidence), or "
+            "unevaluable (no source stated an as-of date). Policy scv1; independent of "
+            "coverage, reconciliation, completeness, and data quality. Null on failed "
+            "captures and pre-policy history."
+        ),
+        examples=["coherent"],
+    )
 
 
 class ReportJobLineageDiagnostics(BaseModel):
