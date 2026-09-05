@@ -277,6 +277,22 @@ class _World:
             idempotency_key=f"proof-{suffix}",
         )
 
+    def park(self, job_id: str) -> None:
+        """Cancel a job this test will never execute, so its pending work
+        item cannot leak into other integration tests' claim pools (the
+        proof shares the session's isolated database with every suite)."""
+
+        record = self.ledger.get_job(job_id)
+        self.ledger.cancel_job(
+            job_id=job_id,
+            actor=record.triggered_by,
+            correlation_id=record.correlation_id,
+            trace_id=record.trace_id,
+        )
+        # The claim pool does not filter on job status, so the cancelled
+        # job's work item must be consumed: one worker pass completes it.
+        self.run_pipeline()
+
     def run_pipeline(self) -> None:
         worker = ReportJobWorker(
             work_ledger=self.ledger,
@@ -387,6 +403,7 @@ def test_a2_unknown_identity_fields_fail_and_nested_mutation_cannot_switch_tenan
     )
     stored = world.ledger.get_job(job.job_id)
     assert stored.tenant_id == TENANT_A
+    world.park(job.job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +688,7 @@ def test_a9_replay_preserves_the_accepted_contract_across_a_default_change(monke
     # Poison is live: a job accepted DURING the window resolves it.
     poisoned_job = world.submit(tenant=TENANT_B, suffix=f"a9p-{suffix}")
     assert poisoned_job.render_template_version == "v99-poison"
+    world.park(poisoned_job.job_id)
 
     from app.reporting_render.replay_service import PortfolioReviewReplayService
 
@@ -941,6 +959,7 @@ def test_a13_requested_policy_and_resolved_contract_agree_and_stay_distinct():
     assert contract is not None
     assert contract["template_version"] == job.render_template_version
     assert contract["report_data_contract_version"] == "portfolio_review.v1"
+    world.park(job.job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1181,3 +1200,4 @@ def test_a17_legacy_rows_stay_explicit_and_are_never_rewritten():
     from app.reporting_render.rerender_service import rerender_eligible
 
     assert rerender_eligible(world.ledger.get_job(legacy_job.job_id)) is False
+    world.park(legacy_job.job_id)
