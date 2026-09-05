@@ -181,7 +181,7 @@ def test_cycle_identity_is_the_business_cycle_not_the_template() -> None:
     assert key(cycle) == key(changed_template)
     assert key(cycle) != key(other_cycle)
     # The legacy scope retains template sensitivity for pre-change lookup.
-    assert cycle.legacy_idempotency_scope != changed_template.legacy_idempotency_scope
+    assert cycle.legacy_idempotency_scopes[0] != changed_template.legacy_idempotency_scopes[0]
     assert cycle.idempotency_scope == changed_template.idempotency_scope
 
 
@@ -294,7 +294,7 @@ def test_a_cycle_materialized_under_the_legacy_identity_is_not_rerun(tmp_path) -
     legacy_key = scheduled_batch_idempotency_key(
         caller_context=caller,
         selector_mode="explicit_portfolio_list",
-        cycle=cycle.model_copy(update={"idempotency_scope": cycle.legacy_idempotency_scope}),
+        cycle=cycle.model_copy(update={"idempotency_scope": cycle.legacy_idempotency_scopes[0]}),
     )
     new_key = scheduled_batch_idempotency_key(
         caller_context=caller,
@@ -325,3 +325,24 @@ def test_a_cycle_materialized_under_the_legacy_identity_is_not_rerun(tmp_path) -
 
     assert ledger.has_batch_for_idempotency_key(legacy_key) is True
     assert ledger.has_batch_for_idempotency_key(new_key) is False
+
+
+def test_legacy_recognition_covers_reconfigured_schedules() -> None:
+    """A schedule reconfigured (v1 -> v2) AFTER its cycle materialized under
+    the old identity must still be recognised: the candidate scopes include
+    both the currently configured triple and the canonical historical
+    default, so recognition never depends on current configuration alone."""
+
+    reconfigured = materialize_cycle(
+        BatchCycleRequest(
+            frequency="monthly",
+            as_of_date="2026-04-30",
+            template_version="v2",
+            render_package_version="portfolio-review.v2",
+        )
+    )
+    historical = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
+
+    # The reconfigured schedule's candidates contain the historical default
+    # scope that the pre-change batch was actually stored under.
+    assert historical.legacy_idempotency_scopes[0] in reconfigured.legacy_idempotency_scopes
