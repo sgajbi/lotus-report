@@ -117,7 +117,11 @@ def accepted_document_contract(
         "accepted_contract_version": ACCEPTED_DOCUMENT_CONTRACT_VERSION,
         "report_family_id": definition.report_family_id,
         "report_type": definition.report_type,
-        "input_snapshot_contract_version": input_snapshot_contract_version,
+        # The DPM families own fixed bounded-input schemas; portfolio
+        # review captures under the runtime reporting contract passed in.
+        "input_snapshot_contract_version": (
+            definition.input_snapshot_contract_version or input_snapshot_contract_version
+        ),
         "report_data_contract_version": definition.report_data_contract_version,
         "render_package_version": GOVERNED_RENDER_PACKAGE_VERSION,
         "template_id": template_id,

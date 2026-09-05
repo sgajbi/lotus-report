@@ -857,12 +857,41 @@ def _accepted_axis(job: ReportJobLedgerRecord, axis: str) -> str | None:
 
 def _job_report_data_contract(job: ReportJobLedgerRecord) -> str:
     """The report-data contract the job was ACCEPTED under (report#283
-    finding 6): the envelope consumes the persisted axis and resolves
-    today's definition only for a legacy job that never persisted one."""
+    finding 6), FAIL-CLOSED against composition drift: this deployment's
+    composers emit exactly one shape per family, so an accepted version
+    this deployment no longer composes must refuse - labelling a new-shaped
+    payload with an old version would hand Render a lie. Regeneration
+    under the current contract is the governed remedy. A legacy job that
+    never persisted the axis resolves today's definition with no
+    accepted-contract claim."""
 
-    return _accepted_axis(job, "report_data_contract_version") or resolve_report_data_contract(
-        job.report_type
-    )
+    current = resolve_report_data_contract(job.report_type)
+    accepted = _accepted_axis(job, "report_data_contract_version")
+    if accepted is not None and accepted != current:
+        raise ValueError(
+            "RENDER_PACKAGE_ACCEPTED_CONTRACT_UNSUPPORTED: job "
+            f"{job.job_id} was accepted under report-data contract "
+            f"{accepted}, but this deployment composes {current}; refusing "
+            "to mislabel the payload - regenerate under the current "
+            "contract to produce a replacement document."
+        )
+    return accepted or current
+
+
+def _job_render_package_version(job: ReportJobLedgerRecord) -> str:
+    """The envelope version, fail-closed exactly like the report-data
+    contract: the envelope structure is bound to this deployment's code."""
+
+    accepted = _accepted_axis(job, "render_package_version")
+    if accepted is not None and accepted != GOVERNED_RENDER_PACKAGE_VERSION:
+        raise ValueError(
+            "RENDER_PACKAGE_ACCEPTED_CONTRACT_UNSUPPORTED: job "
+            f"{job.job_id} was accepted under envelope "
+            f"{accepted}, but this deployment builds "
+            f"{GOVERNED_RENDER_PACKAGE_VERSION}; refusing to mislabel the "
+            "package - regenerate under the current contract."
+        )
+    return accepted or GOVERNED_RENDER_PACKAGE_VERSION
 
 
 def _job_disclosure_baseline(job: ReportJobLedgerRecord) -> str:
@@ -927,9 +956,7 @@ def _render_package_envelope(
         )
     template_id, template_version = _job_template_identity(job)
     return {
-        "render_package_version": (
-            _accepted_axis(job, "render_package_version") or GOVERNED_RENDER_PACKAGE_VERSION
-        ),
+        "render_package_version": _job_render_package_version(job),
         "render_job_id": render_job_id,
         "report_job_id": job.job_id,
         "snapshot_id": snapshot_id,

@@ -442,12 +442,10 @@ def test_a_replayed_job_keeps_its_original_accepted_contract(tmp_path, monkeypat
     assert replayed.accepted_document_contract == original_contract
 
 
-def test_the_envelope_consumes_the_accepted_contract_not_todays_definitions(
-    tmp_path,
-) -> None:
-    """The package is built from the persisted acceptance fact on every
-    contract axis - sentinel values persisted at acceptance surface in the
-    envelope even though today's definitions say otherwise."""
+def test_the_envelope_consumes_the_accepted_pass_through_axes(tmp_path) -> None:
+    """Pass-through axes (locale, brand, disclosure baseline) surface from
+    the persisted acceptance fact even though today's definitions say
+    otherwise - they carry values, not composition shape."""
 
     _ledger, store, ready = _seed_data_ready_job(tmp_path)
     snapshot = store.get_snapshot_by_job(ready.job_id)
@@ -455,7 +453,6 @@ def test_the_envelope_consumes_the_accepted_contract_not_todays_definitions(
         update={
             "accepted_document_contract": {
                 **(ready.accepted_document_contract or {}),
-                "report_data_contract_version": "portfolio_review.v0-frozen",
                 "locale": "en-HK",
                 "brand_variant": "retail_banking",
                 "standard_disclosure_ref": "portfolio-review.standard-disclosures.v0",
@@ -470,10 +467,37 @@ def test_the_envelope_consumes_the_accepted_contract_not_todays_definitions(
         snapshot_id=snapshot.snapshot_id,
     )
 
-    assert package["report_data_contract_version"] == "portfolio_review.v0-frozen"
     assert package["locale"] == "en-HK"
     assert package["brand_variant"] == "retail_banking"
     assert package["disclosure_refs"][0] == "portfolio-review.standard-disclosures.v0"
+
+
+def test_a_shape_binding_axis_this_deployment_cannot_compose_fails_closed(
+    tmp_path,
+) -> None:
+    """The composers emit exactly one shape per family: an accepted
+    report-data contract this deployment no longer composes REFUSES rather
+    than mislabelling a new-shaped payload with the old version. The
+    governed remedy is regeneration under the current contract."""
+
+    _ledger, store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = store.get_snapshot_by_job(ready.job_id)
+    stale = ready.model_copy(
+        update={
+            "accepted_document_contract": {
+                **(ready.accepted_document_contract or {}),
+                "report_data_contract_version": "portfolio_review.v0-frozen",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="RENDER_PACKAGE_ACCEPTED_CONTRACT_UNSUPPORTED"):
+        _build_render_package(
+            job=stale,
+            snapshot=snapshot.snapshot_payload,
+            render_job_id="rdr_contract_stale",
+            snapshot_id=snapshot.snapshot_id,
+        )
 
 
 def test_a_legacy_job_without_a_contract_resolves_current_definitions(tmp_path) -> None:

@@ -63,6 +63,10 @@ class ReportFamilyDefinition:
     standard_disclosure_ref: str
     ordering_modes: tuple[ReportOrderingModeDefinition, ...]
     supported_output_formats: tuple[str, ...]
+    #: The input-snapshot schema this family's capture persists. None means
+    #: the family captures under the runtime reporting contract version
+    #: (portfolio review); the DPM families own fixed bounded-input schemas.
+    input_snapshot_contract_version: str | None = None
     configuration_fields: tuple[ReportConfigurationFieldDefinition, ...] = ()
     sections: tuple[ReportSectionDefinition, ...] = ()
 
@@ -331,6 +335,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_version="v1",
         report_data_contract_version="dpm_proof_pack_report_input.v1",
         standard_disclosure_ref="proof-pack.standard-disclosures.v1",
+        input_snapshot_contract_version="dpm_proof_pack_report_input.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",
@@ -354,6 +359,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_version="v1",
         report_data_contract_version="dpm_wave_report_input.v1",
         standard_disclosure_ref="rebalance-wave.standard-disclosures.v1",
+        input_snapshot_contract_version="dpm_wave_report_input.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",
@@ -377,6 +383,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_version="v1",
         report_data_contract_version="dpm_outcome_report_input.v1",
         standard_disclosure_ref="outcome-review.standard-disclosures.v1",
+        input_snapshot_contract_version="dpm_outcome_report_input.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",
