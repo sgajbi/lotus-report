@@ -531,3 +531,54 @@ async def test_long_waiting_leaves_the_full_budget_for_the_first_real_failure(
     # operator_intervention_required is the exhaustion terminalizer.
     assert failed.failure_category == "render_execution_failed"
     assert failed.failure_category != "operator_intervention_required"
+
+
+@pytest.mark.asyncio
+async def test_custody_recovery_survives_owner_outages_until_archive_completes(
+    tmp_path, monkeypatch
+):
+    """The custody-wait vector end to end: a COMPLETED job whose archive
+    outcome is unrecorded keeps polling through owner outages - never
+    terminally completed, never charged - and the recovered outcome lands
+    under the same render id with custody adopted."""
+
+    ledger, store, rendering = _seed_rendering_job(tmp_path, suffix="custody-wait")
+    completed = ledger.mark_completed(
+        job_id=rendering.job_id,
+        actor=rendering.triggered_by,
+        correlation_id=rendering.correlation_id,
+        trace_id=rendering.trace_id,
+        render_job_id=rendering.render_job_id,
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v2",
+        template_publication="development",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    outage = (503, {"detail": {"code": "unavailable"}})
+    client = _ScriptedRenderClient(
+        status_responses=[outage, outage]
+        + [(200, {**_RENDERED, "render_job_id": rendering.render_job_id})],
+    )
+    worker = _worker(ledger, store, client)
+
+    for poll in range(2):
+        _advance_clock(monkeypatch, seconds=(poll + 1) * 10)
+        result = await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+        assert result.outcomes[0].failure_category == "waiting_on_render"
+        still = ledger.get_job(completed.job_id)
+        assert still.status == "completed"
+
+    _advance_clock(monkeypatch, seconds=100)
+    final = await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+
+    assert final.completed_count == 1
+    recovered = ledger.get_job(completed.job_id)
+    assert recovered.status == "archived"
+    assert recovered.render_job_id == rendering.render_job_id
+    assert recovered.archive_document_id == "doc_archived"
+    assert client.submitted == []
