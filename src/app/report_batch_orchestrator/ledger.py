@@ -143,6 +143,12 @@ class ReportBatchLedger:
             )
             connection.execute(
                 """
+                CREATE INDEX IF NOT EXISTS idx_report_batch_cycle_recognition
+                ON report_batch (as_of_date, tenant_id, region)
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS report_batch_item (
                     batch_item_id TEXT PRIMARY KEY,
                     batch_id TEXT NOT NULL,
@@ -304,6 +310,8 @@ class ReportBatchLedger:
     def has_batch_for_schedule_cycle(
         self,
         *,
+        tenant_id: str,
+        region: str,
         schedule_id: str,
         period_start: str,
         period_end: str,
@@ -311,35 +319,31 @@ class ReportBatchLedger:
     ) -> bool:
         """Whether this schedule's business cycle already has a batch.
 
-        Recognition by the durable facts every scheduled batch records in
-        its options (batch_schedule_id + period bounds) - exact for every
-        historical identity formula and template configuration, unlike any
-        reconstruction of historical idempotency keys.
+        Recognition by the durable facts every scheduled batch records -
+        tenant, region, schedule id, and period bounds - filtered in the
+        database. Tenant and region participate because an operator-chosen
+        schedule_id can recur across tenants: one tenant's batch must never
+        suppress another tenant's cycle.
         """
 
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT options_json FROM report_batch WHERE as_of_date = ?",
-                (as_of_date,),
-            ).fetchall()
-        for row in rows:
-            raw = row["options_json"]
-            if isinstance(raw, dict):
-                # PostgreSQL JSONB arrives parsed; SQLite stores text.
-                options = raw
-            else:
-                try:
-                    options = json.loads(raw)
-                except (TypeError, ValueError):
-                    continue
-            if (
-                isinstance(options, dict)
-                and options.get("batch_schedule_id") == schedule_id
-                and options.get("batch_period_start") == period_start
-                and options.get("batch_period_end") == period_end
-            ):
-                return True
-        return False
+        with self._lock:
+            with self._connect() as connection:
+                row = connection.execute(
+                    """
+                    SELECT 1
+                    FROM report_batch
+                    WHERE as_of_date = ?
+                      AND tenant_id = ?
+                      AND region = ?
+                      AND json_valid(options_json)
+                      AND json_extract(options_json, '$.batch_schedule_id') = ?
+                      AND json_extract(options_json, '$.batch_period_start') = ?
+                      AND json_extract(options_json, '$.batch_period_end') = ?
+                    LIMIT 1
+                    """,
+                    (as_of_date, tenant_id, region, schedule_id, period_start, period_end),
+                ).fetchone()
+        return row is not None
 
     def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
         """Whether ANY batch was materialized under this key.

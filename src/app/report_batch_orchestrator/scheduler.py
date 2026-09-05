@@ -444,6 +444,8 @@ class BatchScheduleLedger(Protocol):
     def has_batch_for_schedule_cycle(
         self,
         *,
+        tenant_id: str,
+        region: str,
         schedule_id: str,
         period_start: str,
         period_end: str,
@@ -687,6 +689,8 @@ class ReportBatchScheduler:
                     selector_identity=_selector_identity(schedule, portfolio_ids),
                 )
                 if self._batch_ledger.has_batch_for_schedule_cycle(
+                    tenant_id=caller_context.tenant_id,
+                    region=caller_context.region,
                     schedule_id=schedule.schedule_id,
                     period_start=cycle.period_start.isoformat(),
                     period_end=cycle.period_end.isoformat(),

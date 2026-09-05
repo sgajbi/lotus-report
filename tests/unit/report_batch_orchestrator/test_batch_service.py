@@ -219,6 +219,8 @@ def test_cycle_recognition_skips_malformed_option_rows(tmp_path) -> None:
 
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id="s",
             period_start="2026-04-01",
             period_end="2026-04-22",
