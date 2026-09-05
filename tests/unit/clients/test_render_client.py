@@ -202,3 +202,37 @@ async def test_get_template_projection_reads_the_system_templates_surface(monkey
     assert payload == {"templates": []}
     assert captured["url"] == "http://render.dev.lotus/system/templates"
     assert captured["max_retries"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_render_status_resolves_the_persisted_render_by_id(monkeypatch):
+    """The resume-resolution lookup (report#302): GET /renders/{id} with the
+    resilient GET idiom and the caller's correlation context."""
+
+    captured: dict[str, object] = {}
+
+    async def _fake_get_with_retry(**kwargs):
+        captured.update(kwargs)
+        return 200, {"render_job_id": "rdr_123", "status": "rendered"}
+
+    monkeypatch.setattr(render_client_module, "get_with_retry", _fake_get_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus/",
+        timeout_seconds=12.5,
+        max_retries=4,
+        retry_backoff_seconds=0.75,
+    )
+
+    status_code, payload = await client.get_render_status(
+        "rdr_123",
+        correlation_id="corr-123",
+        trace_id="0123456789abcdef0123456789abcdef",
+    )
+
+    assert status_code == 200
+    assert payload == {"render_job_id": "rdr_123", "status": "rendered"}
+    assert captured["url"] == "http://render.dev.lotus/renders/rdr_123"
+    assert captured["timeout_seconds"] == 12.5
+    assert captured["max_retries"] == 4
+    assert captured["backoff_seconds"] == 0.75
+    assert captured["headers"]["X-Correlation-ID"] == "corr-123"
