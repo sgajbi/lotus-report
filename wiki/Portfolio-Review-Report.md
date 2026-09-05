@@ -142,7 +142,7 @@ Top-level response families:
 | `report_structure` | recommended meeting-pack order for UI, document, or presentation consumers |
 | `advisor_briefing` | deterministic advisor talking points and required checks |
 | `ai_readiness` | guarded AI feature metadata and blocked AI use cases |
-| `evidence` | source refs, lineage bundle, trust metadata, and domain-product context |
+| `evidence` | source refs, lineage bundle, trust metadata, and domain-product context. Trust claims state only what is proven: `evidence_posture` separates the synchronous `ephemeral_composition` from durable `durable_snapshot` capture; `tenant_id` appears only when `tenant_admission` establishes it (never a fabricated default); `reconciliation_status` stays `unknown` with a bounded reason until an explicit policy proves reconciliation |
 
 ## Gold-Standard Figure Coverage
 
