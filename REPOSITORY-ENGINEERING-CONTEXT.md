@@ -165,6 +165,23 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    escalation is Render's diagnostics contract through an explicit
    (recovery_action -> category, retry_eligible) mapping that fails
    closed on unmapped values.
+   Two merged-review closures harden the same seam: the idempotency
+   request hash is the CLIENT's request — server-derived enrichment
+   (`SERVER_DERIVED_REQUEST_OPTION_KEYS`) never enters it, and records
+   stored under older hash policies are accepted by recomputing the client
+   identity from the record's own persisted request
+   (`client_identity_hash_from_record`), so no deployment must reproduce
+   historical enrichment; and snapshot lifecycle claims state capability,
+   never commands — `reproduction_availability: snapshot_recomposition`
+   (what the snapshot holds) is separate from diagnostics'
+   `rerender_available` (derived from the same `rerender_eligible`
+   predicate that gates the command, so claim and command cannot
+   disagree). Legacy policy 1.0.0 rows stamped `rerender_from_snapshot`
+   translate at the stores' shared row-to-record read boundary
+   (`read_lifecycle` in `_record_from_row`) while replay clones inherit
+   the STORED bytes verbatim via `get_stored_lifecycle` — history is
+   never rewritten and no version/value pair a policy never stamped can
+   be persisted.
    Remaining, in order: revision identity on portfolio-memory events
    (blocked on an event-identity stability treatment: the payload hash IS
    the event identity); the 17-point integrated proof.

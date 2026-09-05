@@ -104,7 +104,15 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal RFC-0105 operator diagnostics view composed from source-backed job, event, snapshot,
   lineage, durable regenerate/replay source-derived relationships, recent rerender attempt
   history, render, and archive handoff state; omits raw payloads, storage references, command
-  idempotency keys, correlation ids, trace ids, and database internals
+  idempotency keys, correlation ids, trace ids, and database internals. The snapshot block
+  separates two facts that must never be conflated: `reproduction_availability` states what the
+  SNAPSHOT holds (`snapshot_recomposition` for a successful capture, `none` for failure
+  evidence; rows stamped `rerender_from_snapshot` under lifecycle policy 1.0.0 read as
+  `snapshot_recomposition` without the stored row changing), and `rerender_available` states
+  whether the executable rerender COMMAND is available right now - derived from the same
+  predicate that gates `POST /reports/jobs/{job_id}/rerender` (archived PDF job with render and
+  archive identities), so JSON-only, failed, and unfinished-PDF jobs truthfully advertise no
+  rerender path even while the snapshot capability stands
 - `GET /reports/jobs/{job_id}/portfolio-memory-events`
   internal report-owned source-event family for downstream portfolio memory; maps report
   lifecycle, snapshot, render, and archive evidence into stable event identities, source refs,
