@@ -84,6 +84,27 @@ REMAINING_BLOCKERS = {
     "supported_feature_promotion_missing",
 }
 
+REQUIRED_RECOVERY = {
+    "target_route": "GET /reports/idea-evidence-packs/materializations",
+    "lookup_key": "idempotencyKey",
+    "required_caller_application": "lotus-idea",
+    "required_capability": "report.idea-materialization.recover",
+    "tenant_scoped": True,
+    "repository_query_limit": 2,
+    "retries_materialization": False,
+    "not_found_status": 404,
+    "identity_conflict_status": 409,
+}
+REQUIRED_RECOVERY_QUERY_FIELDS = {
+    "idempotencyKey",
+    "reportEvidencePackId",
+    "conversionIntentId",
+    "candidateId",
+    "evidencePacketId",
+    "evidenceContentFingerprint",
+    "portfolioId",
+}
+
 
 def validate_idea_evidence_materialization_contract(
     contract_path: Path = CONTRACT_PATH,
@@ -93,6 +114,21 @@ def validate_idea_evidence_materialization_contract(
     for key, expected in REQUIRED_TOP_LEVEL.items():
         if contract.get(key) != expected:
             errors.append(f"{key} must be {expected!r}")
+
+    recovery = contract.get("recovery")
+    if not isinstance(recovery, dict):
+        errors.append("recovery must be an object")
+    else:
+        for key, expected in REQUIRED_RECOVERY.items():
+            if recovery.get(key) != expected:
+                errors.append(f"recovery.{key} must be {expected!r}")
+        recovery_query_fields = set(recovery.get("required_query_fields", ()))
+        missing_recovery_fields = REQUIRED_RECOVERY_QUERY_FIELDS - recovery_query_fields
+        if missing_recovery_fields:
+            errors.append(
+                "recovery.required_query_fields missing: "
+                + ", ".join(sorted(missing_recovery_fields))
+            )
 
     authority = contract.get("source_authority")
     if not isinstance(authority, dict):
@@ -151,6 +187,7 @@ def validate_idea_evidence_materialization_contract(
     for required_fragment in (
         "Does not grant suitability",
         "Does not recompute lotus-idea evidence",
+        "never retries an uncertain materialization POST",
         "Does not promote a supported feature",
     ):
         if required_fragment not in boundaries:

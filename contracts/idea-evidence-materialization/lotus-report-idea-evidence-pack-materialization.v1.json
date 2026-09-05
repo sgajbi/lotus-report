@@ -1,6 +1,6 @@
 {
   "contract_id": "lotus-report-idea-evidence-pack-materialization",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "repository": "lotus-report",
   "approved_producer_repository": "lotus-idea",
   "approved_producer_product": "lotus-idea:IdeaEvidencePacket:v1",
@@ -15,6 +15,26 @@
   "client_publication_authority_granted": false,
   "supported_feature_promoted": false,
   "target_route": "POST /reports/idea-evidence-packs/materializations",
+  "recovery": {
+    "target_route": "GET /reports/idea-evidence-packs/materializations",
+    "lookup_key": "idempotencyKey",
+    "required_query_fields": [
+      "idempotencyKey",
+      "reportEvidencePackId",
+      "conversionIntentId",
+      "candidateId",
+      "evidencePacketId",
+      "evidenceContentFingerprint",
+      "portfolioId"
+    ],
+    "required_caller_application": "lotus-idea",
+    "required_capability": "report.idea-materialization.recover",
+    "tenant_scoped": true,
+    "repository_query_limit": 2,
+    "retries_materialization": false,
+    "not_found_status": 404,
+    "identity_conflict_status": 409
+  },
   "source_authority": {
     "idea_evidence": "lotus-idea",
     "report_materialization": "lotus-report",
@@ -78,11 +98,14 @@
     "Proves report-owned materialization, rendered output creation, and archive record creation through the governed report job pipeline.",
     "Does not grant suitability, advisory proposal approval, mandate approval, order, execution, settlement, distribution, or client-publication authority.",
     "Does not recompute lotus-idea evidence or upstream portfolio, holding, performance, risk, mandate, or transaction facts.",
+    "Recovery reads current Report-owned state and never retries an uncertain materialization POST.",
     "Does not promote a supported feature in lotus-report or lotus-idea."
   ],
   "evidence_refs": [
     "contracts/idea-evidence-materialization/lotus-report-idea-evidence-pack-materialization.v1.json",
     "src/app/idea_evidence_intake/models.py",
+    "src/app/idea_evidence_intake/materialization_contract.py",
+    "src/app/idea_evidence_intake/recovery.py",
     "src/app/idea_evidence_intake/retention_policy.py",
     "src/app/idea_evidence_intake/service.py",
     "src/app/routers/idea_evidence_intake.py",
@@ -91,6 +114,7 @@
     "tests/unit/test_idea_evidence_materialization_contract.py",
     "tests/unit/test_idea_evidence_retention_policy.py",
     "tests/unit/test_idea_evidence_intake_service.py",
+    "tests/unit/test_idea_evidence_recovery.py",
     "tests/integration/test_idea_evidence_intake_api.py"
   ],
   "certification_blockers": [

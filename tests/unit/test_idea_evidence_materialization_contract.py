@@ -81,6 +81,30 @@ def test_idea_evidence_materialization_contract_requires_response_receipt_fields
     ) in errors
 
 
+def test_idea_evidence_materialization_contract_requires_exact_read_only_recovery(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract_path = (
+        ROOT
+        / "contracts"
+        / "idea-evidence-materialization"
+        / "lotus-report-idea-evidence-pack-materialization.v1.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["recovery"]["tenant_scoped"] = False
+    contract["recovery"]["retries_materialization"] = True
+    contract["recovery"]["required_query_fields"].remove("conversionIntentId")
+    drifted = tmp_path / "contract.json"
+    drifted.write_text(json.dumps(contract), encoding="utf-8")
+
+    errors = module.validate_idea_evidence_materialization_contract(drifted)
+
+    assert "recovery.tenant_scoped must be True" in errors
+    assert "recovery.retries_materialization must be False" in errors
+    assert "recovery.required_query_fields missing: conversionIntentId" in errors
+
+
 def _load_validator() -> ModuleType:
     script_path = ROOT / "scripts" / "validate_idea_evidence_materialization_contract.py"
     spec = importlib.util.spec_from_file_location(
