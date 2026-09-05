@@ -63,6 +63,14 @@ boundaries, and copy-paste request examples for direct service and support workf
   source authority, render/archive outcome flags and identifiers, evidence refs, and remaining
   blockers. It does not grant client-publication authority, suitability, mandate approval,
   execution, distribution, or supported-feature promotion.
+- `GET /reports/idea-evidence-packs/materializations`
+  read-only recovery for a Report commit whose POST response was lost. The caller supplies the
+  original idempotency key and exact evidence-pack, conversion-intent, candidate, evidence-packet,
+  evidence-fingerprint, and portfolio identities. Report checks the admitted `lotus-idea`
+  application and `report.idea-materialization.recover` capability before repository access,
+  performs a bounded tenant-scoped lookup, and returns the current canonical receipt only when the
+  persisted identity and report request agree. Not-found is `404`; drift, ambiguity or malformed
+  stored identity is `409`. The GET never starts, retries, renders or archives work.
 - `POST /reports/outcome-reviews`
   internal durable post-trade outcome-review report job initiation from manage-owned
   `DpmOutcomeReportInput`; persists the handoff as the immutable snapshot, records lineage to
