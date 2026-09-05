@@ -139,3 +139,57 @@ def benchmark_source_statement(payload: dict[str, object]) -> str | None:
         if isinstance(note, str) and "benchmark" in note.lower():
             return note
     return None
+
+
+def performance_benchmark_context(
+    *,
+    requested_benchmark_code: str | None,
+    aliases: dict[str, str],
+    available: bool = False,
+    resolved_benchmark_code: str | None = None,
+    return_source: str | None = None,
+    benchmark_currency: str | None = None,
+    source_statement: str | None = None,
+) -> dict[str, object]:
+    benchmark_code = (
+        aliases.get(requested_benchmark_code, requested_benchmark_code)
+        if requested_benchmark_code is not None
+        else None
+    )
+    if available:
+        return {
+            "benchmark_code": resolved_benchmark_code or benchmark_code,
+            "requested_benchmark_code": requested_benchmark_code,
+            "comparison_status": "available",
+            "return_source": return_source,
+            "benchmark_currency": benchmark_currency,
+            "reason_code": None,
+        }
+    return {
+        "benchmark_code": benchmark_code,
+        "comparison_status": "unavailable" if benchmark_code else "not_requested",
+        "reason_code": "benchmark_return_series_not_sourced" if benchmark_code else None,
+        "source_statement": source_statement,
+    }
+
+
+def performance_supportability(
+    *,
+    benchmark_requested: bool,
+    benchmark_available: bool = False,
+) -> dict[str, object]:
+    if not benchmark_requested or benchmark_available:
+        return {"status": "ready", "notes": []}
+    return {
+        "status": "partial",
+        "notes": [
+            {
+                "code": "benchmark_comparison_unavailable",
+                "severity": "warning",
+                "message": (
+                    "Benchmark comparison is unavailable because benchmark return series "
+                    "is not sourced in this report response."
+                ),
+            }
+        ],
+    }

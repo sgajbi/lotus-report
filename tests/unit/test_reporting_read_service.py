@@ -664,11 +664,73 @@ class _AttributionRiskClientMixin:
         }
 
 
-class _RiskClientSuccess(_RollingRiskClientMixin, _AttributionRiskClientMixin):
+class _DrawdownRiskClientMixin:
+    """The shipped /analytics/risk/drawdown answer, minimal but
+    production-shaped: one 1Y period with an underwater series, one closed
+    and one OPEN episode, and the summary block."""
+
+    drawdown_payloads: list[dict[str, object]]
+
+    async def drawdown_analytics(self, payload: dict[str, object]):
+        self.drawdown_payloads.append(payload)
+        return 200, {
+            "source_service": "lotus-risk",
+            "input_mode": "stateful",
+            "results": {
+                "1Y": {
+                    "start_date": "2025-02-24",
+                    "end_date": "2026-02-24",
+                    "portfolio_observation_count": 252,
+                    "benchmark_observation_count": 0,
+                    "summary": {
+                        "max_drawdown": -0.124533,
+                        "max_drawdown_peak_date": "2026-01-12",
+                        "max_drawdown_trough_date": "2026-02-03",
+                        "max_drawdown_recovery_date": None,
+                    },
+                    "episodes": [
+                        {
+                            "episode_id": "dd_0001",
+                            "peak_date": "2025-04-01",
+                            "trough_date": "2025-04-20",
+                            "recovery_date": "2025-05-11",
+                            "depth": -0.0612,
+                            "days_to_trough": 13,
+                        },
+                        {
+                            "episode_id": "dd_0002",
+                            "peak_date": "2026-01-12",
+                            "trough_date": "2026-02-03",
+                            "recovery_date": None,
+                            "depth": -0.124533,
+                            "days_to_trough": 16,
+                        },
+                    ],
+                    "underwater_series": [
+                        {"date": "2026-01-13", "drawdown": -0.0121},
+                        {"date": "2026-02-03", "drawdown": -0.124533},
+                    ],
+                    "error": None,
+                }
+            },
+            "metadata": {
+                "product_name": "DrawdownAnalyticsReport",
+                "product_version": "v1",
+                "contract_version": "v1",
+                "methodology_version": "drawdown.v1",
+                "duration_unit": "BUSINESS_DAYS",
+            },
+        }
+
+
+class _RiskClientSuccess(
+    _RollingRiskClientMixin, _AttributionRiskClientMixin, _DrawdownRiskClientMixin
+):
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
         self.rolling_payloads: list[dict[str, object]] = []
         self.attribution_payloads: list[dict[str, object]] = []
+        self.drawdown_payloads: list[dict[str, object]] = []
 
     async def calculate_risk(self, payload: dict[str, object]):
         self.seen_payloads.append(payload)
@@ -1284,6 +1346,21 @@ async def test_review_composes_core_query_performance_and_risk():
     assert response["performance"]["summary"]["5Y"]["net_annualized_return"] == 3.9
     assert "YTD" in response["riskAnalytics"]["results"]
     assert response["riskAnalytics"]["source"]["service"] == "lotus-risk"
+    # report#289: the captured drawdown block carries the source's results
+    # and metadata verbatim under the 1Y request the contract locked.
+    drawdown = response["drawdown"]
+    assert drawdown["source"]["endpoint"] == "/analytics/risk/drawdown"
+    assert drawdown["request"] == {
+        "period": "1Y",
+        "net_or_gross": "NET",
+        "include_underwater_series": True,
+    }
+    assert drawdown["supportability"] == {"status": "ready", "notes": []}
+    period = drawdown["results"]["1Y"]
+    assert period["underwater_series"][1] == {"date": "2026-02-03", "drawdown": -0.124533}
+    assert period["episodes"][1]["recovery_date"] is None
+    assert drawdown["metadata"]["duration_unit"] == "BUSINESS_DAYS"
+    assert drawdown["metadata"]["methodology_version"] == "drawdown.v1"
     assert response["riskAnalytics"]["supportability"] == {"status": "ready", "notes": []}
     assert response["riskAnalytics"]["summary"]["YTD"] == {
         "volatility": 0.12,

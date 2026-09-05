@@ -384,6 +384,9 @@ class _DummyRiskClient:
     async def calculate_risk(self, payload):
         return 200, {"contract_version": "v1", "risk": payload}
 
+    async def drawdown_analytics(self, payload):
+        return 200, {"contract_version": "v1", "results": {}, "metadata": {}}
+
 
 class _FailingPerformanceClient(_DummyPerformanceClient):
     async def get_workspace_summary(self, payload):
@@ -396,6 +399,9 @@ class _FailingPerformanceClient(_DummyPerformanceClient):
 class _FailingRiskClient(_DummyRiskClient):
     async def calculate_risk(self, payload):
         raise RuntimeError(f"risk failure for {payload['portfolio_id']}")
+
+    async def drawdown_analytics(self, payload):
+        raise RuntimeError("drawdown failure")
 
 
 class _HappyReportingReadService:
@@ -1601,7 +1607,12 @@ async def test_recording_clients_capture_success_and_failure_paths():
     await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
 
     calls = recorder.calls
-    assert len(calls) == 8
+    drawdown_status, _drawdown_payload = await risk.drawdown_analytics(
+        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}
+    )
+    assert drawdown_status == 200
+    calls = recorder.calls
+    assert len(calls) == 9
     assert calls[0].endpoint == "/reporting/portfolio-summary/query"
     assert calls[1].failure_category == "timeout"
     assert calls[2].endpoint == "/reporting/asset-allocation/query"
@@ -1760,8 +1771,11 @@ async def test_capture_service_additional_payload_and_failure_branches():
         await performance.get_contribution({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
     with pytest.raises(RuntimeError, match="risk failure"):
         await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+    with pytest.raises(RuntimeError, match="drawdown failure"):
+        await risk.drawdown_analytics({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
 
     assert [call.failure_category for call in recorder.calls] == [
+        "upstream_error",
         "upstream_error",
         "upstream_error",
         "upstream_error",
@@ -2182,6 +2196,109 @@ async def test_benchmark_series_survives_the_complete_durable_journey(monkeypatc
     assert block["return_source"] == "calculated"
     assert [point["period"] for point in block["points"]] == ["2026-01", "2026-02"]
     assert block["points"][1]["cumulative_twr_pct"] == "-0.20%"
+
+
+@pytest.mark.asyncio
+async def test_drawdown_survives_the_complete_durable_journey(monkeypatch, tmp_path):
+    """The cross-stage rule applied to report#289:
+
+    order -> durable job -> REAL capture -> immutable snapshot carrying the
+    source-owned drawdown block -> REAL render package emitting
+    report_data.drawdown per the contract locked with Render."""
+
+    monkeypatch.setattr("app.reporting_lineage.capture_service.CoreQueryClient", _DummyCoreClient)
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.PerformanceClient", _DummyPerformanceClient
+    )
+    monkeypatch.setattr("app.reporting_lineage.capture_service.RiskClient", _DummyRiskClient)
+
+    captured_block = {
+        "source": {"service": "lotus-risk", "endpoint": "/analytics/risk/drawdown"},
+        "request": {"period": "1Y", "net_or_gross": "NET", "include_underwater_series": True},
+        "supportability": {"status": "ready", "notes": []},
+        "results": {
+            "1Y": {
+                "start_date": "2025-02-24",
+                "end_date": "2026-02-24",
+                "summary": {
+                    "max_drawdown": -0.124533,
+                    "max_drawdown_peak_date": "2026-01-12",
+                    "max_drawdown_trough_date": "2026-02-03",
+                    "max_drawdown_recovery_date": None,
+                },
+                "episodes": [
+                    {
+                        "episode_id": "dd_0002",
+                        "peak_date": "2026-01-12",
+                        "trough_date": "2026-02-03",
+                        "recovery_date": None,
+                        "depth": -0.124533,
+                        "days_to_trough": 16,
+                    }
+                ],
+                "underwater_series": [
+                    {"date": "2026-01-13", "drawdown": -0.0121},
+                    {"date": "2026-02-03", "drawdown": -0.124533},
+                ],
+                "error": None,
+            }
+        },
+        "metadata": {
+            "methodology_version": "drawdown.v1",
+            "duration_unit": "BUSINESS_DAYS",
+        },
+    }
+
+    class _DrawdownReadService(_HappyReportingReadService):
+        async def get_portfolio_review(
+            self,
+            portfolio_id,
+            request_payload,
+            correlation_id=None,
+            admitted_tenant_id=None,
+            evidence_posture="ephemeral_composition",
+        ):
+            payload = await super().get_portfolio_review(
+                portfolio_id, request_payload, correlation_id
+            )
+            payload = dict(payload)
+            payload["drawdown"] = captured_block
+            return payload
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.ReportingReadService",
+        _DrawdownReadService,
+    )
+
+    from app.reporting_render.package_builder import _build_render_package
+
+    ledger = ReportJobLedger(tmp_path / "jobs-drawdown.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-drawdown.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_request(requested_output_formats=["pdf"]),
+        caller_context=_caller(),
+        idempotency_key="idem-drawdown-journey",
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(job)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.snapshot_payload["drawdown"] == captured_block
+
+    render_package = _build_render_package(
+        job=ledger.get_job(job.job_id),
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_drawdown_journey",
+        snapshot_id=snapshot.snapshot_id,
+    )
+    block = render_package["report_data"]["drawdown"]
+    assert block["posture"] == "ready"
+    assert block["underwater"][1] == {"date": "2026-02-03", "drawdown": "-0.124533"}
+    assert block["episodes"][0]["recovery_date"] is None
+    assert block["summary"]["max_drawdown"] == "-0.124533"
+    assert block["duration_unit"] == "BUSINESS_DAYS"
 
 
 @pytest.mark.asyncio

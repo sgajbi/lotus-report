@@ -136,6 +136,11 @@ def _build_render_package(
         # (benchmark_id; input_mode dropped deliberately), and a posture
         # that is never an empty line.
         "benchmark_series": _benchmark_series_section(snapshot),
+        # The report#289 contract locked with Render: source-owned drawdown
+        # series and episodes, complete (presentation-side capping is
+        # Render's), open episodes stated open, 1Y pairing the cumulative
+        # chart's x-axis.
+        "drawdown": _drawdown_section(snapshot),
         "performance_annual_history": _performance_history(
             snapshot,
             "annual_history",
@@ -1770,6 +1775,116 @@ def _performance_history(
             }
         )
     return normalized
+
+
+def _drawdown_section(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """ "How bad did it get, and how long to recover?" (report#289).
+
+    Postures per the locked contract: ``ready`` requires the underwater
+    SERIES - episodes may be an empty list (visible calm, not
+    degradation); ``empty`` is the source affirmatively stating no series
+    for the window (Render states the one-line document fact); and
+    ``unavailable`` is expected-but-refused, carrying the source's own
+    sentence verbatim where present, else Report's one owned
+    document-copy sentence. A null recovery_date is an OPEN episode and
+    stays null - an unrecovered drawdown never reads closed. Values are
+    the source's JSON numbers round-tripped verbatim
+    (value_unit: decimal_fraction, echoing lotus-risk's typed contract);
+    dates are verbatim ISO; nothing is inferred, capped, or gap-filled.
+    """
+
+    drawdown = _as_dict(snapshot.get("drawdown"))
+    if not drawdown:
+        # Pre-#289 snapshots (and non-performance orders) captured no
+        # drawdown block: no panel claim of any kind.
+        return {}
+    supportability = _as_dict(drawdown.get("supportability"))
+    metadata = _as_dict(drawdown.get("metadata"))
+    base: dict[str, Any] = {
+        "posture": "unavailable",
+        "value_unit": "decimal_fraction",
+        "duration_unit": _optional_str(metadata.get("duration_unit")),
+        "methodology_version": _optional_str(metadata.get("methodology_version")),
+        "underwater": [],
+        "episodes": [],
+        "summary": None,
+    }
+    if supportability.get("status") == "unavailable":
+        notes = [note for note in supportability.get("notes") or [] if isinstance(note, dict)]
+        statement = next(
+            (_optional_str(note.get("message")) for note in notes if note.get("message")),
+            None,
+        )
+        return {
+            **base,
+            "source_statement": statement or "Drawdown analytics were not sourced for this report.",
+        }
+    period = _as_dict(_as_dict(drawdown.get("results")).get("1Y"))
+    if not period:
+        return {
+            **base,
+            "source_statement": "Drawdown analytics were not sourced for this report.",
+        }
+    period_error = _optional_str(period.get("error"))
+    if period_error:
+        # A period the source marks in error is SAID in the source's voice.
+        return {**base, "source_statement": period_error}
+    raw_series = period.get("underwater_series")
+    if not isinstance(raw_series, list) or not raw_series:
+        # The source computed the window and stated no series: the panel
+        # states the fact ("No drawdown recorded for the period." - copy is
+        # Render's, per the lock) instead of a blank design hole.
+        return {**base, "posture": "empty"}
+    return {
+        **base,
+        "posture": "ready",
+        "underwater": [_underwater_point(point) for point in raw_series if isinstance(point, dict)],
+        "episodes": [
+            _drawdown_episode(episode)
+            for episode in period.get("episodes") or []
+            if isinstance(episode, dict)
+        ],
+        "summary": _drawdown_summary(_as_dict(period.get("summary"))),
+    }
+
+
+def _source_decimal(value: Any) -> str | None:
+    """The source's JSON number round-tripped verbatim, or None."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return repr(value)
+
+
+def _underwater_point(point: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "date": _optional_str(point.get("date")) or "Not available",
+        "drawdown": _source_decimal(point.get("drawdown")),
+    }
+
+
+def _drawdown_episode(episode: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "episode_id": _optional_str(episode.get("episode_id")) or "Not available",
+        "peak_date": _optional_str(episode.get("peak_date")) or "Not available",
+        "trough_date": _optional_str(episode.get("trough_date")) or "Not available",
+        "recovery_date": _optional_str(episode.get("recovery_date")),
+        "depth": _source_decimal(episode.get("depth")),
+        "days_to_trough": _optional_int(episode.get("days_to_trough")),
+    }
+
+
+def _drawdown_summary(summary_payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not summary_payload:
+        return None
+    return {
+        "max_drawdown": _source_decimal(summary_payload.get("max_drawdown")),
+        "max_drawdown_peak_date": _optional_str(summary_payload.get("max_drawdown_peak_date")),
+        "max_drawdown_trough_date": _optional_str(summary_payload.get("max_drawdown_trough_date")),
+        "max_drawdown_recovery_date": _optional_str(
+            summary_payload.get("max_drawdown_recovery_date")
+        ),
+    }
 
 
 def _benchmark_series_section(snapshot: dict[str, Any]) -> dict[str, Any]:

@@ -12,6 +12,7 @@ from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
 from app.services.attribution_capture import capture_attribution
+from app.services.drawdown_capture import build_drawdown_capture
 from app.services.performance_contribution import (
     map_contribution_levels,
     map_position_contributions,
@@ -29,6 +30,8 @@ from app.services.transaction_evidence import (
 )
 from app.services.workspace_performance import (
     benchmark_source_statement,
+    performance_benchmark_context,
+    performance_supportability,
     workspace_benchmark_history,
     workspace_breakdowns,
     workspace_performance_history,
@@ -352,6 +355,16 @@ class ReportingReadService:
                     )
             else:
                 response["performance"] = None
+            # The drawdown panel rides the performance page (#289): "how bad
+            # did it get, and how long to recover?" beside the cumulative
+            # chart, from lotus-risk's source-owned series and episodes.
+            response["drawdown"] = await build_drawdown_capture(
+                risk_client=self._risk_client,
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                reporting_currency=self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS),
+                client_id=self._optional_string(request_payload, *CLIENT_ID_KEYS),
+            )
 
         if "PERFORMANCE_ATTRIBUTION" in requested_sections:
             response["attribution"] = await capture_attribution(
@@ -1918,16 +1931,21 @@ class ReportingReadService:
                 period_name="1Y",
                 frequency="monthly",
             ),
-            "benchmark": self._performance_benchmark_context(
-                request_payload,
+            "benchmark": performance_benchmark_context(
+                requested_benchmark_code=self._optional_string(
+                    request_payload, *BENCHMARK_CODE_KEYS
+                ),
+                aliases=BENCHMARK_CODE_ALIASES,
                 available=benchmark_available,
                 resolved_benchmark_code=resolved_benchmark_code,
                 return_source=resolved_benchmark_source,
                 benchmark_currency=resolved_benchmark_currency,
                 source_statement=benchmark_source_statement(payload),
             ),
-            "supportability": self._performance_supportability(
-                request_payload,
+            "supportability": performance_supportability(
+                benchmark_requested=bool(
+                    self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
+                ),
                 benchmark_available=benchmark_available,
             ),
             "methodology": self._review_methodology(request_payload),
@@ -3536,58 +3554,6 @@ class ReportingReadService:
             except ValueError:
                 return None
         return None
-
-    def _performance_benchmark_context(
-        self,
-        request_payload: dict[str, object],
-        *,
-        available: bool = False,
-        resolved_benchmark_code: str | None = None,
-        return_source: str | None = None,
-        benchmark_currency: str | None = None,
-        source_statement: str | None = None,
-    ) -> dict[str, object]:
-        requested_benchmark_code = self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
-        benchmark_code = self._normalized_benchmark_code(requested_benchmark_code)
-        if available:
-            return {
-                "benchmark_code": resolved_benchmark_code or benchmark_code,
-                "requested_benchmark_code": requested_benchmark_code,
-                "comparison_status": "available",
-                "return_source": return_source,
-                "benchmark_currency": benchmark_currency,
-                "reason_code": None,
-            }
-        return {
-            "benchmark_code": benchmark_code,
-            "comparison_status": "unavailable" if benchmark_code else "not_requested",
-            "reason_code": "benchmark_return_series_not_sourced" if benchmark_code else None,
-            "source_statement": source_statement,
-        }
-
-    def _performance_supportability(
-        self,
-        request_payload: dict[str, object],
-        *,
-        benchmark_available: bool = False,
-    ) -> dict[str, object]:
-        if not self._optional_string(request_payload, *BENCHMARK_CODE_KEYS):
-            return {"status": "ready", "notes": []}
-        if benchmark_available:
-            return {"status": "ready", "notes": []}
-        return {
-            "status": "partial",
-            "notes": [
-                {
-                    "code": "benchmark_comparison_unavailable",
-                    "severity": "warning",
-                    "message": (
-                        "Benchmark comparison is unavailable because benchmark return series "
-                        "is not sourced in this report response."
-                    ),
-                }
-            ],
-        }
 
     def _map_review_transaction_row(self, row: dict[str, object]) -> dict[str, object]:
         transaction_id = self._safe_str(row.get("transaction_id"))
