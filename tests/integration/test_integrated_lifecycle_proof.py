@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import dataclasses
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -27,7 +28,13 @@ import pytest
 
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import compute_request_hash
-from app.reporting_jobs.models import PortfolioReviewJobRequest, ReportCallerContext
+from app.reporting_jobs.models import (
+    PortfolioReviewJobRequest,
+    ReportCallerContext,
+    ReportJobRegenerateRequest,
+    ReportJobReplayRequest,
+    ReportJobRerenderRequest,
+)
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
 from app.reporting_jobs.worker import ReportJobWorker
 from app.reporting_lineage.capture_service import (
@@ -204,6 +211,33 @@ class _CustodyRenderClient:
             "archive_state": "archived_verified",
             "archive_document_id": document_id,
             "archive_detail": None,
+        }
+
+
+class _CustodyArchiveClient:
+    """Owner-shaped Archive client for the correction/replacement seams:
+    by-request-id lookup reports never-committed (404), lifecycle
+    transitions acknowledged and recorded."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+        self.lookups: list[str] = []
+        self.lifecycle_transitions: list[dict] = []
+
+    async def archive_document(self, payload, **kwargs):
+        self.payloads.append(copy.deepcopy(payload))
+        return 201, {"document_id": f"doc_{uuid4().hex[:12]}"}
+
+    async def get_document_by_request_id(self, archive_request_id, **kwargs):
+        self.lookups.append(archive_request_id)
+        return 404, {"error": {"code": "document_not_found"}}
+
+    async def record_lifecycle_transition(self, **kwargs):
+        self.lifecycle_transitions.append(dict(kwargs))
+        return 201, {
+            "lifecycle_relationship_id": f"life_{uuid4().hex[:8]}",
+            "source_document_id": kwargs["source_document_id"],
+            "target_document_id": kwargs["target_document_id"],
         }
 
 
@@ -518,3 +552,235 @@ def test_a7_ephemeral_composition_mints_no_durable_revision():
     assert snapshot.source_revision_vector is None
     assert snapshot.lifecycle is not None
     assert snapshot.lifecycle["reproduction_availability"] == "none"
+
+
+# ---------------------------------------------------------------------------
+# Assertion 8: a deployment between acceptance, capture and package
+# construction cannot change the accepted contract.
+# ---------------------------------------------------------------------------
+
+
+def test_a8_deployment_between_acceptance_and_package_cannot_change_the_contract(monkeypatch):
+    suffix = uuid4().hex[:12]
+    world = _World()
+    job = world.submit(tenant=TENANT_A, suffix=f"a8-{suffix}")
+    accepted = world.ledger.get_job(job.job_id).accepted_document_contract
+    assert accepted is not None
+
+    # The deployment moves AFTER acceptance: every current-resolution symbol
+    # the package stage could consult is poisoned, so any re-resolution
+    # would surface as the poison value in the recorded package.
+    from app.report_ordering_catalogue import template_resolution
+    from app.reporting_render import package_builder
+
+    poisoned_family = dataclasses.replace(
+        template_resolution.resolve_report_family("portfolio_review"),
+        template_version="v99-poison",
+        standard_disclosure_ref="poison.disclosures.v99",
+    )
+    monkeypatch.setattr(
+        package_builder, "resolve_report_family", lambda report_type: poisoned_family
+    )
+
+    world.provider.stage(
+        job.job_id, _source_payload(tenant=TENANT_A, restatement="r1", suffix=f"a8-{suffix}")
+    )
+    world.run_pipeline()
+
+    record = world.ledger.get_job(job.job_id)
+    assert record.status == "archived"
+    package = world.render_client.payloads[-1]
+    assert package["template_version"] == accepted["template_version"]
+    assert package["template_version"] != "v99-poison"
+    assert "poison.disclosures.v99" not in package["disclosure_refs"]
+
+
+def test_a8b_shape_binding_axis_fails_closed_instead_of_relabelling(monkeypatch):
+    suffix = uuid4().hex[:12]
+    world = _World()
+    job = world.submit(tenant=TENANT_A, suffix=f"a8b-{suffix}")
+
+    # A deployment now composing a DIFFERENT report-data shape must refuse
+    # the accepted job rather than mislabel the payload - regenerate is the
+    # governed remedy, silent relabelling never is.
+    from app.reporting_render import package_builder
+
+    monkeypatch.setattr(
+        package_builder,
+        "resolve_report_data_contract",
+        lambda report_type: "portfolio_review.v9",
+    )
+    world.provider.stage(
+        job.job_id, _source_payload(tenant=TENANT_A, restatement="r1", suffix=f"a8b-{suffix}")
+    )
+    world.run_pipeline()
+
+    record = world.ledger.get_job(job.job_id)
+    assert record.status != "archived"
+    handed_off = [
+        payload
+        for payload in world.render_client.payloads
+        if payload["report_job_id"] == job.job_id
+    ]
+    assert handed_off == []
+
+
+# ---------------------------------------------------------------------------
+# Assertion 9: failed-work replay preserves the source job's accepted
+# contract, including across a family-default change.
+# ---------------------------------------------------------------------------
+
+
+def test_a9_replay_preserves_the_accepted_contract_across_a_default_change(monkeypatch):
+    suffix = uuid4().hex[:12]
+    world = _World()
+    source = world.submit(tenant=TENANT_A, suffix=f"a9-{suffix}")
+    source = world.ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="upstream_data_failed",
+        failure_message="Upstream timeout.",
+        retry_eligible=True,
+    )
+    accepted = source.accepted_document_contract
+    assert accepted is not None
+
+    # The family default moves between the source's acceptance and the
+    # replay: current resolution now yields the poison pair, so ONLY
+    # verbatim inheritance can reproduce the source's contract.
+    from app.report_ordering_catalogue import template_resolution
+
+    monkeypatch.setattr(
+        template_resolution,
+        "accepted_template_identity",
+        lambda report_type, output_formats: ("portfolio-review", "v99-poison"),
+    )
+
+    # Poison is live: a job accepted DURING the window resolves it.
+    poisoned_job = world.submit(tenant=TENANT_B, suffix=f"a9p-{suffix}")
+    assert poisoned_job.render_template_version == "v99-poison"
+
+    from app.reporting_render.replay_service import PortfolioReviewReplayService
+
+    world.provider.default_payload = _source_payload(
+        tenant=TENANT_A, restatement="r1", suffix=f"a9-{suffix}"
+    )
+    replay_service = PortfolioReviewReplayService(
+        ledger=world.ledger,
+        capture_service=world.capture,
+        render_service=world.render,
+    )
+    result = asyncio.run(
+        replay_service.replay_job(
+            job_id=source.job_id,
+            command=ReportJobReplayRequest(reason="Integrated proof assertion 9."),
+            caller_context=_caller(tenant=TENANT_A, suffix=f"a9r-{suffix}"),
+            idempotency_key=f"proof-a9-replay-{suffix}",
+        )
+    )
+
+    replayed = world.ledger.get_job(result.replayed_job.job_id)
+    assert replayed.render_template_version == accepted["template_version"]
+    assert replayed.render_template_version != "v99-poison"
+    assert replayed.accepted_document_contract == accepted
+
+
+# ---------------------------------------------------------------------------
+# Assertion 10: pure rerender retains the same snapshot/revision and
+# contract while recording distinct execution/artifact identity.
+# ---------------------------------------------------------------------------
+
+
+def test_a10_rerender_reuses_snapshot_revision_and_contract_with_new_execution_identity():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    record, snapshot = _archived_cycle(world, tenant=TENANT_A, suffix=f"a10-{suffix}")
+    original_package = world.render_client.payloads[-1]
+
+    from app.reporting_render.rerender_service import PortfolioReviewRerenderService
+
+    rerender_service = PortfolioReviewRerenderService(
+        render_client=world.render_client,
+        archive_client=_CustodyArchiveClient(),
+        snapshot_store=world.store,
+        ledger=world.ledger,
+    )
+    attempt = asyncio.run(
+        rerender_service.rerender_job(
+            job_id=record.job_id,
+            command=ReportJobRerenderRequest(reason="Integrated proof assertion 10."),
+            caller_context=_caller(tenant=TENANT_A, suffix=f"a10r-{suffix}"),
+            idempotency_key=f"proof-a10-rerender-{suffix}",
+        )
+    )
+
+    rerender_package = world.render_client.payloads[-1]
+    # Same facts: snapshot, revision, template, document reference.
+    assert rerender_package["snapshot_id"] == snapshot.snapshot_id
+    assert rerender_package["render_context"]["report_revision_id"] == snapshot.report_revision_id
+    assert rerender_package["template_version"] == original_package["template_version"]
+    assert (
+        rerender_package["render_context"]["document_reference"]
+        == original_package["render_context"]["document_reference"]
+    )
+    # Distinct execution identity: a new render job for the correction.
+    assert rerender_package["render_job_id"] != original_package["render_job_id"]
+    assert attempt.render_job_id == rerender_package["render_job_id"]
+
+
+# ---------------------------------------------------------------------------
+# Assertion 11: regenerate creates a fresh capture with explicit
+# predecessor/replacement lineage and the chosen approved contract.
+# ---------------------------------------------------------------------------
+
+
+def test_a11_regenerate_captures_fresh_with_explicit_replacement_lineage():
+    suffix = uuid4().hex[:12]
+    world = _World()
+    record, snapshot = _archived_cycle(
+        world, tenant=TENANT_A, suffix=f"a11-{suffix}", restatement="r1"
+    )
+    archive_client = _CustodyArchiveClient()
+
+    from app.reporting_render.regenerate_service import PortfolioReviewRegenerateService
+
+    world.provider.default_payload = _source_payload(
+        tenant=TENANT_A, restatement="r2", suffix=f"a11n-{suffix}"
+    )
+    regenerate_service = PortfolioReviewRegenerateService(
+        ledger=world.ledger,
+        snapshot_store=world.store,
+        capture_service=world.capture,
+        render_service=world.render,
+        archive_lineage_client=archive_client,
+    )
+    result = asyncio.run(
+        regenerate_service.regenerate_job(
+            job_id=record.job_id,
+            command=ReportJobRegenerateRequest(reason="Integrated proof assertion 11."),
+            caller_context=_caller(tenant=TENANT_A, suffix=f"a11r-{suffix}"),
+            idempotency_key=f"proof-a11-regenerate-{suffix}",
+        )
+    )
+
+    new_record = world.ledger.get_job(result.regenerated_job.job_id)
+    new_snapshot = world.store.get_snapshot_by_job(new_record.job_id)
+    # Fresh capture: new snapshot, new revision minted from the restated
+    # sources - never a clone of the predecessor's facts.
+    assert new_snapshot.snapshot_id != snapshot.snapshot_id
+    assert new_snapshot.report_revision_id != snapshot.report_revision_id
+    revisions = {
+        entry["source_service"]: entry for entry in new_snapshot.source_revision_vector["revisions"]
+    }
+    assert revisions["lotus-core"]["restatement_version"] == "r2"
+    # Explicit predecessor/replacement lineage, recorded durably.
+    relationships = world.ledger.list_job_relationships(record.job_id)
+    assert any(
+        rel.relationship_type == "regenerate_replacement"
+        and rel.derived_report_job_id == new_record.job_id
+        for rel in relationships
+    )
+    assert new_record.archive_document_id is not None
+    assert new_record.archive_document_id != record.archive_document_id
