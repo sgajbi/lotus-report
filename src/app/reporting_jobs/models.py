@@ -975,6 +975,9 @@ REPORT_JOB_DIAGNOSTICS_RESPONSE_EXAMPLE: dict[str, Any] = {
         "supportability_status": "complete",
         "completeness_status": "complete",
         "captured_at": "2026-04-22T09:00:03Z",
+        "lifecycle_policy_ref": "report-input-snapshot-standard",
+        "reproduction_availability": "snapshot_recomposition",
+        "rerender_available": True,
     },
     "lineage": {
         "upstream_call_count": 3,
