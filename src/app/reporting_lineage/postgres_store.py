@@ -143,12 +143,13 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
                     snapshot_storage_ref, report_revision_id, series_digest,
                     source_revision_digest, factual_content_digest, factual_boundary_version,
-                    source_revision_vector_json, supportability_status, completeness_status,
+                    source_revision_vector_json, source_cut_coherence_json,
+                    supportability_status, completeness_status,
                     lineage_summary_json, captured_at, created_at, correlation_id, trace_id
                 )
                 VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
             (
@@ -169,6 +170,11 @@ class PostgresReportInputSnapshotStore(ManagedPostgresAdapter):
                 (
                     Jsonb(_normalize_json_value(request.source_revision_vector))
                     if request.source_revision_vector is not None
+                    else None
+                ),
+                (
+                    Jsonb(_normalize_json_value(request.source_cut_coherence))
+                    if request.source_cut_coherence is not None
                     else None
                 ),
                 request.supportability_status,

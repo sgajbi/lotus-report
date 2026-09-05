@@ -2342,3 +2342,59 @@ async def test_a_bounded_capture_persists_the_accepted_snapshot_contract(tmp_pat
     assert record.status == "data_ready"
     snapshot = store.get_snapshot_by_job(job.job_id)
     assert snapshot.report_data_contract_version == "dpm_proof_pack_report_input.v0-frozen"
+
+
+@pytest.mark.asyncio
+async def test_capture_evaluates_and_persists_source_cut_coherence(tmp_path):
+    """The verdict is one independently defensible claim persisted beside
+    the snapshot: coherent when every stated cut matches the business
+    date, incoherent with the offender NAMED when one differs - and it is
+    policy-derived, so it lives outside the revision preimage."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs-coherence.sqlite3")
+    store = ReportInputSnapshotStore(tmp_path / "lineage-coherence.sqlite3")
+    coherent_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-coherent"
+    )
+    incoherent_job = ledger.create_portfolio_review_job(
+        request=_request(), caller_context=_caller(), idempotency_key="idem-incoherent"
+    )
+    stale_payload = copy.deepcopy(_stated_review_payload())
+    stale_payload["holdings"]["sourceProduct"]["as_of_date"] = "2026-04-21"
+
+    for job, payload in (
+        (coherent_job, _stated_review_payload()),
+        (incoherent_job, stale_payload),
+    ):
+        service = PortfolioReviewSnapshotCaptureService(
+            snapshot_store=store,
+            job_ledger=ledger,
+            portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+                snapshot_payload=payload
+            ),
+        )
+        await service.capture_for_job(job)
+
+    coherent = store.get_snapshot_by_job(coherent_job.job_id).source_cut_coherence
+    incoherent = store.get_snapshot_by_job(incoherent_job.job_id).source_cut_coherence
+    assert coherent is not None and incoherent is not None
+    assert coherent["status"] == "coherent"
+    assert coherent["policy_version"] == "scv1"
+    assert incoherent["status"] == "incoherent"
+    assert "lotus-core=2026-04-21" in incoherent["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_capture_carries_no_coherence_verdict(tmp_path):
+    ledger, store, job = _create_job(tmp_path, suffix="coherence-failed")
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            error=ReportingUpstreamError("core unavailable"),
+        ),
+    )
+
+    await service.capture_for_job(job)
+
+    assert store.get_snapshot_by_job(job.job_id).source_cut_coherence is None

@@ -13,6 +13,11 @@ from app.reporting_identity.identity import (
     derive_report_revision,
     factual_content_digest,
 )
+from app.reporting_identity.source_cut_coherence import (
+    SOURCE_CUT_COHERENCE_POLICY_VERSION,
+    SourceCutCoherence,
+    evaluate_source_cut_coherence,
+)
 
 __all__ = [
     "CAPTURE_INSTANCE_KEYS",
@@ -26,4 +31,7 @@ __all__ = [
     "derive_report_revision",
     "factual_content_digest",
     "revision_for_capture",
+    "SOURCE_CUT_COHERENCE_POLICY_VERSION",
+    "SourceCutCoherence",
+    "evaluate_source_cut_coherence",
 ]

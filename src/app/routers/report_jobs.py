@@ -404,6 +404,7 @@ def _snapshot_to_diagnostics(
 ) -> ReportJobSnapshotDiagnostics:
     vector = snapshot.source_revision_vector or {}
     coverage = vector.get("coverage")
+    coherence = (snapshot.source_cut_coherence or {}).get("status")
     return ReportJobSnapshotDiagnostics(
         snapshot_id=snapshot.snapshot_id,
         snapshot_hash=snapshot.snapshot_hash,
@@ -416,6 +417,7 @@ def _snapshot_to_diagnostics(
         factual_content_digest=snapshot.factual_content_digest,
         factual_boundary_version=snapshot.factual_boundary_version,
         source_revision_coverage=str(coverage) if isinstance(coverage, str) else None,
+        source_cut_coherence=str(coherence) if isinstance(coherence, str) else None,
     )
 
 

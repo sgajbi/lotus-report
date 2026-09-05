@@ -250,6 +250,11 @@ def _create_snapshot_for(store: ReportInputSnapshotStore, job) -> None:
             factual_content_digest="sha256:facts-1",
             factual_boundary_version="fb1",
             source_revision_vector={"coverage": "partial", "revisions": []},
+            source_cut_coherence={
+                "status": "coherent",
+                "policy_version": "scv1",
+                "detail": "test",
+            },
             supportability_status="complete",
             completeness_status="complete",
             lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
@@ -448,6 +453,11 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
     assert cloned.factual_content_digest == "sha256:facts-1"
     assert cloned.factual_boundary_version == "fb1"
     assert cloned.source_revision_vector == {"coverage": "partial", "revisions": []}
+    assert cloned.source_cut_coherence == {
+        "status": "coherent",
+        "policy_version": "scv1",
+        "detail": "test",
+    }
     assert (
         cloned.lineage_summary["source_call_count"]
         == (source_snapshot.lineage_summary["call_count"])
