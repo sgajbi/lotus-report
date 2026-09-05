@@ -2697,6 +2697,16 @@ def _list_jobs_predicates(filters: ReportJobListFilters) -> tuple[str, list[obje
     if filters.portfolio_id:
         clauses.append("job.portfolio_scope_json LIKE ?")
         params.append(f'%"{filters.portfolio_id}"%')
+    # Creation bounds join the SQL predicates too: without them, same-tenant
+    # jobs OUTSIDE the window could consume the limit and starve eligible
+    # rows inside it. created_at is stored as the same ISO text
+    # _dt_to_text writes, so lexicographic comparison is chronological.
+    if filters.created_from:
+        clauses.append("job.created_at >= ?")
+        params.append(_dt_to_text(filters.created_from))
+    if filters.created_to:
+        clauses.append("job.created_at <= ?")
+        params.append(_dt_to_text(filters.created_to))
     if not clauses:
         return "", []
     return "WHERE " + " AND ".join(clauses), params
