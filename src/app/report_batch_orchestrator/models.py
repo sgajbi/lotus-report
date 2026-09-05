@@ -928,24 +928,6 @@ class BatchCycleRequest(BaseModel):
         description="Required period end when frequency is explicit.",
         examples=["2026-04-30"],
     )
-    template_id: str = Field(
-        "portfolio-review",
-        min_length=1,
-        description="Report template identifier included in scheduled batch identity.",
-        examples=["portfolio-review"],
-    )
-    template_version: str = Field(
-        "v1",
-        min_length=1,
-        description="Report template version included in scheduled batch identity.",
-        examples=["v1"],
-    )
-    render_package_version: str = Field(
-        "portfolio-review.v1",
-        min_length=1,
-        description="Render package contract version included in scheduled batch identity.",
-        examples=["portfolio-review.v1"],
-    )
 
 
 class BatchCycle(BaseModel):
@@ -953,9 +935,6 @@ class BatchCycle(BaseModel):
     period_start: date
     period_end: date
     as_of_date: date
-    template_id: str
-    template_version: str
-    render_package_version: str
     idempotency_scope: str
 
 

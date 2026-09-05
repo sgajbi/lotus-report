@@ -51,9 +51,6 @@ def test_standard_frequency_cycles_are_materialized_from_as_of_date(
         BatchCycleRequest(
             frequency=frequency,
             as_of_date=as_of_date,
-            template_id="portfolio-review",
-            template_version="v1",
-            render_package_version="portfolio-review.v1",
         )
     )
 
@@ -110,9 +107,6 @@ def test_explicit_frequency_requires_valid_period_and_as_of_date() -> None:
                 as_of_date=date(2026, 4, 30),
                 explicit_period_start=None,
                 explicit_period_end=None,
-                template_id="portfolio-review",
-                template_version="v1",
-                render_package_version="portfolio-review.v1",
             ),
             "unsupported_batch_frequency",
         ),
@@ -139,9 +133,6 @@ def test_schedule_validation_rejects_frequency_without_period_semantics(monkeypa
         as_of_date=date(2026, 4, 30),
         explicit_period_start=None,
         explicit_period_end=None,
-        template_id="portfolio-review",
-        template_version="v1",
-        render_package_version="portfolio-review.v1",
     )
 
     with pytest.raises(BatchScheduleValidationError) as exc_info:
