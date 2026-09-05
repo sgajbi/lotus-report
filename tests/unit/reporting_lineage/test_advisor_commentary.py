@@ -654,3 +654,31 @@ async def test_a_complete_validated_verdict_is_admissible():
     package = await _resolve(_StubClient(200, _accepted_payload()))
 
     assert package["status"] == "included"
+
+
+@pytest.mark.asyncio
+async def test_an_integrity_mismatch_closes_the_section_and_never_regenerates() -> None:
+    """lotus-ai#328 conformance: output_artifact_integrity_mismatch means
+    the reviewed artifact's bytes changed after acceptance. Report states
+    the integrity posture explicitly - an unavailable section with its own
+    bounded reason - and neither retries (the status is 4xx, not
+    retryable-transport) nor regenerates narrative."""
+
+    class _IntegrityRefusingClient:
+        async def get_accepted_workflow_output(self, run_id, *, tenant_id):
+            return 409, {
+                "error": "LOTUS_AI_ACCEPTED_OUTPUT_REFUSED",
+                "metadata": {"reason_code": "output_artifact_integrity_mismatch"},
+            }
+
+    package = await resolve_advisor_commentary_package(
+        client=_IntegrityRefusingClient(),
+        run_id="run_integrity",
+        tenant_id="tenant-sg",
+        portfolio_id="P1",
+        as_of_date="2026-04-22",
+        reporting_currency="USD",
+    )
+
+    assert package["status"] == "unavailable"
+    assert package["reason_code"] == "advisor_brief_source_integrity_failed"

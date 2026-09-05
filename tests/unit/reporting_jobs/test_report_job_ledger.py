@@ -1466,3 +1466,31 @@ def test_report_job_ledger_rerender_guards_reject_bad_input(tmp_path):
 def test_bounded_relationship_reason_normalizes_blank_to_not_provided():
     assert _bounded_relationship_reason("   ") == "not_provided"
     assert _bounded_relationship_reason("a" * 300) == "a" * 240
+
+
+def test_list_jobs_applies_predicates_before_the_limit(tmp_path):
+    """report#292's defining regression: a tenant's eligible row beyond
+    other tenants' recent rows must still return - predicates filter in SQL
+    BEFORE the limit, on the SQLite path exactly as on PostgreSQL."""
+
+    from app.reporting_jobs.models import ReportJobListFilters
+
+    ledger = ReportJobLedger(tmp_path / "search.sqlite3")
+    early = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-search-target",
+    )
+    other_caller = _caller().model_copy(update={"tenant_id": "tenant-hk"})
+    for index in range(5):
+        ledger.create_portfolio_review_job(
+            request=_request(),
+            caller_context=other_caller,
+            idempotency_key=f"idem-search-noise-{index}",
+        )
+
+    records = ledger.list_jobs(
+        filters=ReportJobListFilters.model_validate({"tenant_id": "tenant-sg", "limit": 2})
+    )
+
+    assert [record.job_id for record in records] == [early.job_id]
