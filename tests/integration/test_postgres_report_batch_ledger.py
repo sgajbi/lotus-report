@@ -805,3 +805,50 @@ def test_postgres_multi_tenant_scan_returns_in_set_batches_only():
     assert in_set[1][1] in runnable
     assert in_set[2][1] not in runnable
     assert ledger.list_runnable_batch_ids(tenant_ids=[], limit=50) == []
+
+
+def test_postgres_batch_cycle_recognition_by_durable_period_facts() -> None:
+    """Exact schedule-cycle recognition on the durable PostgreSQL path:
+    JSONB options arrive parsed, and recognition matches by the recorded
+    schedule id and period bounds regardless of template configuration."""
+
+    unique_suffix = uuid4().hex
+    ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    ledger.check_ready()
+    schedule_id = f"monthly-recognition-{unique_suffix}"
+    request = _request(unique_suffix, f"PB_SG_GLOBAL_BAL_001_{unique_suffix}")
+    request = request.model_copy(
+        update={
+            "options": {
+                **request.options,
+                "batch_schedule_id": schedule_id,
+                "batch_period_start": "2026-04-01",
+                "batch_period_end": "2026-04-22",
+                "template_version": "v2",
+            }
+        }
+    )
+    key = f"batch-pg-recognition-{unique_suffix}"
+    ledger.create_batch(request=request, caller_context=_caller(unique_suffix), idempotency_key=key)
+
+    assert ledger.has_batch_for_idempotency_key(key) is True
+    assert ledger.has_batch_for_idempotency_key(f"absent-{unique_suffix}") is False
+    assert ledger.has_batch_for_idempotency_key("  ") is False
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id=schedule_id,
+            period_start="2026-04-01",
+            period_end="2026-04-22",
+            as_of_date="2026-04-22",
+        )
+        is True
+    )
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id=schedule_id,
+            period_start="2026-05-01",
+            period_end="2026-05-31",
+            as_of_date="2026-05-31",
+        )
+        is False
+    )

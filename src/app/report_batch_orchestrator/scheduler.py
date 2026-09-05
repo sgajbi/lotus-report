@@ -441,6 +441,15 @@ class BatchScheduleLedger(Protocol):
 
     def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool: ...
 
+    def has_batch_for_schedule_cycle(
+        self,
+        *,
+        schedule_id: str,
+        period_start: str,
+        period_end: str,
+        as_of_date: str,
+    ) -> bool: ...
+
 
 def batch_scheduler_config_from_settings(source: Settings = settings) -> BatchSchedulerConfig:
     schedules = _parse_schedule_definitions(source.batch_schedules_json)
@@ -677,24 +686,17 @@ class ReportBatchScheduler:
                     cycle=cycle,
                     selector_identity=_selector_identity(schedule, portfolio_ids),
                 )
-                legacy_keys = [
-                    scheduled_batch_idempotency_key(
-                        caller_context=caller_context,
-                        selector_mode=request.selector_mode,
-                        cycle=cycle.model_copy(update={"idempotency_scope": legacy_scope}),
-                        selector_identity=_selector_identity(schedule, portfolio_ids),
-                    )
-                    for legacy_scope in cycle.legacy_idempotency_scopes
-                ]
-                if any(
-                    self._batch_ledger.has_batch_for_idempotency_key(legacy_key)
-                    for legacy_key in legacy_keys
+                if self._batch_ledger.has_batch_for_schedule_cycle(
+                    schedule_id=schedule.schedule_id,
+                    period_start=cycle.period_start.isoformat(),
+                    period_end=cycle.period_end.isoformat(),
+                    as_of_date=cycle.as_of_date.isoformat(),
                 ):
-                    # Materialized before the cycle-identity change under a
-                    # template-bearing legacy scope (checked over every
-                    # plausible historical triple - a schedule reconfigured
-                    # after materializing must still be recognised): one
-                    # business cycle keeps one batch - mint nothing.
+                    # This schedule's business cycle already has a batch -
+                    # recognised by its durably recorded schedule id and
+                    # period bounds, which is exact for every historical
+                    # identity formula and template configuration. One
+                    # cycle, one batch: mint nothing.
                     skipped.append(schedule.schedule_id)
                     continue
             try:

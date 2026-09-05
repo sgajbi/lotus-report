@@ -301,6 +301,46 @@ class ReportBatchLedger:
                 """
             )
 
+    def has_batch_for_schedule_cycle(
+        self,
+        *,
+        schedule_id: str,
+        period_start: str,
+        period_end: str,
+        as_of_date: str,
+    ) -> bool:
+        """Whether this schedule's business cycle already has a batch.
+
+        Recognition by the durable facts every scheduled batch records in
+        its options (batch_schedule_id + period bounds) - exact for every
+        historical identity formula and template configuration, unlike any
+        reconstruction of historical idempotency keys.
+        """
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT options_json FROM report_batch WHERE as_of_date = ?",
+                (as_of_date,),
+            ).fetchall()
+        for row in rows:
+            raw = row["options_json"]
+            if isinstance(raw, dict):
+                # PostgreSQL JSONB arrives parsed; SQLite stores text.
+                options = raw
+            else:
+                try:
+                    options = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+            if (
+                isinstance(options, dict)
+                and options.get("batch_schedule_id") == schedule_id
+                and options.get("batch_period_start") == period_start
+                and options.get("batch_period_end") == period_end
+            ):
+                return True
+        return False
+
     def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
         """Whether ANY batch was materialized under this key.
 

@@ -180,8 +180,6 @@ def test_cycle_identity_is_the_business_cycle_not_the_template() -> None:
     # One business cycle, one batch - whatever the current template default.
     assert key(cycle) == key(changed_template)
     assert key(cycle) != key(other_cycle)
-    # The legacy scope retains template sensitivity for pre-change lookup.
-    assert cycle.legacy_idempotency_scopes[0] != changed_template.legacy_idempotency_scopes[0]
     assert cycle.idempotency_scope == changed_template.idempotency_scope
 
 
@@ -281,29 +279,17 @@ def test_scheduled_manifest_scope_materializes_explicit_manifest_entries(tmp_pat
     assert batch.items[0].source_system == "lotus-operations"
 
 
-def test_a_cycle_materialized_under_the_legacy_identity_is_not_rerun(tmp_path) -> None:
-    """The transition guarantee: a batch created under the old
-    template-bearing key is recognised via the legacy scope and skipped -
-    the identity-formula change itself must not manufacture a second run
-    of the same business cycle."""
+def test_schedule_cycle_recognition_is_exact_by_period_facts(tmp_path) -> None:
+    """Recognition by the durably recorded schedule id and period bounds is
+    exact for EVERY historical identity formula and template configuration -
+    including a schedule that held a non-default triple pre-migration and
+    was reconfigured since. No key reconstruction, no guessing."""
+
+    from app.report_batch_orchestrator.models import BatchCreateRequest, PortfolioBatchCandidate
 
     caller = _caller()
-    cycle = materialize_cycle(
-        BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30", template_version="v1")
-    )
-    legacy_key = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=cycle.model_copy(update={"idempotency_scope": cycle.legacy_idempotency_scopes[0]}),
-    )
-    new_key = scheduled_batch_idempotency_key(
-        caller_context=caller,
-        selector_mode="explicit_portfolio_list",
-        cycle=cycle,
-    )
-    assert legacy_key != new_key
-
-    ledger = ReportBatchLedger(tmp_path / "batches.sqlite3")
+    cycle = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
+    ledger = ReportBatchLedger(tmp_path / "recognition.sqlite3")
     ledger.create_batch(
         request=BatchCreateRequest(
             selector_mode="explicit_portfolio_list",
@@ -317,32 +303,45 @@ def test_a_cycle_materialized_under_the_legacy_identity_is_not_rerun(tmp_path) -
                 )
             ],
             as_of_date=cycle.as_of_date,
-            options={},
+            options={
+                "batch_schedule_id": "monthly-sg-global-bal",
+                "batch_period_start": cycle.period_start.isoformat(),
+                "batch_period_end": cycle.period_end.isoformat(),
+                # A pre-migration batch created under an explicitly
+                # configured non-default triple: irrelevant to recognition.
+                "template_id": "portfolio-review",
+                "template_version": "v2",
+                "render_package_version": "portfolio-review.v2",
+            },
         ),
         caller_context=caller,
-        idempotency_key=legacy_key,
+        idempotency_key="scheduled-batch-legacy-arbitrary-key",
     )
 
-    assert ledger.has_batch_for_idempotency_key(legacy_key) is True
-    assert ledger.has_batch_for_idempotency_key(new_key) is False
-
-
-def test_legacy_recognition_covers_reconfigured_schedules() -> None:
-    """A schedule reconfigured (v1 -> v2) AFTER its cycle materialized under
-    the old identity must still be recognised: the candidate scopes include
-    both the currently configured triple and the canonical historical
-    default, so recognition never depends on current configuration alone."""
-
-    reconfigured = materialize_cycle(
-        BatchCycleRequest(
-            frequency="monthly",
-            as_of_date="2026-04-30",
-            template_version="v2",
-            render_package_version="portfolio-review.v2",
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id="monthly-sg-global-bal",
+            period_start=cycle.period_start.isoformat(),
+            period_end=cycle.period_end.isoformat(),
+            as_of_date=cycle.as_of_date.isoformat(),
         )
+        is True
     )
-    historical = materialize_cycle(BatchCycleRequest(frequency="monthly", as_of_date="2026-04-30"))
-
-    # The reconfigured schedule's candidates contain the historical default
-    # scope that the pre-change batch was actually stored under.
-    assert historical.legacy_idempotency_scopes[0] in reconfigured.legacy_idempotency_scopes
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id="monthly-sg-global-bal",
+            period_start="2026-05-01",
+            period_end="2026-05-31",
+            as_of_date="2026-05-31",
+        )
+        is False
+    )
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id="another-schedule",
+            period_start=cycle.period_start.isoformat(),
+            period_end=cycle.period_end.isoformat(),
+            as_of_date=cycle.as_of_date.isoformat(),
+        )
+        is False
+    )

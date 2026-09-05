@@ -391,8 +391,10 @@ async def test_scheduler_is_idempotent_for_same_schedule(tmp_path) -> None:
     first = await scheduler.run_due_schedules(config=config, caller_context=_caller_context())
     second = await scheduler.run_due_schedules(config=config, caller_context=_caller_context())
 
-    assert first.materialized[0].batch_id == second.materialized[0].batch_id
-    assert first.materialized[0].idempotency_key == second.materialized[0].idempotency_key
+    # One business cycle, one batch: the second pass recognises the cycle by
+    # its durable schedule/period facts and mints nothing.
+    assert len(first.materialized) == 1
+    assert len(second.materialized) == 0
 
 
 async def test_scheduler_skips_missing_portfolios(tmp_path) -> None:
@@ -475,13 +477,10 @@ async def test_scheduler_keeps_distinct_schedules_from_colliding(tmp_path) -> No
     assert result.materialized[0].idempotency_key != result.materialized[1].idempotency_key
 
 
-async def test_a_legacy_identity_batch_blocks_rematerialization(tmp_path) -> None:
-    """The cycle-identity transition (report#283 finding E): a batch created
-    under the old template-bearing key is recognised through the legacy
-    scope and the pass SKIPS the schedule instead of minting a second batch
-    for the same business cycle under the new key."""
+async def test_a_pre_migration_batch_blocks_rematerialization(tmp_path) -> None:
+    """A batch materialized under ANY historical identity is recognised by
+    its durable schedule/period facts and the pass mints nothing."""
 
-    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
     source = _PortfolioSource(
         {
             "PB_SG_GLOBAL_BAL_001": (
@@ -492,60 +491,38 @@ async def test_a_legacy_identity_batch_blocks_rematerialization(tmp_path) -> Non
     )
     schedule = _schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])
     caller = _caller_context()
-    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
 
-    # Recreate the pre-change world: the same business cycle already
-    # materialized under the legacy template-bearing key.
-    probe = await scheduler.run_due_schedules(config=_config(schedule), caller_context=caller)
-    assert len(probe.materialized) == 1
-    new_key = probe.materialized[0].idempotency_key
-
-    legacy_ledger = ReportBatchLedger(tmp_path / "legacy.sqlite3")
-
-    class _LegacyAwareLedger:
-        def __init__(self, inner):
-            self._inner = inner
+    class _RecognisingLedger:
+        def __init__(self):
             self.created = 0
 
         def create_batch(self, **kwargs):
             self.created += 1
-            return self._inner.create_batch(**kwargs)
+            raise AssertionError("recognition must prevent creation")
 
         def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
-            # The pre-change batch exists under the legacy-derived key.
-            return idempotency_key != new_key
+            return False
 
-    guard = _LegacyAwareLedger(legacy_ledger)
-    scheduler_with_legacy = ReportBatchScheduler(batch_ledger=guard, portfolio_source=source)
+        def has_batch_for_schedule_cycle(self, **kwargs) -> bool:
+            return True
 
-    result = await scheduler_with_legacy.run_due_schedules(
-        config=_config(schedule), caller_context=caller
-    )
+    guard = _RecognisingLedger()
+    scheduler = ReportBatchScheduler(batch_ledger=guard, portfolio_source=source)
 
+    result = await scheduler.run_due_schedules(config=_config(schedule), caller_context=caller)
+
+    assert guard.created == 0
     assert len(result.materialized) == 0
     assert schedule.schedule_id in result.skipped_schedule_ids
-    assert guard.created == 0
-
-
-def test_portfolio_rows_reads_both_payload_shapes() -> None:
-    from app.report_batch_orchestrator.scheduler import _portfolio_rows
-
-    assert _portfolio_rows({"portfolios": [{"portfolio_id": "P1"}, "junk"]}) == [
-        {"portfolio_id": "P1"}
-    ]
-    assert _portfolio_rows({"items": [{"portfolio_id": "P2"}]}) == [{"portfolio_id": "P2"}]
-    assert _portfolio_rows({"portfolios": "not-a-list"}) == []
-    assert _portfolio_rows({}) == []
 
 
 async def test_option_hash_drift_on_the_same_cycle_converges_to_skip(tmp_path) -> None:
-    """The transition window's second shape: a batch created under the NEW
-    template-free key but the OLD template-bearing options hash. The next
-    pass conflicts on the key - and converges by skipping, because the key
-    IS the business-cycle identity: one cycle, one batch, never an aborted
-    pass and never a duplicate."""
+    """A batch whose stored options hash predates the template-free options
+    (same cycle key, different hash) conflicts on create - and the pass
+    converges by skipping: one cycle, one batch, never an aborted pass."""
 
-    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    from app.report_batch_orchestrator.ledger import BatchIdempotencyConflictError
+
     source = _PortfolioSource(
         {
             "PB_SG_GLOBAL_BAL_001": (
@@ -558,16 +535,11 @@ async def test_option_hash_drift_on_the_same_cycle_converges_to_skip(tmp_path) -
     caller = _caller_context()
 
     class _WindowLedger:
-        """Simulates the mid-window batch: same key, different stored hash."""
-
-        def __init__(self, inner):
-            self._inner = inner
+        def __init__(self):
             self.attempts = 0
 
         def create_batch(self, **kwargs):
             self.attempts += 1
-            from app.report_batch_orchestrator.ledger import BatchIdempotencyConflictError
-
             raise BatchIdempotencyConflictError(
                 "batch_idempotency_key_reused_with_different_request"
             )
@@ -575,7 +547,10 @@ async def test_option_hash_drift_on_the_same_cycle_converges_to_skip(tmp_path) -
         def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
             return False
 
-    guard = _WindowLedger(ledger)
+        def has_batch_for_schedule_cycle(self, **kwargs) -> bool:
+            return False
+
+    guard = _WindowLedger()
     scheduler = ReportBatchScheduler(batch_ledger=guard, portfolio_source=source)
 
     result = await scheduler.run_due_schedules(config=_config(schedule), caller_context=caller)
@@ -583,3 +558,14 @@ async def test_option_hash_drift_on_the_same_cycle_converges_to_skip(tmp_path) -
     assert guard.attempts == 1
     assert len(result.materialized) == 0
     assert schedule.schedule_id in result.skipped_schedule_ids
+
+
+def test_portfolio_rows_reads_both_payload_shapes() -> None:
+    from app.report_batch_orchestrator.scheduler import _portfolio_rows
+
+    assert _portfolio_rows({"portfolios": [{"portfolio_id": "P1"}, "junk"]}) == [
+        {"portfolio_id": "P1"}
+    ]
+    assert _portfolio_rows({"items": [{"portfolio_id": "P2"}]}) == [{"portfolio_id": "P2"}]
+    assert _portfolio_rows({"portfolios": "not-a-list"}) == []
+    assert _portfolio_rows({}) == []

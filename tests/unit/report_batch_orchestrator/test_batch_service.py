@@ -189,3 +189,40 @@ def test_has_batch_for_idempotency_key_answers_existence_only(tmp_path) -> None:
 
     assert ledger.has_batch_for_idempotency_key("") is False
     assert ledger.has_batch_for_idempotency_key("scheduled-batch-none") is False
+
+
+def test_cycle_recognition_skips_malformed_option_rows(tmp_path) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    from app.report_batch_orchestrator.ledger import ReportBatchLedger
+
+    ledger = ReportBatchLedger(tmp_path / "malformed.sqlite3")
+    with closing(sqlite3.connect(tmp_path / "malformed.sqlite3")) as connection, connection:
+        connection.execute(
+            """
+            INSERT INTO report_batch (
+                batch_id, selector_mode, tenant_id, region,
+                materialized_portfolio_ids_json, requested_output_formats_json,
+                as_of_date, reporting_currency, options_json, trigger_type,
+                triggered_by, caller_application, idempotency_key,
+                request_hash, status, item_count, correlation_id, trace_id,
+                created_at
+            ) VALUES (
+                'rbch_x', 'explicit_portfolio_list', 'tenant-sg', 'APAC',
+                '[]', '[]', '2026-04-22', 'USD', 'not-json', 'user', 'a',
+                'app', 'k-x', 'h', 'created', 0, 'c', 't',
+                '2026-04-22T00:00:00Z'
+            )
+            """
+        )
+
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            schedule_id="s",
+            period_start="2026-04-01",
+            period_end="2026-04-22",
+            as_of_date="2026-04-22",
+        )
+        is False
+    )
