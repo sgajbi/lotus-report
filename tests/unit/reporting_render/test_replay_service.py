@@ -464,10 +464,13 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
         "policy_version": "scv1",
         "detail": "test",
     }
+    # The store's read boundary translates the legacy 1.0.0 spelling to the
+    # capability vocabulary, so the clone - built from what the reader saw -
+    # carries the current claim while the SOURCE row keeps its bytes.
     assert cloned.lifecycle == {
         "policy_ref": "report-input-snapshot-standard",
         "policy_version": "1.0.0",
-        "reproduction_availability": "rerender_from_snapshot",
+        "reproduction_availability": "snapshot_recomposition",
         "lifecycle_authority": "test",
     }
     assert (

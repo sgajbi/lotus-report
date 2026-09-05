@@ -1,3 +1,5 @@
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -378,3 +380,38 @@ def test_report_input_snapshot_store_roundtrips_the_revision_binding(tmp_path) -
     assert bound.report_revision_id == "rrv3_roundtrip"
     assert unbound.report_revision_id is None
     assert unbound.source_revision_vector is None
+
+
+def test_legacy_lifecycle_rows_read_as_the_capability_claim_without_rewrite(tmp_path) -> None:
+    """A policy 1.0.0 row stores "rerender_from_snapshot"; the store's
+    row-to-record boundary reads it as the 1.1.0 capability vocabulary for
+    EVERY reader - snapshot GET, lineage, diagnostics, replay - while the
+    stored bytes keep the original spelling (history is never rewritten)."""
+
+    db = tmp_path / "lineage.sqlite3"
+    store = ReportInputSnapshotStore(db)
+    created = store.create_snapshot(
+        _request(
+            report_job_id="rjob_legacy",
+            lifecycle={
+                "policy_ref": "report-input-snapshot-standard",
+                "policy_version": "1.0.0",
+                "reproduction_availability": "rerender_from_snapshot",
+                "lifecycle_authority": "test",
+            },
+        )
+    )
+
+    loaded = store.get_snapshot_by_job("rjob_legacy")
+    assert loaded.lifecycle is not None
+    assert loaded.lifecycle["reproduction_availability"] == "snapshot_recomposition"
+    assert loaded.lifecycle["policy_version"] == "1.0.0"
+    assert created.lifecycle is not None
+    assert created.lifecycle["reproduction_availability"] == "snapshot_recomposition"
+
+    with closing(sqlite3.connect(db)) as connection:
+        stored = connection.execute(
+            "SELECT lifecycle_json FROM report_input_snapshot WHERE report_job_id = ?",
+            ("rjob_legacy",),
+        ).fetchone()[0]
+    assert "rerender_from_snapshot" in stored
