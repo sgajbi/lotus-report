@@ -6,7 +6,13 @@ from decimal import Decimal, InvalidOperation
 from numbers import Real
 from typing import Any, Sequence
 
-from app.report_ordering_catalogue.template_resolution import resolve_report_data_contract
+from app.report_ordering_catalogue.template_resolution import (
+    GOVERNED_BRAND_VARIANT,
+    GOVERNED_LOCALE,
+    GOVERNED_RENDER_PACKAGE_VERSION,
+    resolve_report_data_contract,
+    resolve_report_family,
+)
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
@@ -171,7 +177,7 @@ def _build_render_package(
         "advisor_commentary": advisor_commentary,
     }
     lineage_refs = [job.job_id]
-    disclosure_refs = ["portfolio-review.standard-disclosures.v1"]
+    disclosure_refs = [_job_disclosure_baseline(job)]
     if reviewed_narrative["status"] == "included":
         lineage_refs.extend(_reviewed_narrative_lineage_refs(reviewed_narrative))
         disclosure_refs.extend(_reviewed_narrative_disclosure_refs(reviewed_narrative))
@@ -191,7 +197,7 @@ def _build_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_revision_id=report_revision_id,
-        report_data_contract_version=resolve_report_data_contract("portfolio_review"),
+        report_data_contract_version=_job_report_data_contract(job),
         report_data=report_data,
         lineage_refs=_dedupe_strings(lineage_refs),
         disclosure_refs=_dedupe_strings(disclosure_refs),
@@ -841,6 +847,31 @@ def template_contract_mismatch(
     )
 
 
+def _accepted_axis(job: ReportJobLedgerRecord, axis: str) -> str | None:
+    contract = job.accepted_document_contract or {}
+    value = contract.get(axis)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _job_report_data_contract(job: ReportJobLedgerRecord) -> str:
+    """The report-data contract the job was ACCEPTED under (report#283
+    finding 6): the envelope consumes the persisted axis and resolves
+    today's definition only for a legacy job that never persisted one."""
+
+    return _accepted_axis(job, "report_data_contract_version") or resolve_report_data_contract(
+        job.report_type
+    )
+
+
+def _job_disclosure_baseline(job: ReportJobLedgerRecord) -> str:
+    return (
+        _accepted_axis(job, "standard_disclosure_ref")
+        or resolve_report_family(job.report_type).standard_disclosure_ref
+    )
+
+
 def _job_template_identity(job: ReportJobLedgerRecord) -> tuple[str, str]:
     """The governed template id/version persisted on the job at acceptance.
 
@@ -896,7 +927,9 @@ def _render_package_envelope(
         )
     template_id, template_version = _job_template_identity(job)
     return {
-        "render_package_version": "render_package.v1",
+        "render_package_version": (
+            _accepted_axis(job, "render_package_version") or GOVERNED_RENDER_PACKAGE_VERSION
+        ),
         "render_job_id": render_job_id,
         "report_job_id": job.job_id,
         "snapshot_id": snapshot_id,
@@ -904,8 +937,8 @@ def _render_package_envelope(
         "report_data_contract_version": report_data_contract_version,
         "template_id": template_id,
         "template_version": template_version,
-        "locale": "en-SG",
-        "brand_variant": "private_banking",
+        "locale": _accepted_axis(job, "locale") or GOVERNED_LOCALE,
+        "brand_variant": _accepted_axis(job, "brand_variant") or GOVERNED_BRAND_VARIANT,
         "output_format": "pdf",
         "render_context": {
             "timezone": "Asia/Singapore",
@@ -1175,7 +1208,7 @@ def _build_proof_pack_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_revision_id=report_revision_id,
-        report_data_contract_version=resolve_report_data_contract("proof_pack"),
+        report_data_contract_version=_job_report_data_contract(job),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -1183,7 +1216,7 @@ def _build_proof_pack_render_package(
             report_data["content_hash"],
             portfolio_memory,
         ),
-        disclosure_refs=["proof-pack.standard-disclosures.v1"],
+        disclosure_refs=[_job_disclosure_baseline(job)],
     )
 
 
@@ -1268,7 +1301,7 @@ def _build_outcome_review_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_revision_id=report_revision_id,
-        report_data_contract_version=resolve_report_data_contract("outcome_review"),
+        report_data_contract_version=_job_report_data_contract(job),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -1276,7 +1309,7 @@ def _build_outcome_review_render_package(
             report_data["content_hash"],
             portfolio_memory,
         ),
-        disclosure_refs=["outcome-review.standard-disclosures.v1"],
+        disclosure_refs=[_job_disclosure_baseline(job)],
     )
 
 
@@ -1362,7 +1395,7 @@ def _build_wave_render_package(
         render_job_id=render_job_id,
         snapshot_id=snapshot_id,
         report_revision_id=report_revision_id,
-        report_data_contract_version=resolve_report_data_contract("rebalance_wave"),
+        report_data_contract_version=_job_report_data_contract(job),
         report_data=report_data,
         lineage_refs=_dpm_lineage_refs(
             job.job_id,
@@ -1370,7 +1403,7 @@ def _build_wave_render_package(
             report_data["content_hash"],
             portfolio_memory,
         ),
-        disclosure_refs=["rebalance-wave.standard-disclosures.v1"],
+        disclosure_refs=[_job_disclosure_baseline(job)],
     )
 
 

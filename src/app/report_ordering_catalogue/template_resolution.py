@@ -77,3 +77,52 @@ def job_template_identity(
     if inherited is not None:
         return inherited
     return accepted_template_identity(report_type, output_formats)
+
+
+#: The record's own schema tag, persisted with every contract so a future
+#: axis change is distinguishable from history.
+ACCEPTED_DOCUMENT_CONTRACT_VERSION = "adc.v1"
+
+#: Governed presentation constants shared by every family today. They live
+#: HERE - the acceptance-time authority - so the render envelope consumes
+#: the accepted value instead of restating its own.
+GOVERNED_LOCALE = "en-SG"
+GOVERNED_BRAND_VARIANT = "private_banking"
+GOVERNED_RENDER_PACKAGE_VERSION = "render_package.v1"
+
+
+def accepted_document_contract(
+    report_type: str,
+    output_formats: Collection[str] | None,
+    *,
+    input_snapshot_contract_version: str,
+    inherited_template: tuple[str | None, str | None] | None = None,
+) -> dict[str, str | None]:
+    """EVERY contract axis a job is accepted under, resolved ONCE at
+    acceptance and persisted with the job (report#283, audit finding 6).
+
+    No lifecycle path may reinterpret an accepted job against today's
+    definitions: capture reads the input-snapshot contract from here, the
+    render envelope reads the report-data contract, template pair,
+    envelope version, locale, brand, and disclosure baseline from here,
+    and a replay inherits the source job's persisted contract verbatim.
+    Regeneration is a fresh capture and resolves the then-current contract.
+    """
+
+    definition = resolve_report_family(report_type)
+    template_id, template_version = job_template_identity(
+        report_type, output_formats, inherited_template
+    )
+    return {
+        "accepted_contract_version": ACCEPTED_DOCUMENT_CONTRACT_VERSION,
+        "report_family_id": definition.report_family_id,
+        "report_type": definition.report_type,
+        "input_snapshot_contract_version": input_snapshot_contract_version,
+        "report_data_contract_version": definition.report_data_contract_version,
+        "render_package_version": GOVERNED_RENDER_PACKAGE_VERSION,
+        "template_id": template_id,
+        "template_version": template_version,
+        "locale": GOVERNED_LOCALE,
+        "brand_variant": GOVERNED_BRAND_VARIANT,
+        "standard_disclosure_ref": definition.standard_disclosure_ref,
+    }

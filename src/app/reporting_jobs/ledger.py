@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
-from app.report_ordering_catalogue.template_resolution import job_template_identity
+from app.config import settings
+from app.report_ordering_catalogue.template_resolution import (
+    accepted_document_contract,
+    job_template_identity,
+)
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -76,6 +80,34 @@ def utc_now() -> datetime:
 
 def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def resolve_job_accepted_contract(
+    *,
+    report_type: str,
+    output_formats: list[str] | None,
+    inherited_template: tuple[str | None, str | None] | None,
+    inherited_contract: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The one contract-minting path both ledgers share.
+
+    A replay RECOVERS an accepted job and inherits its contract verbatim;
+    a legacy source without one yields a freshly minted contract that
+    still carries the inherited template pair - the one axis legacy
+    acceptance persisted. Every other acceptance resolves the current
+    governed contract exactly once, here.
+    """
+
+    if inherited_contract is not None:
+        return inherited_contract
+    return dict(
+        accepted_document_contract(
+            report_type,
+            output_formats,
+            input_snapshot_contract_version=settings.contract_version,
+            inherited_template=inherited_template,
+        )
+    )
 
 
 def compute_request_hash(
@@ -292,10 +324,21 @@ class ReportJobLedger:
                     archive_request_id TEXT,
                     archive_document_id TEXT,
                     archive_completed_at TEXT,
+                    accepted_document_contract_json TEXT,
                     FOREIGN KEY(report_request_id) REFERENCES report_request(report_request_id)
                 )
                 """
             )
+            # The accepted-document-contract column arrived after the table
+            # (report#283); a database created before it evolves additively.
+            job_columns = {
+                str(column_row["name"])
+                for column_row in connection.execute("PRAGMA table_info(report_job)").fetchall()
+            }
+            if "accepted_document_contract_json" not in job_columns:
+                connection.execute(
+                    "ALTER TABLE report_job ADD COLUMN accepted_document_contract_json TEXT"
+                )
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS report_status_event (
@@ -476,6 +519,7 @@ class ReportJobLedger:
                 source_job.render_template_id,
                 source_job.render_template_version,
             ),
+            inherited_contract=source_job.accepted_document_contract,
         )
 
     def submit_portfolio_review_job(
@@ -551,6 +595,7 @@ class ReportJobLedger:
         replay_source_job_id: str | None = None,
         replay_reason: str = "Replay of failed report work.",
         inherited_template: tuple[str | None, str | None] | None = None,
+        inherited_contract: dict[str, Any] | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -565,6 +610,12 @@ class ReportJobLedger:
         # presentation contract this job was accepted under.
         render_template_id, render_template_version = job_template_identity(
             report_type, output_formats, inherited_template
+        )
+        job_accepted_contract = resolve_job_accepted_contract(
+            report_type=report_type,
+            output_formats=output_formats,
+            inherited_template=inherited_template,
+            inherited_contract=inherited_contract,
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
@@ -727,9 +778,10 @@ class ReportJobLedger:
                         report_job_id, report_request_id, report_type, portfolio_scope_json,
                         status, failure_category, failure_message, current_step, retry_eligible,
                         cancel_requested, created_at, updated_at, started_at, completed_at,
-                        cancelled_at, render_template_id, render_template_version
+                        cancelled_at, render_template_id, render_template_version,
+                        accepted_document_contract_json
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -749,6 +801,7 @@ class ReportJobLedger:
                         None,
                         render_template_id,
                         render_template_version,
+                        json.dumps(job_accepted_contract, sort_keys=True),
                     ),
                 )
                 self._append_status_event(
@@ -1754,7 +1807,8 @@ class ReportJobLedger:
                     job.render_duration_ms,
                     job.archive_request_id,
                     job.archive_document_id,
-                    job.archive_completed_at
+                    job.archive_completed_at,
+                job.accepted_document_contract_json
                 FROM report_request req
                 JOIN report_job job ON job.report_request_id = req.report_request_id
                 {where}
@@ -2446,7 +2500,8 @@ class ReportJobLedger:
                 job.render_duration_ms,
                 job.archive_request_id,
                 job.archive_document_id,
-                job.archive_completed_at
+                job.archive_completed_at,
+                job.accepted_document_contract_json
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = ?
@@ -2487,6 +2542,13 @@ def _work_item_from_row(row: sqlite3.Row) -> ReportJobWorkItem:
     )
 
 
+def _optional_json_object(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parsed = json.loads(value)
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _record_from_row(row: sqlite3.Row) -> ReportJobLedgerRecord:
     return ReportJobLedgerRecord(
         request_id=row["report_request_id"],
@@ -2522,6 +2584,9 @@ def _record_from_row(row: sqlite3.Row) -> ReportJobLedgerRecord:
         render_job_id=_optional_row_value(row, "render_job_id"),
         render_output_format=_optional_row_value(row, "render_output_format"),
         render_template_id=_optional_row_value(row, "render_template_id"),
+        accepted_document_contract=_optional_json_object(
+            _optional_row_value(row, "accepted_document_contract_json")
+        ),
         render_template_version=_optional_row_value(row, "render_template_version"),
         render_template_publication=_optional_row_value(row, "render_template_publication"),
         render_artifact_sha256=_optional_row_value(row, "render_artifact_sha256"),

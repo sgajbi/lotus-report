@@ -139,14 +139,21 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    document record (archive migration 011), with resumed renders resolving
    the persisted render job before any resubmission so package-shape
    evolution can never strand an in-flight job as a conflict.
-   Remaining, in order: retire the portfolio/date bundle labels in the
-   evidence pack (consumer declarations checked first - the tenant_id
-   lesson) and revision identity on portfolio-memory events (blocked on an
-   event-identity stability treatment: the payload hash IS the event
-   identity); persist one `AcceptedDocumentContract` covering ALL
-   contract axes (report-data, envelope, locale/brand/disclosure — template
-   identity is already persisted); trust-state separation incl. source-cut
-   coherence; snapshot lifecycle metadata; the 17-point integrated proof.
+   The synthetic evidence-pack source fingerprint is retired across all
+   three federation layers, and the accepted document contract is one
+   durable job fact: EVERY axis (family/type, input-snapshot schema,
+   report-data contract, envelope version, template pair, locale, brand,
+   disclosure baseline) resolves once at acceptance
+   (`accepted_document_contract` in `report_ordering_catalogue/`), persists
+   on the job (migration 021), and is consumed by capture and the render
+   envelope — a replay inherits it verbatim, regeneration resolves current,
+   legacy jobs resolve current definitions with no accepted-contract claim.
+   Remaining, in order: scheduler requested-policy replacement (schedule
+   definitions still carry template fields); revision identity on
+   portfolio-memory events (blocked on an event-identity stability
+   treatment: the payload hash IS the event identity); trust-state
+   separation incl. source-cut coherence; snapshot lifecycle metadata; the
+   17-point integrated proof.
    Design decisions (hash boundary, no circular identity, historical
    mapping) are recorded in the 2026-09-05 audit, on #283, and in
    `src/app/reporting_identity/identity.py`'s module docstring.
