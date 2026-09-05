@@ -334,7 +334,9 @@ def test_defer_is_lease_fenced(tmp_path):
         delay_seconds=5,
     )
     assert deferred.status == "retry_pending"
-    assert deferred.attempt_count == claimed[0].attempt_count
+    # The CLAIM charged an attempt; deferral refunds it - waiting must not
+    # consume the failure budget through the claim-side counter either.
+    assert deferred.attempt_count == claimed[0].attempt_count - 1
 
 
 @pytest.mark.asyncio
@@ -486,3 +488,46 @@ async def test_stale_resubmit_never_overrides_ledger_completion_evidence(tmp_pat
     assert failed.status == "failed"
     assert failed.failure_category == "render_artifact_unrecoverable"
     assert client.submitted == []
+
+
+@pytest.mark.asyncio
+async def test_long_waiting_leaves_the_full_budget_for_the_first_real_failure(
+    tmp_path, monkeypatch
+):
+    """The claim-side counter must not smuggle waiting into the budget:
+    after five waiting polls, the FIRST genuine failure is attempt ONE -
+    retry-pending with the full budget ahead, never misclassified as
+    exhaustion."""
+
+    ledger, store, rendering = _seed_rendering_job(tmp_path, suffix="budget-preserved")
+    in_progress = (200, {"render_job_id": rendering.render_job_id, "status": "rendering"})
+    client = _ScriptedRenderClient(
+        status_responses=[in_progress] * 5
+        + [(200, {"render_job_id": rendering.render_job_id, "status": "rendering"})],
+        diagnostics=(200, {"recovery_action": "wait_for_completion", "retryable": True}),
+    )
+    worker = _worker(ledger, store, client)
+
+    for poll in range(5):
+        _advance_clock(monkeypatch, seconds=(poll + 1) * 10)
+        result = await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+        assert result.outcomes[0].failure_category == "waiting_on_render"
+
+    # The sixth pass hits a REAL escalated failure...
+    client._diagnostics = (
+        200,
+        {
+            "recovery_action": "escalate_render_runtime",
+            "retryable": False,
+            "stale_state": "stale",
+        },
+    )
+    _advance_clock(monkeypatch, seconds=100)
+    await worker.run_once(worker_id="w1", max_items=5, lease_seconds=60)
+
+    failed = ledger.get_job(rendering.job_id)
+    assert failed.status == "failed"
+    # ...and it is the job's OWN mapped failure, never budget exhaustion:
+    # operator_intervention_required is the exhaustion terminalizer.
+    assert failed.failure_category == "render_execution_failed"
+    assert failed.failure_category != "operator_intervention_required"

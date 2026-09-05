@@ -769,14 +769,17 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             if not current:
                 record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
-            connection.execute(
+            # Restore the attempt the CLAIM charged and fence the UPDATE on
+            # the live lease - identical semantics to the SQLite ledger.
+            deferred_cursor = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
                     lease_acquired_at = NULL, lease_expires_at = NULL,
+                    attempt_count = GREATEST(attempt_count - 1, 0),
                     available_at = %s, last_error_category = %s, last_error_summary = %s,
                     updated_at = %s
-                WHERE work_item_id = %s
+                WHERE work_item_id = %s AND status = 'leased' AND lease_token = %s
                 """,
                 (
                     deferred_at + timedelta(seconds=max(delay_seconds, 1)),
@@ -784,8 +787,12 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     "Waiting on owner-side work; the failure budget is untouched.",
                     deferred_at,
                     work_item_id,
+                    lease_token,
                 ),
             )
+            if deferred_cursor.rowcount != 1:
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             row = connection.execute(
                 "SELECT * FROM report_job_work_item WHERE work_item_id = %s",
                 (work_item_id,),
@@ -831,7 +838,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     lease_acquired_at = NULL, lease_expires_at = NULL,
                     available_at = %s, last_error_category = %s, last_error_summary = %s,
                     updated_at = %s
-                WHERE work_item_id = %s
+                WHERE work_item_id = %s AND status = 'leased' AND lease_token = %s
                 RETURNING *
                 """,
                 (
@@ -841,10 +848,14 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     " ".join(error_summary.split())[:240],
                     failed_at,
                     work_item_id,
+                    lease_token,
                 ),
             ).fetchone()
             if not row:
-                raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+                # The fenced UPDATE matched nothing: the lease expired and was
+                # reclaimed between the ownership SELECT and this write.
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             if decision.status == "failed":
                 self._terminalize_report_job_from_work(
                     connection=connection,

@@ -1003,14 +1003,22 @@ class ReportJobLedger:
             if not current:
                 record_report_job_work_lease_event(outcome="stale_conflict")
                 raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
-            connection.execute(
+            # Restore the attempt the CLAIM charged: claiming increments the
+            # counter, so without this a long wait would silently consume
+            # the failure budget and misclassify the first real failure as
+            # exhaustion. The UPDATE is fenced on the live lease and its
+            # rowcount checked - an expired lease reclaimed by another
+            # worker between the SELECT and this UPDATE must never be
+            # cleared by the stale holder.
+            deferred_rows = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
                     lease_acquired_at = NULL, lease_expires_at = NULL,
+                    attempt_count = MAX(attempt_count - 1, 0),
                     available_at = ?, last_error_category = ?, last_error_summary = ?,
                     updated_at = ?
-                WHERE work_item_id = ?
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
                 """,
                 (
                     _dt_to_text(deferred_at + timedelta(seconds=max(delay_seconds, 1))),
@@ -1018,8 +1026,12 @@ class ReportJobLedger:
                     "Waiting on owner-side work; the failure budget is untouched.",
                     _dt_to_text(deferred_at),
                     work_item_id,
+                    lease_token,
                 ),
-            )
+            ).rowcount
+            if deferred_rows != 1:
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             row = connection.execute(
                 "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
                 (work_item_id,),
@@ -1057,14 +1069,14 @@ class ReportJobLedger:
                 failed_at=failed_at,
                 retry_policy=policy,
             )
-            connection.execute(
+            failed_rows = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = ?, lease_owner = NULL, lease_token = NULL,
                     lease_acquired_at = NULL, lease_expires_at = NULL,
                     available_at = ?, last_error_category = ?, last_error_summary = ?,
                     updated_at = ?
-                WHERE work_item_id = ?
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
                 """,
                 (
                     decision.status,
@@ -1073,8 +1085,12 @@ class ReportJobLedger:
                     " ".join(error_summary.split())[:240],
                     _dt_to_text(failed_at),
                     work_item_id,
+                    lease_token,
                 ),
-            )
+            ).rowcount
+            if failed_rows != 1:
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             row = connection.execute(
                 "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
                 (work_item_id,),
