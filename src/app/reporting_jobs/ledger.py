@@ -2695,8 +2695,15 @@ def _list_jobs_predicates(filters: ReportJobListFilters) -> tuple[str, list[obje
             clauses.append(clause)
             params.append(value)
     if filters.portfolio_id:
-        clauses.append("job.portfolio_scope_json LIKE ?")
-        params.append(f'%"{filters.portfolio_id}"%')
+        # Exact membership in the scope's portfolio_ids: LIKE would treat _
+        # and % in canonical ids as wildcards and match case-insensitively.
+        clauses.append(
+            """EXISTS (
+                SELECT 1 FROM json_each(job.portfolio_scope_json, '$.portfolio_ids')
+                WHERE json_each.value = ?
+            )"""
+        )
+        params.append(filters.portfolio_id)
     # Creation bounds join the SQL predicates too: without them, same-tenant
     # jobs OUTSIDE the window could consume the limit and starve eligible
     # rows inside it. created_at is stored as the same ISO text

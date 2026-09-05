@@ -1532,3 +1532,36 @@ def test_list_jobs_applies_creation_bounds_before_the_limit(tmp_path):
     )
 
     assert [record.job_id for record in records] == [target.job_id]
+
+
+def test_portfolio_filter_matches_exactly_never_by_wildcard(tmp_path):
+    """LIKE would read _ and % in canonical portfolio ids as wildcards; the
+    json_each membership predicate matches exactly."""
+
+    from app.reporting_jobs.models import ReportJobListFilters
+
+    ledger = ReportJobLedger(tmp_path / "portfolio-exact.sqlite3")
+    ledger.create_portfolio_review_job(
+        request=_request(portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_BAL_001"]}),
+        caller_context=_caller(),
+        idempotency_key="idem-exact-a",
+    )
+    ledger.create_portfolio_review_job(
+        request=_request(portfolio_scope={"portfolio_ids": ["PB_SG_GLOBAL_XAL_001"]}),
+        caller_context=_caller(),
+        idempotency_key="idem-exact-b",
+    )
+
+    wildcard_probe = ledger.list_jobs(
+        filters=ReportJobListFilters.model_validate(
+            {"tenant_id": "tenant-sg", "portfolio_id": "PB_SG_GLOBAL__AL_001", "limit": 10}
+        )
+    )
+    exact = ledger.list_jobs(
+        filters=ReportJobListFilters.model_validate(
+            {"tenant_id": "tenant-sg", "portfolio_id": "PB_SG_GLOBAL_BAL_001", "limit": 10}
+        )
+    )
+
+    assert wildcard_probe == []
+    assert len(exact) == 1
