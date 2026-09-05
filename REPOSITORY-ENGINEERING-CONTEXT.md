@@ -148,9 +148,11 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    on the job (migration 021), and is consumed by capture and the render
    envelope — a replay inherits it verbatim, regeneration resolves current,
    legacy jobs resolve current definitions with no accepted-contract claim.
-   The scheduler's duplicated template selection is retired: schedules
-   state only the requested policy (report type, output formats) and the
-   accepted document contract is the one resolved record per job.
+   The scheduler's duplicated template selection is retired: scheduling is
+   portfolio-review-only (the family is bound in the definition validator
+   and dispatch), schedules state only output formats and composition
+   options, and the accepted document contract is the one resolved record
+   per job.
    Remaining, in order: revision identity on portfolio-memory events
    (blocked on an event-identity stability treatment: the payload hash IS
    the event identity); trust-state separation incl. source-cut coherence;
