@@ -154,6 +154,9 @@ Current implementation-backed figures include:
 - YTD contribution totals, top contributors, and detractors where sourced
 - risk metrics, volatility, drawdown, Sharpe, value-at-risk, and concentration indicators where
   sourced or derivable
+- the benchmark's monthly return series beside the portfolio's cumulative chart, and the
+  source-owned drawdown underwater series with recovery episodes, where lotus-performance and
+  lotus-risk state them
 - position-level market value, cost basis, unrealized P&L, unrealized P&L percentage, product type,
   sector, country of risk, rating, liquidity tier, and held-since date where sourced
 - `HoldingsAsOf:v1` source-product metadata, data-quality posture, reconciliation posture, latest
@@ -407,6 +410,10 @@ Blocks, with their one load-bearing rule each:
 | `holdings_presentation` (#245) | Posture, `presented_/available_count`, `presented_weight_pct`, Core's `supportability_status` verbatim | Empty portfolio != unavailable holdings != unreconciled holdings != trusted-complete - four distinct states |
 | `attribution_bridge` (#254) | Brinson bridge: effects with the hierarchy slot (`grouping_dimension`+`level`), source totals, reconciliation with source-classified residual, `ready`/`pending`/`unavailable` | The residual is presented, never allocated away; totals are the source's authoritative fields, never summed from rows; a pending async calculation is said with its identity, never waited on |
 | `earnings_statement` (#249) | Income gross->withholding->net (+ by-type), realized P&L with named largest gain/loss, `completeness` | `window_truncated` sums are a floor: the page says "at least X, based on N transactions reviewed" and never the word "total"; truncated zeros never claim an empty period |
+| `risk_trend` (#255) | "Is risk changing?": rolling 63-observation daily series per metric with per-metric posture, source-stated unit, explicit `not_computed` gaps | The series is forwarded verbatim - no smoothing, resampling, or gap-filling; a trend statement appears only if lotus-risk states one; one computed point is unavailable, never a trend |
+| `risk_attribution` (#254/#282) | "What risk did we take for the result?": per-set reconciliation triple (total, reconciled sum, residual), contributors in source order as signed strings, source-stated unit | The residual is its own presented fact, never allocated away; an incomplete contributor set refuses the WHOLE set in the source's voice; a period the source marks in error is said, not drawn |
+| `benchmark_series` (#288) | The benchmark's own monthly buckets for the cumulative chart: posture `ready`/`unbenchmarked`/`unavailable`, owner-named identity (`benchmark_id`), points at the portfolio rows' precision in the 12-month window | The chart pairs points by period keys, never row position; an unassigned benchmark is a normal state with no caption, while an expected-but-unsourced series carries the source's sentence verbatim or Report's one owned document-copy line |
+| `drawdown` (#289) | "How bad did it get, and how long to recover?": lotus-risk's underwater series, complete episode list (peak/trough/recovery), summary, `value_unit`/`duration_unit` stated as data | Episodes are the source's stated boundaries - Report never infers them from a return series; a null `recovery_date` is an OPEN episode and never reads closed; `ready` requires the series while zero episodes is visible calm |
 
 Render-side drawing contracts are agreed per block before either side builds (recorded on the
 linked issues); the package is additive, so undrawn blocks change nothing on the page.
