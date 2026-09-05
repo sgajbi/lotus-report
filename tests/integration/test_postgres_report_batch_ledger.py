@@ -836,6 +836,8 @@ def test_postgres_batch_cycle_recognition_by_durable_period_facts() -> None:
     assert ledger.has_batch_for_idempotency_key("  ") is False
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id=schedule_id,
             period_start="2026-04-01",
             period_end="2026-04-22",
@@ -845,6 +847,8 @@ def test_postgres_batch_cycle_recognition_by_durable_period_facts() -> None:
     )
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id=schedule_id,
             period_start="2026-05-01",
             period_end="2026-05-31",

@@ -320,6 +320,8 @@ def test_schedule_cycle_recognition_is_exact_by_period_facts(tmp_path) -> None:
 
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id="monthly-sg-global-bal",
             period_start=cycle.period_start.isoformat(),
             period_end=cycle.period_end.isoformat(),
@@ -329,6 +331,8 @@ def test_schedule_cycle_recognition_is_exact_by_period_facts(tmp_path) -> None:
     )
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id="monthly-sg-global-bal",
             period_start="2026-05-01",
             period_end="2026-05-31",
@@ -336,8 +340,22 @@ def test_schedule_cycle_recognition_is_exact_by_period_facts(tmp_path) -> None:
         )
         is False
     )
+    # One tenant's batch must never suppress another tenant's cycle.
     assert (
         ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-hk",
+            region="APAC",
+            schedule_id="monthly-sg-global-bal",
+            period_start=cycle.period_start.isoformat(),
+            period_end=cycle.period_end.isoformat(),
+            as_of_date=cycle.as_of_date.isoformat(),
+        )
+        is False
+    )
+    assert (
+        ledger.has_batch_for_schedule_cycle(
+            tenant_id="tenant-sg",
+            region="APAC",
             schedule_id="another-schedule",
             period_start=cycle.period_start.isoformat(),
             period_end=cycle.period_end.isoformat(),

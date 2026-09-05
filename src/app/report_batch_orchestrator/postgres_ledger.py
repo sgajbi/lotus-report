@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import timedelta
@@ -99,6 +98,8 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
     def has_batch_for_schedule_cycle(
         self,
         *,
+        tenant_id: str,
+        region: str,
         schedule_id: str,
         period_start: str,
         period_end: str,
@@ -106,35 +107,31 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
     ) -> bool:
         """Whether this schedule's business cycle already has a batch.
 
-        Recognition by the durable facts every scheduled batch records in
-        its options (batch_schedule_id + period bounds) - exact for every
-        historical identity formula and template configuration, unlike any
-        reconstruction of historical idempotency keys.
+        Recognition by the durable facts every scheduled batch records -
+        tenant, region, schedule id, and period bounds - filtered in the
+        database (JSONB operators; the as_of/tenant index keeps the
+        per-pass cost bounded as the append-only ledger grows). Tenant and
+        region participate because an operator-chosen schedule_id can recur
+        across tenants: one tenant's batch must never suppress another
+        tenant's cycle.
         """
 
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT options_json FROM report_batch WHERE as_of_date = %s",
-                (as_of_date,),
-            ).fetchall()
-        for row in rows:
-            raw = row["options_json"]
-            if isinstance(raw, dict):
-                # PostgreSQL JSONB arrives parsed; SQLite stores text.
-                options = raw
-            else:
-                try:
-                    options = json.loads(raw)
-                except (TypeError, ValueError):
-                    continue
-            if (
-                isinstance(options, dict)
-                and options.get("batch_schedule_id") == schedule_id
-                and options.get("batch_period_start") == period_start
-                and options.get("batch_period_end") == period_end
-            ):
-                return True
-        return False
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM report_batch
+                WHERE as_of_date = %s
+                  AND tenant_id = %s
+                  AND region = %s
+                  AND options_json->>'batch_schedule_id' = %s
+                  AND options_json->>'batch_period_start' = %s
+                  AND options_json->>'batch_period_end' = %s
+                LIMIT 1
+                """,
+                (as_of_date, tenant_id, region, schedule_id, period_start, period_end),
+            ).fetchone()
+        return row is not None
 
     def has_batch_for_idempotency_key(self, idempotency_key: str) -> bool:
         """Whether ANY batch was materialized under this key.
