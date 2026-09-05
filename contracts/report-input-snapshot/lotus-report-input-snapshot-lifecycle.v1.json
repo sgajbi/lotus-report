@@ -8,11 +8,11 @@
   "policies": [
     {
       "policy_ref": "report-input-snapshot-standard",
-      "policy_version": "1.0.0",
+      "policy_version": "1.1.0",
       "purpose": "REPORT_REPRODUCTION_AND_EXPLANATION_EVIDENCE",
       "applies_to": "report_input_snapshot rows and their append-only upstream-call lineage",
-      "reproduction_availability": "rerender_from_snapshot",
-      "reproduction_statement": "A successful capture supports rerendering the exact document semantics from the immutable snapshot (POST /reports/jobs/{job_id}/rerender) and answering what the document presented without replaying current policy. A failed capture records failure evidence only and supports no reproduction.",
+      "reproduction_availability": "snapshot_recomposition",
+      "reproduction_statement": "A successful capture supports recomposing the exact document semantics from the immutable snapshot and answering what the document presented without replaying current policy. The executable rerender command (POST /reports/jobs/{job_id}/rerender) is a separate lifecycle-dependent fact available only to archived PDF jobs - the snapshot capability never advertises a command the job has not earned. A failed capture records failure evidence only and supports no reproduction. Policy 1.0.0 stamped the value rerender_from_snapshot for this same capability; rows carrying it read as snapshot_recomposition and are never rewritten.",
       "retention_posture": "retain_while_reproduction_obligations_stand",
       "retention_statement": "Snapshots are retained at least as long as the archived documents they can reproduce or explain remain under lotus-archive retention. No automated deletion exists; a future governed deletion capability must resolve against lotus-archive document retention and legal holds BEFORE removing reproduction evidence.",
       "legal_hold_interface": "lotus-archive owns legal hold for archived documents; a hold on a document implies its snapshot must not be deleted. Report enforces this trivially today because no snapshot deletion path exists.",

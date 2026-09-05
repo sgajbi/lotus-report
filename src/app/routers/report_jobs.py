@@ -75,7 +75,10 @@ from app.reporting_render.replay_service import (
     ReportReplayResult,
     get_portfolio_review_replay_service,
 )
-from app.reporting_render.rerender_service import get_portfolio_review_rerender_service
+from app.reporting_render.rerender_service import (
+    get_portfolio_review_rerender_service,
+    rerender_eligible,
+)
 from app.reporting_render.service import get_portfolio_review_render_orchestration_service
 from app.routers.caller_context import caller_context_from_headers
 from app.routers.report_ordering_validation import enforce_report_ordering_submission
@@ -401,6 +404,7 @@ def _record_to_list_item(record: ReportJobLedgerRecord) -> ReportJobListItem:
 
 def _snapshot_to_diagnostics(
     snapshot: ReportInputSnapshotRecord,
+    record: ReportJobLedgerRecord,
 ) -> ReportJobSnapshotDiagnostics:
     vector = snapshot.source_revision_vector or {}
     coverage = vector.get("coverage")
@@ -429,6 +433,7 @@ def _snapshot_to_diagnostics(
             if isinstance(lifecycle.get("reproduction_availability"), str)
             else None
         ),
+        rerender_available=rerender_eligible(record),
     )
 
 
@@ -1495,7 +1500,7 @@ async def get_report_job_diagnostics(
         status=status_response,
         event_count=len(events),
         latest_event=events[-1] if events else None,
-        snapshot=_snapshot_to_diagnostics(snapshot) if snapshot else None,
+        snapshot=_snapshot_to_diagnostics(snapshot, record) if snapshot else None,
         lineage=_lineage_to_diagnostics(snapshot, upstream_calls) if snapshot else None,
         relationships=relationships,
         rerender_attempts=[_attempt_to_diagnostics(attempt) for attempt in rerender_attempts],

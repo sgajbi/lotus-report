@@ -2438,7 +2438,7 @@ async def test_every_capture_states_its_lifecycle_claim(tmp_path):
     failed_lifecycle = store.get_snapshot_by_job(failed_job.job_id).lifecycle
     assert ok_lifecycle is not None and failed_lifecycle is not None
     assert ok_lifecycle["policy_ref"] == "report-input-snapshot-standard"
-    assert ok_lifecycle["reproduction_availability"] == "rerender_from_snapshot"
+    assert ok_lifecycle["reproduction_availability"] == "snapshot_recomposition"
     assert failed_lifecycle["policy_ref"] == "report-input-snapshot-standard"
     assert failed_lifecycle["reproduction_availability"] == "none"
     assert "lotus-archive" in ok_lifecycle["lifecycle_authority"]

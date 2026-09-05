@@ -519,13 +519,23 @@ def get_portfolio_review_rerender_service() -> PortfolioReviewRerenderService:
     )
 
 
+def rerender_eligible(job: ReportJobLedgerRecord) -> bool:
+    """THE rerender-command availability rule - the same predicate gates the
+    operator command and the diagnostics claim, so the two can never
+    disagree (one fact, one name). Render exposes NO re-render surface: a
+    rerender is a fresh submission needing a full package, which only an
+    archived PDF job possesses end to end."""
+
+    return (
+        job.status == "archived"
+        and "pdf" in job.requested_output_formats
+        and bool(job.render_job_id)
+        and bool(job.archive_document_id)
+    )
+
+
 def _assert_rerender_eligible(job: ReportJobLedgerRecord) -> None:
-    if (
-        job.status != "archived"
-        or "pdf" not in job.requested_output_formats
-        or not job.render_job_id
-        or not job.archive_document_id
-    ):
+    if not rerender_eligible(job):
         raise InvalidReportJobTransitionError("report_job_cannot_be_rerendered")
 
 

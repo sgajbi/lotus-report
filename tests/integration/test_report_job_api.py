@@ -985,6 +985,9 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
             "partial",
             "complete",
         }
+        # A cancelled (never archived) job truthfully advertises NO
+        # executable rerender path, while the snapshot capability stands.
+        assert diagnostics_body["snapshot"]["rerender_available"] is False
         assert diagnostics_body["lineage"]["upstream_call_count"] == 1
         assert diagnostics_body["lineage"]["source_services"] == ["lotus-core"]
         assert diagnostics_body["operation_links"]["status_url"] == (

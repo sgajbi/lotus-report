@@ -2085,10 +2085,21 @@ class ReportJobSnapshotDiagnostics(BaseModel):
     reproduction_availability: str | None = Field(
         default=None,
         description=(
-            "What this snapshot can reproduce: rerender_from_snapshot for a successful "
-            "capture, none for a failed capture's failure evidence."
+            "What the SNAPSHOT holds: snapshot_recomposition for a successful capture "
+            "(policy 1.0.0 rows state rerender_from_snapshot for the same capability), "
+            "none for failure evidence. Never a command claim."
         ),
-        examples=["rerender_from_snapshot"],
+        examples=["snapshot_recomposition"],
+    )
+    rerender_available: bool = Field(
+        default=False,
+        description=(
+            "Whether the executable rerender command is available RIGHT NOW - derived "
+            "from the same predicate that gates POST /reports/jobs/{job_id}/rerender "
+            "(archived PDF with render and archive identity), so the claim and the "
+            "command can never disagree. JSON-only, failed, and unfinished-PDF jobs "
+            "are false."
+        ),
     )
 
 
