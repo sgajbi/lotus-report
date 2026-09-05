@@ -204,6 +204,11 @@ class _CustodyRenderClient:
     async def submit_render_package(self, payload, **kwargs):
         self.payloads.append(copy.deepcopy(payload))
         render_job_id = payload["render_job_id"]
+        # Convergence here is id-keyed only; the REAL owner keys idempotency
+        # on (render_job_id, package hash) and refuses a CHANGED package
+        # under the same id with 409 render_conflict. No proof scenario
+        # resubmits a changed package - do not lean on this simplification
+        # for one that does.
         document_id = self.documents.setdefault(render_job_id, f"doc_{uuid4().hex[:12]}")
         return 201, {
             "status": "rendered",
