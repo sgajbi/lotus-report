@@ -113,17 +113,20 @@ _SOURCE_REVISION_FIELDS = (
 #: facts, per the source-owner contracts (Core's sourceProduct blocks, the
 #: lotus-ai accepted-output projection, the DPM bounded report inputs):
 #: a content hash, the source's snapshot/artifact id, a restatement
-#: version, a batch fingerprint, a run id, or the stated generation
-#: instant of the served cut. Everything else a source may state is
-#: preserved verbatim but does NOT qualify: catalogue identity
-#: (source_product, source_product_version) says which PRODUCT served,
-#: the business as_of_date is request semantics shared by every capture
-#: of the series, methodology_version names configuration, and
-#: supportability/reconciliation are quality labels - none of them says
-#: which data revision the source served.
+#: version, a batch fingerprint, or a run id - each content-derived or a
+#: versioned identifier. Everything else a source may state is preserved
+#: verbatim but does NOT qualify: catalogue identity (source_product,
+#: source_product_version) says which PRODUCT served, the business
+#: as_of_date is request semantics shared by every capture of the series,
+#: methodology_version names configuration, supportability/reconciliation
+#: are quality labels - and generated_at is a PROXY: an instant identifies
+#: a generation event only under an unstated convention that every
+#: re-serve mints a fresh stamp, so a batch source reusing a business-clock
+#: label across a corrected rerun would make complete coverage attest a
+#: changed revision. A specific source may earn its stamp back into the
+#: set by citing a contract line that documents it as unique-per-generation.
 QUALIFYING_REVISION_EVIDENCE_FIELDS = frozenset(
     {
-        "generated_at",
         "source_snapshot_id",
         "content_hash",
         "restatement_version",
@@ -281,9 +284,10 @@ class SourceRevisionVector(BaseModel):
 
         complete: every expected source stated QUALIFYING revision evidence
         (a content hash, snapshot id, restatement version, batch
-        fingerprint, run id, or stated generation instant); partial: some
-        did; unknown: none did. Catalogue identity and quality labels never
-        qualify - they say which product served, not which data revision.
+        fingerprint, or run id); partial: some did; unknown: none did.
+        Catalogue identity, quality labels, and bare timestamps never
+        qualify - they say which product served or when, not which data
+        revision.
         """
 
         evidenced = {

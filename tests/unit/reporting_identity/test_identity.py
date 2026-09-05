@@ -390,7 +390,6 @@ def test_a_complete_claim_backed_only_by_catalogue_identity_is_refused() -> None
         ("restatement_version", "r1"),
         ("source_batch_fingerprint", "core-batch-77"),
         ("calculation_run_id", "run_accept_1"),
-        ("generated_at", "2026-08-31T08:59:59Z"),
     ],
 )
 def test_each_qualifying_field_establishes_stated_revision_evidence(field, value) -> None:
@@ -401,6 +400,25 @@ def test_each_qualifying_field_establishes_stated_revision_evidence(field, value
 
     assert revision.states_revision_evidence()
     assert vector.coverage == "complete"
+
+
+def test_a_bare_generated_at_stamp_never_establishes_coverage() -> None:
+    """A timestamp is a PROXY for a generation event: nothing in the source
+    contracts promises every re-serve mints a fresh stamp, and a reused
+    business-clock label across a corrected rerun would make complete
+    coverage attest a changed revision. Fail-closed: stamp-only sources
+    stay unknown until a producer contract documents uniqueness."""
+
+    stamp_only = SourceRevision(
+        source_service="lotus-core",
+        generated_at="2026-08-31T08:59:59Z",
+    )
+    vector = SourceRevisionVector.from_evidence(
+        revisions=(stamp_only,), expected_sources=("lotus-core",)
+    )
+
+    assert not stamp_only.states_revision_evidence()
+    assert vector.coverage == "unknown"
 
 
 def test_mixed_sources_with_one_catalogue_only_participant_stay_partial() -> None:
