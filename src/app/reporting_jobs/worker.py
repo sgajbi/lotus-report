@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.reporting_jobs.execution import ReportJobExecutionResult
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
 
@@ -47,7 +48,7 @@ class ReportJobWorkLedger(Protocol):
 
 
 class ReportJobExecutor(Protocol):
-    async def execute_job(self, *, job_id: str) -> ReportJobLedgerRecord: ...
+    async def execute_job(self, *, job_id: str) -> ReportJobExecutionResult: ...
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ class ReportJobWorker:
         if not lease_token:
             raise RuntimeError("report_job_work_item_missing_lease_token")
         try:
-            job = await self._execution_service.execute_job(job_id=work_item.report_job_id)
+            execution = await self._execution_service.execute_job(job_id=work_item.report_job_id)
         except Exception as exc:
             failed_work = self._work_ledger.fail_work_item(
                 work_item_id=work_item.work_item_id,
@@ -132,28 +133,28 @@ class ReportJobWorker:
                 failure_category=failed_work.last_error_category,
             )
 
+        job = execution.job
+        if execution.waiting_on_owner:
+            # The EXPLICIT waiting outcome from execution: whatever recovery
+            # status the job holds (rendering, completed, archiving), DEFER
+            # without burning the failure budget - the eventual owner
+            # outcome is adopted under the same render id, and stale
+            # escalation is the owner's diagnostics contract, not a local
+            # poll count (report#303).
+            deferred_work = self._work_ledger.defer_work_item(
+                work_item_id=work_item.work_item_id,
+                lease_token=lease_token,
+                wait_reason="waiting_on_render",
+                delay_seconds=self._retry_policy.base_delay_seconds,
+            )
+            return ReportJobWorkOutcome(
+                work_item_id=work_item.work_item_id,
+                report_job_id=work_item.report_job_id,
+                work_status=deferred_work.status,
+                job_status=job.status,
+                failure_category="waiting_on_render",
+            )
         if not _is_terminal_job(job):
-            if job.status == "rendering":
-                # Waiting on owner-side work: after a clean pass every other
-                # path terminalizes or advances, so a job still at rendering
-                # means the persisted render is in progress at lotus-render.
-                # DEFER without burning the failure budget - the eventual
-                # outcome is adopted under the same render id, and stale
-                # escalation is the owner's diagnostics contract, not a
-                # local poll count (report#303).
-                deferred_work = self._work_ledger.defer_work_item(
-                    work_item_id=work_item.work_item_id,
-                    lease_token=lease_token,
-                    wait_reason="waiting_on_render",
-                    delay_seconds=self._retry_policy.base_delay_seconds,
-                )
-                return ReportJobWorkOutcome(
-                    work_item_id=work_item.work_item_id,
-                    report_job_id=work_item.report_job_id,
-                    work_status=deferred_work.status,
-                    job_status=job.status,
-                    failure_category="waiting_on_render",
-                )
             failed_work = self._work_ledger.fail_work_item(
                 work_item_id=work_item.work_item_id,
                 lease_token=lease_token,

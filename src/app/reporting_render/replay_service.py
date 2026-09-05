@@ -34,7 +34,10 @@ from app.reporting_metrics import (
     record_replay_fingerprint_comparison,
     record_report_operation,
 )
-from app.reporting_render.service import get_portfolio_review_render_orchestration_service
+from app.reporting_render.service import (
+    RenderWaiting,
+    get_portfolio_review_render_orchestration_service,
+)
 
 
 @dataclass(frozen=True)
@@ -161,7 +164,9 @@ class ReplaySnapshotStore(Protocol):
 
 
 class ReplayRenderService(Protocol):
-    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
+    async def render_for_job(
+        self, job: ReportJobLedgerRecord
+    ) -> "ReportJobLedgerRecord | RenderWaiting": ...
 
 
 class PortfolioReviewReplayService:
@@ -230,7 +235,11 @@ class PortfolioReviewReplayService:
                 caller_context=caller_context,
             )
         if replayed.status == "data_ready" and "pdf" in replayed.requested_output_formats:
-            replayed = await self._render_service.render_for_job(replayed)
+            rendered = await self._render_service.render_for_job(replayed)
+            # An owner-side wait surfaces the job unchanged: the operator
+            # API answers with the nonterminal state and the work queue
+            # keeps polling toward adoption.
+            replayed = rendered.job if isinstance(rendered, RenderWaiting) else rendered
         if "pdf" in replayed.requested_output_formats:
             # Runs on fresh renders AND on same-key retries of an already
             # terminal replay: a crash between the durable render and the

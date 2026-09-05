@@ -749,29 +749,14 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
     ) -> ReportJobWorkItem:
         """Reschedule a lease WITHOUT burning the failure budget.
 
-        Waiting on owner-side work (a render still in progress at
-        lotus-render) is not failure: the attempt counter is untouched, so
-        the failure budget stays scoped to real failures, while lease
-        fencing is enforced exactly like fail_work_item. Stale-work
-        escalation is the OWNER's diagnostics contract, not a local poll
-        count (report#303).
+        Identical semantics to the SQLite ledger: one fenced UPDATE does
+        ownership check, attempt refund, and release atomically, so a lease
+        reclaimed between any check and write simply fails the fence.
         """
 
         deferred_at = now or utc_now()
         with self._connect() as connection:
-            current = connection.execute(
-                """
-                SELECT attempt_count, lease_owner FROM report_job_work_item
-                WHERE work_item_id = %s AND status = 'leased' AND lease_token = %s
-                """,
-                (work_item_id, lease_token),
-            ).fetchone()
-            if not current:
-                record_report_job_work_lease_event(outcome="stale_conflict")
-                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
-            # Restore the attempt the CLAIM charged and fence the UPDATE on
-            # the live lease - identical semantics to the SQLite ledger.
-            deferred_cursor = connection.execute(
+            row = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = 'retry_pending', lease_owner = NULL, lease_token = NULL,
@@ -780,6 +765,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     available_at = %s, last_error_category = %s, last_error_summary = %s,
                     updated_at = %s
                 WHERE work_item_id = %s AND status = 'leased' AND lease_token = %s
+                RETURNING *
                 """,
                 (
                     deferred_at + timedelta(seconds=max(delay_seconds, 1)),
@@ -789,16 +775,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     work_item_id,
                     lease_token,
                 ),
-            )
-            if deferred_cursor.rowcount != 1:
-                record_report_job_work_lease_event(outcome="stale_conflict")
-                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
-            row = connection.execute(
-                "SELECT * FROM report_job_work_item WHERE work_item_id = %s",
-                (work_item_id,),
             ).fetchone()
             if not row:
-                raise InvalidReportJobWorkTransitionError("report_job_work_item_not_found")
+                record_report_job_work_lease_event(outcome="stale_conflict")
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             return _work_item_from_row(row)
 
     def fail_work_item(

@@ -95,7 +95,8 @@ class ReportBatchExecutionService:
             return quarantined
 
         try:
-            job = await self._job_execution_service.execute_job(job_id=item.report_job_id)
+            execution = await self._job_execution_service.execute_job(job_id=item.report_job_id)
+            job = execution.job
         except Exception as exc:
             failed_item = self._batch_ledger.mark_item_failed(
                 batch_item_id=item.batch_item_id,

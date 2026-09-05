@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from app.reporting_jobs.execution import ReportJobExecutionResult
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
 from app.reporting_jobs.worker import ReportJobWorker
@@ -94,15 +95,16 @@ class _Ledger:
 
 
 class _Executor:
-    def __init__(self, result=None, error=None):
+    def __init__(self, result=None, error=None, waiting=False):
         self.result = result or _job()
         self.error = error
+        self.waiting = waiting
 
     async def execute_job(self, *, job_id):
         assert job_id == "rjob_1"
         if self.error:
             raise self.error
-        return self.result
+        return ReportJobExecutionResult(job=self.result, waiting_on_owner=self.waiting)
 
 
 @pytest.mark.asyncio
@@ -159,7 +161,7 @@ async def test_worker_defers_a_job_waiting_on_its_render():
     ledger = _Ledger()
     result = await ReportJobWorker(
         work_ledger=ledger,
-        execution_service=_Executor(result=_job(status="rendering")),
+        execution_service=_Executor(result=_job(status="rendering"), waiting=True),
     ).run_once(worker_id="worker-1", max_items=5, lease_seconds=60)
 
     assert result.retry_pending_count == 1
@@ -171,8 +173,9 @@ async def test_worker_defers_a_job_waiting_on_its_render():
 
 @pytest.mark.asyncio
 async def test_worker_fails_other_non_terminal_states_against_the_budget():
-    """Only owner-side waiting defers; any other incomplete state is a real
-    failure and consumes the bounded budget."""
+    """Only the EXPLICIT waiting outcome defers; any other incomplete state
+    is a real failure and consumes the bounded budget - including a
+    nonterminal job returned WITHOUT the waiting posture."""
 
     ledger = _Ledger()
     result = await ReportJobWorker(
@@ -216,7 +219,7 @@ async def test_worker_claims_each_item_only_after_prior_execution_finishes():
     class _SequencedExecutor:
         async def execute_job(self, *, job_id):
             execution_order.append(f"rwork_{job_id.removeprefix('rjob_')}")
-            return _job()
+            return ReportJobExecutionResult(job=_job(), waiting_on_owner=False)
 
     ledger = _SequencedLedger(items=[first, second])
     result = await ReportJobWorker(
@@ -272,7 +275,7 @@ async def test_parallel_workers_never_share_a_preclaimed_later_item():
             if job_id == "rjob_1":
                 first_started.set()
                 await release_first.wait()
-            return _job()
+            return ReportJobExecutionResult(job=_job(), waiting_on_owner=False)
 
     ledger = _ConcurrentLedger()
     first_worker = ReportJobWorker(
@@ -312,3 +315,23 @@ async def test_worker_rejects_unleased_work_before_report_execution():
 
     assert ledger.completed == []
     assert ledger.failed == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "archiving"])
+async def test_worker_defers_custody_recovery_waiting_states(status):
+    """The P1 vector: a completed/archiving job whose owner lookup is
+    temporarily unanswerable is WAITING - never terminally completed and
+    never charged against the failure budget."""
+
+    ledger = _Ledger()
+    result = await ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=_Executor(result=_job(status=status), waiting=True),
+    ).run_once(worker_id="worker-1", max_items=5, lease_seconds=60)
+
+    assert result.retry_pending_count == 1
+    assert result.outcomes[0].failure_category == "waiting_on_render"
+    assert ledger.completed == []
+    assert ledger.failed == []
+    assert ledger.deferred[0]["wait_reason"] == "waiting_on_render"

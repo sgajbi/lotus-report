@@ -4,6 +4,7 @@ import pytest
 
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.models import ReportJobLedgerRecord
+from app.reporting_render.waiting import RenderWaiting
 
 
 def _job(*, status: str = "accepted", output_formats: list[str] | None = None):
@@ -74,7 +75,8 @@ async def test_executor_advances_capture_then_render(status):
 
     assert capture.calls == [status]
     assert render.calls == ["data_ready"]
-    assert result.status == "archived"
+    assert result.waiting_on_owner is False
+    assert result.job.status == "archived"
 
 
 @pytest.mark.asyncio
@@ -90,7 +92,8 @@ async def test_executor_advances_data_ready_pdf_job(status):
 
     assert capture.calls == []
     assert render.calls == [status]
-    assert result.status == "archived"
+    assert result.waiting_on_owner is False
+    assert result.job.status == "archived"
 
 
 @pytest.mark.asyncio
@@ -104,6 +107,28 @@ async def test_executor_leaves_terminal_job_unchanged():
         render_service=render,
     ).execute_job(job_id="rjob_1")
 
-    assert result is terminal
+    assert result.job is terminal
+    assert result.waiting_on_owner is False
     assert capture.calls == []
     assert render.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["rendering", "completed", "archiving"])
+async def test_executor_propagates_waiting_for_every_recovery_status(status):
+    """The explicit waiting outcome crosses the boundary for EVERY recovery
+    status - a completed job with an unresolved custody outcome must not be
+    reported as terminally done while the owner is unreachable."""
+
+    class _WaitingRender:
+        async def render_for_job(self, job):
+            return RenderWaiting(job=job)
+
+    result = await ReportJobExecutionService(
+        report_job_ledger=_Ledger(_job(status=status)),
+        capture_service=_Capture(),
+        render_service=_WaitingRender(),
+    ).execute_job(job_id="rjob_1")
+
+    assert result.waiting_on_owner is True
+    assert result.job.status == status
