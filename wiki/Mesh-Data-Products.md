@@ -32,6 +32,9 @@
   source-safe receipt with `report_package_identity`, source authority, render/archive outcome
   posture, optional render/archive identifiers, evidence refs, and remaining blockers. It is still
   not certified for client publication or supported-feature promotion.
+- Recovery status: `GET /reports/idea-evidence-packs/materializations` returns that Report-owned
+  receipt after an uncertain response only when the tenant, idempotency key and complete persisted
+  Idea/portfolio identity match. It never retries the POST and does not add publication authority.
 - Policy enforcement: Report rejects unknown, inactive, producer-unauthorized, or tenant-mismatched
   retention references before durable intake or report-job creation. Active legal holds are
   propagated for Archive enforcement and do not grant publication authority.

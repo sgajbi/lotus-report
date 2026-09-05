@@ -78,7 +78,9 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   projection and latest-accepted lookup.
 - **Downstream (write):** `lotus-render` render package; `lotus-archive` document handoff.
 - **Consumer-facing:** the report ordering catalogue, report job APIs, job lineage, and the
-  advisor-commentary availability seam consumed by `lotus-gateway`.
+  advisor-commentary availability seam consumed by `lotus-gateway`. The Idea evidence-pack
+  boundary also exposes a tenant-scoped, exact-identity recovery receipt so a lost materialization
+  response can be reconciled without issuing another command.
 - Repo-native domain-data-product declarations live in `contracts/`; `lotus-performance` and
   `lotus-risk` remain **watchlisted** consumers, so analytics-enriched evidence must not publish
   complete, unblocked trust telemetry.
@@ -93,7 +95,8 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 3. **A transport failure is not a downstream failure.** Timeout ≠ absence; render completion ≠
    archived; a retry must never mint a duplicate client document.
 4. **Uncertain outcomes resolve before retrying**, and one lineage yields at most one archived
-   document.
+   document. Idea materialization recovery reads the existing Report request by tenant and
+   idempotency key, verifies the complete persisted Idea/portfolio identity, and never resubmits.
 5. **The snapshot is immutable and decides.** What a document presented is answered by its
    snapshot, not by replaying today's policy against an old order. A capture commits the snapshot
    and its **upstream-call** rows in one transaction, so `data_ready` means the evidence *and* its
