@@ -842,6 +842,17 @@ async def test_capture_service_records_outcome_review_snapshot_and_manage_lineag
     assert calls[0].request_hash == "sha256:outcome-review"
     assert calls[0].response_hash == "sha256:report-input"
     assert calls[0].response_ref == "dor_001"
+    # The outcome review LINKS the proof pack it reviewed; the revision must
+    # name the served artifact itself, never the linked upstream one.
+    vector = snapshot.source_revision_vector
+    assert vector is not None
+    assert vector["coverage"] == "complete"
+    assert len(vector["revisions"]) == 1
+    outcome_revision = vector["revisions"][0]
+    assert outcome_revision["source_service"] == "lotus-manage"
+    assert outcome_revision["source_snapshot_id"] == "dor_001"
+    assert outcome_revision["content_hash"] == "sha256:report-input"
+    assert outcome_revision["source_product"] == "DPM_OUTCOME_REPORT_INPUT"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",
@@ -992,6 +1003,18 @@ async def test_capture_service_records_wave_snapshot_and_manage_lineage(tmp_path
     assert calls[0].request_hash == "sha256:wave"
     assert calls[0].response_hash == "sha256:wave-report-input"
     assert calls[0].response_ref == "dwv_001"
+    # The standard wave input states its evidence_ref via ref_type/ref_id -
+    # the permitted alternative representation - and it must still evidence
+    # the vector.
+    vector = snapshot.source_revision_vector
+    assert vector is not None
+    assert vector["coverage"] == "complete"
+    assert len(vector["revisions"]) == 1
+    wave_revision = vector["revisions"][0]
+    assert wave_revision["source_service"] == "lotus-manage"
+    assert wave_revision["source_snapshot_id"] == "dwv_001"
+    assert wave_revision["content_hash"] == "sha256:wave-report-input"
+    assert wave_revision["source_product"] == "DPM_WAVE_REPORT_INPUT"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",
