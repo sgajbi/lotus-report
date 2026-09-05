@@ -2311,3 +2311,34 @@ async def test_a_failed_capture_mints_no_revision(tmp_path):
     assert snapshot.report_revision_id is None
     assert snapshot.factual_content_digest is None
     assert snapshot.source_revision_vector is None
+
+
+@pytest.mark.asyncio
+async def test_a_bounded_capture_persists_the_accepted_snapshot_contract(tmp_path):
+    """report#283 finding 6, capture side: the snapshot's input contract is
+    the ACCEPTED axis - a deployment that moves the family's bounded-input
+    schema must not reinterpret an accepted job's capture. The accepted
+    contract also states the family's own schema, never the global
+    portfolio-review setting."""
+
+    ledger, store, job = _create_proof_pack_job(tmp_path, suffix="accepted-contract")
+    assert job.accepted_document_contract is not None
+    assert (
+        job.accepted_document_contract["input_snapshot_contract_version"]
+        == "dpm_proof_pack_report_input.v1"
+    )
+    frozen = job.model_copy(
+        update={
+            "accepted_document_contract": {
+                **job.accepted_document_contract,
+                "input_snapshot_contract_version": "dpm_proof_pack_report_input.v0-frozen",
+            }
+        }
+    )
+    service = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = await service.capture_for_job(frozen)
+
+    assert record.status == "data_ready"
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.report_data_contract_version == "dpm_proof_pack_report_input.v0-frozen"

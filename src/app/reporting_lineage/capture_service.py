@@ -18,6 +18,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.capture_binding import revision_for_capture
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.advisor_commentary import (
@@ -980,7 +981,7 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
             report_type=job.report_type,
-            report_data_contract_version="dpm_proof_pack_report_input.v1",
+            report_data_contract_version=_accepted_snapshot_contract_version(job),
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=proof_pack_report_input,
@@ -1086,7 +1087,7 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
             report_type=job.report_type,
-            report_data_contract_version="dpm_outcome_report_input.v1",
+            report_data_contract_version=_accepted_snapshot_contract_version(job),
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=outcome_report_input,
@@ -1195,7 +1196,7 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
             report_type=job.report_type,
-            report_data_contract_version="dpm_wave_report_input.v1",
+            report_data_contract_version=_accepted_snapshot_contract_version(job),
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=wave_report_input,
@@ -1388,7 +1389,8 @@ def _accepted_snapshot_contract_version(job: ReportJobLedgerRecord) -> str:
     accepted = contract.get("input_snapshot_contract_version")
     if isinstance(accepted, str) and accepted.strip():
         return accepted
-    return str(settings.contract_version)
+    family_stated = resolve_report_family(job.report_type).input_snapshot_contract_version
+    return family_stated or str(settings.contract_version)
 
 
 def _bind_revision_identity(
