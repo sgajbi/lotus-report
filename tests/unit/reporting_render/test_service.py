@@ -40,6 +40,22 @@ from app.reporting_render.service import PortfolioReviewRenderOrchestrationServi
 
 
 class _RenderClientSuccess:
+    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+        # The real status projection: every submit field except the bytes.
+        return 200, {
+            "render_job_id": render_job_id,
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_archived",
+        }
+
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         assert correlation_id == "corr-render"
         assert trace_id == "trace-render"
@@ -113,6 +129,24 @@ class _RenderClientWithArchiveOutcome:
         self._archive_state = archive_state
         self._archive_document_id = archive_document_id
         self._archive_detail = archive_detail
+
+    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+        status_payload = {
+            "render_job_id": render_job_id,
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
+            "archive_state": self._archive_state,
+            "archive_document_id": self._archive_document_id,
+        }
+        if self._archive_detail is not None:
+            status_payload["archive_detail"] = self._archive_detail
+        return 200, status_payload
 
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         return 201, {
@@ -300,7 +334,7 @@ def _assert_portfolio_memory_controls(memory: dict) -> None:
     assert memory["event_refs"][0]["manage_lookup_id"] == "pmem_lookup_dpp_001"
 
 
-def _seed_data_ready_job(tmp_path):
+def _seed_data_ready_job(tmp_path, report_revision_id=None):
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     job = ledger.create_portfolio_review_job(
@@ -316,6 +350,7 @@ def _seed_data_ready_job(tmp_path):
     )
     store.create_snapshot(
         ReportInputSnapshotCreateRequest(
+            report_revision_id=report_revision_id,
             report_job_id=job.job_id,
             report_type=job.report_type,
             report_data_contract_version="v1",
@@ -1558,6 +1593,7 @@ async def test_a_package_validation_error_fails_the_job_before_any_render_call(t
                 snapshot_hash = record.snapshot_hash
                 snapshot_payload = record.snapshot_payload
                 report_data_contract_version = record.report_data_contract_version
+                report_revision_id = record.report_revision_id
 
             return _Record()
 
@@ -2586,3 +2622,188 @@ def test_render_package_helpers_ignore_malformed_collection_rows(monkeypatch):
     assert service._render_client is sentinel_client
     assert service._snapshot_store is sentinel_store
     assert service._job_ledger is sentinel_ledger
+
+
+class _RenderClientHoldsNoJob:
+    """The persisted submission never landed: status is a governed 404, and
+    the CURRENT package may be submitted safely - nothing exists to
+    conflict with."""
+
+    def __init__(self):
+        self.submitted_packages = []
+
+    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+        return 404, {"detail": {"code": "render_job_not_found"}}
+
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        self.submitted_packages.append(payload)
+        return 201, {
+            "render_job_id": payload["render_job_id"],
+            "status": "rendered",
+            "template_id": payload["template_id"],
+            "template_version": payload["template_version"],
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_archived",
+        }
+
+
+class _RenderClientMustNotSubmit:
+    def __init__(self, lookup_status, lookup_payload):
+        self._lookup = (lookup_status, lookup_payload)
+
+    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+        return self._lookup
+
+    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        raise AssertionError("an unresolved persisted render must never be blindly resubmitted")
+
+
+def _mark_job_rendering(ledger, ready):
+    return ledger.mark_rendering(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_resumed_render_adopts_the_persisted_outcome_without_resubmitting(tmp_path):
+    """Deployment-boundary safety (the #300-line P1): a package rebuilt by
+    newer code may differ in shape from the one the persisted render id
+    carries, so a resume adopts the outcome Render already holds instead of
+    resubmitting into a package-hash conflict."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = _mark_job_rendering(ledger, ready)
+    client = _RenderClientMustNotSubmit(
+        200,
+        {
+            "render_job_id": f"rdr_{ready.job_id}_pdf",
+            "status": "rendered",
+            "template_id": "portfolio-review",
+            "template_version": "v1",
+            "artifact_sha256": "sha256:artifact",
+            "bounded_determinism_fingerprint": "fingerprint",
+            "runtime_engine": "typst",
+            "runtime_engine_version": "0.14.2",
+            "render_duration_ms": 812,
+            "archive_state": "archived_verified",
+            "archive_document_id": "doc_archived",
+        },
+    )
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(rendering)
+
+    assert result.status == "archived"
+    assert result.archive_document_id == "doc_archived"
+
+
+@pytest.mark.asyncio
+async def test_a_resume_submits_only_when_render_verifiably_holds_no_job(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = _mark_job_rendering(ledger, ready)
+    client = _RenderClientHoldsNoJob()
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(rendering)
+
+    assert result.status == "archived"
+    assert len(client.submitted_packages) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_in_progress_persisted_render_fails_retryable_without_resubmitting(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = _mark_job_rendering(ledger, ready)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientMustNotSubmit(
+            200, {"render_job_id": f"rdr_{ready.job_id}_pdf", "status": "rendering"}
+        ),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(rendering)
+
+    assert result.status == "failed"
+    assert result.failure_category == "render_execution_failed"
+    assert result.retry_eligible is True
+
+
+@pytest.mark.asyncio
+async def test_an_unanswerable_render_lookup_fails_retryable_without_resubmitting(tmp_path):
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = _mark_job_rendering(ledger, ready)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientMustNotSubmit(503, {"detail": {"code": "unavailable"}}),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(rendering)
+
+    assert result.status == "failed"
+    assert result.failure_category == "render_execution_failed"
+    assert result.retry_eligible is True
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_render_package_carries_the_revision_identity(tmp_path):
+    """The durable revision binding rides the package: render_context for
+    Render, the custody block verbatim onward to Archive (archive migration
+    011)."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path, report_revision_id="rrv3_render-handoff")
+    client = _RenderClientHoldsNoJob()
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    await service.render_for_job(ready)
+
+    assert len(client.submitted_packages) == 1
+    context = client.submitted_packages[0]["render_context"]
+    assert context["report_revision_id"] == "rrv3_render-handoff"
+    assert context["archive"]["report_revision_id"] == "rrv3_render-handoff"
+
+
+@pytest.mark.asyncio
+async def test_a_pre_identity_snapshot_renders_without_a_fabricated_revision(tmp_path):
+    """A snapshot captured before revision identity existed states nothing:
+    the package omits the key entirely rather than inventing an id."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    client = _RenderClientHoldsNoJob()
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=client,
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    await service.render_for_job(ready)
+
+    assert len(client.submitted_packages) == 1
+    context = client.submitted_packages[0]["render_context"]
+    assert "report_revision_id" not in context
+    assert "report_revision_id" not in context["archive"]
