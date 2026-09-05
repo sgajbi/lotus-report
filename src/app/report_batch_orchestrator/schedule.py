@@ -59,15 +59,6 @@ def materialize_cycle(request: BatchCycleRequest) -> BatchCycle:
             period_end=period_end,
             as_of_date=request.as_of_date,
         ),
-        legacy_idempotency_scopes=_legacy_cycle_scopes(
-            frequency=request.frequency,
-            period_start=period_start,
-            period_end=period_end,
-            as_of_date=request.as_of_date,
-            template_id=request.template_id,
-            template_version=request.template_version,
-            render_package_version=request.render_package_version,
-        ),
     )
 
 
@@ -132,46 +123,3 @@ def _cycle_scope(
     }
     digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:24]
     return f"{frequency}:{period_start.isoformat()}:{period_end.isoformat()}:{digest}"
-
-
-def _legacy_cycle_scopes(
-    *,
-    frequency: str,
-    period_start: date,
-    period_end: date,
-    as_of_date: date,
-    template_id: str,
-    template_version: str,
-    render_package_version: str,
-) -> tuple[str, ...]:
-    """Every plausible pre-#283 scope for this business cycle.
-
-    The old formula hashed whatever template values the schedule held AT
-    MATERIALIZATION TIME, so recognition cannot depend on the current
-    configured values alone: a schedule reconfigured after materializing
-    would reconstruct the wrong key and re-mint the cycle. The candidates
-    are the currently requested triple plus the canonical historical
-    default every schedule carried before the identity change. Used ONLY
-    to recognise and skip - new batches never use these.
-    """
-
-    candidates = [
-        (template_id, template_version, render_package_version),
-        ("portfolio-review", "v1", "portfolio-review.v1"),
-    ]
-    scopes: list[str] = []
-    for candidate_id, candidate_version, candidate_package in candidates:
-        payload = {
-            "frequency": frequency,
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-            "as_of_date": as_of_date.isoformat(),
-            "template_id": candidate_id,
-            "template_version": candidate_version,
-            "render_package_version": candidate_package,
-        }
-        digest = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:24]
-        scope = f"{frequency}:{period_start.isoformat()}:{period_end.isoformat()}:{digest}"
-        if scope not in scopes:
-            scopes.append(scope)
-    return tuple(scopes)
