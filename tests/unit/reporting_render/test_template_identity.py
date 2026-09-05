@@ -343,3 +343,155 @@ def test_failed_work_replay_preserves_the_source_jobs_accepted_contract(
         idempotency_key="idem-fresh-after-move",
     )
     assert fresh.render_template_version == "v2-current"
+
+
+def test_acceptance_persists_every_document_contract_axis(tmp_path) -> None:
+    """report#283 finding 6: the whole accepted document contract is one
+    durable job fact - family, type, input-snapshot schema, report-data
+    contract, envelope version, template pair, locale, brand, and the
+    standard-disclosure baseline - resolved once at acceptance."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    job = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-contract",
+    )
+
+    contract = job.accepted_document_contract
+    assert contract is not None
+    assert contract["accepted_contract_version"] == "adc.v1"
+    assert contract["report_family_id"] == "portfolio_review"
+    assert contract["report_type"] == "portfolio_review"
+    assert contract["input_snapshot_contract_version"]
+    assert contract["report_data_contract_version"] == "portfolio_review.v1"
+    assert contract["render_package_version"] == "render_package.v1"
+    assert (contract["template_id"], contract["template_version"]) == resolve_report_template(
+        "portfolio_review"
+    )
+    assert contract["locale"] == "en-SG"
+    assert contract["brand_variant"] == "private_banking"
+    assert contract["standard_disclosure_ref"] == "portfolio-review.standard-disclosures.v1"
+
+
+def test_a_replayed_job_keeps_its_original_accepted_contract(tmp_path, monkeypatch) -> None:
+    """The demonstrated replay defect, closed: a failed v1 job replayed
+    after a v2 deployment retains its ORIGINAL accepted contract verbatim -
+    a deployment that moved the definitions must not reinterpret it."""
+
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    source = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-replay-contract-src",
+    )
+    original_contract = source.accepted_document_contract
+    assert original_contract is not None
+    ledger.mark_collecting_data(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+    )
+    ledger.mark_failed(
+        job_id=source.job_id,
+        actor=source.triggered_by,
+        correlation_id=source.correlation_id,
+        trace_id=source.trace_id,
+        failure_category="upstream_data_failed",
+        failure_message="upstream unavailable",
+        retry_eligible=True,
+    )
+
+    # Simulate the v2 deployment: a fresh acceptance would now mint a
+    # different contract...
+    def _v2_contract(
+        report_type,
+        output_formats,
+        *,
+        input_snapshot_contract_version,
+        inherited_template=None,
+    ):
+        return {
+            "accepted_contract_version": "adc.v1",
+            "report_data_contract_version": "portfolio_review.v2",
+            "template_id": "portfolio-review",
+            "template_version": "v9",
+            "locale": "en-GB",
+        }
+
+    monkeypatch.setattr(ledger_module, "accepted_document_contract", _v2_contract)
+    fresh = ledger.create_portfolio_review_job(
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-fresh-under-v2",
+    )
+    assert fresh.accepted_document_contract is not None
+    assert fresh.accepted_document_contract["report_data_contract_version"] == (
+        "portfolio_review.v2"
+    )
+
+    # ...but the REPLAY inherits the source's original verbatim.
+    replayed = ledger.create_replay_derived_job(
+        source_job_id=source.job_id,
+        request=_job_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-replay-contract",
+        reason="Replay after upstream recovery.",
+    )
+    assert replayed.accepted_document_contract == original_contract
+
+
+def test_the_envelope_consumes_the_accepted_contract_not_todays_definitions(
+    tmp_path,
+) -> None:
+    """The package is built from the persisted acceptance fact on every
+    contract axis - sentinel values persisted at acceptance surface in the
+    envelope even though today's definitions say otherwise."""
+
+    _ledger, store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = store.get_snapshot_by_job(ready.job_id)
+    frozen = ready.model_copy(
+        update={
+            "accepted_document_contract": {
+                **(ready.accepted_document_contract or {}),
+                "report_data_contract_version": "portfolio_review.v0-frozen",
+                "locale": "en-HK",
+                "brand_variant": "retail_banking",
+                "standard_disclosure_ref": "portfolio-review.standard-disclosures.v0",
+            }
+        }
+    )
+
+    package = _build_render_package(
+        job=frozen,
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_contract_frozen",
+        snapshot_id=snapshot.snapshot_id,
+    )
+
+    assert package["report_data_contract_version"] == "portfolio_review.v0-frozen"
+    assert package["locale"] == "en-HK"
+    assert package["brand_variant"] == "retail_banking"
+    assert package["disclosure_refs"][0] == "portfolio-review.standard-disclosures.v0"
+
+
+def test_a_legacy_job_without_a_contract_resolves_current_definitions(tmp_path) -> None:
+    """A job accepted before the contract existed keeps working: it
+    resolves today's definitions, with no accepted-contract claim implied
+    and nothing fabricated."""
+
+    _ledger, store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = store.get_snapshot_by_job(ready.job_id)
+    legacy = ready.model_copy(update={"accepted_document_contract": None})
+
+    package = _build_render_package(
+        job=legacy,
+        snapshot=snapshot.snapshot_payload,
+        render_job_id="rdr_legacy_contract",
+        snapshot_id=snapshot.snapshot_id,
+    )
+
+    assert package["report_data_contract_version"] == "portfolio_review.v1"
+    assert package["locale"] == "en-SG"
+    assert package["disclosure_refs"][0] == "portfolio-review.standard-disclosures.v1"

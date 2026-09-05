@@ -56,6 +56,11 @@ class ReportFamilyDefinition:
     template_id: str
     template_version: str
     report_data_contract_version: str
+    #: The governed standard-disclosure baseline every document of this
+    #: family carries (composition may append content-driven refs). Hoisted
+    #: from the render package builders so the accepted document contract
+    #: can persist it at acceptance (report#283).
+    standard_disclosure_ref: str
     ordering_modes: tuple[ReportOrderingModeDefinition, ...]
     supported_output_formats: tuple[str, ...]
     configuration_fields: tuple[ReportConfigurationFieldDefinition, ...] = ()
@@ -286,6 +291,7 @@ REPORT_FAMILY_DEFINITIONS = (
         # no other report family moves.
         template_version="v2",
         report_data_contract_version="portfolio_review.v1",
+        standard_disclosure_ref="portfolio-review.standard-disclosures.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="single_portfolio",
@@ -324,6 +330,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_id="proof-pack",
         template_version="v1",
         report_data_contract_version="dpm_proof_pack_report_input.v1",
+        standard_disclosure_ref="proof-pack.standard-disclosures.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",
@@ -346,6 +353,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_id="rebalance-wave",
         template_version="v1",
         report_data_contract_version="dpm_wave_report_input.v1",
+        standard_disclosure_ref="rebalance-wave.standard-disclosures.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",
@@ -368,6 +376,7 @@ REPORT_FAMILY_DEFINITIONS = (
         template_id="outcome-review",
         template_version="v1",
         report_data_contract_version="dpm_outcome_report_input.v1",
+        standard_disclosure_ref="outcome-review.standard-disclosures.v1",
         ordering_modes=(
             ReportOrderingModeDefinition(
                 mode_id="source_workflow",

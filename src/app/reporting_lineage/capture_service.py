@@ -853,7 +853,7 @@ class PortfolioReviewSnapshotCaptureService:
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
             report_type=job.report_type,
-            report_data_contract_version=settings.contract_version,
+            report_data_contract_version=_accepted_snapshot_contract_version(job),
             portfolio_scope=job.portfolio_scope,
             as_of_date=job.as_of_date,
             snapshot_payload=snapshot_payload,
@@ -1376,6 +1376,19 @@ class PortfolioReviewSnapshotCaptureService:
             duration_seconds=perf_counter() - started_at,
         )
         return record
+
+
+def _accepted_snapshot_contract_version(job: ReportJobLedgerRecord) -> str:
+    """The input-snapshot contract the job was ACCEPTED under (report#283
+    finding 6) - never today's setting for a job that persisted its own.
+    A legacy job without a persisted contract keeps the current setting,
+    with no accepted-contract claim implied."""
+
+    contract = job.accepted_document_contract or {}
+    accepted = contract.get("input_snapshot_contract_version")
+    if isinstance(accepted, str) and accepted.strip():
+        return accepted
+    return str(settings.contract_version)
 
 
 def _bind_revision_identity(

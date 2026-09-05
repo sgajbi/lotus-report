@@ -2791,6 +2791,11 @@ class ReportJobLedgerRecord(BaseModel):
     render_template_id: str | None = None
     render_template_version: str | None = None
     render_template_publication: str | None = None
+    #: EVERY contract axis this job was accepted under, resolved once at
+    #: acceptance (report#283 finding 6). None only on jobs accepted before
+    #: the contract existed - such jobs resolve current definitions with no
+    #: accepted-contract claim, never a fabricated one.
+    accepted_document_contract: dict[str, Any] | None = None
     render_artifact_sha256: str | None = None
     render_bounded_determinism_fingerprint: str | None = None
     render_runtime_engine: str | None = None

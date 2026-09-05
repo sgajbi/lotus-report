@@ -26,6 +26,7 @@ from app.reporting_jobs.ledger import (
     _request_parts,
     _transition_event_payload,
     compute_request_hash,
+    resolve_job_accepted_contract,
     utc_now,
 )
 from app.reporting_jobs.lifecycle_policy import (
@@ -230,6 +231,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 source_job.render_template_id,
                 source_job.render_template_version,
             ),
+            inherited_contract=source_job.accepted_document_contract,
         )
 
     def submit_portfolio_review_job(
@@ -308,6 +310,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         replay_source_job_id: str | None = None,
         replay_reason: str = "Replay of failed report work.",
         inherited_template: tuple[str | None, str | None] | None = None,
+        inherited_contract: dict[str, Any] | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -320,6 +323,12 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         # for PDF-capable jobs - identical to the SQLite ledger's discipline.
         render_template_id, render_template_version = job_template_identity(
             report_type, output_formats, inherited_template
+        )
+        job_accepted_contract = resolve_job_accepted_contract(
+            report_type=report_type,
+            output_formats=output_formats,
+            inherited_template=inherited_template,
+            inherited_contract=inherited_contract,
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(
@@ -513,12 +522,13 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         render_template_version, render_artifact_sha256,
                         render_bounded_determinism_fingerprint, render_runtime_engine,
                         render_runtime_engine_version, render_duration_ms,
-                        archive_request_id, archive_document_id, archive_completed_at
+                        archive_request_id, archive_document_id, archive_completed_at,
+                        accepted_document_contract_json
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -549,6 +559,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         None,
                         None,
                         None,
+                        Jsonb(job_accepted_contract),
                     ),
                 )
                 self._append_status_event(
@@ -1584,7 +1595,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 job.render_duration_ms,
                 job.archive_request_id,
                 job.archive_document_id,
-                job.archive_completed_at
+                job.archive_completed_at,
+                job.accepted_document_contract_json
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE {" AND ".join(where_clauses)}
@@ -2275,7 +2287,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 job.render_duration_ms,
                 job.archive_request_id,
                 job.archive_document_id,
-                job.archive_completed_at
+                job.archive_completed_at,
+                job.accepted_document_contract_json
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = %s
@@ -2355,6 +2368,11 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportJobLedgerRecord:
         render_job_id=row.get("render_job_id"),
         render_output_format=row.get("render_output_format"),
         render_template_id=row.get("render_template_id"),
+        accepted_document_contract=(
+            row.get("accepted_document_contract_json")
+            if isinstance(row.get("accepted_document_contract_json"), dict)
+            else None
+        ),
         render_template_version=row.get("render_template_version"),
         render_template_publication=row.get("render_template_publication"),
         render_artifact_sha256=row.get("render_artifact_sha256"),
