@@ -7,6 +7,7 @@ from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from psycopg.errors import UniqueViolation
 
 from app.config import settings
@@ -16,8 +17,10 @@ from app.idea_evidence_intake.recovery import (
     recovery_identity_from_request,
 )
 from app.idea_evidence_intake.service import (
+    IdeaEvidenceIntakeLedger,
     build_proof_pack_report_job_request_from_idea_evidence,
 )
+from app.main import app
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     InvalidReportJobTransitionError,
@@ -28,6 +31,7 @@ from app.reporting_jobs.ledger import (
 from app.reporting_jobs.models import (
     PortfolioReviewJobRequest,
     ReportCallerContext,
+    ReportJobLedgerRecord,
     ReportJobListFilters,
 )
 from app.reporting_jobs.postgres_ledger import (
@@ -37,6 +41,9 @@ from app.reporting_jobs.postgres_ledger import (
 )
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
+from app.reporting_lineage.service import get_portfolio_review_snapshot_capture_service
+from app.reporting_render.service import get_portfolio_review_render_orchestration_service
+from app.routers.idea_evidence_intake import get_idea_evidence_intake_ledger
 from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 
 
@@ -107,6 +114,16 @@ def _idea_materialization_request(
             "requested_output_formats": ["json"],
         }
     )
+
+
+class _CommittedOnlyCaptureService:
+    async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+        return job
+
+
+class _NeverRenderService:
+    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+        raise AssertionError("receipt recovery must not render or resubmit materialization")
 
 
 def test_postgres_report_job_ledger_persists_idempotent_job_and_status_events() -> None:
@@ -180,6 +197,76 @@ def test_postgres_recovers_exact_idea_materialization_after_adapter_restart() ->
     assert recovered.materialization_status == "accepted"
     assert recovered.creates_rendered_output is False
     assert recovered.creates_archive_record is False
+    assert (
+        len(
+            restarted_ledger.list_jobs(
+                filters=ReportJobListFilters(
+                    tenant_id="tenant-sg",
+                    idempotency_key=idempotency_key,
+                    limit=2,
+                )
+            )
+        )
+        == 1
+    )
+
+
+def test_postgres_api_recovers_lost_materialization_response_without_second_post() -> None:
+    unique_suffix = uuid4().hex
+    idempotency_key = f"idea-materialization-lost-response-{unique_suffix}"
+    request = _idea_materialization_request(unique_suffix)
+    submitting_ledger = _ledger()
+    app.dependency_overrides[get_report_job_ledger] = lambda: submitting_ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _CommittedOnlyCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _NeverRenderService()
+    )
+    client = TestClient(app)
+    headers = {
+        "Idempotency-Key": idempotency_key,
+        "X-Actor-Id": "advisor-123",
+        "X-Caller-Application": "lotus-idea",
+        "X-Tenant-Id": "tenant-sg",
+        "X-Region": "APAC",
+        "X-Correlation-ID": f"corr-lost-response-{unique_suffix}",
+        "X-Trace-ID": f"trace-lost-response-{unique_suffix}",
+    }
+    try:
+        # Report commits the request; the consumer deliberately discards the response body.
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=request.model_dump(mode="json"),
+            headers=headers,
+        )
+        assert submitted.status_code == 202
+
+        restarted_ledger = _ledger()
+        app.dependency_overrides[get_report_job_ledger] = lambda: restarted_ledger
+        recovery_headers = {**headers, "X-Capabilities": "report.idea-materialization.recover"}
+        recovery_headers.pop("Idempotency-Key")
+        identity = recovery_identity_from_request(request)
+        recovered = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params={
+                "idempotencyKey": idempotency_key,
+                "reportEvidencePackId": identity.report_evidence_pack_id,
+                "conversionIntentId": identity.conversion_intent_id,
+                "candidateId": identity.candidate_id,
+                "evidencePacketId": identity.evidence_packet_id,
+                "evidenceContentFingerprint": identity.evidence_content_fingerprint,
+                "portfolioId": identity.portfolio_id,
+            },
+            headers=recovery_headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert recovered.status_code == 200
+    assert recovered.json()["materialization_status"] == "accepted"
+    assert recovered.json()["report_package_identity"]["candidate_id"] == (f"icand_{unique_suffix}")
     assert (
         len(
             restarted_ledger.list_jobs(
