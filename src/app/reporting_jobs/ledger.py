@@ -110,16 +110,32 @@ def resolve_job_accepted_contract(
     )
 
 
+#: Request-option keys the SERVER derives and injects after acceptance
+#: validation. They are excluded from the idempotency identity: the hash
+#: answers "did the CLIENT ask for the same thing", and a deployment that
+#: starts (or stops) enriching options must never change the identity of
+#: an unchanged accepted request. The owning module pins its constant to
+#: this registry by test.
+SERVER_DERIVED_REQUEST_OPTION_KEYS = frozenset({"idea_materialization_recovery_identity"})
+
+
 def compute_request_hash(
     *,
     report_type: str,
     request: ReportJobRequest,
     caller_context: ReportCallerContext,
+    include_server_derived_options: bool = False,
 ) -> str:
     portfolio_scope, as_of_date, output_formats, reporting_currency, options = _request_parts(
         report_type=report_type,
         request=request,
     )
+    if not include_server_derived_options:
+        options = {
+            key: value
+            for key, value in options.items()
+            if key not in SERVER_DERIVED_REQUEST_OPTION_KEYS
+        }
     hash_payload = {
         "report_type": report_type,
         "portfolio_scope": portfolio_scope,
@@ -635,7 +651,19 @@ class ReportJobLedger:
                     (normalized_key,),
                 ).fetchone()
                 if existing:
-                    if existing["request_hash"] != request_hash:
+                    stored_hash = existing["request_hash"]
+                    if stored_hash != request_hash and stored_hash != compute_request_hash(
+                        report_type=report_type,
+                        request=request,
+                        caller_context=caller_context,
+                        # Transitional acceptance: records created while the
+                        # server-derived recovery identity participated in
+                        # the hash stored the enriched form. The enrichment
+                        # is deterministic from the request, so an identical
+                        # retry recomputes it exactly; a changed business
+                        # intent matches NEITHER form and still conflicts.
+                        include_server_derived_options=True,
+                    ):
                         raise IdempotencyConflictError(
                             "idempotency_key_reused_with_different_request"
                         )

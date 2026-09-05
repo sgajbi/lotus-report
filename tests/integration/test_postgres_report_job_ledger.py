@@ -1029,6 +1029,7 @@ def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_
         _connection: object,
         visible_existing: Mapping[str, Any],
         _request_hash: str,
+        _legacy_request_hash: str | None = None,
     ) -> str:
         assert visible_existing == existing
         return "recovered-from-visible-existing-row"
@@ -1304,3 +1305,40 @@ def test_postgres_defer_work_item_keeps_the_failure_budget_untouched() -> None:
     # The claim charged an attempt; deferral refunds it.
     assert deferred.attempt_count == claimed[0].attempt_count - 1
     assert deferred.last_error_category == "waiting_on_render"
+
+
+def test_postgres_identity_is_stable_across_server_enrichment() -> None:
+    """The #312 finding on the production store: a pre-metadata record
+    accepts the identical enriched retry; changed intent still conflicts."""
+
+    ledger = _ledger()
+    unique_suffix = uuid4().hex
+    request, caller_context = _request_and_context(unique_suffix)
+    original = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"idem-identity-{unique_suffix}",
+    )
+
+    enriched = request.model_copy(
+        update={
+            "options": {
+                **request.options,
+                "idea_materialization_recovery_identity": {"identity_version": "v1"},
+            }
+        }
+    )
+    retried = ledger.submit_portfolio_review_job(
+        request=enriched,
+        caller_context=caller_context,
+        idempotency_key=f"idem-identity-{unique_suffix}",
+    )
+    assert retried.job_id == original.job_id
+
+    changed = request.model_copy(update={"reporting_currency": "SGD"})
+    with pytest.raises(IdempotencyConflictError):
+        ledger.submit_portfolio_review_job(
+            request=changed,
+            caller_context=caller_context,
+            idempotency_key=f"idem-identity-{unique_suffix}",
+        )

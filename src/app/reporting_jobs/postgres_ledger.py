@@ -336,6 +336,15 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             request=request,
             caller_context=caller_context,
         )
+        # Transitional acceptance for records stored while server-derived
+        # options participated in the hash (see the SQLite ledger's
+        # idempotency block for the full rationale).
+        legacy_request_hash = compute_request_hash(
+            report_type=report_type,
+            request=request,
+            caller_context=caller_context,
+            include_server_derived_options=True,
+        )
 
         try:
             with self._connect() as connection:
@@ -348,7 +357,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     (normalized_key,),
                 ).fetchone()
                 if existing:
-                    record = self._existing_or_conflict(connection, existing, request_hash)
+                    record = self._existing_or_conflict(
+                        connection, existing, request_hash, legacy_request_hash
+                    )
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record
@@ -422,7 +433,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                         (normalized_key,),
                     ).fetchone()
                     if existing:
-                        record = self._existing_or_conflict(connection, existing, request_hash)
+                        record = self._existing_or_conflict(
+                            connection, existing, request_hash, legacy_request_hash
+                        )
                         if enqueue:
                             self._ensure_work_item(connection, record=record)
                         return record
@@ -619,7 +632,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     (normalized_key,),
                 ).fetchone()
                 if existing:
-                    record = self._existing_or_conflict(connection, existing, request_hash)
+                    record = self._existing_or_conflict(
+                        connection, existing, request_hash, legacy_request_hash
+                    )
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record
@@ -2011,8 +2026,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         connection: Connection[Mapping[str, Any]],
         existing: Mapping[str, Any],
         request_hash: str,
+        legacy_request_hash: str | None = None,
     ) -> ReportJobLedgerRecord:
-        if existing["request_hash"] != request_hash:
+        stored_hash = existing["request_hash"]
+        if stored_hash != request_hash and stored_hash != legacy_request_hash:
             raise IdempotencyConflictError("idempotency_key_reused_with_different_request")
         return self._load_by_request_id(connection, str(existing["report_request_id"]))
 
