@@ -20,6 +20,7 @@ from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.capture_binding import revision_for_capture
+from app.reporting_identity.snapshot_lifecycle import snapshot_lifecycle_claim
 from app.reporting_identity.source_cut_coherence import evaluate_source_cut_coherence
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.advisor_commentary import (
@@ -1405,6 +1406,10 @@ def _bind_revision_identity(
     integrity hash stay untouched, so the id is never its own preimage. A
     failed capture mints nothing."""
 
+    capture_failed = snapshot_request.snapshot_payload.get("capture_status") == "failed"
+    snapshot_request = snapshot_request.model_copy(
+        update={"lifecycle": snapshot_lifecycle_claim(capture_failed=capture_failed)}
+    )
     minted = revision_for_capture(
         job=job,
         snapshot_payload=snapshot_request.snapshot_payload,

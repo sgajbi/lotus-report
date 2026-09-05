@@ -255,6 +255,12 @@ def _create_snapshot_for(store: ReportInputSnapshotStore, job) -> None:
                 "policy_version": "scv1",
                 "detail": "test",
             },
+            lifecycle={
+                "policy_ref": "report-input-snapshot-standard",
+                "policy_version": "1.0.0",
+                "reproduction_availability": "rerender_from_snapshot",
+                "lifecycle_authority": "test",
+            },
             supportability_status="complete",
             completeness_status="complete",
             lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
@@ -457,6 +463,12 @@ async def test_artifactless_render_failure_recovers_end_to_end_through_replay(tm
         "status": "coherent",
         "policy_version": "scv1",
         "detail": "test",
+    }
+    assert cloned.lifecycle == {
+        "policy_ref": "report-input-snapshot-standard",
+        "policy_version": "1.0.0",
+        "reproduction_availability": "rerender_from_snapshot",
+        "lifecycle_authority": "test",
     }
     assert (
         cloned.lineage_summary["source_call_count"]

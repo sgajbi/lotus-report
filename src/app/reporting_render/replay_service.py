@@ -540,6 +540,7 @@ class PortfolioReviewReplayService:
                     factual_boundary_version=source_snapshot.factual_boundary_version,
                     source_revision_vector=source_snapshot.source_revision_vector,
                     source_cut_coherence=source_snapshot.source_cut_coherence,
+                    lifecycle=source_snapshot.lifecycle,
                     supportability_status=source_snapshot.supportability_status,
                     completeness_status=source_snapshot.completeness_status,
                     lineage_summary=_cloned_lineage_summary(

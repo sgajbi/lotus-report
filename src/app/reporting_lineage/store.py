@@ -110,6 +110,9 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
     coherence = row["source_cut_coherence_json"]
     if isinstance(coherence, str):
         coherence = json.loads(coherence)
+    lifecycle = row["lifecycle_json"]
+    if isinstance(lifecycle, str):
+        lifecycle = json.loads(lifecycle)
     return ReportInputSnapshotRecord(
         snapshot_id=str(row["snapshot_id"]),
         report_job_id=str(row["report_job_id"]),
@@ -135,6 +138,7 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
         ),
         source_revision_vector=dict(vector) if isinstance(vector, dict) else None,
         source_cut_coherence=dict(coherence) if isinstance(coherence, dict) else None,
+        lifecycle=dict(lifecycle) if isinstance(lifecycle, dict) else None,
         supportability_status=str(row["supportability_status"]),
         completeness_status=str(row["completeness_status"]),
         lineage_summary=dict(summary),
@@ -258,6 +262,7 @@ class ReportInputSnapshotStore:
                     factual_boundary_version TEXT,
                     source_revision_vector_json TEXT,
                     source_cut_coherence_json TEXT,
+                    lifecycle_json TEXT,
                     supportability_status TEXT NOT NULL,
                     completeness_status TEXT NOT NULL,
                     lineage_summary_json TEXT NOT NULL,
@@ -284,6 +289,7 @@ class ReportInputSnapshotStore:
                 "factual_boundary_version",
                 "source_revision_vector_json",
                 "source_cut_coherence_json",
+                "lifecycle_json",
             ):
                 if column_name not in existing_columns:
                     connection.execute(
@@ -433,11 +439,11 @@ class ReportInputSnapshotStore:
                     portfolio_scope_json, as_of_date, snapshot_payload_json, snapshot_hash,
                     snapshot_storage_ref, report_revision_id, series_digest,
                     source_revision_digest, factual_content_digest, factual_boundary_version,
-                    source_revision_vector_json, source_cut_coherence_json,
+                    source_revision_vector_json, source_cut_coherence_json, lifecycle_json,
                     supportability_status, completeness_status,
                     lineage_summary_json, captured_at, created_at, correlation_id, trace_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             (
                 snapshot_id,
@@ -462,6 +468,11 @@ class ReportInputSnapshotStore:
                 (
                     canonical_json_dumps(request.source_cut_coherence)
                     if request.source_cut_coherence is not None
+                    else None
+                ),
+                (
+                    canonical_json_dumps(request.lifecycle)
+                    if request.lifecycle is not None
                     else None
                 ),
                 request.supportability_status,

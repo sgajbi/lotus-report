@@ -2073,6 +2073,23 @@ class ReportJobSnapshotDiagnostics(BaseModel):
         ),
         examples=["coherent"],
     )
+    lifecycle_policy_ref: str | None = Field(
+        default=None,
+        description=(
+            "The governing snapshot lifecycle policy reference stamped at capture "
+            "(contracts/report-input-snapshot). Stated, never enforced; null on "
+            "pre-policy history."
+        ),
+        examples=["report-input-snapshot-standard"],
+    )
+    reproduction_availability: str | None = Field(
+        default=None,
+        description=(
+            "What this snapshot can reproduce: rerender_from_snapshot for a successful "
+            "capture, none for a failed capture's failure evidence."
+        ),
+        examples=["rerender_from_snapshot"],
+    )
 
 
 class ReportJobLineageDiagnostics(BaseModel):
