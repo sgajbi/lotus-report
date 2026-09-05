@@ -29,6 +29,7 @@ from app.reporting_lineage.store import ReportInputSnapshotNotFoundError
 from app.reporting_metrics import record_report_operation
 from app.reporting_render.archive_lineage import record_archive_lineage
 from app.reporting_render.service import (
+    RenderWaiting,
     get_portfolio_review_render_orchestration_service,
 )
 
@@ -92,7 +93,9 @@ class RegenerateCaptureService(Protocol):
 
 
 class RegenerateRenderService(Protocol):
-    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord: ...
+    async def render_for_job(
+        self, job: ReportJobLedgerRecord
+    ) -> "ReportJobLedgerRecord | RenderWaiting": ...
 
 
 class RegenerateArchiveLineageClient(Protocol):
@@ -184,7 +187,11 @@ class PortfolioReviewRegenerateService:
             # durably by _upsert_regenerate_relationship below; it never rode
             # the archive handoff (Archive's create contract has no
             # supersession fields - lifecycle transitions are its own API).
-            regenerated = await self._render_service.render_for_job(regenerated)
+            rendered = await self._render_service.render_for_job(regenerated)
+            # An owner-side wait surfaces the job unchanged: the operator
+            # API answers with the nonterminal state and the work queue
+            # keeps polling toward adoption.
+            regenerated = rendered.job if isinstance(rendered, RenderWaiting) else rendered
         if regenerated.status == "archived":
             if not regenerated.archive_document_id:
                 raise InvalidReportJobTransitionError(

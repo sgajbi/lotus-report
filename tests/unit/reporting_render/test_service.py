@@ -37,6 +37,7 @@ from app.reporting_render.package_builder import (
     _transactions,
 )
 from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
+from app.reporting_render.waiting import RenderWaiting
 
 
 class _RenderClientSuccess:
@@ -2757,7 +2758,8 @@ async def test_an_in_progress_persisted_render_stays_nonterminal_for_the_queue(t
 
     result = await service.render_for_job(rendering)
 
-    assert result.status == "rendering"
+    assert isinstance(result, RenderWaiting)
+    assert result.job.status == "rendering"
     assert ledger.get_job(ready.job_id).status == "rendering"
 
 
@@ -2773,7 +2775,8 @@ async def test_an_unanswerable_render_lookup_stays_nonterminal_for_the_queue(tmp
 
     result = await service.render_for_job(rendering)
 
-    assert result.status == "rendering"
+    assert isinstance(result, RenderWaiting)
+    assert result.job.status == "rendering"
     assert ledger.get_job(ready.job_id).status == "rendering"
 
 

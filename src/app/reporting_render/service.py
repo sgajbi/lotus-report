@@ -23,6 +23,7 @@ from app.reporting_render.package_builder import (
 from app.reporting_render.package_builder import (
     template_contract_mismatch as _template_contract_mismatch,
 )
+from app.reporting_render.waiting import RenderWaiting
 
 
 class RenderSnapshotStore(Protocol):
@@ -97,13 +98,12 @@ class RenderJobLedger(Protocol):
 
 
 class _WaitingOnRender:
-    """Sentinel type: the persisted render is owner-side work in progress.
-    The job stays NONTERMINAL and the work queue DEFERS - waiting is not
-    failure, and the failure budget is scoped to real failures only
-    (report#303)."""
+    """Internal sentinel: the persisted render is owner-side work in
+    progress (report#303)."""
 
 
 WAITING_ON_RENDER = _WaitingOnRender()
+
 
 #: The report#303 mapping table: Render's owner recovery vocabulary ->
 #: (report failure_category, report retry_eligible). Two retryable
@@ -145,7 +145,9 @@ class PortfolioReviewRenderOrchestrationService:
         self._snapshot_store = snapshot_store
         self._job_ledger = job_ledger
 
-    async def render_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
+    async def render_for_job(
+        self, job: ReportJobLedgerRecord
+    ) -> ReportJobLedgerRecord | RenderWaiting:
         started_at = perf_counter()
         if "pdf" not in job.requested_output_formats:
             return job
@@ -168,7 +170,7 @@ class PortfolioReviewRenderOrchestrationService:
                 render_job_id=render_job_id,
                 started_at=started_at,
             )
-            if isinstance(recovered, ReportJobLedgerRecord):
+            if isinstance(recovered, (ReportJobLedgerRecord, RenderWaiting)):
                 return recovered
             outcome = recovered
         else:
@@ -307,7 +309,7 @@ class PortfolioReviewRenderOrchestrationService:
         snapshot: Any,
         render_job_id: str,
         started_at: float,
-    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
+    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord | RenderWaiting:
         """One recovered outcome (or terminal record) for a resumed job.
 
         Waiting returns the job UNCHANGED - nonterminal by design, so the
@@ -324,7 +326,7 @@ class PortfolioReviewRenderOrchestrationService:
             started_at=started_at,
         )
         if isinstance(resolution, _WaitingOnRender):
-            return job
+            return RenderWaiting(job=job)
         if resolution is None:
             built = self._build_package_or_fail(
                 job=job,
