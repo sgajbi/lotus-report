@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.clients.archive_client import ArchiveClient
 from app.config import settings
@@ -157,6 +157,8 @@ class ReplayArchiveResolver(Protocol):
 
 class ReplaySnapshotStore(Protocol):
     def get_snapshot_by_job(self, report_job_id: str) -> ReportInputSnapshotRecord: ...
+
+    def get_stored_lifecycle(self, snapshot_id: str) -> dict[str, Any] | None: ...
 
     def create_snapshot(
         self, request: ReportInputSnapshotCreateRequest
@@ -549,7 +551,14 @@ class PortfolioReviewReplayService:
                     factual_boundary_version=source_snapshot.factual_boundary_version,
                     source_revision_vector=source_snapshot.source_revision_vector,
                     source_cut_coherence=source_snapshot.source_cut_coherence,
-                    lifecycle=source_snapshot.lifecycle,
+                    # Inherited from the STORED bytes, not the translated
+                    # record - a clone of a policy 1.0.0 source persists the
+                    # 1.0.0 claim verbatim (readers translate at the store's
+                    # read boundary), never a version/value pair no policy
+                    # ever stamped.
+                    lifecycle=self._snapshot_store.get_stored_lifecycle(
+                        source_snapshot.snapshot_id
+                    ),
                     supportability_status=source_snapshot.supportability_status,
                     completeness_status=source_snapshot.completeness_status,
                     lineage_summary=_cloned_lineage_summary(

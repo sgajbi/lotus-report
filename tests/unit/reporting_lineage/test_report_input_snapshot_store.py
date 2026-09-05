@@ -415,3 +415,30 @@ def test_legacy_lifecycle_rows_read_as_the_capability_claim_without_rewrite(tmp_
             ("rjob_legacy",),
         ).fetchone()[0]
     assert "rerender_from_snapshot" in stored
+
+
+def test_get_stored_lifecycle_returns_raw_bytes_and_fails_closed_when_missing(tmp_path) -> None:
+    """Internal re-persistence reads the claim exactly as stored - and a
+    missing snapshot fails closed rather than returning an absent claim."""
+
+    store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    created = store.create_snapshot(
+        _request(
+            report_job_id="rjob_raw",
+            lifecycle={
+                "policy_ref": "report-input-snapshot-standard",
+                "policy_version": "1.0.0",
+                "reproduction_availability": "rerender_from_snapshot",
+                "lifecycle_authority": "test",
+            },
+        )
+    )
+
+    assert store.get_stored_lifecycle(created.snapshot_id) == {
+        "policy_ref": "report-input-snapshot-standard",
+        "policy_version": "1.0.0",
+        "reproduction_availability": "rerender_from_snapshot",
+        "lifecycle_authority": "test",
+    }
+    with pytest.raises(ReportInputSnapshotNotFoundError):
+        store.get_stored_lifecycle("rsnap_missing")
