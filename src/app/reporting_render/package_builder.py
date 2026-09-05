@@ -1781,7 +1781,7 @@ def _benchmark_series_section(snapshot: dict[str, Any]) -> dict[str, Any]:
     missing), ``unbenchmarked`` (no benchmark assigned or requested - a
     normal state, no caption), ``unavailable`` (a benchmark was expected
     but the source stated no series - carries the source's own diagnostics
-    sentence where present, else the stated supportability note). A stated
+    sentence where present, else Report's owned document copy). A stated
     posture is never an empty line: an available-but-empty series reads
     unavailable, not ready.
     """
@@ -1814,25 +1814,18 @@ def _benchmark_series_section(snapshot: dict[str, Any]) -> dict[str, Any]:
     if status in {"not_requested", None} and not points:
         return {"posture": "unbenchmarked", "points": []}
     statement = _optional_str(context.get("source_statement"))
-    if statement is None:
-        statement = _supportability_note_message(
-            performance, code="benchmark_comparison_unavailable"
-        )
     return {
         "posture": "unavailable",
         "benchmark_id": _optional_str(context.get("benchmark_code")),
         "points": [],
-        "source_statement": statement
-        or "Benchmark return series is not sourced in this report response.",
+        # The source's own sentence verbatim where it stated one; otherwise
+        # this is REPORT-authored document copy (never API voice) - the
+        # field carries verbatim source sentences beside it and must read
+        # no worse.
+        "source_statement": (
+            statement or "Benchmark return series was not sourced for this report."
+        ),
     }
-
-
-def _supportability_note_message(performance: dict[str, Any], *, code: str) -> str | None:
-    notes = _as_dict(performance.get("supportability")).get("notes")
-    for note in notes if isinstance(notes, list) else []:
-        if isinstance(note, dict) and note.get("code") == code:
-            return _optional_str(note.get("message"))
-    return None
 
 
 #: How many holdings the overview panel presents. The reconciliation published
