@@ -2714,7 +2714,7 @@ async def test_a_resumed_render_adopts_the_persisted_outcome_without_resubmittin
 
 
 @pytest.mark.asyncio
-async def test_a_resume_submits_only_when_render_verifiably_holds_no_job(tmp_path):
+async def test_a_rendering_resume_submits_only_on_a_verified_404(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     rendering = _mark_job_rendering(ledger, ready)
     client = _RenderClientHoldsNoJob()
@@ -2731,7 +2731,13 @@ async def test_a_resume_submits_only_when_render_verifiably_holds_no_job(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_an_in_progress_persisted_render_fails_retryable_without_resubmitting(tmp_path):
+async def test_an_in_progress_persisted_render_stays_nonterminal_for_the_queue(tmp_path):
+    """Marking the job failed would be TERMINAL for the work queue - only
+    replay could act, minting a fresh render id while the original render
+    can still finish and archive (a duplicate-document path). Nonterminal
+    means the queue retries the SAME job and render id and adopts the
+    eventual outcome."""
+
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     rendering = _mark_job_rendering(ledger, ready)
     service = PortfolioReviewRenderOrchestrationService(
@@ -2744,13 +2750,12 @@ async def test_an_in_progress_persisted_render_fails_retryable_without_resubmitt
 
     result = await service.render_for_job(rendering)
 
-    assert result.status == "failed"
-    assert result.failure_category == "render_execution_failed"
-    assert result.retry_eligible is True
+    assert result.status == "rendering"
+    assert ledger.get_job(ready.job_id).status == "rendering"
 
 
 @pytest.mark.asyncio
-async def test_an_unanswerable_render_lookup_fails_retryable_without_resubmitting(tmp_path):
+async def test_an_unanswerable_render_lookup_stays_nonterminal_for_the_queue(tmp_path):
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     rendering = _mark_job_rendering(ledger, ready)
     service = PortfolioReviewRenderOrchestrationService(
@@ -2761,8 +2766,133 @@ async def test_an_unanswerable_render_lookup_fails_retryable_without_resubmittin
 
     result = await service.render_for_job(rendering)
 
+    assert result.status == "rendering"
+    assert ledger.get_job(ready.job_id).status == "rendering"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("render_category", "expected_category", "expected_retryable"),
+    [
+        ("engine_unavailable", "render_execution_failed", True),
+        ("timeout", "render_execution_failed", True),
+        ("template_render_failed", "render_execution_failed", False),
+        ("resource_limit_exceeded", "render_execution_failed", False),
+        ("package_validation_failed", "render_validation_failed", False),
+        ("template_not_supported", "render_validation_failed", False),
+        ("artifact_validation_failed", "render_validation_failed", False),
+    ],
+)
+async def test_an_adopted_render_failure_keeps_its_own_vocabulary(
+    tmp_path, render_category, expected_category, expected_retryable
+):
+    """The projection's 200 transport status must not overwrite what the
+    persisted failure actually was: a transient engine failure stays
+    retryable across a worker restart, a validation failure keeps its
+    category."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    rendering = _mark_job_rendering(ledger, ready)
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientMustNotSubmit(
+            200,
+            {
+                "render_job_id": f"rdr_{ready.job_id}_pdf",
+                "status": "failed",
+                "failure_category": render_category,
+                "failure_message": "recorded by lotus-render",
+            },
+        ),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(rendering)
+
     assert result.status == "failed"
-    assert result.failure_category == "render_execution_failed"
+    assert result.failure_category == expected_category
+    assert result.retry_eligible is expected_retryable
+    assert result.failure_message == "recorded by lotus-render"
+
+
+@pytest.mark.asyncio
+async def test_a_completed_job_never_resubmits_on_a_render_404(tmp_path):
+    """Local completion evidence outranks a 404: re-rendering would produce
+    different bytes and a different derived archive request id - a
+    duplicate-document path. The designed recovery is replay's clone under
+    a FRESH render id."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    _mark_job_rendering(ledger, ready)
+    completed = ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        template_publication="development",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientMustNotSubmit(404, {"detail": {"code": "render_job_not_found"}}),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(completed)
+
+    assert result.status == "failed"
+    assert result.failure_category == "render_artifact_unrecoverable"
+    assert result.retry_eligible is True
+
+
+@pytest.mark.asyncio
+async def test_an_archiving_job_routes_a_render_404_to_archive_resolution(tmp_path):
+    """The recorded custody request may already have committed: replay must
+    resolve it against Archive FIRST, never re-render blindly."""
+
+    ledger, store, ready = _seed_data_ready_job(tmp_path)
+    _mark_job_rendering(ledger, ready)
+    ledger.mark_completed(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        render_job_id=f"rdr_{ready.job_id}_pdf",
+        output_format="pdf",
+        template_id="portfolio-review",
+        template_version="v1",
+        template_publication="development",
+        artifact_sha256="sha256:artifact",
+        bounded_determinism_fingerprint="fingerprint",
+        runtime_engine="typst",
+        runtime_engine_version="0.14.2",
+        render_duration_ms=812,
+    )
+    archiving = ledger.mark_archiving(
+        job_id=ready.job_id,
+        actor=ready.triggered_by,
+        correlation_id=ready.correlation_id,
+        trace_id=ready.trace_id,
+        archive_request_id=f"areq_{ready.job_id}",
+    )
+    service = PortfolioReviewRenderOrchestrationService(
+        render_client=_RenderClientMustNotSubmit(404, {"detail": {"code": "render_job_not_found"}}),
+        snapshot_store=store,
+        job_ledger=ledger,
+    )
+
+    result = await service.render_for_job(archiving)
+
+    assert result.status == "failed"
+    assert result.failure_category == "archive_outcome_unknown"
     assert result.retry_eligible is True
 
 
