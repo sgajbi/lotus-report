@@ -2213,7 +2213,7 @@ async def test_identical_facts_share_one_revision_across_capture_instances(tmp_p
     second = store.get_snapshot_by_job(second_job.job_id)
 
     assert first.report_revision_id is not None
-    assert first.report_revision_id.startswith("rrv2_")
+    assert first.report_revision_id.startswith("rrv3_")
     assert first.report_revision_id == second.report_revision_id
     assert first.factual_content_digest == second.factual_content_digest
     assert first.factual_boundary_version == "fb1"

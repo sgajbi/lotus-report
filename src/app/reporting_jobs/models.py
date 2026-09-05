@@ -2028,7 +2028,7 @@ class ReportJobSnapshotDiagnostics(BaseModel):
             "distinguishes capture instances. Null on failed captures and on snapshots "
             "captured before revision identity existed."
         ),
-        examples=["rrv2_7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
+        examples=["rrv3_7a5486f4a7ef1962f27fe67c6ef392fd0da0dfc7c98a84e426238637f4a5b7dd"],
     )
     series_digest: str | None = Field(
         default=None,

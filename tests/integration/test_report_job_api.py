@@ -978,7 +978,7 @@ def test_portfolio_review_job_submit_status_and_cancel(tmp_path):
         assert diagnostics_body["snapshot"]["snapshot_id"].startswith("rsnap_")
         # A successful capture minted a canonical revision, and the readback
         # surface exposes it beside the capture-instance hash.
-        assert diagnostics_body["snapshot"]["report_revision_id"].startswith("rrv2_")
+        assert diagnostics_body["snapshot"]["report_revision_id"].startswith("rrv3_")
         assert diagnostics_body["snapshot"]["factual_boundary_version"] == "fb1"
         assert diagnostics_body["snapshot"]["source_revision_coverage"] in {
             "unknown",

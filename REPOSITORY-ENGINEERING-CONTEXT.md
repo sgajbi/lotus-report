@@ -122,7 +122,9 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    reconciliation — `src/app/services/review_evidence.py`), replay inheriting
    the accepted template contract, business-cycle-only batch identity, and
    revision minting at capture: every successful capture derives
-   `report_revision_id` (`rrv2_`) from series key + stated source revisions +
+   `report_revision_id` (`rrv3_`; the derived coverage claim is excluded
+   from the preimage so policy evolution never re-mints identities) from
+   series key + stated source revisions +
    factual content under the versioned `fb1` boundary
    (`src/app/reporting_identity/capture_binding.py`), persists it in side
    columns (migration 020), exposes it on job diagnostics, and replay-clones
