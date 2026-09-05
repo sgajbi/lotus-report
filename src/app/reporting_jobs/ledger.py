@@ -125,22 +125,17 @@ def client_identity_hash_from_record(record: "ReportJobLedgerRecord") -> str:
     evolution-proof comparison basis for records hashed under any earlier
     enrichment policy."""
 
-    options = {
-        key: value
-        for key, value in record.options.items()
-        if key not in SERVER_DERIVED_REQUEST_OPTION_KEYS
-    }
-    hash_payload = {
-        "report_type": record.report_type,
-        "portfolio_scope": record.portfolio_scope,
-        "as_of_date": record.as_of_date.isoformat(),
-        "requested_output_formats": sorted(record.requested_output_formats),
-        "reporting_currency": record.reporting_currency,
-        "options": options,
-        "tenant_id": record.tenant_id,
-        "region": record.region,
-    }
-    return hashlib.sha256(canonical_json(hash_payload).encode("utf-8")).hexdigest()
+    return _client_identity_hash(
+        report_type=record.report_type,
+        portfolio_scope=record.portfolio_scope,
+        as_of_date_iso=record.as_of_date.isoformat(),
+        output_formats=record.requested_output_formats,
+        reporting_currency=record.reporting_currency,
+        options=record.options,
+        tenant_id=record.tenant_id,
+        region=record.region,
+        strip_server_derived=True,
+    )
 
 
 def compute_request_hash(
@@ -154,7 +149,43 @@ def compute_request_hash(
         report_type=report_type,
         request=request,
     )
-    if not include_server_derived_options:
+    return _client_identity_hash(
+        report_type=report_type,
+        portfolio_scope=portfolio_scope,
+        as_of_date_iso=as_of_date.isoformat(),
+        output_formats=output_formats,
+        reporting_currency=reporting_currency,
+        options=options,
+        tenant_id=caller_context.tenant_id,
+        region=caller_context.region,
+        strip_server_derived=not include_server_derived_options,
+    )
+
+
+def _client_identity_hash(
+    *,
+    report_type: str,
+    portfolio_scope: dict[str, Any],
+    as_of_date_iso: str,
+    output_formats: list[str],
+    reporting_currency: str | None,
+    options: dict[str, Any],
+    tenant_id: str | None,
+    region: str | None,
+    strip_server_derived: bool,
+) -> str:
+    """The ONE construction of the client identity hash.
+
+    Both identity questions - "what is this incoming request's identity"
+    (compute_request_hash) and "what is this stored record's client
+    identity under the current policy" (client_identity_hash_from_record) -
+    MUST build the identical payload, normalization included: when they
+    diverge, a legacy record whose declared-set lists were stored unsorted
+    conflicts with its own identical retry. Sharing the builder makes that
+    divergence unexpressible.
+    """
+
+    if strip_server_derived:
         options = {
             key: value
             for key, value in options.items()
@@ -163,12 +194,12 @@ def compute_request_hash(
     hash_payload = {
         "report_type": report_type,
         "portfolio_scope": _set_normalized(portfolio_scope, "portfolio_ids"),
-        "as_of_date": as_of_date.isoformat(),
+        "as_of_date": as_of_date_iso,
         "requested_output_formats": sorted(output_formats),
         "reporting_currency": reporting_currency,
         "options": _set_normalized(options, "sections", "allocation_dimensions"),
-        "tenant_id": caller_context.tenant_id,
-        "region": caller_context.region,
+        "tenant_id": tenant_id,
+        "region": region,
     }
     return hashlib.sha256(canonical_json(hash_payload).encode("utf-8")).hexdigest()
 
