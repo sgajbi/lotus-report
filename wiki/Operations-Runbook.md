@@ -523,7 +523,13 @@ Expected controls:
    links without raw payloads,
 5. `POST /reports/jobs/{job_id}/rerender` is only for archived PDF jobs and creates a new
    rerender attempt from the existing immutable snapshot without recollecting upstream data; the
-   latest attempts remain discoverable later from the diagnostics view,
+   latest attempts remain discoverable later from the diagnostics view. Before issuing the
+   command, read the diagnostics snapshot block: `rerender_available` is derived from the same
+   eligibility predicate the command enforces, so a `false` there means the command will refuse
+   (job not archived, no PDF output, or missing render/archive identity) - while
+   `reproduction_availability: snapshot_recomposition` only states the retained snapshot can
+   recompose what the document presented, never that a rerender command exists (legacy rows
+   stamped `rerender_from_snapshot` under policy 1.0.0 read as the same capability),
 6. `POST /reports/jobs/{job_id}/regenerate` is only for archived PDF jobs and creates a new report
    job, fresh upstream snapshot and lineage bundle, and replacement archive document when source
    data must be refreshed,
