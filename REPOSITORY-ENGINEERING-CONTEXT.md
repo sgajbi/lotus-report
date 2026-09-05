@@ -148,12 +148,13 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    on the job (migration 021), and is consumed by capture and the render
    envelope — a replay inherits it verbatim, regeneration resolves current,
    legacy jobs resolve current definitions with no accepted-contract claim.
-   Remaining, in order: scheduler requested-policy replacement (schedule
-   definitions still carry template fields); revision identity on
-   portfolio-memory events (blocked on an event-identity stability
-   treatment: the payload hash IS the event identity); trust-state
-   separation incl. source-cut coherence; snapshot lifecycle metadata; the
-   17-point integrated proof.
+   The scheduler's duplicated template selection is retired: schedules
+   state only the requested policy (report type, output formats) and the
+   accepted document contract is the one resolved record per job.
+   Remaining, in order: revision identity on portfolio-memory events
+   (blocked on an event-identity stability treatment: the payload hash IS
+   the event identity); trust-state separation incl. source-cut coherence;
+   snapshot lifecycle metadata; the 17-point integrated proof.
    Design decisions (hash boundary, no circular identity, historical
    mapping) are recorded in the 2026-09-05 audit, on #283, and in
    `src/app/reporting_identity/identity.py`'s module docstring.
