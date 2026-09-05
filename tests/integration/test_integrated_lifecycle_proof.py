@@ -21,11 +21,18 @@ import asyncio
 import copy
 import dataclasses
 import os
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 import pytest
 
+from app.report_batch_orchestrator.dispatch import ReportBatchDispatcher
+from app.report_batch_orchestrator.postgres_ledger import PostgresReportBatchLedger
+from app.report_batch_orchestrator.scheduler import (
+    BatchScheduleDefinition,
+    BatchSchedulerConfig,
+    ReportBatchScheduler,
+)
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import compute_request_hash
 from app.reporting_jobs.models import (
@@ -784,3 +791,150 @@ def test_a11_regenerate_captures_fresh_with_explicit_replacement_lineage():
     )
     assert new_record.archive_document_id is not None
     assert new_record.archive_document_id != record.archive_document_id
+
+
+# ---------------------------------------------------------------------------
+# Assertion 12: repeated or concurrent scheduled-cycle execution creates only
+# the intended logical work across a default-version change.
+# ---------------------------------------------------------------------------
+
+
+def _schedule_config(schedule_id: str) -> "BatchSchedulerConfig":
+    return BatchSchedulerConfig(
+        scheduler_id=f"scheduler-{schedule_id}",
+        interval_seconds=60.0,
+        tenant_id=TENANT_A,
+        region="APAC",
+        booking_center_code="SG",
+        role="system",
+        schedules=(
+            BatchScheduleDefinition(
+                schedule_id=schedule_id,
+                enabled=True,
+                selector_mode="explicit_portfolio_list",
+                frequency="monthly",
+                as_of_date=date(2026, 4, 22),
+                portfolio_ids=[SHARED_PORTFOLIO],
+                requested_output_formats=["pdf"],
+                reporting_currency="USD",
+                options={"sections": ["OVERVIEW"]},
+            ),
+        ),
+    )
+
+
+class _SchedulerPortfolioSource:
+    async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+        return 200, {"portfolio_id": portfolio_id, "status": "active"}
+
+    async def list_portfolios(self, correlation_id=None):
+        return 200, {"portfolios": [{"portfolio_id": SHARED_PORTFOLIO, "status": "active"}]}
+
+
+def test_a12_repeated_scheduled_cycles_converge_across_a_default_change(monkeypatch):
+    suffix = uuid4().hex[:12]
+    schedule_id = f"proof-cycle-{suffix}"
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    scheduler = ReportBatchScheduler(
+        batch_ledger=batch_ledger,
+        portfolio_source=_SchedulerPortfolioSource(),
+    )
+    caller = _caller(tenant=TENANT_A, suffix=f"a12-{suffix}")
+
+    first = asyncio.run(
+        scheduler.run_due_schedules(
+            config=_schedule_config(schedule_id),
+            caller_context=caller,
+            evaluation_date=date(2026, 4, 22),
+        )
+    )
+    assert len(first.materialized) == 1
+
+    # The family default moves between the first execution and the rerun -
+    # cycle recognition is business-cycle identity ONLY, so the rerun still
+    # converges on the existing batch instead of materializing a duplicate.
+    from app.report_ordering_catalogue import template_resolution
+
+    monkeypatch.setattr(
+        template_resolution,
+        "accepted_template_identity",
+        lambda report_type, output_formats: ("portfolio-review", "v99-poison"),
+    )
+    second = asyncio.run(
+        scheduler.run_due_schedules(
+            config=_schedule_config(schedule_id),
+            caller_context=caller,
+            evaluation_date=date(2026, 4, 22),
+        )
+    )
+    assert second.materialized == ()
+    assert schedule_id in second.skipped_schedule_ids
+
+    # Exactly one batch exists for the cycle's durable facts.
+    assert batch_ledger.has_batch_for_schedule_cycle(
+        tenant_id=TENANT_A,
+        region="APAC",
+        schedule_id=schedule_id,
+        period_start="2026-04-01",
+        period_end="2026-04-22",
+        as_of_date="2026-04-22",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Assertion 13: scheduled requested policy and each accepted job's resolved
+# contract agree and remain distinguishable.
+# ---------------------------------------------------------------------------
+
+
+def test_a13_requested_policy_and_resolved_contract_agree_and_stay_distinct():
+    suffix = uuid4().hex[:12]
+    schedule_id = f"proof-policy-{suffix}"
+    world = _World()
+    batch_ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    scheduler = ReportBatchScheduler(
+        batch_ledger=batch_ledger,
+        portfolio_source=_SchedulerPortfolioSource(),
+    )
+    caller = _caller(tenant=TENANT_A, suffix=f"a13-{suffix}")
+    run = asyncio.run(
+        scheduler.run_due_schedules(
+            config=_schedule_config(schedule_id),
+            caller_context=caller,
+            evaluation_date=date(2026, 4, 22),
+        )
+    )
+    batch = batch_ledger.get_batch(run.materialized[0].batch_id)
+
+    # The schedule states REQUESTED policy only - output formats, currency,
+    # composition options - plus the durable cycle-identity facts. It has no
+    # template or contract axes to state.
+    assert batch.requested_output_formats == ["pdf"]
+    assert batch.reporting_currency == "USD"
+    assert batch.options["sections"] == ["OVERVIEW"]
+    assert batch.options["batch_schedule_id"] == schedule_id
+    assert "template_version" not in batch.options
+
+    dispatcher = ReportBatchDispatcher(
+        batch_ledger=batch_ledger,
+        report_job_ledger=world.ledger,
+    )
+    dispatched = dispatcher.dispatch_batch(
+        batch_id=batch.batch_id,
+        caller_context=caller,
+        worker_id=f"proof-dispatcher-{suffix}",
+    )
+    assert len(dispatched.report_job_ids) == 1
+    job = world.ledger.get_job(dispatched.report_job_ids[0])
+
+    # The job's request AGREES with the schedule's requested policy...
+    assert job.requested_output_formats == batch.requested_output_formats
+    assert job.reporting_currency == batch.reporting_currency
+    assert job.options["sections"] == ["OVERVIEW"]
+    # ...while the resolved document contract is the ACCEPTANCE's own fact,
+    # stamped from the governed definitions - present on the job, absent
+    # from the schedule, so the two authorities remain distinguishable.
+    contract = job.accepted_document_contract
+    assert contract is not None
+    assert contract["template_version"] == job.render_template_version
+    assert contract["report_data_contract_version"] == "portfolio_review.v1"
