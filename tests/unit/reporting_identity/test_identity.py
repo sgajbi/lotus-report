@@ -147,12 +147,9 @@ def test_missing_source_evidence_stays_missing() -> None:
 
 
 def test_coverage_participates_in_identity() -> None:
-    stated = SourceRevisionVector(
-        revisions=(SourceRevision(source_service="lotus-core"),), coverage="complete"
-    )
-    unknown = SourceRevisionVector(
-        revisions=(SourceRevision(source_service="lotus-core"),), coverage="unknown"
-    )
+    evidenced = SourceRevision(source_service="lotus-core", content_hash="sha256:a")
+    stated = SourceRevisionVector(revisions=(evidenced,), coverage="complete")
+    unknown = SourceRevisionVector(revisions=(evidenced,), coverage="unknown")
 
     assert stated.digest() != unknown.digest()
 
@@ -189,3 +186,80 @@ def test_revision_ties_on_partial_sort_keys_cannot_reorder_the_digest() -> None:
 def test_an_invented_coverage_state_is_refused() -> None:
     with pytest.raises(Exception, match="coverage"):
         SourceRevisionVector(revisions=(), coverage="compelete")
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: ReportSeriesKey.model_validate(
+            {
+                "tenant_id": "tenant-sg",
+                "report_family_id": "portfolio_review",
+                "report_type": "portfolio_review",
+                "portfolio_scope": {"portfolio_ids": ["P1"]},
+                "as_of_date": "2026-08-31",
+                "fee_basis": "gross",
+            }
+        ),
+        lambda: SourceRevisionVector.model_validate(
+            {"revisions": [], "coverage": "unknown", "cut_token": "x"}
+        ),
+        lambda: __import__(
+            "app.reporting_identity", fromlist=["ReportRevisionIdentity"]
+        ).ReportRevisionIdentity.model_validate(
+            {
+                "report_revision_id": "rrv2_x",
+                "series_digest": "a",
+                "source_revision_digest": "b",
+                "snapshot_hash": "c",
+                "extra_field": "y",
+            }
+        ),
+    ],
+    ids=["series", "vector", "derived-identity"],
+)
+def test_unknown_identity_fields_fail_validation(build) -> None:
+    """Fail-closed: a producer introducing a new output-affecting field
+    before this consumer models it must break validation - never keep the
+    old identity by silent discard."""
+
+    with pytest.raises(Exception, match="[Ee]xtra|forbid|permitted"):
+        build()
+
+
+def test_caller_side_mutation_cannot_change_an_admitted_identity() -> None:
+    scope = {"portfolio_ids": ["PB_SG_001"]}
+    series = _series(portfolio_scope=scope)
+    before = series.digest()
+
+    scope["portfolio_ids"].append("PB_SG_999")
+
+    assert series.digest() == before
+
+
+def test_complete_coverage_must_be_backed_by_evidence() -> None:
+    with pytest.raises(Exception, match="SOURCE_REVISION_COVERAGE_UNBACKED"):
+        SourceRevisionVector(revisions=(), coverage="complete")
+    with pytest.raises(Exception, match="SOURCE_REVISION_COVERAGE_UNBACKED"):
+        SourceRevisionVector(
+            revisions=(SourceRevision(source_service="lotus-core"),), coverage="complete"
+        )
+
+
+def test_from_evidence_computes_coverage_instead_of_trusting_a_label() -> None:
+    stated = SourceRevision(source_service="lotus-core", content_hash="sha256:a")
+    silent = SourceRevision(source_service="lotus-risk")
+
+    complete = SourceRevisionVector.from_evidence(
+        revisions=(stated,), expected_sources=("lotus-core",)
+    )
+    partial = SourceRevisionVector.from_evidence(
+        revisions=(stated, silent), expected_sources=("lotus-core", "lotus-risk")
+    )
+    unknown = SourceRevisionVector.from_evidence(
+        revisions=(silent,), expected_sources=("lotus-risk",)
+    )
+
+    assert complete.coverage == "complete"
+    assert partial.coverage == "partial"
+    assert unknown.coverage == "unknown"
