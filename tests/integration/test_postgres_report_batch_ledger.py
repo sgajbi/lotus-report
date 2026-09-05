@@ -624,10 +624,13 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
     )
 
     ledger = own_postgres_adapter(PostgresReportBatchLedger(_database_url()))
+    suffix = uuid4().hex
+    schedule_id = f"rbsc_pg_roundtrip_{suffix}"
+    tenant_id = f"tenant-sg-{suffix}"
     now = datetime(2026, 8, 29, 10, 0, tzinfo=UTC)
     schedule = StoredBatchSchedule(
-        schedule_id="rbsc_pg_roundtrip",
-        tenant_id="tenant-sg",
+        schedule_id=schedule_id,
+        tenant_id=tenant_id,
         region="APAC",
         booking_center_code="SG",
         owner_actor="advisor-123",
@@ -643,15 +646,15 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
         updated_at=None,
     )
     ledger.save_schedule_definition(schedule)
-    assert ledger.get_schedule_definition("rbsc_pg_roundtrip") == schedule
-    assert schedule in ledger.list_schedule_definitions("tenant-sg")
-    assert ledger.list_schedule_definitions("tenant-uk") == []
+    assert ledger.get_schedule_definition(schedule_id) == schedule
+    assert schedule in ledger.list_schedule_definitions(tenant_id)
+    assert ledger.list_schedule_definitions(f"tenant-uk-{suffix}") == []
 
     for index, action in enumerate(["created", "disabled", "enabled"]):
         ledger.append_schedule_audit(
             BatchScheduleAuditRecord(
-                audit_id=f"rbsa_pg_{index}",
-                schedule_id="rbsc_pg_roundtrip",
+                audit_id=f"rbsa_pg_{suffix}_{index}",
+                schedule_id=schedule_id,
                 action=action,
                 actor="advisor-123",
                 correlation_id="corr-pg",
@@ -659,13 +662,13 @@ def test_postgres_schedule_definition_roundtrip_and_audit_order():
                 created_at=now,
             )
         )
-    audit = ledger.list_schedule_audit("rbsc_pg_roundtrip")
+    audit = ledger.list_schedule_audit(schedule_id)
     assert [record.action for record in audit] == ["created", "disabled", "enabled"]
 
     ledger.save_schedule_definition(
         schedule.model_copy(update={"enabled": False, "updated_at": now, "revision": 2})
     )
-    stored = ledger.get_schedule_definition("rbsc_pg_roundtrip")
+    stored = ledger.get_schedule_definition(schedule_id)
     assert stored.enabled is False
     assert stored.revision == 2
 
