@@ -287,6 +287,202 @@ def test_idea_evidence_materialization_route_creates_archived_report_job(tmp_pat
     assert upstream_calls[0].contract_version == "LotusIdeaEvidencePackReportInput.1.0"
 
 
+def test_idea_evidence_materialization_recovers_exact_receipt_after_restart(tmp_path) -> None:
+    database_path = tmp_path / "jobs.sqlite3"
+    ledger = ReportJobLedger(database_path)
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    client = TestClient(app)
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-recovery"),
+        )
+        restarted_ledger = ReportJobLedger(database_path)
+        app.dependency_overrides[get_report_job_ledger] = lambda: restarted_ledger
+        recovered = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query("idea-report-materialization-recovery"),
+            headers=_recovery_headers(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert recovered.status_code == 200
+    assert recovered.json() == submitted.json()
+    assert len(restarted_ledger.list_jobs(filters=ReportJobListFilters(limit=2))) == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("reportEvidencePackId", "irep_changed"),
+        ("conversionIntentId", "icnv_changed"),
+        ("candidateId", "icand_changed"),
+        ("evidencePacketId", "ievp_changed"),
+        ("evidenceContentFingerprint", "sha256:changed"),
+        ("portfolioId", "PB_SG_CHANGED_001"),
+    ],
+)
+def test_idea_evidence_materialization_recovery_rejects_identity_drift(
+    tmp_path,
+    field: str,
+    value: str,
+) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    client = TestClient(app)
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-drift"),
+        )
+        query = _recovery_query("idea-report-materialization-drift")
+        query[field] = value
+        recovered = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=query,
+            headers=_recovery_headers(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert recovered.status_code == 409
+    assert recovered.json()["detail"]["code"] == "idea_materialization_identity_conflict"
+
+
+def test_idea_evidence_materialization_recovery_is_tenant_scoped(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    client = TestClient(app)
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-tenant-scope"),
+        )
+        headers = _recovery_headers()
+        headers["X-Tenant-Id"] = "tenant-other"
+        recovered = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query("idea-report-materialization-tenant-scope"),
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert recovered.status_code == 404
+    assert recovered.json()["detail"]["code"] == "idea_materialization_not_found"
+
+
+@pytest.mark.parametrize("denial", ["wrong_caller", "missing_capability"])
+def test_idea_evidence_materialization_recovery_denies_before_repository_io(
+    denial: str,
+) -> None:
+    app.dependency_overrides[get_report_job_ledger] = lambda: _UnexpectedListLedger()
+    client = TestClient(app)
+    headers = _recovery_headers()
+    if denial == "wrong_caller":
+        headers["X-Caller-Application"] = "lotus-workbench"
+    else:
+        headers.pop("X-Capabilities")
+    try:
+        response = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query("idea-report-materialization-denied"),
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "idea_materialization_recovery_forbidden"
+
+
+def test_idea_evidence_materialization_recovery_openapi_is_exact_and_read_only() -> None:
+    operation = app.openapi()["paths"]["/reports/idea-evidence-packs/materializations"]["get"]
+    query_parameters = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "query"
+    }
+
+    assert set(query_parameters) == {
+        "idempotencyKey",
+        "reportEvidencePackId",
+        "conversionIntentId",
+        "candidateId",
+        "evidencePacketId",
+        "evidenceContentFingerprint",
+        "portfolioId",
+    }
+    assert all(parameter["required"] for parameter in query_parameters.values())
+    assert {"200", "403", "404", "409", "422"} <= set(operation["responses"])
+    assert "requestBody" not in operation
+
+
+def test_idea_evidence_materialization_rejects_non_idea_caller_before_side_effects(
+    tmp_path,
+) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    intake_ledger = IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: intake_ledger
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _UnexpectedCaptureService()
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    headers = _headers("idea-report-materialization-wrong-caller")
+    headers["X-Caller-Application"] = "lotus-workbench"
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=_materialization_payload(),
+            headers=headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "idea_materialization_forbidden"
+    assert intake_ledger.snapshot() == {}
+    assert ledger.list_jobs(filters=ReportJobListFilters(limit=2)) == []
+
+
 def test_idea_evidence_materialization_records_archive_failure_without_retry(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
@@ -668,6 +864,25 @@ def _headers(idempotency_key: str) -> dict[str, str]:
     }
 
 
+def _recovery_headers() -> dict[str, str]:
+    headers = _headers("unused-for-read")
+    headers.pop("Idempotency-Key")
+    headers["X-Capabilities"] = "report.idea-materialization.recover"
+    return headers
+
+
+def _recovery_query(idempotency_key: str) -> dict[str, str]:
+    return {
+        "idempotencyKey": idempotency_key,
+        "reportEvidencePackId": "irep_001",
+        "conversionIntentId": "icnv_001",
+        "candidateId": "icand_001",
+        "evidencePacketId": "ievp_001",
+        "evidenceContentFingerprint": "sha256:idea-evidence-content",
+        "portfolioId": "PB_SG_GLOBAL_BAL_001",
+    }
+
+
 class _IdeaEvidenceCaptureService:
     def __init__(self, ledger: ReportJobLedger, lineage_store: ReportInputSnapshotStore) -> None:
         self._ledger = ledger
@@ -790,3 +1005,8 @@ class _UnexpectedRenderClient:
 class _MissingKeyReportJobLedger:
     def create_proof_pack_report_job(self, **kwargs):
         raise MissingIdempotencyKeyError("missing idempotency key")
+
+
+class _UnexpectedListLedger:
+    def list_jobs(self, **kwargs):
+        raise AssertionError(f"Unauthorized recovery must not query the repository: {kwargs}")

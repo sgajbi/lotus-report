@@ -10,11 +10,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Iterator, Mapping
 
+from app.idea_evidence_intake.materialization_contract import (
+    IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION,
+)
 from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
 )
+from app.idea_evidence_intake.recovery import recovery_identity_from_request
 from app.idea_evidence_intake.retention_policy import IdeaEvidenceRetentionPolicy
 from app.reporting_jobs.models import ProofPackReportJobRequest, ReportCallerContext
 
@@ -32,24 +36,6 @@ REPORT_IDEA_EVIDENCE_INTAKE_EVIDENCE_REFS = (
     "src/app/routers/idea_evidence_intake.py",
     "tests/unit/test_idea_evidence_intake_service.py",
     "tests/integration/test_idea_evidence_intake_api.py",
-)
-
-IDEA_EVIDENCE_MATERIALIZATION_ROUTE = "POST /reports/idea-evidence-packs/materializations"
-IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS = (
-    "POST /reports/idea-evidence-packs/materializations",
-    "contracts/idea-evidence-materialization/"
-    "lotus-report-idea-evidence-pack-materialization.v1.json",
-    "src/app/idea_evidence_intake/service.py",
-    "src/app/routers/idea_evidence_intake.py",
-    "src/app/reporting_lineage/capture_service.py",
-    "src/app/reporting_render/package_builder.py",
-    "tests/unit/test_idea_evidence_materialization_contract.py",
-    "tests/unit/test_idea_evidence_intake_service.py",
-    "tests/integration/test_idea_evidence_intake_api.py",
-)
-IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS = (
-    "client_publication_authority_blocked",
-    "supported_feature_promotion_missing",
 )
 
 
@@ -355,6 +341,11 @@ def build_proof_pack_report_job_request_from_idea_evidence(
         "client_publication_authority_granted": False,
     }
     options = dict(request.options)
+    # Reserved, server-derived identity used for read-only lost-response recovery.
+    # A caller-supplied value under this key is deliberately replaced.
+    options[IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION] = recovery_identity_from_request(
+        request
+    ).model_dump(mode="json")
     if retention_policy is not None:
         options["retention_policy"] = {
             "policy_ref": retention_policy.policy_ref,

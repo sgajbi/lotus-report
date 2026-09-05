@@ -5,15 +5,22 @@ from pathlib import Path
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.config import settings
 from app.idea_evidence_intake.models import (
+    IdeaEvidenceMaterializationRecoveryIdentity,
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackIntakeResponse,
     IdeaEvidencePackMaterializationRequest,
     IdeaEvidencePackMaterializationResponse,
-    IdeaEvidenceReportPackageIdentity,
+)
+from app.idea_evidence_intake.recovery import (
+    IdeaMaterializationIdentityConflictError,
+    IdeaMaterializationNotFoundError,
+    materialization_response,
+    recover_idea_materialization,
+    recovery_identity_from_request,
 )
 from app.idea_evidence_intake.retention_policy import (
     IdeaEvidenceRetentionPolicy,
@@ -22,8 +29,6 @@ from app.idea_evidence_intake.retention_policy import (
     RetentionPolicyError,
 )
 from app.idea_evidence_intake.service import (
-    IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS,
-    IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS,
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
     build_proof_pack_report_job_request_from_idea_evidence,
@@ -214,6 +219,14 @@ async def materialize_idea_evidence_pack(
         correlation_id=correlation_id,
         trace_id=trace_id,
     )
+    if caller_context.caller_application != "lotus-idea":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "idea_materialization_forbidden",
+                "message": "Only the admitted lotus-idea service may materialize Idea evidence.",
+            },
+        )
     if not idempotency_key or not idempotency_key.strip():
         record_report_operation(
             operation="report_job_submission",
@@ -303,31 +316,160 @@ async def materialize_idea_evidence_pack(
     )
 
 
+@router.get(
+    "/materializations",
+    response_model=IdeaEvidencePackMaterializationResponse,
+    summary="Recover one exact lotus-idea materialization receipt",
+    description=(
+        "Returns the current Report-owned receipt for one tenant-scoped idempotent Idea "
+        "materialization after an uncertain response. Every Idea and portfolio identity is "
+        "matched before a receipt is returned. This read never creates or retries a report job."
+    ),
+    responses={
+        403: {"description": "The caller is not the admitted lotus-idea recovery consumer."},
+        404: {"description": "No materialization exists in the caller's tenant scope."},
+        409: {"description": "Stored and expected materialization identity do not match."},
+        422: {"description": "The required exact recovery identity is missing or malformed."},
+    },
+)
+async def recover_idea_evidence_pack_materialization(
+    idempotency_key: Annotated[
+        str,
+        Query(
+            alias="idempotencyKey",
+            min_length=1,
+            description="Original materialization command idempotency key.",
+            examples=["idea-report-materialization-001"],
+        ),
+    ],
+    report_evidence_pack_id: Annotated[
+        str,
+        Query(
+            alias="reportEvidencePackId",
+            min_length=3,
+            description="Exact lotus-idea report evidence-pack identifier.",
+            examples=["irep_001"],
+        ),
+    ],
+    conversion_intent_id: Annotated[
+        str,
+        Query(
+            alias="conversionIntentId",
+            min_length=3,
+            description="Exact governed conversion-intent identifier.",
+            examples=["icnv_001"],
+        ),
+    ],
+    candidate_id: Annotated[
+        str,
+        Query(
+            alias="candidateId",
+            min_length=3,
+            description="Exact reviewed opportunity-candidate identifier.",
+            examples=["icand_001"],
+        ),
+    ],
+    evidence_packet_id: Annotated[
+        str,
+        Query(
+            alias="evidencePacketId",
+            min_length=3,
+            description="Exact reviewed evidence-packet identifier.",
+            examples=["ievp_001"],
+        ),
+    ],
+    evidence_content_fingerprint: Annotated[
+        str,
+        Query(
+            alias="evidenceContentFingerprint",
+            pattern=r"^sha256:[a-zA-Z0-9_.:-]+$",
+            description="Exact source evidence content fingerprint.",
+            examples=["sha256:idea-evidence-content"],
+        ),
+    ],
+    portfolio_id: Annotated[
+        str,
+        Query(
+            alias="portfolioId",
+            min_length=3,
+            description="Exact portfolio scope accepted with the Report request.",
+            examples=["PB_SG_GLOBAL_BAL_001"],
+        ),
+    ],
+    ledger: ReportJobLedger = Depends(get_report_job_ledger),
+    actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
+    caller_application: Annotated[str | None, Header(alias="X-Caller-Application")] = None,
+    tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
+    region: Annotated[str | None, Header(alias="X-Region")] = None,
+    booking_center_code: Annotated[str | None, Header(alias="X-Booking-Center-Code")] = None,
+    role: Annotated[str | None, Header(alias="X-Role")] = None,
+    correlation_id: Annotated[str | None, Header(alias="X-Correlation-ID")] = None,
+    trace_id: Annotated[str | None, Header(alias="X-Trace-ID")] = None,
+    capabilities: Annotated[str | None, Header(alias="X-Capabilities")] = None,
+) -> IdeaEvidencePackMaterializationResponse:
+    caller_context = caller_context_from_headers(
+        triggered_by=actor_id,
+        caller_application=caller_application,
+        tenant_id=tenant_id,
+        region=region,
+        booking_center_code=booking_center_code,
+        role=role,
+        correlation_id=correlation_id,
+        trace_id=trace_id,
+    )
+    capability_set = {item.strip() for item in (capabilities or "").split(",") if item.strip()}
+    if (
+        caller_context.caller_application != "lotus-idea"
+        or "report.idea-materialization.recover" not in capability_set
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "idea_materialization_recovery_forbidden",
+                "message": "The caller is not authorized to recover Idea materializations.",
+            },
+        )
+    expected_identity = IdeaEvidenceMaterializationRecoveryIdentity(
+        report_evidence_pack_id=report_evidence_pack_id,
+        conversion_intent_id=conversion_intent_id,
+        candidate_id=candidate_id,
+        evidence_packet_id=evidence_packet_id,
+        evidence_content_fingerprint=evidence_content_fingerprint,
+        portfolio_id=portfolio_id,
+    )
+    try:
+        return recover_idea_materialization(
+            ledger=ledger,
+            tenant_id=caller_context.tenant_id,
+            idempotency_key=idempotency_key,
+            expected_identity=expected_identity,
+        )
+    except IdeaMaterializationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "idea_materialization_not_found",
+                "message": "No Idea materialization exists in the caller's tenant scope.",
+            },
+        ) from exc
+    except IdeaMaterializationIdentityConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "idea_materialization_identity_conflict",
+                "message": "The stored Idea materialization identity is inconsistent.",
+            },
+        ) from exc
+
+
 def _materialization_response(
     *,
     record: ReportJobLedgerRecord,
     request: IdeaEvidencePackMaterializationRequest,
     idempotency_key: str,
 ) -> IdeaEvidencePackMaterializationResponse:
-    evidence_pack = request.idea_evidence_pack
-    return IdeaEvidencePackMaterializationResponse(
-        report_request_id=record.request_id,
-        report_job_id=record.job_id,
-        status=record.status,
-        materialization_status=record.status,
-        status_url=f"/reports/jobs/{record.job_id}",
+    return materialization_response(
+        record=record,
+        identity=recovery_identity_from_request(request),
         idempotency_key=idempotency_key,
-        report_package_identity=IdeaEvidenceReportPackageIdentity(
-            report_evidence_pack_id=evidence_pack.report_evidence_pack_id,
-            conversion_intent_id=evidence_pack.conversion_intent_id,
-            candidate_id=evidence_pack.candidate_id,
-            evidence_packet_id=evidence_pack.evidence_packet_id,
-            evidence_content_fingerprint=evidence_pack.evidence_content_fingerprint,
-        ),
-        creates_rendered_output=record.render_job_id is not None,
-        creates_archive_record=record.archive_document_id is not None,
-        remaining_blockers=IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS,
-        evidence_refs=IDEA_EVIDENCE_MATERIALIZATION_EVIDENCE_REFS,
-        render_job_id=record.render_job_id,
-        archive_document_id=record.archive_document_id,
     )
