@@ -119,6 +119,30 @@ def resolve_job_accepted_contract(
 SERVER_DERIVED_REQUEST_OPTION_KEYS = frozenset({"idea_materialization_recovery_identity"})
 
 
+def client_identity_hash_from_record(record: "ReportJobLedgerRecord") -> str:
+    """The CLIENT identity of a stored request, recomputed from its own
+    persisted fields with every server-derived option stripped - the
+    evolution-proof comparison basis for records hashed under any earlier
+    enrichment policy."""
+
+    options = {
+        key: value
+        for key, value in record.options.items()
+        if key not in SERVER_DERIVED_REQUEST_OPTION_KEYS
+    }
+    hash_payload = {
+        "report_type": record.report_type,
+        "portfolio_scope": record.portfolio_scope,
+        "as_of_date": record.as_of_date.isoformat(),
+        "requested_output_formats": sorted(record.requested_output_formats),
+        "reporting_currency": record.reporting_currency,
+        "options": options,
+        "tenant_id": record.tenant_id,
+        "region": record.region,
+    }
+    return hashlib.sha256(canonical_json(hash_payload).encode("utf-8")).hexdigest()
+
+
 def compute_request_hash(
     *,
     report_type: str,
@@ -651,23 +675,22 @@ class ReportJobLedger:
                     (normalized_key,),
                 ).fetchone()
                 if existing:
-                    stored_hash = existing["request_hash"]
-                    if stored_hash != request_hash and stored_hash != compute_request_hash(
-                        report_type=report_type,
-                        request=request,
-                        caller_context=caller_context,
-                        # Transitional acceptance: records created while the
-                        # server-derived recovery identity participated in
-                        # the hash stored the enriched form. The enrichment
-                        # is deterministic from the request, so an identical
-                        # retry recomputes it exactly; a changed business
-                        # intent matches NEITHER form and still conflicts.
-                        include_server_derived_options=True,
-                    ):
+                    record = self._load_by_request_id(connection, existing["report_request_id"])
+                    if existing[
+                        "request_hash"
+                    ] != request_hash and request_hash != client_identity_hash_from_record(record):
+                        # Transitional acceptance: a record stored while ANY
+                        # deployment's server-derived enrichment participated
+                        # in the hash is compared by recomputing the CLIENT
+                        # identity from its own persisted request - no
+                        # dependency on reproducing historical enrichment, so
+                        # the contract survives enrichment schema changes and
+                        # removals alike. A changed business intent matches
+                        # neither the stored hash nor the persisted client
+                        # identity and still conflicts.
                         raise IdempotencyConflictError(
                             "idempotency_key_reused_with_different_request"
                         )
-                    record = self._load_by_request_id(connection, existing["report_request_id"])
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record

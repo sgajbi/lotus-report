@@ -12,6 +12,7 @@ from app.idea_evidence_intake.models import (
     IdeaEvidencePackIntakeRequest,
     IdeaEvidencePackMaterializationRequest,
 )
+from app.idea_evidence_intake.recovery import recovery_identity_from_request
 from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
@@ -291,3 +292,34 @@ def _request(report_evidence_pack_id: str = "irep_001") -> IdeaEvidencePackIntak
         retention_policy_ref="generated-report-standard",
         requested_at_utc=datetime(2026, 6, 24, 8, 15, tzinfo=UTC),
     )
+
+
+def test_a_client_supplied_reserved_recovery_key_never_persists_as_server_truth() -> None:
+    """Reserved namespace means reserved: a caller-supplied value under the
+    server-derived recovery-identity key is unconditionally REPLACED with
+    the server derivation at acceptance - a forged value never persists as
+    server truth (and the recovery path additionally fail-closes on any
+    stored identity inconsistent with the record's own proof-pack facts)."""
+
+    request = IdeaEvidencePackMaterializationRequest(
+        idea_evidence_pack=_request(),
+        portfolio_id="PB_SG_GLOBAL_BAL_001",
+        mandate_id="MANDATE_PB_SG_GLOBAL_BAL_001",
+        as_of_date="2026-06-24",
+        requested_output_formats=["pdf"],
+        reporting_currency="USD",
+        options={
+            "retention_policy_id": "generated-report-standard",
+            IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION: {
+                "forged": "by-client",
+                "portfolio_id": "PB_ATTACKER_001",
+            },
+        },
+    )
+
+    report_job_request = build_proof_pack_report_job_request_from_idea_evidence(request)
+
+    stored = report_job_request.options[IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION]
+    assert stored != {"forged": "by-client", "portfolio_id": "PB_ATTACKER_001"}
+    assert stored == recovery_identity_from_request(request).model_dump(mode="json")
+    assert stored["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
