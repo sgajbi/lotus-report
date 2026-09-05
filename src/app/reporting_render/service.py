@@ -304,6 +304,11 @@ class PortfolioReviewRenderOrchestrationService:
         except the artifact bytes, which Report never consumes. A verified
         404 means the original submission never landed, so submitting the
         current package is safe: no prior package exists to conflict with.
+        That reading RELIES on an owner fact: lotus-render's store has no
+        purge or retention surface, so a 404 today genuinely means
+        never-submitted, not expired. Render records this as a versioned
+        consumer contract - a future retention feature must coordinate
+        with Report before 404 can mean anything else.
         Anything else - the render still in progress, or an unanswerable
         lookup - fails RETRYABLE without a blind resubmission, because a
         blind resubmission under a shape-evolved builder is exactly the
