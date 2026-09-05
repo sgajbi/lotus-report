@@ -1494,3 +1494,41 @@ def test_list_jobs_applies_predicates_before_the_limit(tmp_path):
     )
 
     assert [record.job_id for record in records] == [early.job_id]
+
+
+def test_list_jobs_applies_creation_bounds_before_the_limit(tmp_path):
+    """Same-tenant jobs OUTSIDE the created window must not consume the
+    limit and starve eligible rows inside it."""
+
+    from datetime import UTC, datetime, timedelta
+
+    from app.reporting_jobs.models import ReportJobListFilters
+
+    ledger = ReportJobLedger(tmp_path / "created-window.sqlite3")
+    target = ledger.create_portfolio_review_job(
+        request=_request(),
+        caller_context=_caller(),
+        idempotency_key="idem-window-target",
+    )
+    for index in range(5):
+        ledger.create_portfolio_review_job(
+            request=_request(),
+            caller_context=_caller(),
+            idempotency_key=f"idem-window-noise-{index}",
+        )
+
+    # Window ends AT the target's creation instant: only the target is
+    # inside; the five newer noise rows are outside. A Python-only bound
+    # would let the noise consume the SQL limit and return nothing.
+    records = ledger.list_jobs(
+        filters=ReportJobListFilters.model_validate(
+            {
+                "tenant_id": "tenant-sg",
+                "created_from": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                "created_to": target.created_at.isoformat(),
+                "limit": 2,
+            }
+        )
+    )
+
+    assert [record.job_id for record in records] == [target.job_id]
