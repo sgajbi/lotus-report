@@ -66,6 +66,7 @@ class _Ledger:
     def __init__(self, items=None):
         self.items = [_work_item()] if items is None else items
         self.failed = []
+        self.deferred = []
         self.completed = []
         self.claimed = []
 
@@ -85,6 +86,10 @@ class _Ledger:
 
     def fail_work_item(self, **kwargs):
         self.failed.append(kwargs)
+        return _work_item(status="retry_pending")
+
+    def defer_work_item(self, **kwargs):
+        self.deferred.append(kwargs)
         return _work_item(status="retry_pending")
 
 
@@ -145,7 +150,12 @@ async def test_worker_retries_unexpected_execution_failure_without_claiming_job_
 
 
 @pytest.mark.asyncio
-async def test_worker_retries_non_terminal_pipeline_state():
+async def test_worker_defers_a_job_waiting_on_its_render():
+    """Waiting is not failure: a job still at rendering after a clean pass
+    means owner-side work in progress - the item DEFERS with the failure
+    budget untouched, and the eventual outcome is adopted under the same
+    render id (report#303)."""
+
     ledger = _Ledger()
     result = await ReportJobWorker(
         work_ledger=ledger,
@@ -154,6 +164,24 @@ async def test_worker_retries_non_terminal_pipeline_state():
 
     assert result.retry_pending_count == 1
     assert result.outcomes[0].job_status == "rendering"
+    assert result.outcomes[0].failure_category == "waiting_on_render"
+    assert ledger.failed == []
+    assert ledger.deferred[0]["wait_reason"] == "waiting_on_render"
+
+
+@pytest.mark.asyncio
+async def test_worker_fails_other_non_terminal_states_against_the_budget():
+    """Only owner-side waiting defers; any other incomplete state is a real
+    failure and consumes the bounded budget."""
+
+    ledger = _Ledger()
+    result = await ReportJobWorker(
+        work_ledger=ledger,
+        execution_service=_Executor(result=_job(status="collecting_data")),
+    ).run_once(worker_id="worker-1", max_items=5, lease_seconds=60)
+
+    assert result.retry_pending_count == 1
+    assert ledger.deferred == []
     assert ledger.failed[0]["error_category"] == "report_job_worker_incomplete"
 
 

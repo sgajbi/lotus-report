@@ -2653,11 +2653,18 @@ class _RenderClientHoldsNoJob:
 
 
 class _RenderClientMustNotSubmit:
-    def __init__(self, lookup_status, lookup_payload):
+    def __init__(self, lookup_status, lookup_payload, diagnostics=None):
         self._lookup = (lookup_status, lookup_payload)
+        self._diagnostics = diagnostics or (
+            200,
+            {"recovery_action": "wait_for_completion", "retryable": True},
+        )
 
     async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
         return self._lookup
+
+    async def get_render_diagnostics(self, render_job_id, correlation_id=None, trace_id=None):
+        return self._diagnostics
 
     async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
         raise AssertionError("an unresolved persisted render must never be blindly resubmitted")

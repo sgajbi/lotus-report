@@ -10,9 +10,13 @@ from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
 from app.reporting_metrics import record_report_operation
-from app.reporting_render.document_reference import derive_archive_request_id
+from app.reporting_render.document_reference import (
+    derive_archive_request_id,
+    mint_document_reference,
+)
 from app.reporting_render.package_builder import (
     _build_render_package,
+    _job_template_identity,
     _optional_int,
     _optional_str,
 )
@@ -92,6 +96,36 @@ class RenderJobLedger(Protocol):
     ) -> ReportJobLedgerRecord: ...
 
 
+class _WaitingOnRender:
+    """Sentinel type: the persisted render is owner-side work in progress.
+    The job stays NONTERMINAL and the work queue DEFERS - waiting is not
+    failure, and the failure budget is scoped to real failures only
+    (report#303)."""
+
+
+WAITING_ON_RENDER = _WaitingOnRender()
+
+#: The report#303 mapping table: Render's owner recovery vocabulary ->
+#: (report failure_category, report retry_eligible). Two retryable
+#: meanings are reconciled EXPLICITLY here: Render's retryable=True on
+#: escalate_template_support means "retry can help AFTER remediation";
+#: the queue's retry_eligible means "blind retry helps" - the stricter
+#: queue semantic is a deliberate choice, never a silent shadowing.
+#: wait_for_completion and read_artifact_metadata are not failures at all
+#: (WAIT - the next resolution adopts); an unmapped value fails closed.
+RENDER_RECOVERY_ACTION_MAP: dict[str, tuple[str, bool]] = {
+    "resubmit_identical_package_or_escalate_runtime": ("render_execution_failed", True),
+    "fix_upstream_render_package": ("render_validation_failed", False),
+    "fix_template_registry_or_package": ("render_validation_failed", False),
+    "escalate_render_runtime": ("render_execution_failed", False),
+    "escalate_template_support": ("render_execution_failed", False),
+    "reduce_document_size_or_raise_envelope": ("render_validation_failed", False),
+    "escalate_reporting_platform": ("render_execution_failed", False),
+}
+
+RENDER_RECOVERY_WAIT_ACTIONS = frozenset({"wait_for_completion", "read_artifact_metadata"})
+
+
 class PortfolioReviewRenderOrchestrationService:
     def __init__(
         self,
@@ -116,34 +150,29 @@ class PortfolioReviewRenderOrchestrationService:
 
         snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
         render_job_id = job.render_job_id or f"rdr_{job.job_id}_pdf"
-        try:
-            payload = _build_render_package(
+        if job.status in {"rendering", "completed", "archiving"}:
+            # Resolution BEFORE any package recomposition: recovering an
+            # existing render must never depend on this deployment still
+            # being able to recompose the package - a completed v1 job
+            # adopts its owner outcome even after the composer moved to v2.
+            recovered = await self._recover_persisted_render(
                 job=job,
-                snapshot=snapshot.snapshot_payload,
+                snapshot=snapshot,
                 render_job_id=render_job_id,
-                # The durable record's identity - the payload does not carry
-                # it, and governed rendering fails closed without it.
-                snapshot_id=snapshot.snapshot_id,
-                report_revision_id=snapshot.report_revision_id,
+                started_at=started_at,
             )
-        except ValueError as exc:
-            failed_job = self._job_ledger.mark_failed(
-                job_id=job.job_id,
-                actor=job.triggered_by,
-                correlation_id=job.correlation_id,
-                trace_id=job.trace_id,
-                failure_category="render_validation_failed",
-                failure_message=str(exc),
-                retry_eligible=False,
+            if isinstance(recovered, ReportJobLedgerRecord):
+                return recovered
+            outcome = recovered
+        else:
+            built = self._build_package_or_fail(
+                job=job,
+                snapshot=snapshot,
+                render_job_id=render_job_id,
+                started_at=started_at,
             )
-            record_report_operation(
-                operation="render_handoff",
-                status=failed_job.status,
-                failure_category=failed_job.failure_category,
-                duration_seconds=perf_counter() - started_at,
-            )
-            return failed_job
-        if job.status == "data_ready":
+            if isinstance(built, ReportJobLedgerRecord):
+                return built
             self._job_ledger.mark_rendering(
                 job_id=job.job_id,
                 actor=job.triggered_by,
@@ -151,26 +180,34 @@ class PortfolioReviewRenderOrchestrationService:
                 trace_id=job.trace_id,
                 render_job_id=render_job_id,
                 output_format="pdf",
-                template_id=str(payload["template_id"]),
-                template_version=str(payload["template_version"]),
+                template_id=str(built["template_id"]),
+                template_version=str(built["template_version"]),
             )
-
-        outcome = await self._obtain_render_outcome(
-            job=job,
-            render_job_id=render_job_id,
-            payload=payload,
-            started_at=started_at,
-        )
-        if isinstance(outcome, ReportJobLedgerRecord):
-            return outcome
+            outcome = await self._render_client.submit_render_package(
+                built,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
         status_code, response_payload = outcome
+        # The identity every outcome is validated against comes from the
+        # JOB's persisted acceptance facts, never from a recomposed package.
+        template_id, template_version = _job_template_identity(job)
+        document_reference = mint_document_reference(
+            report_job_id=job.job_id,
+            snapshot_id=snapshot.snapshot_id,
+            template_id=template_id,
+            template_version=template_version,
+        )
         if status_code in {200, 201} and response_payload.get("status") == "rendered":
             # The template Render used must equal what Report ordered - the
             # persisted acceptance fact the document_reference binds. A
             # response stating a different (or no) template identity rendered
             # a document this job never ordered: fail closed, never record it
             # as this job's completion.
-            mismatch = _template_contract_mismatch(payload, response_payload)
+            mismatch = _template_contract_mismatch(
+                {"template_id": template_id, "template_version": template_version},
+                response_payload,
+            )
             if mismatch:
                 failed_job = self._job_ledger.mark_failed(
                     job_id=job.job_id,
@@ -197,8 +234,8 @@ class PortfolioReviewRenderOrchestrationService:
                     trace_id=job.trace_id,
                     render_job_id=str(response_payload.get("render_job_id") or render_job_id),
                     output_format="pdf",
-                    template_id=str(payload["template_id"]),
-                    template_version=str(payload["template_version"]),
+                    template_id=template_id,
+                    template_version=template_version,
                     template_publication=_optional_str(
                         response_payload.get("template_publication")
                     ),
@@ -214,7 +251,7 @@ class PortfolioReviewRenderOrchestrationService:
                 )
             archived = self._record_archive_outcome(
                 job=rendered,
-                package=payload,
+                document_reference=document_reference,
                 render_response=response_payload,
             )
             record_report_operation(
@@ -256,47 +293,99 @@ class PortfolioReviewRenderOrchestrationService:
         )
         return failed_job
 
-    async def _obtain_render_outcome(
+    async def _recover_persisted_render(
         self,
         *,
         job: ReportJobLedgerRecord,
+        snapshot: Any,
         render_job_id: str,
-        payload: dict[str, Any],
         started_at: float,
     ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
-        """One render outcome per call, obtained the deployment-safe way.
+        """One recovered outcome (or terminal record) for a resumed job.
 
-        A persisted render_job_id may already carry a package captured by
-        OLDER code: rebuild-and-resubmit would collide with Render's
-        create-or-get package-hash idempotency as a non-retryable conflict
-        even though nothing is wrong. So a resumed job resolves the
-        persisted render's outcome first, and only a fresh job submits
-        unconditionally (the repo invariant: uncertain outcomes resolve
-        before acting).
+        Waiting returns the job UNCHANGED - nonterminal by design, so the
+        queue defers without burning the failure budget and the eventual
+        outcome is adopted under the SAME render id. A verified 404 while
+        the ledger says rendering is the only path that composes and
+        submits - the unsupported-accepted-contract refusal runs there and
+        nowhere else during recovery.
         """
 
-        if job.status in {"rendering", "completed", "archiving"}:
-            return await self._resolve_persisted_render(
+        resolution = await self._resolve_persisted_render(
+            job=job,
+            render_job_id=render_job_id,
+            started_at=started_at,
+        )
+        if isinstance(resolution, _WaitingOnRender):
+            return job
+        if resolution is None:
+            built = self._build_package_or_fail(
                 job=job,
+                snapshot=snapshot,
                 render_job_id=render_job_id,
-                package=payload,
                 started_at=started_at,
             )
-        submitted: tuple[int, dict[str, Any]] = await self._render_client.submit_render_package(
-            payload,
-            correlation_id=job.correlation_id,
-            trace_id=job.trace_id,
-        )
-        return submitted
+            if isinstance(built, ReportJobLedgerRecord):
+                return built
+            submitted: tuple[int, dict[str, Any]] = await self._render_client.submit_render_package(
+                built,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+            return submitted
+        return resolution
+
+    def _build_package_or_fail(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        snapshot: Any,
+        render_job_id: str,
+        started_at: float,
+    ) -> dict[str, Any] | ReportJobLedgerRecord:
+        """Compose the render package for a genuinely NEW submission.
+
+        Composition - including the unsupported-accepted-contract refusal -
+        runs ONLY when a submission is actually needed; recovering an
+        existing render never recomposes.
+        """
+
+        try:
+            payload: dict[str, Any] = _build_render_package(
+                job=job,
+                snapshot=snapshot.snapshot_payload,
+                render_job_id=render_job_id,
+                # The durable record's identity - the payload does not carry
+                # it, and governed rendering fails closed without it.
+                snapshot_id=snapshot.snapshot_id,
+                report_revision_id=snapshot.report_revision_id,
+            )
+        except ValueError as exc:
+            failed_job = self._job_ledger.mark_failed(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                failure_category="render_validation_failed",
+                failure_message=str(exc),
+                retry_eligible=False,
+            )
+            record_report_operation(
+                operation="render_handoff",
+                status=failed_job.status,
+                failure_category=failed_job.failure_category,
+                duration_seconds=perf_counter() - started_at,
+            )
+            return failed_job
+        return payload
 
     async def _resolve_persisted_render(
         self,
         *,
         job: ReportJobLedgerRecord,
         render_job_id: str,
-        package: dict[str, Any],
         started_at: float,
-    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord:
+    ) -> tuple[int, dict[str, Any]] | ReportJobLedgerRecord | _WaitingOnRender | None:
         """Resolve a persisted render before any resubmission.
 
         A rendered outcome is ADOPTED verbatim - the status projection
@@ -305,12 +394,18 @@ class PortfolioReviewRenderOrchestrationService:
         with Render's own failure vocabulary mapped explicitly, so a
         transient engine failure stays retryable across a worker restart.
 
-        A render still in progress, or an unanswerable lookup, leaves the
-        report job NONTERMINAL: the work queue's retry policy re-enters
-        this resolution and adopts the outcome once terminal. Marking the
-        job failed here would be TERMINAL for the queue - only replay could
-        act, and replay mints a fresh render id while the original render
-        can still finish and archive: a duplicate-document path.
+        A render still in progress consults the OWNER's diagnostics
+        contract: wait_for_completion keeps the job NONTERMINAL (the queue
+        DEFERS without burning the failure budget - waiting is not
+        failure) and the eventual outcome is adopted under the SAME render
+        id; a stale or escalated posture maps through the explicit
+        report#303 table into a REAL failure. An unanswerable lookup waits:
+        marking the job failed would be terminal for the queue - only
+        replay could act, and replay mints a fresh render id while the
+        original can still finish and archive, a duplicate-document path.
+        Returns WAITING_ON_RENDER to wait, None to authorize a fresh
+        submission (verified 404 while the ledger says rendering), a
+        terminal record, or the adopted (status, payload) outcome.
 
         A verified 404 means the original submission never landed - safe
         to submit - but ONLY while the job's own ledger agrees nothing
@@ -340,21 +435,14 @@ class PortfolioReviewRenderOrchestrationService:
                     lookup_payload=lookup_payload,
                     started_at=started_at,
                 )
-            return self._leave_resolution_pending(
+            return await self._escalate_or_wait(
                 job=job,
+                render_job_id=render_job_id,
                 started_at=started_at,
-                reason="render_resolution_in_progress",
             )
         if lookup_status == 404:
             if job.status == "rendering":
-                submitted: tuple[
-                    int, dict[str, Any]
-                ] = await self._render_client.submit_render_package(
-                    package,
-                    correlation_id=job.correlation_id,
-                    trace_id=job.trace_id,
-                )
-                return submitted
+                return None
             return self._fail_completed_render_lost(job=job, started_at=started_at)
         return self._leave_resolution_pending(
             job=job,
@@ -362,16 +450,87 @@ class PortfolioReviewRenderOrchestrationService:
             reason="render_resolution_unavailable",
         )
 
+    async def _escalate_or_wait(
+        self,
+        *,
+        job: ReportJobLedgerRecord,
+        render_job_id: str,
+        started_at: float,
+    ) -> ReportJobLedgerRecord | _WaitingOnRender:
+        """The owner decides whether in-progress means wait or escalate.
+
+        Render's diagnostics contract states recovery_action against the
+        OWNER's staleness thresholds; the report#303 mapping table converts
+        the owner vocabulary into queue semantics, and an unmapped value
+        fails closed naming itself rather than guessing wait semantics.
+        An unanswerable diagnostics lookup waits - with no escalation
+        channel, not duplicating a document outranks failing fast.
+        """
+
+        diag_status, diag_payload = await self._render_client.get_render_diagnostics(
+            render_job_id,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+        )
+        if diag_status != 200:
+            return self._leave_resolution_pending(
+                job=job,
+                started_at=started_at,
+                reason="render_resolution_in_progress",
+            )
+        recovery_action = _optional_str(diag_payload.get("recovery_action")) or ""
+        if recovery_action in RENDER_RECOVERY_WAIT_ACTIONS:
+            return self._leave_resolution_pending(
+                job=job,
+                started_at=started_at,
+                reason="render_resolution_in_progress",
+            )
+        mapped = RENDER_RECOVERY_ACTION_MAP.get(recovery_action)
+        if mapped is None:
+            failure_category, retry_eligible = "render_execution_failed", False
+            failure_message = (
+                "lotus-render stated recovery action "
+                f"{recovery_action or 'absent'!r}, which this consumer does not "
+                "map; failing closed rather than guessing wait semantics."
+            )
+        else:
+            failure_category, retry_eligible = mapped
+            support_message = _optional_str(diag_payload.get("support_message"))
+            stale_state = _optional_str(diag_payload.get("stale_state"))
+            failure_message = (
+                f"lotus-render diagnostics escalated the persisted render: "
+                f"recovery_action={recovery_action}"
+                + (f", stale_state={stale_state}" if stale_state else "")
+                + (f". {support_message}" if support_message else ".")
+            )
+        failed_job = self._job_ledger.mark_failed(
+            job_id=job.job_id,
+            actor=job.triggered_by,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            failure_category=failure_category,
+            failure_message=failure_message,
+            retry_eligible=retry_eligible,
+        )
+        record_report_operation(
+            operation="render_handoff",
+            status=failed_job.status,
+            failure_category=failed_job.failure_category,
+            duration_seconds=perf_counter() - started_at,
+        )
+        return failed_job
+
     def _leave_resolution_pending(
         self,
         *,
         job: ReportJobLedgerRecord,
         started_at: float,
         reason: str,
-    ) -> ReportJobLedgerRecord:
-        """Nonterminal by design: the work queue retries the SAME job and
-        render id, so the eventual terminal outcome is adopted rather than
-        replayed under a fresh identity."""
+    ) -> _WaitingOnRender:
+        """Nonterminal by design: the work queue DEFERS the SAME job and
+        render id without burning the failure budget, so the eventual
+        terminal outcome is adopted rather than replayed under a fresh
+        identity."""
 
         record_report_operation(
             operation="render_handoff",
@@ -379,7 +538,7 @@ class PortfolioReviewRenderOrchestrationService:
             failure_category=reason,
             duration_seconds=perf_counter() - started_at,
         )
-        return job
+        return WAITING_ON_RENDER
 
     #: Render-owned failure categories that a live submission would have
     #: surfaced as retryable transport/engine trouble; everything else in
@@ -478,7 +637,7 @@ class PortfolioReviewRenderOrchestrationService:
         self,
         *,
         job: ReportJobLedgerRecord,
-        package: dict[str, Any],
+        document_reference: str,
         render_response: dict[str, Any],
     ) -> ReportJobLedgerRecord:
         """The render#120 cutover: lotus-render is the ONE archive transmit
@@ -501,8 +660,7 @@ class PortfolioReviewRenderOrchestrationService:
         # cross-repo parity test; it is deleted once the fallback is dead.
         archive_request_id = _optional_str(render_response.get("archive_request_id"))
         if archive_request_id is None and artifact_sha256:
-            reference = str(package["render_context"]["document_reference"])
-            archive_request_id = derive_archive_request_id(reference, artifact_sha256)
+            archive_request_id = derive_archive_request_id(document_reference, artifact_sha256)
         if archive_state == "archived_verified" and document_id and archive_request_id:
             if job.status == "completed":
                 self._job_ledger.mark_archiving(

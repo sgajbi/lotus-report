@@ -60,6 +60,28 @@ class RenderClient:
         )
         return result
 
+    async def get_render_diagnostics(
+        self,
+        render_job_id: str,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """GET /renders/{render_job_id}/diagnostics - Render's stale-work
+        escalation channel (report#303): recovery_action, retryable,
+        stale_state, and a support message, computed against the OWNER's
+        staleness thresholds. Report maps the owner vocabulary through an
+        explicit table and fails closed on unmapped values."""
+
+        result: tuple[int, dict[str, Any]] = await get_with_retry(
+            url=f"{self._base_url}/renders/{render_job_id}/diagnostics",
+            timeout_seconds=self._timeout_seconds,
+            params={},
+            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+        return result
+
     async def get_template_projection(
         self,
         correlation_id: str | None = None,

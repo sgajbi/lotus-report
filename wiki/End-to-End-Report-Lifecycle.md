@@ -59,6 +59,7 @@ and runtime identity - evidence is never destroyed by a failure.
 
 | Failure mode | Category | Retry posture | Recovery |
 | --- | --- | --- | --- |
+| Render still in progress at resume (owner diagnostics say wait) | none - the job stays NONTERMINAL | Work queue DEFERS without burning the failure budget | The eventual outcome is ADOPTED under the same render id; stale-work escalation is Render's diagnostics contract (report#303 mapping table), never a local poll count |
 | Source data unavailable / upstream error | `upstream_data_failed` / `timeout` | Retryable | Replay after upstream recovers |
 | Requested inputs unsupported | `validation_failed` | Not retryable | Corrected new order |
 | Render rejects the package (422) | `render_validation_failed` | Not retryable | Fix at source, new order |

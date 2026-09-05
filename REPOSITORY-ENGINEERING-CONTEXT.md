@@ -156,10 +156,18 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    and dispatch), schedules state only output formats, reporting
    currency, and composition options, and the accepted document contract is the one resolved record
    per job.
+   Recovery is deployment-safe end to end (report#303 closed): a resumed
+   render resolves the persisted render BEFORE any package recomposition
+   (a completed v1 job adopts its owner outcome across a composer
+   upgrade); waiting on an in-progress render is NOT failure - the work
+   queue defers without burning the bounded failure budget and the
+   eventual outcome is adopted under the same render id; stale-work
+   escalation is Render's diagnostics contract through an explicit
+   (recovery_action -> category, retry_eligible) mapping that fails
+   closed on unmapped values.
    Remaining, in order: revision identity on portfolio-memory events
    (blocked on an event-identity stability treatment: the payload hash IS
-   the event identity); trust-state separation incl. source-cut coherence;
-   snapshot lifecycle metadata; the 17-point integrated proof.
+   the event identity); the 17-point integrated proof.
    Design decisions (hash boundary, no circular identity, historical
    mapping) are recorded in the 2026-09-05 audit, on #283, and in
    `src/app/reporting_identity/identity.py`'s module docstring.

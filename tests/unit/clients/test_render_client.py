@@ -236,3 +236,34 @@ async def test_get_render_status_resolves_the_persisted_render_by_id(monkeypatch
     assert captured["max_retries"] == 4
     assert captured["backoff_seconds"] == 0.75
     assert captured["headers"]["X-Correlation-ID"] == "corr-123"
+
+
+@pytest.mark.asyncio
+async def test_get_render_diagnostics_reads_the_owner_recovery_contract(monkeypatch):
+    """The stale-work escalation channel (report#303): GET
+    /renders/{id}/diagnostics with the resilient GET idiom."""
+
+    captured: dict[str, object] = {}
+
+    async def _fake_get_with_retry(**kwargs):
+        captured.update(kwargs)
+        return 200, {"recovery_action": "wait_for_completion", "retryable": True}
+
+    monkeypatch.setattr(render_client_module, "get_with_retry", _fake_get_with_retry)
+    client = RenderClient(
+        base_url="http://render.dev.lotus/",
+        timeout_seconds=12.5,
+        max_retries=4,
+        retry_backoff_seconds=0.75,
+    )
+
+    status_code, payload = await client.get_render_diagnostics(
+        "rdr_123",
+        correlation_id="corr-123",
+        trace_id="0123456789abcdef0123456789abcdef",
+    )
+
+    assert status_code == 200
+    assert payload["recovery_action"] == "wait_for_completion"
+    assert captured["url"] == "http://render.dev.lotus/renders/rdr_123/diagnostics"
+    assert captured["headers"]["X-Correlation-ID"] == "corr-123"
