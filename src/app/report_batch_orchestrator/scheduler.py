@@ -71,9 +71,6 @@ class BatchScheduleDefinition(BaseModel):
     reporting_currency: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
     max_batch_size: int = Field(250, ge=1)
-    template_id: str = "portfolio-review"
-    template_version: str = "v1"
-    render_package_version: str = "portfolio-review.v1"
     explicit_period_start: date | None = None
     explicit_period_end: date | None = None
 
@@ -187,21 +184,6 @@ class BatchScheduleSummaryResponse(BaseModel):
         ge=1,
         description="Maximum materialized item count allowed for this schedule.",
         examples=[250],
-    )
-    template_id: str = Field(
-        ...,
-        description="Report template identifier used by the scheduled batch.",
-        examples=["portfolio-review"],
-    )
-    template_version: str = Field(
-        ...,
-        description="Report template version used by the scheduled batch.",
-        examples=["v1"],
-    )
-    render_package_version: str = Field(
-        ...,
-        description="Render package contract version used by the scheduled batch.",
-        examples=["portfolio-review.v1"],
     )
     manifest_source: str | None = Field(
         default=None,
@@ -390,9 +372,6 @@ BATCH_SCHEDULE_LIST_RESPONSE_EXAMPLE: dict[str, Any] = {
             "requested_output_formats": ["pdf"],
             "reporting_currency": "USD",
             "max_batch_size": 250,
-            "template_id": "portfolio-review",
-            "template_version": "v1",
-            "render_package_version": "portfolio-review.v1",
             "manifest_source": None,
             "manifest_version": None,
             "manifest_hash": None,
@@ -857,9 +836,6 @@ def _schedule_summary(schedule: BatchScheduleDefinition) -> BatchScheduleSummary
         requested_output_formats=schedule.requested_output_formats,
         reporting_currency=schedule.reporting_currency,
         max_batch_size=schedule.max_batch_size,
-        template_id=schedule.template_id,
-        template_version=schedule.template_version,
-        render_package_version=schedule.render_package_version,
         manifest_source=schedule.manifest_source,
         manifest_version=schedule.manifest_version,
         manifest_hash=_manifest_hash(schedule)
@@ -875,9 +851,6 @@ def _cycle_request(schedule: BatchScheduleDefinition) -> BatchCycleRequest:
         as_of_date=schedule.as_of_date,
         explicit_period_start=schedule.explicit_period_start,
         explicit_period_end=schedule.explicit_period_end,
-        template_id=schedule.template_id,
-        template_version=schedule.template_version,
-        render_package_version=schedule.render_package_version,
     )
 
 

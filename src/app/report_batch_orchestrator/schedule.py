@@ -50,9 +50,6 @@ def materialize_cycle(request: BatchCycleRequest) -> BatchCycle:
         period_start=period_start,
         period_end=period_end,
         as_of_date=request.as_of_date,
-        template_id=request.template_id,
-        template_version=request.template_version,
-        render_package_version=request.render_package_version,
         idempotency_scope=_cycle_scope(
             frequency=request.frequency,
             period_start=period_start,
