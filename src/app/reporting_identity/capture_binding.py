@@ -107,6 +107,12 @@ def source_revision_vector_for_capture(
     advisor_revision = _revision_from_advisor_commentary(snapshot_payload)
     if advisor_revision is not None:
         stated.append(advisor_revision)
+    bounded_revision = _revision_from_bounded_input(
+        snapshot_payload=snapshot_payload,
+        upstream_services=upstream_services,
+    )
+    if bounded_revision is not None:
+        stated.append(bounded_revision)
 
     deduped: dict[str, SourceRevision] = {}
     for revision in stated:
@@ -168,10 +174,60 @@ def _revision_from_advisor_commentary(snapshot_payload: dict[str, Any]) -> Sourc
     package = snapshot_payload.get("advisor_commentary_package")
     if not isinstance(package, dict) or package.get("status") != "included":
         return None
-    run_id = _stated_str(package.get("advisor_brief_run_id"))
+    # The INCLUDED package states its identity as run_id + content_hash (the
+    # accepted-output contract); advisor_brief_run_id exists only on the
+    # unavailable shape, which carries no accepted content to evidence.
+    run_id = _stated_str(package.get("run_id"))
     if run_id is None:
         return None
-    return SourceRevision(source_service="lotus-ai", calculation_run_id=run_id)
+    fields: dict[str, str] = {"calculation_run_id": run_id}
+    content_hash = _stated_str(package.get("content_hash"))
+    if content_hash is not None:
+        fields["content_hash"] = content_hash
+    return SourceRevision(source_service="lotus-ai", **fields)
+
+
+#: Keys under which a bounded report-input object (proof pack, outcome
+#: review, rebalance wave) states the identity of the served artifact.
+_BOUNDED_INPUT_ID_KEYS = ("proof_pack_id", "outcome_review_id", "wave_id")
+
+
+def _revision_from_bounded_input(
+    *,
+    snapshot_payload: dict[str, Any],
+    upstream_services: tuple[str, ...],
+) -> SourceRevision | None:
+    """Stated revision evidence of a bounded report-input capture.
+
+    A bounded input IS one source-owned object served whole: it states its
+    own content_hash and artifact id at the top level. The revision is
+    attributed to the single capture-validated upstream participant - the
+    payload's own source claims never decide attribution, so a spoofed
+    evidence_ref cannot relabel the source.
+    """
+
+    content_hash = _stated_str(snapshot_payload.get("content_hash"))
+    if content_hash is None:
+        return None
+    participants = set(upstream_services)
+    if len(participants) != 1:
+        return None
+    fields: dict[str, str] = {"content_hash": content_hash}
+    for id_key in _BOUNDED_INPUT_ID_KEYS:
+        artifact_id = _stated_str(snapshot_payload.get(id_key))
+        if artifact_id is not None:
+            fields["source_snapshot_id"] = artifact_id
+            break
+    evidence_ref = snapshot_payload.get("evidence_ref")
+    if isinstance(evidence_ref, dict):
+        source_type = _stated_str(evidence_ref.get("source_type"))
+        if source_type is not None:
+            fields["source_product"] = source_type
+        if "source_snapshot_id" not in fields:
+            source_id = _stated_str(evidence_ref.get("source_id"))
+            if source_id is not None:
+                fields["source_snapshot_id"] = source_id
+    return SourceRevision(source_service=participants.pop(), **fields)
 
 
 def _stated_str(value: Any) -> str | None:

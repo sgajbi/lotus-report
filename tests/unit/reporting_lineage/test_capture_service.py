@@ -704,6 +704,20 @@ async def test_capture_service_composes_advisor_commentary_from_accepted_brief(
     assert snapshot.lineage_summary["advisor_brief_request_id"] == "req_77"
     assert snapshot.lineage_summary["advisor_brief_reviewed_by"] == "advisor-lead-7"
     assert snapshot.lineage_summary["advisor_brief_content_hash"] == "0b" * 32
+    # The INCLUDED brief is evidenced source revision (run_id + content_hash
+    # from the accepted-output contract), never a bare lotus-ai entry.
+    vector = snapshot.source_revision_vector
+    assert vector is not None
+    ai_revisions = [
+        revision for revision in vector["revisions"] if revision["source_service"] == "lotus-ai"
+    ]
+    assert ai_revisions == [
+        {
+            "source_service": "lotus-ai",
+            "calculation_run_id": "run_accept_1",
+            "content_hash": "0b" * 32,
+        }
+    ]
     assert _advisor_commentary_resolution_count("included", "none") >= 1.0
 
 
@@ -864,6 +878,18 @@ async def test_capture_service_records_proof_pack_snapshot_and_manage_lineage(tm
     assert calls[0].request_hash == "sha256:proof-pack"
     assert calls[0].response_hash == "sha256:report-input"
     assert calls[0].response_ref == "dpp_001:dpm_proof_pack_report_input"
+    # The bounded report-input states its own revision evidence: content
+    # hash and artifact id, attributed to the ONE capture-validated
+    # participant - so coverage is honestly complete.
+    vector = snapshot.source_revision_vector
+    assert vector is not None
+    assert vector["coverage"] == "complete"
+    assert len(vector["revisions"]) == 1
+    bounded = vector["revisions"][0]
+    assert bounded["source_service"] == "lotus-manage"
+    assert bounded["content_hash"] == "sha256:report-input"
+    assert bounded["source_snapshot_id"] == "dpp_001"
+    assert bounded["source_product"] == "DPM_PROOF_PACK_REPORT_INPUT"
     assert [event.to_status for event in ledger.list_status_events(job.job_id)] == [
         "accepted",
         "collecting_data",
