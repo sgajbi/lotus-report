@@ -256,11 +256,19 @@ async def materialize_idea_evidence_pack(
         tenant_id=caller_context.tenant_id,
         producer=request.idea_evidence_pack.producer,
     )
-    # Captured BEFORE accept(), which stores the record and would make the
-    # question answer itself. A true value means accept() compared this
-    # request's payload fingerprint -- candidate_id and conversion_intent_id
-    # included -- against a stored one and found it unchanged.
-    intake_holds_prior_record = intake_ledger.has_record(materialization_key)
+    # Before accept(), which would persist this request. A refusal made after
+    # it is not repeatable: the rejected attempt becomes the prior record that
+    # excuses its own retry.
+    try:
+        _refuse_unverifiable_legacy_replay(
+            ledger=ledger,
+            intake_ledger=intake_ledger,
+            tenant_id=caller_context.tenant_id,
+            request=request,
+            idempotency_key=materialization_key,
+        )
+    except IdeaMaterializationIdentityConflictError as exc:
+        raise _identity_conflict_error(started_at) from exc
     try:
         intake_ledger.accept(
             request.idea_evidence_pack,
@@ -307,18 +315,6 @@ async def materialize_idea_evidence_pack(
             },
         ) from exc
     try:
-        # First, before anything is done on this request's behalf. Deciding it
-        # while projecting the response let a replay that was about to be
-        # refused advance an accepted job through capture, or produce a
-        # rendered and archived outcome for a data_ready one -- so the 409
-        # described state the rejected request had itself created.
-        _refuse_unverifiable_legacy_replay(
-            ledger=ledger,
-            intake_holds_prior_record=intake_holds_prior_record,
-            record=record,
-            request=request,
-            idempotency_key=record.idempotency_key,
-        )
         if record.status == "accepted":
             record = await capture_service.capture_for_job(record)  # type: ignore[attr-defined]
         if record.status == "data_ready" and "pdf" in report_job_request.requested_output_formats:
@@ -336,19 +332,7 @@ async def materialize_idea_evidence_pack(
             idempotency_key=record.idempotency_key,
         )
     except IdeaMaterializationIdentityConflictError as exc:
-        record_report_operation(
-            operation="report_job_submission",
-            status="failed",
-            failure_category="idea_materialization_identity_conflict",
-            duration_seconds=perf_counter() - started_at,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "idea_materialization_identity_conflict",
-                "message": "The stored Idea materialization identity is inconsistent.",
-            },
-        ) from exc
+        raise _identity_conflict_error(started_at) from exc
 
 
 @router.get(
@@ -497,15 +481,37 @@ async def recover_idea_evidence_pack_materialization(
         ) from exc
 
 
+def _identity_conflict_error(started_at: float) -> HTTPException:
+    """The 409 for a materialization whose identity cannot be trusted.
+
+    Shared by the pre-accept refusal and the response projection so one
+    condition carries one code and one metric wherever it is detected. Records
+    the failure as a side effect because every caller raises what it returns.
+    """
+    record_report_operation(
+        operation="report_job_submission",
+        status="failed",
+        failure_category="idea_materialization_identity_conflict",
+        duration_seconds=perf_counter() - started_at,
+    )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "idea_materialization_identity_conflict",
+            "message": "The stored Idea materialization identity is inconsistent.",
+        },
+    )
+
+
 def _refuse_unverifiable_legacy_replay(
     *,
     ledger: ReportJobLedger,
-    intake_holds_prior_record: bool,
-    record: ReportJobLedgerRecord,
+    intake_ledger: IdeaEvidenceIntakeLedger,
+    tenant_id: str,
     request: IdeaEvidencePackMaterializationRequest,
     idempotency_key: str,
 ) -> None:
-    """Refuse a legacy replay that nothing validated, before work begins.
+    """Refuse a legacy replay that nothing validated, before anything is stored.
 
     A pre-identity record replays through POST because the intake ledger has
     already compared this request's payload fingerprint -- candidate_id and
@@ -514,18 +520,30 @@ def _refuse_unverifiable_legacy_replay(
     while the report request hash still matches because those fields are absent
     from it.
 
-    Called before capture and render, so a request that will be refused cannot
-    advance the job or produce a rendered outcome on the way to its 409.
+    Runs before intake_ledger.accept() and before capture and render, which is
+    what makes the refusal both side-effect free and repeatable. Deciding after
+    accept() let the rejected attempt persist as the prior record that excused
+    its own retry; deciding after capture let a rejected request advance the
+    job on its way to a 409.
+
+    An absent prior report row raises IdeaMaterializationNotFoundError and is
+    not a refusal: that is a genuinely new request, with nothing to verify
+    against. Only a row that exists without recoverable identity is refused.
     """
-    if intake_holds_prior_record:
+    if intake_ledger.has_record(idempotency_key):
+        # A real prior intake: accept() will compare payload fingerprints
+        # against it and raise on any change, including to the fields the
+        # report request hash omits.
         return
     try:
         recover_idea_materialization(
             ledger=ledger,
-            tenant_id=record.tenant_id,
+            tenant_id=tenant_id,
             idempotency_key=idempotency_key,
             expected_identity=recovery_identity_from_request(request),
         )
+    except IdeaMaterializationNotFoundError:
+        return
     except IdeaMaterializationRecoveryIdentityMissingError as exc:
         raise IdeaMaterializationIdentityConflictError(
             "idea_materialization_legacy_replay_unverifiable"
@@ -556,9 +574,10 @@ def _materialization_response(
         # request hash. GET recovery remains fail-closed because it cannot make
         # that command-bound comparison.
         #
-        # Reaching here means the intake ledger did hold a prior record for this
-        # key: _refuse_unverifiable_legacy_replay has already refused the case
-        # where it did not, before any capture or render ran.
+        # Reaching here means _refuse_unverifiable_legacy_replay let this
+        # request through, before anything was stored or done for it: either a
+        # real prior intake exists, whose fingerprint accept() then compared, or
+        # the row carries recoverable identity that matched.
         snapshot = read_idea_materialization_owner_snapshot(
             ledger=ledger,
             tenant_id=record.tenant_id,
