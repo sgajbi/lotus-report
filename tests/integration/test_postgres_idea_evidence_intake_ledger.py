@@ -28,7 +28,10 @@ from app.idea_evidence_intake.postgres_ledger import PostgresIdeaEvidenceIntakeL
 from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
+    build_intake_record,
+    payload_fingerprint_of,
 )
+from app.postgres import PostgresConnectionProvider
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_persistence.schema import apply_report_schema_migrations
 
@@ -233,3 +236,96 @@ def test_the_two_engines_agree_on_the_payload_fingerprint(
         postgres_ledger.snapshot()[key].payload_fingerprint
         == sqlite_ledger.snapshot()[key].payload_fingerprint
     )
+
+
+def test_a_lost_insert_race_with_an_identical_payload_replays(
+    postgres_ledger: PostgresIdeaEvidenceIntakeLedger,
+) -> None:
+    """Both requests reached the INSERT; the loser must return the winner's receipt.
+
+    `_store_record` is driven directly because `accept()`'s pre-check catches a
+    second identical request before it ever inserts, so the handler under test
+    is unreachable through the public path. A thread barrier would show the two
+    calls starting together, not both arriving at the INSERT, and it is the
+    resolution rather than the timing that decides correctness here.
+    """
+    suffix = uuid4().hex[:12]
+    key = f"intake-{suffix}"
+    request = _request(suffix)
+    record = build_intake_record(
+        request,
+        idempotency_key=key,
+        payload_fingerprint=payload_fingerprint_of(request),
+    )
+
+    winner = postgres_ledger._store_record(
+        record, request=request, correlation_id=None, trace_id=None
+    )
+    loser = postgres_ledger._store_record(
+        record, request=request, correlation_id=None, trace_id=None
+    )
+
+    assert loser.intake_id == winner.intake_id
+    assert loser.payload_fingerprint == winner.payload_fingerprint
+
+
+def test_a_lost_insert_race_with_a_different_payload_conflicts(
+    postgres_ledger: PostgresIdeaEvidenceIntakeLedger,
+) -> None:
+    """The same race, different payload: the key is taken by another request.
+
+    Refusing is the only safe answer -- returning the winner's receipt would
+    tell the caller its own request was accepted when a different one was.
+    """
+    suffix = uuid4().hex[:12]
+    key = f"intake-{suffix}"
+    first = _request(suffix)
+    postgres_ledger.accept(first, idempotency_key=key)
+
+    substituted = _request(suffix, candidate_id="icand_substituted")
+    conflicting = build_intake_record(
+        substituted,
+        idempotency_key=key,
+        payload_fingerprint=payload_fingerprint_of(substituted),
+    )
+
+    with pytest.raises(IdeaEvidenceIntakeConflictError):
+        postgres_ledger._store_record(
+            conflicting, request=substituted, correlation_id=None, trace_id=None
+        )
+
+
+def test_a_ledger_needs_somewhere_to_connect() -> None:
+    """Neither a URL nor a provider is a configuration error, not an empty ledger.
+
+    An intake ledger that silently held nothing would look exactly like one that
+    has been reset -- the state report#334 refuses -- so it must refuse to exist
+    instead.
+    """
+    with pytest.raises(ValueError, match="database_url_required"):
+        PostgresIdeaEvidenceIntakeLedger()
+
+
+def test_a_supplied_connection_provider_is_not_closed_by_the_ledger() -> None:
+    """Ownership decides who closes.
+
+    The application shares one provider across ledgers, so a ledger closing a
+    provider it was handed would shut the pool for everything else using it.
+    """
+    database_url = _database_url()
+    provider = PostgresConnectionProvider(database_url=database_url)
+    try:
+        borrowed = PostgresIdeaEvidenceIntakeLedger(connection_provider=provider)
+        borrowed.close()
+        # Still usable: closing a borrowed provider would have broken this.
+        assert borrowed.has_record(f"absent-{uuid4().hex[:8]}") is False
+    finally:
+        provider.close()
+
+
+def test_a_ledger_that_owns_its_provider_closes_it() -> None:
+    owned = PostgresIdeaEvidenceIntakeLedger(_database_url())
+    owned.close()
+
+    with pytest.raises(Exception):
+        owned.has_record("any-key")
