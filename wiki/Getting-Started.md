@@ -6,6 +6,9 @@ Prerequisites, before anything else:
 
 - **Python 3.12 or newer** — `pyproject.toml` requires `>=3.12` and CI pins 3.12
 - **`make`** — every documented command uses it; not a default on Windows
+- **Docker** — the local run needs a real PostgreSQL ledger, not a file database. The
+  repository Compose file provides `lotus-report-postgres` on host port `5439`; bring it up
+  with `docker compose up -d lotus-report-postgres` before running the service
 - **An activated virtual environment.** `make install` installs into whichever interpreter is
   on `PATH`; it does not create one. On a PEP 668 distribution (Debian/Ubuntu, Fedora,
   Homebrew Python) installing into the system interpreter is refused with
