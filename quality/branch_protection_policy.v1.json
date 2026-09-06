@@ -73,7 +73,7 @@
     {
       "limitation": "only the zero-approval exception is bound to the weakness it documents",
       "detail": "validate_policy_document requires the zero-approval exception while required_approving_review_count is 0, but no invariant binds the omitted-gate-context exception to the omission. Deleting that exception while the context stays absent passes both offline validation and a matching live comparison, so the reason, compensating controls and retirement condition can be lost silently.",
-      "why_not_fixed_here": "the invariant lives in the canonical checker's offline validation; adding a Risk-only rule would fork an estate-wide control and diverge this repository from the canonical parity check.",
+      "why_not_fixed_here": "the invariant lives in the canonical checker's offline validation; adding a Report-only rule would fork an estate-wide control and diverge this repository from the canonical parity check.",
       "tracked_as": "lotus-gateway#743, against the canonical implementation, alongside #740 and #742"
     }
   ]
