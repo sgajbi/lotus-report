@@ -44,6 +44,17 @@ class _PortfolioSource:
         return self.list_payload
 
 
+def _dropped_record(caplog) -> dict[str, object]:
+    """The single aggregated drop record, or a failure saying none was emitted."""
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "scheduled_batch_candidates_dropped"
+    ]
+    assert len(records) == 1, f"expected one drop record, got {len(records)}"
+    return dict(records[0].extra_fields)
+
+
 def _caller_context() -> ReportCallerContext:
     return ReportCallerContext(
         trigger_type="system",
@@ -591,20 +602,44 @@ async def test_a_source_refusal_is_recorded_rather_than_swallowed(tmp_path, capl
             caller_context=_caller_context(),
         )
 
-    dropped = [
-        record
-        for record in caplog.records
-        if record.getMessage() == "scheduled_batch_candidate_dropped"
-    ]
-    assert len(dropped) == 1
-    fields = dropped[0].extra_fields
-    assert fields["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
-    assert fields["source_status_code"] == 401
-    assert fields["reason_code"] == "source_refused"
+    fields = _dropped_record(caplog)
+    assert fields["dropped_count"] == 1
+    assert fields["source_status_codes"] == [401]
+    assert fields["reason_codes"] == ["source_refused"]
 
     # Still dropped: attributing a portfolio Report could not read is the
     # defect, and recording the refusal does not license keeping it.
     assert result.materialized == ()
+
+
+async def test_the_drop_record_names_no_portfolio(tmp_path, caplog) -> None:
+    """The property most likely to be broken by a well-meaning edit.
+
+    `SAFE_OPERATOR_LOOKUP_FIELDS` excludes portfolio identifiers and
+    `JsonFormatter` copies these fields verbatim into retained logs, so reaching
+    for `portfolio_id` here -- convenient, and the obvious thing to want --
+    would put a client-sensitive value on the live failure path.
+    """
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource({"PB_SG_GLOBAL_BAL_001": (401, {})})
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    with caplog.at_level(logging.WARNING, logger="report_batch_scheduler"):
+        await scheduler.run_due_schedules(
+            config=_config(_schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])),
+            caller_context=_caller_context(),
+        )
+
+    fields = _dropped_record(caplog)
+    assert "portfolio_id" not in fields
+    assert "PB_SG_GLOBAL_BAL_001" not in str(fields)
+    assert set(fields) <= {
+        "schedule_id",
+        "dropped_count",
+        "source_status_codes",
+        "reason_codes",
+        "source_system",
+    }
 
 
 async def test_an_identity_mismatch_is_recorded_separately(tmp_path, caplog) -> None:
@@ -625,14 +660,9 @@ async def test_an_identity_mismatch_is_recorded_separately(tmp_path, caplog) -> 
             caller_context=_caller_context(),
         )
 
-    dropped = [
-        record
-        for record in caplog.records
-        if record.getMessage() == "scheduled_batch_candidate_dropped"
-    ]
-    assert len(dropped) == 1
-    assert dropped[0].extra_fields["reason_code"] == "source_identity_mismatch"
-    assert dropped[0].extra_fields["source_status_code"] == 200
+    fields = _dropped_record(caplog)
+    assert fields["reason_codes"] == ["source_identity_mismatch"]
+    assert fields["source_status_codes"] == [200]
     assert result.materialized == ()
 
 
@@ -658,6 +688,6 @@ async def test_a_readable_portfolio_is_not_reported_as_dropped(tmp_path, caplog)
     assert not [
         record
         for record in caplog.records
-        if record.getMessage() == "scheduled_batch_candidate_dropped"
+        if record.getMessage() == "scheduled_batch_candidates_dropped"
     ]
     assert len(result.materialized) == 1

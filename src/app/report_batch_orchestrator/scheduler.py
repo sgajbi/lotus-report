@@ -533,34 +533,40 @@ class StoredScheduleSource(Protocol):
     ) -> list[BatchScheduleDefinition]: ...
 
 
-def _log_candidate_dropped(
+def _log_candidates_dropped(
     *,
-    portfolio_id: str,
     schedule_id: str,
-    status_code: int,
-    reason_code: str,
+    dropped: list[tuple[int, str]],
 ) -> None:
-    """Record a candidate Report could not read, rather than dropping it silently.
+    """Record that a source refused candidates, without naming them.
 
     A bare `continue` made a refusing dependency indistinguishable from a
     portfolio that is not there: the pass reported success with nothing
-    materialised, and nothing said why. Report still declines the candidate --
+    materialized, and nothing said why. Report still declines the candidates --
     attributing a portfolio it could not read is the defect this scheduler
     exists to avoid (issue #177) -- but the decline is now operable.
 
-    `status_code` is carried because the reasons differ operationally: a 401
-    means Report is not presenting what the source now requires, while a 404
-    means the portfolio is genuinely absent, and an operator needs to tell
-    those apart from the log alone.
+    Deliberately no `portfolio_id`. It is a client-sensitive identifier and
+    `SAFE_OPERATOR_LOOKUP_FIELDS` excludes it, while `JsonFormatter` copies
+    these fields verbatim into retained logs. The schedule is named instead,
+    and its portfolio list is configuration the operator already holds.
+
+    Aggregated per schedule for the same reason it is safer: one record saying
+    twelve candidates were refused with 401 is what an operator acts on, where
+    twelve records per pass is noise. Status codes are kept distinct because
+    they differ operationally -- a 401 means Report is not presenting what the
+    source requires, a 404 means the portfolio is absent.
     """
+    if not dropped:
+        return
     _LOGGER.warning(
-        "scheduled_batch_candidate_dropped",
+        "scheduled_batch_candidates_dropped",
         extra={
             "extra_fields": {
-                "portfolio_id": portfolio_id,
                 "schedule_id": schedule_id,
-                "source_status_code": status_code,
-                "reason_code": reason_code,
+                "dropped_count": len(dropped),
+                "source_status_codes": sorted({status for status, _ in dropped}),
+                "reason_codes": sorted({reason for _, reason in dropped}),
                 "source_system": "lotus-core",
             }
         },
@@ -781,26 +787,17 @@ class ReportBatchScheduler:
             )
 
         candidates: list[PortfolioBatchCandidate] = []
+        dropped: list[tuple[int, str]] = []
         for portfolio_id in schedule.portfolio_ids:
             status_code, payload = await self._portfolio_source.get_portfolio_detail(
                 portfolio_id,
                 correlation_id=caller_context.correlation_id,
             )
             if status_code != 200:
-                _log_candidate_dropped(
-                    portfolio_id=portfolio_id,
-                    schedule_id=schedule.schedule_id,
-                    status_code=status_code,
-                    reason_code="source_refused",
-                )
+                dropped.append((status_code, "source_refused"))
                 continue
             if str(payload.get("portfolio_id") or "") != portfolio_id:
-                _log_candidate_dropped(
-                    portfolio_id=portfolio_id,
-                    schedule_id=schedule.schedule_id,
-                    status_code=status_code,
-                    reason_code="source_identity_mismatch",
-                )
+                dropped.append((status_code, "source_identity_mismatch"))
                 continue
             candidates.append(
                 PortfolioBatchCandidate(
@@ -813,6 +810,7 @@ class ReportBatchScheduler:
                     source_object="Portfolio",
                 )
             )
+        _log_candidates_dropped(schedule_id=schedule.schedule_id, dropped=dropped)
         return candidates
 
     async def _resolve_manifest_candidates(
@@ -825,26 +823,17 @@ class ReportBatchScheduler:
     ) -> list[PortfolioBatchCandidate]:
         manifest_by_id = {entry.portfolio_id: entry for entry in schedule.manifest_entries}
         candidates: list[PortfolioBatchCandidate] = []
+        dropped: list[tuple[int, str]] = []
         for portfolio_id in manifest_by_id:
             status_code, payload = await self._portfolio_source.get_portfolio_detail(
                 portfolio_id,
                 correlation_id=caller_context.correlation_id,
             )
             if status_code != 200:
-                _log_candidate_dropped(
-                    portfolio_id=portfolio_id,
-                    schedule_id=schedule.schedule_id,
-                    status_code=status_code,
-                    reason_code="source_refused",
-                )
+                dropped.append((status_code, "source_refused"))
                 continue
             if str(payload.get("portfolio_id") or "") != portfolio_id:
-                _log_candidate_dropped(
-                    portfolio_id=portfolio_id,
-                    schedule_id=schedule.schedule_id,
-                    status_code=status_code,
-                    reason_code="source_identity_mismatch",
-                )
+                dropped.append((status_code, "source_identity_mismatch"))
                 continue
             entry = manifest_by_id[portfolio_id]
             candidates.append(
@@ -857,6 +846,7 @@ class ReportBatchScheduler:
                     source_object=entry.source_object,
                 )
             )
+        _log_candidates_dropped(schedule_id=schedule.schedule_id, dropped=dropped)
         return candidates
 
 
