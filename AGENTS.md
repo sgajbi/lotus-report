@@ -5,7 +5,24 @@ This is the governed operating contract for Lotus agent work.
 Repo-root `AGENTS.md` files across Lotus repositories and the deployed local `AGENTS.md` should
 remain synchronized copies of this file.
 
-Use `automation/Sync-AgentOperatingContract.ps1` to synchronize or verify that deployed copy.
+Use `lotus-platform/automation/Sync-AgentOperatingContract.ps1` to synchronize or verify that
+deployed copy. That path identifies the script; it is not a command that runs from where you are
+standing. Run it from the `lotus-platform` checkout, because the qualified form resolves from the
+directory holding the checkouts rather than from the repository you are working in:
+
+```powershell
+Set-Location "$env:LOTUS_WORKSPACE_ROOT/lotus-platform"
+powershell -ExecutionPolicy Bypass -File automation/Sync-AgentOperatingContract.ps1 -CheckOnly
+```
+
+```bash
+cd "$LOTUS_WORKSPACE_ROOT/lotus-platform"
+pwsh -File automation/Sync-AgentOperatingContract.ps1 -CheckOnly
+```
+
+Set `LOTUS_WORKSPACE_ROOT` once to the directory holding the Lotus checkouts. Without a
+`lotus-platform` checkout the script cannot be run at all: the GitHub fallback below can display a
+document, and it cannot execute one.
 
 ## Progressive Context Discovery
 
@@ -19,10 +36,14 @@ Before substantial work, load this small starting set:
 
 Then load only task-relevant depth:
 
-1. `LOTUS-ENGINEERING-CONTEXT.md` for cross-repository architecture or shared engineering policy,
-2. `CONTEXT-REFERENCE-MAP.md` to locate a specific standard, RFC, contract, or runbook,
-3. `TASK-ROUTING-GUIDE.md` when ownership or the correct context set is unclear,
-4. `PROCEDURAL-MEMORY-INDEX.md` when execution method, recovery, or delivery evidence is central.
+1. `lotus-platform/context/LOTUS-ENGINEERING-CONTEXT.md` for cross-repository architecture or
+   shared engineering policy,
+2. `lotus-platform/context/CONTEXT-REFERENCE-MAP.md` to locate a specific standard, RFC,
+   contract, or runbook,
+3. `lotus-platform/context/TASK-ROUTING-GUIDE.md` when ownership or the correct context set is
+   unclear,
+4. `lotus-platform/context/PROCEDURAL-MEMORY-INDEX.md` when execution method, recovery, or
+   delivery evidence is central.
 
 Do not load the complete context estate by default. Essential controls in `AGENTS.md` remain
 mandatory even when the rest of the task needs only repository-local context.
@@ -34,14 +55,23 @@ done to a convention that already existed and was not followed. Documentation an
 covered by `lotus-readme-wiki-governance`; skills, agent context, routing and manifests by
 `lotus-skill-context-governance`.
 
-Those `lotus-platform/context/...` paths assume a sibling checkout. Without one, read the same
-documents at
-`https://github.com/sgajbi/lotus-platform/blob/main/context/<FILENAME>` — the repository is the
-authoritative source and the sibling path is a local convenience, not a prerequisite. Skills
-resolve the same way: `codex/skills/<skill-name>/SKILL.md` in a sibling checkout, or the same path
-under that URL.
+A path beginning `lotus-platform/` is relative to the directory that holds the Lotus checkouts,
+not to the repository you are working in. Qualifying a path says who owns it; it does not by
+itself say where to stand to read it, and resolving one of these from a repository root reaches
+`<your-repo>/lotus-platform/...`, which does not exist.
 
-Paths in Lotus documentation are repository-relative. Where a machine-specific location is
+Without a sibling checkout, replace the `lotus-platform/` prefix with
+`https://github.com/sgajbi/lotus-platform/blob/main/` and read the document there. One rule
+covers every path under it, including `context/`, `docs/`, `automation/` and
+`codex/skills/<skill-name>/SKILL.md`. The repository is the authoritative source, so a sibling
+checkout is a local convenience rather than a prerequisite.
+
+A path naming a document owned by `lotus-platform` carries the `lotus-platform/` prefix, because
+this file is deployed unchanged into every repository and a bare path resolves inside whichever
+repository is reading it. A path naming a document each repository owns for itself, such as
+`AGENTS.md` or `REPOSITORY-ENGINEERING-CONTEXT.md`, is deliberately bare.
+
+Paths in Lotus documentation are otherwise repository-relative. Where a machine-specific location is
 unavoidable, `<workspace-root>` means the directory holding the Lotus checkouts and `<temp-dir>`
 the local temporary directory; neither is a real path and neither assumes an operating system,
 drive or folder name.
@@ -74,7 +104,8 @@ all subsequent repo-local commands anchored to the target repo.
 
 In a shared checkout, verify ownership and the active branch, stage explicit paths, and never stash
 another session's work. Record provenance and revert rationale through the
-`Agent Context And Task Ledger Playbook` linked from `PROCEDURAL-MEMORY-INDEX.md`.
+`Agent Context And Task Ledger Playbook` linked from
+`lotus-platform/context/PROCEDURAL-MEMORY-INDEX.md`.
 
 ## Mandatory Operating Rules
 
@@ -119,13 +150,14 @@ Always:
 8. classify pattern matches and validate a guard's premise before rewriting or hardening it.
 
 The evidence and failure cases behind these rules live in the
-`Agentic Coding Quality Evaluation Loop` linked from `PROCEDURAL-MEMORY-INDEX.md`; they do not
+`Agentic Coding Quality Evaluation Loop` linked from
+`lotus-platform/context/PROCEDURAL-MEMORY-INDEX.md`; they do not
 belong in this mandatory entry contract.
 
 ## Where Repository-Scoped Practice Lives
 
 `AGENTS.md` is deployed identically to every repository from this contract and checked by
-`automation/Sync-AgentOperatingContract.ps1 -CheckOnly`. Nothing repository-specific belongs in it:
+`lotus-platform/automation/Sync-AgentOperatingContract.ps1 -CheckOnly`. Nothing repository-specific belongs in it:
 editing one repository's copy forks a governed file.
 
 Repository-scoped working practice — the hazards, conventions and command shapes that are true of
@@ -247,7 +279,8 @@ Update the relevant context artifacts when:
 If the change is platform-wide:
 
 1. update the central context system in `lotus-platform/context/`.
-2. update `LOTUS-SKILL-ROUTING-MAP.md` if task routing expectations changed.
+2. update `lotus-platform/context/LOTUS-SKILL-ROUTING-MAP.md` if task routing expectations
+   changed.
 
 If the change is repository-local:
 
@@ -259,22 +292,22 @@ If both changed:
 
 Documented commands must state their working directory, provide runnable OS-specific variants, use
 portable paths, and be verified from a fresh checkout. Detailed authoring rules live in
-`docs/documentation/LOTUS-DOCUMENTATION-LAYERING.md`.
+`lotus-platform/docs/documentation/LOTUS-DOCUMENTATION-LAYERING.md`.
 
 ## Cross-Links
 
 Central context system:
 
-1. `<lotus-platform>/context/LOTUS-QUICKSTART-CONTEXT.md`
-2. `<lotus-platform>/context/LOTUS-ENGINEERING-CONTEXT.md`
-3. `<lotus-platform>/context/CONTEXT-REFERENCE-MAP.md`
-4. `<lotus-platform>/context/PROCEDURAL-MEMORY-INDEX.md`
-5. `<lotus-platform>/context/LOTUS-SKILL-ROUTING-MAP.md`
-6. `<lotus-platform>/context/lotus-context-manifest.json`
-7. `<lotus-platform>/context/platform-engineering-ledger.md`
-8. `<lotus-platform>/context/recent-architectural-decisions-digest.md`
-9. `<lotus-platform>/docs/onboarding/LOTUS-DEVELOPER-ONBOARDING.md`
-10. `<lotus-platform>/docs/onboarding/LOTUS-AGENT-RAMP-UP.md`
+1. `lotus-platform/context/LOTUS-QUICKSTART-CONTEXT.md`
+2. `lotus-platform/context/LOTUS-ENGINEERING-CONTEXT.md`
+3. `lotus-platform/context/CONTEXT-REFERENCE-MAP.md`
+4. `lotus-platform/context/PROCEDURAL-MEMORY-INDEX.md`
+5. `lotus-platform/context/LOTUS-SKILL-ROUTING-MAP.md`
+6. `lotus-platform/context/lotus-context-manifest.json`
+7. `lotus-platform/context/platform-engineering-ledger.md`
+8. `lotus-platform/context/recent-architectural-decisions-digest.md`
+9. `lotus-platform/docs/onboarding/LOTUS-DEVELOPER-ONBOARDING.md`
+10. `lotus-platform/docs/onboarding/LOTUS-AGENT-RAMP-UP.md`
 
 Repository-local context:
 
