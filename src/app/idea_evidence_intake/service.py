@@ -117,6 +117,15 @@ class IdeaEvidenceIntakeLedger:
         )
         return stored_record.response
 
+    def has_record(self, idempotency_key: str) -> bool:
+        """Whether this ledger holds a prior intake under that key.
+
+        Used to establish that a legacy replay was genuinely validated against
+        a stored record. An emptied or restored-from-elsewhere ledger accepts a
+        request as new, so its acceptance proves nothing about a replay.
+        """
+        return self._get_record(idempotency_key) is not None
+
     def snapshot(self) -> Mapping[str, IdeaEvidenceIntakeRecord]:
         if self._database_path is None:
             return MappingProxyType(dict(self._records_by_key))

@@ -298,7 +298,7 @@ def test_idea_evidence_materialization_recovers_exact_receipt_after_restart(tmp_
     ledger = ReportJobLedger(database_path)
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _IdeaEvidenceCaptureService(ledger, lineage_store)
     )
@@ -337,7 +337,7 @@ def test_idea_evidence_materialization_post_replays_legacy_record_without_recove
     ledger = ReportJobLedger(database_path)
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _IdeaEvidenceCaptureService(ledger, lineage_store)
     )
@@ -364,6 +364,10 @@ def test_idea_evidence_materialization_post_replays_legacy_record_without_recove
                 "UPDATE report_request SET options_json = ? WHERE idempotency_key = ?",
                 (json.dumps(options), "idea-report-materialization-legacy-replay"),
             )
+            # closing() only closes. Unlike `with sqlite3.connect(...)`, which commits
+            # on clean exit, it leaves the transaction open -- so the strip must be
+            # committed explicitly before the replay is issued against it.
+            connection.commit()
 
         replayed = client.post(
             "/reports/idea-evidence-packs/materializations",
@@ -385,11 +389,83 @@ def test_idea_evidence_materialization_post_replays_legacy_record_without_recove
     assert recovered.json()["detail"]["code"] == "idea_materialization_identity_conflict"
 
 
+def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_was_lost(
+    tmp_path,
+) -> None:
+    """A legacy replay validated by nothing must refuse, not echo the original.
+
+    The POST fallback for pre-identity records is justified by the intake
+    ledger having already compared this request's payload fingerprint --
+    candidate_id and conversion_intent_id included -- against a stored one. If
+    that ledger has been lost or reset, it accepts the request as new and
+    compares nothing, while the report-side request hash still matches because
+    those fields are absent from it. A materially different request would then
+    receive the original request's response.
+    """
+    database_path = tmp_path / "jobs.sqlite3"
+    ledger = ReportJobLedger(database_path)
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    client = TestClient(app)
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-lost-intake"),
+        )
+        with closing(sqlite3.connect(database_path)) as connection:
+            row = connection.execute(
+                "SELECT options_json FROM report_request WHERE idempotency_key = ?",
+                ("idea-report-materialization-lost-intake",),
+            ).fetchone()
+            assert row is not None
+            options = json.loads(row[0])
+            options.pop(IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION)
+            connection.execute(
+                "UPDATE report_request SET options_json = ? WHERE idempotency_key = ?",
+                (json.dumps(options), "idea-report-materialization-lost-intake"),
+            )
+            connection.commit()
+
+        # The disaster-recovery state: PostgreSQL kept the report row, the
+        # SQLite intake ledger did not survive.
+        (tmp_path / "intake.sqlite3").unlink()
+
+        altered = {
+            **payload,
+            "idea_evidence_pack": {
+                **payload["idea_evidence_pack"],
+                "candidate_id": "icand_substituted",
+            },
+        }
+        replayed = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=altered,
+            headers=_headers("idea-report-materialization-lost-intake"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert replayed.status_code == 409
+    assert replayed.json()["detail"]["code"] == "idea_materialization_identity_conflict"
+    # Not the original receipt under a different candidate.
+    assert replayed.json() != submitted.json()
+
+
 def test_idea_materialization_recovery_advances_only_with_owner_events(tmp_path) -> None:
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _IdeaEvidenceCaptureService(ledger, lineage_store)
     )
@@ -456,7 +532,7 @@ def test_idea_evidence_materialization_recovery_rejects_identity_drift(
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _IdeaEvidenceCaptureService(ledger, lineage_store)
     )
@@ -490,7 +566,7 @@ def test_idea_evidence_materialization_recovery_is_tenant_scoped(tmp_path) -> No
     ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         _IdeaEvidenceCaptureService(ledger, lineage_store)
     )
@@ -611,7 +687,7 @@ def test_idea_evidence_materialization_records_archive_failure_without_retry(tmp
         job_ledger=ledger,
     )
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         capture_service
     )
@@ -735,7 +811,7 @@ def test_idea_evidence_materialization_propagates_active_legal_hold(tmp_path) ->
     lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     capture_service = _IdeaEvidenceCaptureService(ledger, lineage_store)
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
-    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
         capture_service
     )
@@ -950,6 +1026,15 @@ def _payload() -> dict[str, object]:
         "producer": "lotus-idea",
         "supportability_status": "not_certified",
     }
+
+
+def _intake_ledger(tmp_path) -> IdeaEvidenceIntakeLedger:
+    """One file-backed intake ledger per test, as production has.
+
+    Returned fresh per request on purpose: production does the same, and the
+    shared file is what makes a second request see the first one's record.
+    """
+    return IdeaEvidenceIntakeLedger(tmp_path / "intake.sqlite3")
 
 
 def _materialization_payload() -> dict[str, object]:

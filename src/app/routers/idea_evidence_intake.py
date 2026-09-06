@@ -256,6 +256,11 @@ async def materialize_idea_evidence_pack(
         tenant_id=caller_context.tenant_id,
         producer=request.idea_evidence_pack.producer,
     )
+    # Captured BEFORE accept(), which stores the record and would make the
+    # question answer itself. A true value means accept() compared this
+    # request's payload fingerprint -- candidate_id and conversion_intent_id
+    # included -- against a stored one and found it unchanged.
+    intake_holds_prior_record = intake_ledger.has_record(materialization_key)
     try:
         intake_ledger.accept(
             request.idea_evidence_pack,
@@ -311,12 +316,28 @@ async def materialize_idea_evidence_pack(
         failure_category=record.failure_category,
         duration_seconds=perf_counter() - started_at,
     )
-    return _materialization_response(
-        ledger=ledger,
-        record=record,
-        request=request,
-        idempotency_key=record.idempotency_key,
-    )
+    try:
+        return _materialization_response(
+            ledger=ledger,
+            intake_holds_prior_record=intake_holds_prior_record,
+            record=record,
+            request=request,
+            idempotency_key=record.idempotency_key,
+        )
+    except IdeaMaterializationIdentityConflictError as exc:
+        record_report_operation(
+            operation="report_job_submission",
+            status="failed",
+            failure_category="idea_materialization_identity_conflict",
+            duration_seconds=perf_counter() - started_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "idea_materialization_identity_conflict",
+                "message": "The stored Idea materialization identity is inconsistent.",
+            },
+        ) from exc
 
 
 @router.get(
@@ -468,6 +489,7 @@ async def recover_idea_evidence_pack_materialization(
 def _materialization_response(
     *,
     ledger: ReportJobLedger,
+    intake_holds_prior_record: bool,
     record: ReportJobLedgerRecord,
     request: IdeaEvidencePackMaterializationRequest,
     idempotency_key: str,
@@ -488,6 +510,16 @@ def _materialization_response(
         # replay through POST after the ledger has validated their client-only
         # request hash. GET recovery remains fail-closed because it cannot make
         # that command-bound comparison.
+        #
+        # That justification only holds if the intake ledger actually validated
+        # something. If it has been lost or reset it accepts any request as new,
+        # and candidate_id and conversion_intent_id are absent from the report
+        # request hash -- so a materially different request would return an
+        # exact-replay response. Refuse rather than infer.
+        if not intake_holds_prior_record:
+            raise IdeaMaterializationIdentityConflictError(
+                "idea_materialization_legacy_replay_unverifiable"
+            )
         snapshot = read_idea_materialization_owner_snapshot(
             ledger=ledger,
             tenant_id=record.tenant_id,
