@@ -56,5 +56,13 @@
       "compensating_controls": "the offline shape check is blocking, so the table itself cannot rot; the scheduled live comparison fails closed on the absent token, so its silence is never mistaken for a pass",
       "retires_when": "an operator provisions a repository PAT with administration:read; then move the live comparison into the blocking pre-merge lane, add its context to this list and to live protection in the ordered rollout the pattern specifies, and delete this exception"
     }
+  ],
+  "stated_limitations": [
+    {
+      "limitation": "the comparison asserts required-check NAMES, not their source app bindings",
+      "detail": "branch protection also carries required_status_checks.checks[].app_id, which names the app permitted to satisfy each context. A context whose binding is removed or replaced keeps its name in contexts, so this comparison reports a match while a different app or a legacy commit status could satisfy protection.",
+      "why_not_fixed_here": "the checker is lifted byte-identically from the canonical implementation so that a fix propagates to every adopter; changing it in one adopter would fork an estate-wide control and silently diverge this repository from the canonical parity check. The gap is the canonical checker's, and is reported there.",
+      "tracked_as": "lotus-gateway#740, against the canonical implementation; this table adopts the binding declaration once the canonical checker compares it"
+    }
   ]
 }
