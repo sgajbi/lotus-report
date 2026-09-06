@@ -169,8 +169,14 @@ with `-p custom` or an exported `COMPOSE_PROJECT_NAME`, every command below need
 otherwise they address the directory-derived project instead, so the `stop` does not quiesce
 the running service and `create` collides with the pinned `container_name`. Set it once:
 
+Substitute the project name and keep it exported for every command that follows. The angle
+brackets below are a placeholder, not shell syntax — replace the whole quoted value:
+
 ```shell
-export COMPOSE_PROJECT_NAME=<the project the stack runs under>   # omit only if it is the directory default
+# Find the project the stack is running under:
+docker compose ls
+# Then set it, quoted. Skip this only if the project is the directory default:
+export COMPOSE_PROJECT_NAME="your-project-name"
 ```
 
 ```shell

@@ -13,7 +13,7 @@
 -- constraint that happens to be convenient.
 --
 -- Timestamps are TIMESTAMPTZ, not TEXT. The SQLite ledger stored ISO strings
--- because SQLite has no timestamp type; carrying that choice into PostgreSQL
+-- because SQLite has no timestamp type. Carrying that choice into PostgreSQL
 -- would preserve a limitation as if it were a decision, and would leave
 -- ordering and retention comparisons doing string arithmetic on values whose
 -- offset is not enforced.
