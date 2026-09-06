@@ -117,7 +117,14 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal report-owned source-event family for downstream portfolio memory; maps report
   lifecycle, snapshot, render, and archive evidence into stable event identities, source refs,
   artifact refs, hashes, and retention/redaction/access/audit policy without exposing raw snapshot
-  payloads or storage references
+  payloads or storage references. An event's identity is fixed at event time (preimage version
+  `eip2`: job, transition, portfolio, timestamp) and never moves afterwards - not as the job
+  captures a snapshot, renders or archives, and not across a redeployment, so a consumer may
+  deduplicate on `event_identity` safely. Facts that arrive later (snapshot, artifact, archive
+  document, report revision) appear as refs outside that preimage, each only on events at or
+  after the step that produced it. Identities emitted before `eip2` were computed at read time
+  and never stored: they are not reconstructible and none is claimed - re-key once by the stable
+  `event_id`, which is unchanged across both versions
 - `GET /reports/jobs/{job_id}/events`
   internal append-only report job lifecycle event history with versioned support-safe typed
   payloads; legacy rows remain readable as legacy message-only events, and replay/regenerate

@@ -3668,3 +3668,108 @@ def test_job_search_is_fenced_to_the_admitted_caller_tenant(tmp_path):
         assert other.json()["count"] == 0
     finally:
         _clear_overrides()
+
+
+def test_historical_event_identity_survives_lifecycle_progress_and_restart(tmp_path):
+    """The #283 reproduction: read ONE fixed historical event (job_accepted)
+    at four points - before capture, after capture, after archiving, and
+    after a process restart reading the same durable ledger - and require
+    its identity to be the same fact every time.
+
+    A job_accepted event is finished history the moment it is written. Its
+    identity must not move because the job later captured a snapshot or
+    received an archive document: a downstream consumer that deduplicates
+    on event_identity (or content_hash) would otherwise re-ingest the same
+    historical event once per lifecycle step, and could never recognise the
+    event it already holds.
+    """
+
+    client, ledger, lineage_store = _client(tmp_path)
+    try:
+        payload = _payload()
+        payload["requested_output_formats"] = ["pdf"]
+        response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
+        assert response.status_code == 202
+        job_id = response.json()["report_job_id"]
+
+        def _accepted_event() -> dict:
+            events = client.get(
+                f"/reports/jobs/{job_id}/portfolio-memory-events",
+                headers=_headers(),
+            )
+            assert events.status_code == 200
+            accepted = [
+                event
+                for event in events.json()["events"]
+                if event["event_type"] == "REPORT_JOB_ACCEPTED"
+            ]
+            assert len(accepted) == 1
+            return accepted[0]
+
+        before_capture = _accepted_event()
+
+        _run_pending_jobs(ledger)
+        assert ledger.get_job(job_id).status == "data_ready"
+        after_capture = _accepted_event()
+
+        rendered = ledger.mark_completed(
+            job_id=job_id,
+            actor="advisor-123",
+            correlation_id="corr-identity",
+            trace_id="trace-identity",
+            render_job_id=f"rdr_{job_id}_pdf",
+            output_format="pdf",
+            template_id="portfolio-review",
+            template_version="v1",
+            template_publication="development",
+            artifact_sha256="sha256:artifact",
+            bounded_determinism_fingerprint="fingerprint",
+            runtime_engine="typst",
+            runtime_engine_version="0.14.2",
+            render_duration_ms=812,
+        )
+        ledger.mark_archiving(
+            job_id=rendered.job_id,
+            actor=rendered.triggered_by,
+            correlation_id=rendered.correlation_id,
+            trace_id=rendered.trace_id,
+            archive_request_id=f"arch_{job_id}",
+        )
+        ledger.mark_archived(
+            job_id=rendered.job_id,
+            actor=rendered.triggered_by,
+            correlation_id=rendered.correlation_id,
+            trace_id=rendered.trace_id,
+            archive_request_id=f"arch_{job_id}",
+            archive_document_id=f"doc_{job_id}",
+        )
+        after_archiving = _accepted_event()
+
+        # A process restart: fresh adapters over the SAME durable files, the
+        # way a redeployed reader sees this job.
+        restarted_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+        restarted_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+        app.dependency_overrides[get_report_job_ledger] = lambda: restarted_ledger
+        app.dependency_overrides[get_report_lineage_store] = lambda: restarted_store
+        after_restart = _accepted_event()
+
+        readings = {
+            "before_capture": before_capture,
+            "after_capture": after_capture,
+            "after_archiving": after_archiving,
+            "after_restart": after_restart,
+        }
+        identities = {name: event["event_identity"] for name, event in readings.items()}
+        hashes = {name: event["content_hash"] for name, event in readings.items()}
+
+        # The event_id is already stable (job id + status event id).
+        assert len({event["event_id"] for event in readings.values()}) == 1
+        # The identity a consumer deduplicates on must be equally stable.
+        assert len(set(identities.values())) == 1, (
+            f"REPORT_JOB_ACCEPTED identity moved during the job's own lifecycle: {identities}"
+        )
+        assert len(set(hashes.values())) == 1, (
+            f"REPORT_JOB_ACCEPTED content hash moved during the job's own lifecycle: {hashes}"
+        )
+    finally:
+        _clear_overrides()
