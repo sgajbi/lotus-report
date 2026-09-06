@@ -311,3 +311,37 @@ def test_verification_reports_a_row_that_is_not_there(migrated_database_url, tmp
 
     with psycopg.connect(migrated_database_url, row_factory=dict_row) as connection:
         assert "missing from target" in _verify_row(connection, absent)
+
+
+def test_a_never_used_deployment_can_cut_over_when_it_says_so(
+    migrated_database_url, tmp_path
+) -> None:
+    """The ledger file appears on the first request, not at deployment.
+
+    An environment that has served none has no file, and refusing to cut it
+    over leaves it stuck on SQLite forever. The flag makes that a decision
+    rather than an accident.
+    """
+    report = transfer_intake_ledger(
+        sqlite_path=tmp_path / "never-created.sqlite3",
+        database_url=migrated_database_url,
+        allow_missing_source=True,
+    )
+
+    assert report.source_records == 0
+    assert report.verified == 0
+    assert report.complete
+
+
+def test_a_missing_file_is_still_refused_by_default(migrated_database_url, tmp_path) -> None:
+    """The control. Absence and a wrong path look identical from here.
+
+    Accepting absence by default would let a cutover with a mistyped path
+    report success having moved nothing, which is why the zero-record case has
+    to be stated rather than inferred.
+    """
+    with pytest.raises(IntakeTransferError, match="not found"):
+        transfer_intake_ledger(
+            sqlite_path=tmp_path / "never-created.sqlite3",
+            database_url=migrated_database_url,
+        )
