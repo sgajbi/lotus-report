@@ -12,10 +12,14 @@ here is only interesting because of when it shipped, it belongs there instead.
 ## Repository Role
 
 `lotus-report` composes governed client reporting from evidence owned by other services. It decides
-which reports exist, what they mean, and what evidence may enter them. It computes no financial
-values, renders no pages, generates no narrative and stores no durable documents; those boundaries
-are enumerated in [What Report Must Never Own](#what-report-must-never-own) and are load-bearing
-rather than aspirational.
+which reports exist, what they mean, and what evidence may enter them. It does not compute
+AUTHORITATIVE financial values - valuation, performance, risk and contribution are owned upstream
+and Report may only echo them - though it does derive presentation aggregates from figures it was
+given, such as allocation weights in `AggregationService` and the presented total and unexplained
+residual in `build_contribution_ranking`. It renders no pages, generates no narrative and stores no
+durable documents. Those boundaries are enumerated in
+[What Report Must Never Own](#what-report-must-never-own) and are load-bearing rather than
+aspirational.
 
 ## Current-State Summary
 
@@ -76,8 +80,10 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 
 ## Runtime And Integration Boundaries
 
-Every boundary below is a service boundary: each arrow crosses into a system that owns its
-own truth, and Report holds only the identity it was handed back.
+Not every arrow below is a service boundary. `order accepted -> capture` and `capture -> compose`
+are internal steps in one transaction domain. The crossings are the authoritative reads performed
+during capture, and the Render, Archive and consumer handoffs - and at each of those Report holds
+only the identity it was handed back.
 
 ### The report lifecycle
 
