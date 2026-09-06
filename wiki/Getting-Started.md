@@ -30,10 +30,26 @@ Prerequisites, before anything else:
   make -f probe.mk shellcheck      # SHELL=/usr/bin/sh ; POSIX assignment worked
   ```
 
-  Installing Git for Windows supplies that shell. **Not verified**: a host with the WinGet
-  `make` and no POSIX shell — the failure above is read from the Makefile and GNU Make's
-  documented `SHELL` selection, not reproduced here, because this machine cannot be put in
-  that state without removing tooling other work depends on.
+  GNU Make uses `sh.exe` **if it can find one on `PATH`**, and falls back to the Windows
+  interpreter otherwise. Installing Git for Windows is therefore necessary but not sufficient:
+  its `bin` directory must be on `PATH`, which the installer's "Git from the command line and
+  also from 3rd-party software" option does. Running `make` from Git Bash guarantees it.
+
+  Both halves are measured here, with the same probe recipe:
+
+  ```
+  PATH including Git bin   ->  SHELL_IS=/usr/bin/sh          (also from PowerShell)
+  PATH excluding Git bin   ->  SHELL_IS=$0   (unexpanded - cmd.exe ran the recipe)
+  ```
+
+  Confirm your own setup before running the gates:
+
+  ```shell
+  printf 'probe:
+	@echo SHELL_IS=$$0
+' > probe.mk && make -f probe.mk probe
+  # must print SHELL_IS=/usr/bin/sh or similar; SHELL_IS=$0 means cmd.exe and the gates will fail
+  ```
 - **Docker** — the local run needs a real PostgreSQL ledger, not a file database. The
   repository Compose file provides `lotus-report-postgres` on host port `5439`; bring it up
   with `docker compose up -d lotus-report-postgres` before running the service
