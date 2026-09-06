@@ -105,15 +105,25 @@ def transfer_intake_ledger(
     *,
     sqlite_path: Path | str,
     database_url: str,
+    allow_missing_source: bool = False,
 ) -> TransferReport:
     """Copy every SQLite intake record into PostgreSQL and prove it arrived.
 
     Raises `IntakeTransferError` if any record is missing or differs. Safe to
-    re-run: a completed transfer reports every row as already present and
+    re-run: a completed transfer reports every record as already present and
     verifies them again, which is also how an operator confirms a cutover
     without changing anything.
+
+    `allow_missing_source` accepts an absent ledger file as a verified
+    zero-record transfer. Off by default and deliberately explicit: the file is
+    created on the first request, so a deployment that has served none has no
+    file, but "no records" and "wrong path" are the same observation from here.
+    Conflating them silently is how a cutover moves nothing and reports
+    success, so the operator states which one they are looking at.
     """
     report = TransferReport()
+    if allow_missing_source and not Path(sqlite_path).exists():
+        return report
     source_rows = list(_read_source_rows(sqlite_path))
     report.source_records = len(source_rows)
 
@@ -223,6 +233,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         help="The SQLite intake ledger to read. In the deployed image this is under /app/data.",
     )
+    parser.add_argument(
+        "--allow-missing-source",
+        action="store_true",
+        help=(
+            "Accept an absent ledger file as a verified zero-record transfer. "
+            "For a deployment that has never accepted an intake -- state it "
+            "deliberately, because an absent file is also what a wrong path "
+            "looks like."
+        ),
+    )
     args = parser.parse_args(argv)
 
     database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
@@ -231,7 +251,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        report = transfer_intake_ledger(sqlite_path=args.sqlite_path, database_url=database_url)
+        report = transfer_intake_ledger(
+            sqlite_path=args.sqlite_path,
+            database_url=database_url,
+            allow_missing_source=args.allow_missing_source,
+        )
     except IntakeTransferError as exc:
         print(f"Intake ledger transfer FAILED: {exc}")
         return 1

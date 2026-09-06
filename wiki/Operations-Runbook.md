@@ -356,24 +356,43 @@ there.
 it either finds no compose file or, worse, resolves a *different* project and reports success
 against a deployment you did not mean to touch.
 
+**Use the same Compose project selector the stack was launched with**, exactly as the rollout above
+requires. If it was started with `-p custom` or an exported `COMPOSE_PROJECT_NAME`, every command
+here needs it too — otherwise they address the directory-derived project, so the `stop` does not
+quiesce the running service and the `run` commands reach a different database and a different
+intake volume. A transfer that reports success against the wrong project has moved nothing.
+
+**If the deployment has never accepted an intake there is no ledger file**, because it is created
+on the first request. That is a legitimate zero-record cutover, and it needs
+`--allow-missing-source` on the transfer command below. Pass it only when you have established
+that is the situation: an absent file is also what a wrong `--sqlite-path` looks like.
+
 PowerShell, matching the rest of this runbook:
 
 ```powershell
 Set-Location <repository root>
+$env:COMPOSE_PROJECT_NAME = "<the project the stack runs under>"   # omit only if it is the directory default
+
+# PowerShell does not stop on a failing native command, so each gate below is
+# checked explicitly. Without these an operator pastes the whole block and
+# continues to the backend switch after a failed transfer.
 
 # 1. Stop the API so nothing accepts an intake mid-transfer.
 docker compose stop lotus-report
+if ($LASTEXITCODE -ne 0) { throw "Could not stop the API -- do not continue" }
 
 # 2. Carry the records across, in a one-off container with the intake volume
 #    mounted. Safe to re-run: an interrupted run leaves a prefix that a re-run
 #    completes. REPORT_JOB_LEDGER_DATABASE_URL comes from the service
 #    environment, so it targets the compose database rather than yours.
 docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
+if ($LASTEXITCODE -ne 0) { throw "Transfer failed -- do not continue" }
 
 # 3. Verify by running exactly the same command again. A completed transfer
 #    reports every record as already present and re-verifies its content,
 #    changing nothing.
 docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
+if ($LASTEXITCODE -ne 0) { throw "Verification failed -- do not continue" }
 ```
 
 Bash equivalent:
@@ -381,6 +400,7 @@ Bash equivalent:
 ```bash
 set -euo pipefail
 cd <repository root>
+export COMPOSE_PROJECT_NAME=<the project the stack runs under>   # omit only if it is the directory default
 
 docker compose stop lotus-report
 
@@ -427,6 +447,7 @@ docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BAC
 #    real idempotency key from the transferred set, and its original body.
 #    All four caller-context headers are required: the route rejects a missing
 #    X-Tenant-Id or X-Region with HTTP 400 before it reaches the ledger.
+$env:REPORT_BASE_URL = "http://localhost:8300"   # the Compose API endpoint
 curl.exe -s -X POST "$env:REPORT_BASE_URL/reports/idea-evidence-packs" `
   -H "Idempotency-Key: <a key accepted before the cutover>" `
   -H "X-Actor-Id: <actor>" `
@@ -451,6 +472,7 @@ env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND docker compose config \
 docker compose up -d lotus-report
 docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 
+REPORT_BASE_URL=http://localhost:8300   # the Compose API endpoint
 curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "Idempotency-Key: <a key accepted before the cutover>" \
   -H "X-Actor-Id: <actor>" \
