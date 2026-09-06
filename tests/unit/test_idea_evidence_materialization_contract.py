@@ -132,16 +132,26 @@ def test_idea_evidence_materialization_contract_requires_owner_version(
     assert "response_fields missing: source_event_version" in errors
 
 
-#: The table name as SQL may legally spell it: bare, schema-qualified, quoted,
-#: or both. Matching only the bare form lets a qualified deletion through a
-#: guard whose whole purpose is to forbid deletion.
-_STATUS_EVENT_TABLE = r'(?:[\w"]+\s*\.\s*)?"?report_status_event"?'
+#: The target table as SQL may legally spell it: bare, schema-qualified, quoted,
+#: either or both, and optionally preceded by PostgreSQL's ONLY.
+_STATUS_EVENT_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?report_status_event"?'
 
-#: Every statement that destroys history, not only DELETE. TRUNCATE and DROP
-#: remove the same rows and would decrease source_event_version identically.
+#: Any other table appearing earlier in a comma-separated list. TRUNCATE takes
+#: several tables at once, and the target is not always the first one.
+_OTHER_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?\w+"?'
+
+#: Every statement that destroys history by naming the table. Not only DELETE:
+#: TRUNCATE and DROP remove the same rows and would decrease
+#: source_event_version identically.
+#:
+#: Anchored on the table name, so it cannot see statements that destroy the
+#: table without naming it -- DROP SCHEMA ... CASCADE, DROP DATABASE, a restore
+#: from a truncated dump. Those are out of reach of a guard of this shape, not
+#: covered by it; the append-only property depends on review for them.
 HISTORY_DESTROYING_SQL = re.compile(
-    r"\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)"
-    rf"\s+{_STATUS_EVENT_TABLE}",
+    r"\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)\s+"
+    rf"(?:{_OTHER_TABLE}\s*,\s*)*"
+    rf"{_STATUS_EVENT_TABLE}\b",
     re.IGNORECASE,
 )
 
@@ -160,12 +170,15 @@ def test_report_status_event_history_remains_append_only() -> None:
     )
 
 
-def test_append_only_guard_catches_every_history_destroying_form() -> None:
+def test_append_only_guard_catches_table_named_history_destroying_forms() -> None:
     """The guard must fail on each spelling, not only the bare DELETE.
 
     Without this, broadening the pattern is an unverified claim -- which is how
     the original guard came to match one form while reading as if it forbade a
-    class.
+    class, and how the broadened one still missed ONLY and multi-table lists.
+
+    Scope is deliberately the table-named forms; see HISTORY_DESTROYING_SQL for
+    what a table-name-anchored guard cannot reach.
     """
     must_match = [
         "DELETE FROM report_status_event",
@@ -177,6 +190,14 @@ def test_append_only_guard_catches_every_history_destroying_form() -> None:
         "TRUNCATE TABLE public.report_status_event",
         "DROP TABLE report_status_event",
         "DROP TABLE IF EXISTS public.report_status_event",
+        # PostgreSQL's ONLY, which suppresses cascade to inheriting tables and
+        # deletes the named table's own rows just the same.
+        "DELETE FROM ONLY report_status_event",
+        "TRUNCATE TABLE ONLY report_status_event",
+        "TRUNCATE ONLY public.report_status_event",
+        # TRUNCATE takes a list; the target need not come first.
+        "TRUNCATE report_job, report_status_event",
+        "TRUNCATE TABLE report_job, ONLY public.report_status_event",
     ]
     for statement in must_match:
         assert HISTORY_DESTROYING_SQL.search(statement), f"guard missed: {statement}"
@@ -186,6 +207,10 @@ def test_append_only_guard_catches_every_history_destroying_form() -> None:
         "INSERT INTO report_status_event (status_event_id) VALUES (?)",
         "DELETE FROM report_job WHERE report_job_id = ?",
         "-- report_status_event history is append-only",
+        # Reads the table to choose rows in another one; destroys no history.
+        "DELETE FROM audit_log WHERE id IN (SELECT id FROM report_status_event)",
+        # A different table whose name merely starts the same way.
+        "DELETE FROM report_status_event_archive",
     ]
     for statement in must_not_match:
         assert not HISTORY_DESTROYING_SQL.search(statement), (
