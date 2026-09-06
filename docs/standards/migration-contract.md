@@ -2,15 +2,28 @@
 
 - Service: `lotus-report`
 - Persistence mode: **PostgreSQL report job ledger schema and report batch ledger schema** for
-  durable reporting request, job, status, batch, and batch-item lifecycle state.
+  durable reporting request, job, status, batch, and batch-item lifecycle state, and the
+  **PostgreSQL `idea_evidence_intake` table** created by migration 024.
+- Scope boundary for `idea_evidence_intake`: this contract governs the PostgreSQL **table**. The
+  store production uses by default is still SQLite at `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, selected
+  by `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`, and no records have been transferred into
+  PostgreSQL yet. Until that transfer lands, this contract says nothing about the durability of the
+  store actually in use. Tracked as report#326.
 - Migration policy: **forward-only schema management** with deterministic smoke validation.
 
 ## Deterministic Checks
 
+- `make migration-upgrade-smoke` additionally asserts `idea_evidence_intake`'s column **types** and
+  indexes against `information_schema` — `jsonb` for both payloads, `timestamptz` for both instants.
+  Types rather than presence, because a table created with `text` columns everywhere would satisfy a
+  presence check while delivering neither shape validation on write nor instant-ordered timestamps,
+  which are the two reasons for moving the store at all.
+
 - `make migration-smoke` validates that this contract document exists, applies the versioned
   PostgreSQL report job ledger schema and report batch ledger schema, checks mandatory tables `report_request`,
   `report_job`, `report_status_event`, `report_job_work_item`, `report_input_snapshot`, `report_upstream_call`,
-  `report_batch`, and `report_batch_item`, verifies required operational indexes, and verifies
+  `report_batch`, `report_batch_item`, and `idea_evidence_intake`, verifies required operational
+  indexes, and verifies
   database-level idempotency uniqueness on
   `report_request.idempotency_key` plus the single-snapshot-per-job uniqueness posture on
   `report_input_snapshot.report_job_id` and batch idempotency uniqueness on

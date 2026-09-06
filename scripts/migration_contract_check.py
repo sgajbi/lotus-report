@@ -28,6 +28,17 @@ REQUIRED_PHRASES = (
     "report_upstream_call",
     "report_batch",
     "report_batch_item",
+    # The contract must name the intake TABLE it now governs: one in the
+    # mandatory set but absent from the document leaves the standard silently
+    # narrower than the gate (report#326).
+    #
+    # Backticked on purpose. The check lowercases the document, so a bare
+    # "idea_evidence_intake" is already satisfied by the environment variable
+    # names IDEA_EVIDENCE_INTAKE_LEDGER_PATH and
+    # REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND -- a phrase that can never go
+    # missing gates nothing. The closing backtick is what separates the table
+    # from those prefixes.
+    "`idea_evidence_intake`",
     "archive_request_id",
     "archive_document_id",
     "archive_completed_at",
@@ -72,7 +83,8 @@ def run_ledger_schema_checks() -> int:
                   'report_job',
                   'report_status_event',
                   'report_batch',
-                  'report_batch_item'
+                  'report_batch_item',
+                  'idea_evidence_intake'
               )
             """
         ).fetchall()
@@ -83,6 +95,7 @@ def run_ledger_schema_checks() -> int:
             "report_status_event",
             "report_batch",
             "report_batch_item",
+            "idea_evidence_intake",
         } - tables
         if missing_tables:
             print(f"Ledger schema smoke failed: missing tables {sorted(missing_tables)}")
