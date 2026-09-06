@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -158,31 +157,20 @@ def test_snapshot_lineage_docs_require_atomic_complete_resume() -> None:
 
 
 def _repository_slug() -> str:
-    """This repository's name, from git metadata rather than the folder name.
+    """This repository's name, from the packaging metadata.
 
-    A clone or worktree may sit under any directory name, so ``ROOT.name`` would
-    make the governed unit gate depend on where the checkout was placed. The
-    identity must also come from outside the policy document: deriving it from
-    the document would let a wholly copied table agree with itself.
+    Checked in, so it needs no git remote and no CI environment -- a source
+    snapshot or a checkout with no origin still runs this gate. Load-bearing for
+    packaging, so it cannot be silently wrong. And outside the governance file
+    set, so it stays independent of the policy document: deriving identity from
+    the document would let a wholly copied table agree with itself, and a
+    hand-written constant here would repeat the per-repo edit whose omission
+    caused the defect this test exists for.
     """
-    env = os.environ.get("GITHUB_REPOSITORY")
-    if env:
-        return env.rsplit("/", 1)[-1]
-
-    result = subprocess.run(
-        ["git", "config", "--get", "remote.origin.url"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    url = result.stdout.strip()
-    assert result.returncode == 0 and url, (
-        "cannot establish repository identity: no GITHUB_REPOSITORY and no "
-        "git remote.origin.url. Refusing to skip - a guard that does not run "
-        "is indistinguishable from one that passes."
-    )
-    return url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1]
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        name = tomllib.load(handle)["project"]["name"]
+    assert name, "pyproject [project] name is empty"
+    return name
 
 
 def test_branch_protection_policy_table_describes_this_repository() -> None:
@@ -206,7 +194,7 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     document = json.loads(policy)
 
     assert document["repository"].endswith(f"/{slug}"), (
-        f"policy repository is {document['repository']!r} in a {slug} checkout"
+        f"policy repository is {document['repository']!r} in the {slug} package"
     )
 
     review_lead = document["review_authority"]["review_lead"]
