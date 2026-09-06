@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,24 @@ def test_make_ci_runs_each_suite_once_through_combined_coverage() -> None:
     assert "test-unit" not in prerequisites
     assert "test-integration" not in prerequisites
     assert "test-e2e" not in prerequisites
+
+
+def test_make_ci_still_reaches_every_suite_through_test_coverage() -> None:
+    """The other half: absence of the targets is not the property.
+
+    A `ci` that ran no tests at all would satisfy the assertions above --
+    emptying test-coverage's recipe leaves them green while the gate stops
+    exercising anything. Both together say what is meant: every suite runs, and
+    each runs once.
+    """
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    recipe = re.search(r"^test-coverage:\n((?:\t.*\n)+)", makefile, re.MULTILINE)
+    assert recipe is not None, "no test-coverage recipe found"
+
+    for suite in ("unit", "integration", "e2e"):
+        assert f"TEST_SUITE={suite}" in recipe.group(1), (
+            f"test-coverage no longer runs the {suite} suite: {recipe.group(1)}"
+        )
 
 
 def test_build_isolated_ci_database_separates_and_bounds_database_identity() -> None:
