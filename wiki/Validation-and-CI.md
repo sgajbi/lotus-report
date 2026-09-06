@@ -64,6 +64,13 @@ be banked in the same commit.
   only the helper-owned database on success or failure
 - `make docker-build`
   container build validation
+- `python scripts/check_branch_protection_policy.py --offline`
+  branch-protection policy table is complete and self-consistent; needs no token and runs in
+  every governed lane through the unit gate
+- `python scripts/check_branch_protection_policy.py`
+  live `main` protection matches `quality/branch_protection_policy.v1.json` field by field.
+  Needs a token carrying `administration: read` and **fails closed without one** - a missing or
+  under-scoped token is reported as an error, never as a pass
 - report-work lifecycle proof
   `python -m pytest tests/unit/reporting_jobs/test_report_job_work_queue.py tests/unit/reporting_jobs/test_report_job_worker.py tests/integration/test_report_job_api.py::test_report_job_replay_creates_new_job_and_is_idempotent -q`
   proves bounded explicit and expired-lease retry, one-at-a-time claim-before-execute under parallel
@@ -92,6 +99,11 @@ be banked in the same commit.
   upgrade, and security posture still hold
 - combined coverage gate
   enforces the repo's 97% coverage floor across unit, integration, and e2e packs
+- branch-protection policy gate
+  offline half proves the policy table is well-formed and blocks in every governed lane; the
+  live half runs as its own scheduled `branch-protection` job in
+  `main-gate-coverage-audit.yml` and fails in **both** drift directions, so protection that is
+  weakened *or* strengthened away from the recorded policy is surfaced rather than absorbed
 
 ## Safe local database lifecycle
 
@@ -113,6 +125,37 @@ running services: the lane marks the caller's isolation promise via
 `REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED`, so the integration-test session trusts the given
 database. Bare `pytest tests/integration` (or `make test-integration`) instead provisions its own
 ephemeral `lotus_report_ci_<token>` database, so it is safe alongside the running local stack.
+
+## Branch-protection policy gate
+
+`quality/branch_protection_policy.v1.json` records the protection `main` is *supposed* to carry;
+the checker compares it against what GitHub actually reports. Two halves, deliberately split:
+
+- **Offline** (`--offline`) validates the table itself and runs inside the unit gate, so it blocks
+  every merge. No token, no network.
+- **Live** compares the table against the GitHub API. It runs on a schedule as its **own**
+  `branch-protection` job rather than a step inside the coverage-audit job, because a shared job's
+  timeout would cancel the protection evidence at exactly the moment it is most useful.
+
+**Operator requirements, in order of how often they bite:**
+
+1. The live comparison needs a token carrying **`administration: read`**. `github.token` does not
+   have it. Without it the job **fails closed** - that is the designed behaviour, not a
+   misconfiguration to route around, and the fix is to provision the scope rather than to relax
+   the check.
+2. The live half is **not yet a required merge context**. A drift finding is therefore visible but
+   non-blocking; treat a red `branch-protection` job as an action item, not as noise.
+3. Drift is reported, **never auto-corrected**. Protection changes are operator-gated by design, so
+   the gate's output is a remediation command for a human to run.
+
+The checker and its tests are lifted **byte-identically** from the canonical implementation in
+`lotus-gateway` and must stay that way, so every adopter inherits one behaviour and upstream fixes
+arrive by re-lift. Repository-specific needs belong in the policy table or adopter-side config -
+never in the script. Three known canonical gaps are recorded in the table's stated limitations
+(`lotus-gateway#740`, `#742`, `#743`); none is closable from the table side.
+
+The gate does not yet assert its own context is required - self-anchoring is deliberately deferred
+rather than overlooked, because making it required is itself an operator-gated protection write.
 
 ## Contract emphasis
 
