@@ -79,6 +79,21 @@ class IdeaEvidenceIntakePort(Protocol):
     def snapshot(self) -> Mapping[str, IdeaEvidenceIntakeRecord]: ...
 
 
+def as_utc_instant(value: datetime) -> datetime:
+    """The same instant, always aware and in UTC.
+
+    A naive value is read as UTC, which is the rule the SQLite writer already
+    applied on its way to storage. Applying it here instead means the record,
+    both backends and the receipt carry one instant: PostgreSQL binds naive
+    values to TIMESTAMPTZ using the session TimeZone, so leaving one naive made
+    the stored instant depend on which engine wrote it and on how the server
+    happened to be configured.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def build_intake_record(
     request: IdeaEvidencePackIntakeRequest,
     *,
@@ -94,7 +109,7 @@ def build_intake_record(
     means is not a property of where it is kept, and duplicating this per engine
     is how the two would drift into disagreeing about the same intake.
     """
-    accepted_at = accepted_at_utc or datetime.now(UTC)
+    accepted_at = as_utc_instant(accepted_at_utc) if accepted_at_utc else datetime.now(UTC)
     intake_id = _intake_id(idempotency_key, payload_fingerprint)
     response = IdeaEvidencePackIntakeResponse(
         intake_id=intake_id,

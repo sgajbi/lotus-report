@@ -329,3 +329,33 @@ def test_a_ledger_that_owns_its_provider_closes_it() -> None:
 
     with pytest.raises(Exception):
         owned.has_record("any-key")
+
+
+def test_a_naive_acceptance_instant_means_utc_on_both_engines(
+    postgres_ledger: PostgresIdeaEvidenceIntakeLedger,
+    tmp_path,
+) -> None:
+    """A caller-supplied naive instant must not depend on the backend.
+
+    PostgreSQL binds a naive value to TIMESTAMPTZ using the session TimeZone,
+    so leaving one naive made the stored instant depend on which engine wrote
+    it and on how the server happened to be configured -- while the receipt
+    kept the unshifted naive value, letting the typed column disagree with the
+    response it belongs to.
+    """
+    suffix = uuid4().hex[:12]
+    key = f"intake-{suffix}"
+    naive = datetime(2026, 6, 24, 8, 15)
+    assert naive.tzinfo is None
+
+    accepted = postgres_ledger.accept(_request(suffix), idempotency_key=key, accepted_at_utc=naive)
+    sqlite_ledger = IdeaEvidenceIntakeLedger(tmp_path / "intake.sqlite3")
+    sqlite_accepted = sqlite_ledger.accept(
+        _request(suffix), idempotency_key=key, accepted_at_utc=naive
+    )
+
+    expected = naive.replace(tzinfo=UTC)
+    assert accepted.accepted_at_utc == expected
+    assert sqlite_accepted.accepted_at_utc == expected
+    assert postgres_ledger.snapshot()[key].accepted_at_utc == expected
+    assert sqlite_ledger.snapshot()[key].accepted_at_utc == expected

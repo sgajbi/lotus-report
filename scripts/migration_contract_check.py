@@ -45,6 +45,40 @@ REQUIRED_PHRASES = (
 )
 
 
+#: The intake table's types as migration 024 creates them. Checked against the
+#: schema a deployment actually runs on, not only the throwaway schema the
+#: upgrade smoke builds: CREATE TABLE IF NOT EXISTS no-ops on an existing
+#: table, so a TEXT-typed predecessor would pass an existence check and then
+#: fail at runtime on the JSONB bind (report#326).
+DEPLOYED_INTAKE_COLUMN_TYPES = {
+    "response_json": "jsonb",
+    "caller_context_json": "jsonb",
+    "accepted_at_utc": "timestamp with time zone",
+    "created_at_utc": "timestamp with time zone",
+}
+
+
+def _deployed_intake_column_mismatch(connection: object) -> str:
+    """Empty when the deployed intake table has the types migration 024 chose."""
+    rows = connection.execute(  # type: ignore[attr-defined]
+        """
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'idea_evidence_intake'
+        """
+    ).fetchall()
+    observed = {
+        str(row[0]): str(row[1]) for row in rows if str(row[0]) in DEPLOYED_INTAKE_COLUMN_TYPES
+    }
+    if observed != DEPLOYED_INTAKE_COLUMN_TYPES:
+        return (
+            "deployed idea_evidence_intake column types differ from migration 024: "
+            f"expected={DEPLOYED_INTAKE_COLUMN_TYPES} actual={observed}"
+        )
+    return ""
+
+
 def run_ledger_schema_checks() -> int:
     if not REQUIRED_DOC.exists():
         print(f"Missing required migration contract document: {REQUIRED_DOC}")
@@ -99,6 +133,11 @@ def run_ledger_schema_checks() -> int:
         } - tables
         if missing_tables:
             print(f"Ledger schema smoke failed: missing tables {sorted(missing_tables)}")
+            return 1
+
+        intake_mismatch = _deployed_intake_column_mismatch(connection)
+        if intake_mismatch:
+            print(f"Ledger schema smoke failed: {intake_mismatch}")
             return 1
 
         snapshot_table_rows = connection.execute(
