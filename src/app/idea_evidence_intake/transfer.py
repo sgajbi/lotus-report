@@ -28,7 +28,9 @@ single mismatch fails the transfer.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -203,3 +205,40 @@ def _verify_row(connection: psycopg.Connection[dict[str, Any]], row: Mapping[str
             return f"{key}: {column} differs as an instant"
 
     return ""
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI for the transfer, runnable inside the deployed image.
+
+    Lives here rather than only in `scripts/` because the image ships `src/`
+    and not `scripts/`, and the ledger being transferred is in a volume mounted
+    into that image -- so the operator path has to be
+    `python -m app.idea_evidence_intake.transfer`.
+    """
+    parser = argparse.ArgumentParser(description="Transfer the SQLite intake ledger to PostgreSQL.")
+    parser.add_argument(
+        "--sqlite-path",
+        default=os.environ.get(
+            "IDEA_EVIDENCE_INTAKE_LEDGER_PATH", "data/idea-evidence-intake.sqlite3"
+        ),
+        help="The SQLite intake ledger to read. In the deployed image this is under /app/data.",
+    )
+    args = parser.parse_args(argv)
+
+    database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
+    if not database_url:
+        print("REPORT_JOB_LEDGER_DATABASE_URL is required to transfer the intake ledger.")
+        return 1
+
+    try:
+        report = transfer_intake_ledger(sqlite_path=args.sqlite_path, database_url=database_url)
+    except IntakeTransferError as exc:
+        print(f"Intake ledger transfer FAILED: {exc}")
+        return 1
+
+    print(f"Intake ledger transfer complete: {report.summary()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
