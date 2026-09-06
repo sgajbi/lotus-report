@@ -15,15 +15,20 @@ Prerequisites, before anything else:
   `externally-managed-environment`. CI does not see this because `actions/setup-python`
   supplies an isolated interpreter.
 
+  Use a **versioned** interpreter: on Debian 12 and Ubuntu 22.04 `python3` is 3.11 or 3.10 even
+  when 3.12 is installed alongside, and a venv built from it fails the editable install.
+
   ```bash
-  # Debian/Ubuntu may need the venv module first: sudo apt install python3-venv
-  python3 -m venv .venv
+  # Debian/Ubuntu: sudo apt install python3.12-venv
+  python3.12 -m venv .venv
   source .venv/bin/activate
+  python -V                      # must report 3.12 or newer before continuing
   ```
 
   ```powershell
-  py -3 -m venv .venv
+  py -3.12 -m venv .venv
   .venv\Scripts\Activate.ps1
+  python -V                      # must report 3.12 or newer before continuing
   ```
 
 ```bash
