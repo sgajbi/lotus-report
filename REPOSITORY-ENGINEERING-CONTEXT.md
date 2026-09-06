@@ -316,6 +316,33 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
 `ENTERPRISE_ENFORCE_READ_AUTHZ=true` and `ENTERPRISE_PRIMARY_KEY_ID`.
 
+## Persistence Topology
+
+Two durable stores, on two engines, with different guarantees.
+
+The **PostgreSQL job and batch ledgers** hold the reporting lifecycle and are persisted by the
+`lotus-report-postgres-data` volume, governed by `docs/standards/migration-contract.md`:
+forward-only schema management, deterministic smoke validation, and `make migration-upgrade-smoke`
+proving a populated volume upgrades in place.
+
+The **Idea evidence intake ledger** is SQLite at `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, defaulting to
+`data/idea-evidence-intake.sqlite3`, persisted by the `lotus-report-intake-data` volume mounted at
+`/app/data` on the API service **only** — the API router is its sole constructor, and sharing one
+SQLite file between containers would trade a durability gap for multi-writer corruption. Before
+that volume existed the file sat in the container's ephemeral layer, so container replacement
+destroyed intake evidence and silently reset idempotency, since `idempotency_key` is the replay
+identity itself.
+
+**Upgrading a deployment that predates the volume requires a one-time rollout** — stop the API,
+carry the existing ledger into the volume, verify the row count, delete the export. It is in
+[Operations Runbook](wiki/Operations-Runbook.md) under *One-time rollout: Idea intake ledger
+volume*. Skipping it starts the service on an empty ledger with no error.
+
+The intake ledger's schema-upgrade **policy** remains open: `migration-contract.md` scopes itself
+to PostgreSQL and treats SQLite as a unit-test adapter, so this store has no migration standard and
+no migration gate. Tracked as [#326](https://github.com/sgajbi/lotus-report/issues/326); do not
+read the migration contract as covering it.
+
 ## Validation And CI Expectations
 
 The commands above are the entry points; these are the expectations they exist to satisfy.

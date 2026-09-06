@@ -164,6 +164,15 @@ gone.
 Carry the file across first. **Stop the API before copying** — the service must be
 quiesced for the whole rollout, not just at the moment of the copy:
 
+**Use the same Compose project selector the stack was launched with.** If it was started
+with `-p custom` or an exported `COMPOSE_PROJECT_NAME`, every command below needs it too —
+otherwise they address the directory-derived project instead, so the `stop` does not quiesce
+the running service and `create` collides with the pinned `container_name`. Set it once:
+
+```shell
+export COMPOSE_PROJECT_NAME=<the project the stack runs under>   # omit only if it is the directory default
+```
+
 ```shell
 # 0. STOP the API first. Everything after this reads a quiesced file.
 docker compose stop lotus-report
@@ -172,7 +181,12 @@ docker compose stop lotus-report
 #    The ledger holds caller context and operational identifiers; it must not land
 #    somewhere it can be committed or swept into a backup.
 export ROLLOUT_DIR="$(mktemp -d)"
-docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 "$ROLLOUT_DIR/idea-evidence-intake.sqlite3"
+if docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" 2>/dev/null; then
+  echo "ledger found; continuing with the rollout"
+else
+  echo "no ledger in this deployment - it has taken no intake requests. Nothing to carry:"
+  echo "restart with 'docker compose up -d' and skip the remaining steps."
+fi
 
 # 2. take the baseline FROM THE QUIESCED COPY, not from the live service
 python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
@@ -202,6 +216,12 @@ nothing reports it. And a byte-level copy of a live SQLite database can overlap 
 in-flight transaction, producing a torn file that may not fail until it is read. Stopping
 the container closes both, which is why step 0 stops it and it stays stopped until
 `docker compose up -d` brings it back on the volume.
+
+**A deployment that has never taken an intake request has no ledger file** — the schema is
+created lazily on first write, and the image ships no file. That is a valid zero-record state,
+not a fault: the copy in step 1 finds nothing, there is nothing to carry, and the correct
+action is to restart on the new volume. The conditional above is why the procedure reports that
+rather than failing with the API already stopped.
 
 Once the counts match, **delete the export** — it is a complete ledger:
 
