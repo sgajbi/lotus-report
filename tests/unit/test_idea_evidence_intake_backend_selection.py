@@ -19,8 +19,6 @@ from app.idea_evidence_intake.postgres_ledger import PostgresIdeaEvidenceIntakeL
 from app.idea_evidence_intake.service import IdeaEvidenceIntakeLedger
 from app.routers.idea_evidence_intake import get_idea_evidence_intake_ledger
 
-pytestmark = pytest.mark.unit
-
 
 @pytest.fixture(autouse=True)
 def _clear_ledger_cache():

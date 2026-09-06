@@ -35,8 +35,6 @@ from app.postgres import PostgresConnectionProvider
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_persistence.schema import apply_report_schema_migrations
 
-pytestmark = pytest.mark.integration
-
 
 def _database_url() -> str:
     database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")

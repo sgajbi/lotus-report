@@ -23,15 +23,19 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 
 from app.idea_evidence_intake.models import IdeaEvidencePackIntakeRequest
 from app.idea_evidence_intake.postgres_ledger import PostgresIdeaEvidenceIntakeLedger
 from app.idea_evidence_intake.service import IdeaEvidenceIntakeLedger
-from app.idea_evidence_intake.transfer import IntakeTransferError, transfer_intake_ledger
+from app.idea_evidence_intake.transfer import (
+    IntakeTransferError,
+    _read_source_rows,
+    _verify_row,
+    transfer_intake_ledger,
+)
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_persistence.schema import apply_report_schema_migrations
-
-pytestmark = pytest.mark.integration
 
 
 def _database_url() -> str:
@@ -105,6 +109,23 @@ def _populated_sqlite_ledger(
             correlation_id=f"corr-{suffix}-{index}",
         )
     return str(path), receipts
+
+
+def _remove(database_url: str, idempotency_key: str) -> None:
+    """Take a deliberately corrupted row back out of the shared table.
+
+    These tests run against a database other tests also use, and the ledger's
+    `snapshot()` validates every row it reads. A row left with an invalid
+    `intake_status` fails unrelated tests later in the same session, which is
+    how three of them broke under the full integration run while passing on
+    their own.
+    """
+    with psycopg.connect(database_url) as connection:
+        connection.execute(
+            "DELETE FROM idea_evidence_intake WHERE idempotency_key = %s",
+            (idempotency_key,),
+        )
+        connection.commit()
 
 
 def test_a_populated_ledger_transfers_and_still_replays(migrated_database_url, tmp_path) -> None:
@@ -187,8 +208,11 @@ def test_a_target_row_that_differs_fails_the_transfer(migrated_database_url, tmp
         )
         connection.commit()
 
-    with pytest.raises(IntakeTransferError, match=corrupted_key):
-        transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+    try:
+        with pytest.raises(IntakeTransferError, match=corrupted_key):
+            transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+    finally:
+        _remove(migrated_database_url, corrupted_key)
 
 
 def test_a_missing_source_file_is_refused(migrated_database_url, tmp_path) -> None:
@@ -202,3 +226,88 @@ def test_a_missing_source_file_is_refused(migrated_database_url, tmp_path) -> No
             sqlite_path=tmp_path / "absent.sqlite3",
             database_url=migrated_database_url,
         )
+
+
+def test_a_tampered_payload_fails_even_though_jsonb_reorders_keys(
+    migrated_database_url, tmp_path
+) -> None:
+    """The JSON comparison is parsed, not textual, and still catches a change.
+
+    Both halves matter. Textual comparison would report every row as differing,
+    because JSONB preserves neither key order nor whitespace; parsed comparison
+    that skipped this case would let altered evidence through.
+    """
+    suffix = uuid4().hex[:12]
+    sqlite_path, _ = _populated_sqlite_ledger(tmp_path, suffix)
+    transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+
+    tampered_key = f"intake-{suffix}-1"
+    with psycopg.connect(migrated_database_url) as connection:
+        connection.execute(
+            """
+            UPDATE idea_evidence_intake
+            SET response_json = jsonb_set(response_json, '{intake_status}', '"tampered"')
+            WHERE idempotency_key = %s
+            """,
+            (tampered_key,),
+        )
+        connection.commit()
+
+    try:
+        with pytest.raises(IntakeTransferError, match="response_json differs"):
+            transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+    finally:
+        # `snapshot()` validates EVERY row into the response model, so leaving
+        # an invalid intake_status here makes unrelated tests fail later in the
+        # same session against the shared table.
+        _remove(migrated_database_url, tampered_key)
+
+
+def test_a_shifted_acceptance_instant_fails(migrated_database_url, tmp_path) -> None:
+    """Instants are compared as instants, so a shift is caught.
+
+    Separate from the textual columns on purpose: the transfer changes their
+    representation from TEXT to TIMESTAMPTZ, and a comparison that stringified
+    them again would pass a row whose stored instant had moved.
+    """
+    suffix = uuid4().hex[:12]
+    sqlite_path, _ = _populated_sqlite_ledger(tmp_path, suffix)
+    transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+
+    shifted_key = f"intake-{suffix}-0"
+    with psycopg.connect(migrated_database_url) as connection:
+        connection.execute(
+            """
+            UPDATE idea_evidence_intake
+            SET accepted_at_utc = accepted_at_utc + interval '1 hour'
+            WHERE idempotency_key = %s
+            """,
+            (shifted_key,),
+        )
+        connection.commit()
+
+    try:
+        with pytest.raises(IntakeTransferError, match="accepted_at_utc differs as an instant"):
+            transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+    finally:
+        _remove(migrated_database_url, shifted_key)
+
+
+def test_verification_reports_a_row_that_is_not_there(migrated_database_url, tmp_path) -> None:
+    """The defensive branch, asserted directly because a full run cannot reach it.
+
+    `transfer_intake_ledger` inserts before it verifies, so within one run a row
+    is always present by the time verification looks. The branch exists for the
+    case where something removed it in between, and asserting it here is the
+    only way to know it reports rather than raising an unhelpful TypeError on
+    `None`.
+    """
+    suffix = uuid4().hex[:12]
+    sqlite_path, _ = _populated_sqlite_ledger(tmp_path, suffix, count=1)
+    transfer_intake_ledger(sqlite_path=sqlite_path, database_url=migrated_database_url)
+
+    absent = dict(next(iter(_read_source_rows(sqlite_path))))
+    absent["idempotency_key"] = f"never-transferred-{suffix}"
+
+    with psycopg.connect(migrated_database_url, row_factory=dict_row) as connection:
+        assert "missing from target" in _verify_row(connection, absent)
