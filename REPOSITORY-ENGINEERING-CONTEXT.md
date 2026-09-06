@@ -279,27 +279,28 @@ run.
 
 Branch protection is asserted, not assumed. `quality/branch_protection_policy.v1.json` records
 every protection field this repository claims — required contexts, posture flags, bypass
-allowances, CODEOWNERS posture, the review authority, and `documented_exceptions` each carrying
-the condition that retires it — and `scripts/check_branch_protection_policy.py` compares live
-protection against it field by field, failing in BOTH drift directions (protection weakening, and
-an exception's text being removed without the configuration strengthening), with absent settings
+allowances, CODEOWNERS posture, the review authority, and `documented_exceptions` each carrying the
+condition that retires it — and `scripts/check_branch_protection_policy.py` compares live
+protection against it field by field, comparing for EQUALITY rather than as a floor, so protection
+that weakens OR strengthens away from the table fails and must be re-declared, with absent settings
 compared as ABSENT rather than coerced to false. The checker is lifted BYTE-IDENTICALLY from the
-canonical implementation (`lotus-gateway` at `main`) and must stay that way: that identity is how
-a canonical fix reaches every adopter instead of forking an estate-wide control, so
+canonical implementation (`lotus-gateway` at `main`) and must stay that way: that identity is how a
+canonical fix reaches every adopter instead of forking an estate-wide control, so
 repository-specific needs belong in the policy table, never in the script. The offline
 document-shape checks run blocking in the unit gate so the table cannot rot; the live comparison
 runs daily in its own job in `Main Gate Coverage Audit` — a separate job, because sharing the
-coverage audit's job would let that job's timeout cancel the protection evidence exactly when it
-is most useful. **Operator requirement:** the live comparison needs a repository Actions secret
+coverage audit's job would let that job's timeout cancel the protection evidence exactly when it is
+most useful. **Operator requirement:** the live comparison needs a repository Actions secret
 (`LOTUS_AUTOMERGE_TOKEN`) carrying `administration: read`, which `github.token` cannot carry; no
 Lotus repository held one when this landed, so the step FAILS CLOSED on the missing token rather
 than passing silently, and the gate's own context is deliberately not yet self-anchored in the
 required list — requiring it would block every merge on an operator action rather than assert a
-control. Two comparison gaps are stated in the table rather than implied: source `app_id`
-bindings (lotus-gateway#740), four protection controls the API returns but the checker's
-hard-coded allowlist ignores (lotus-gateway#742), and only the zero-approval exception being bound
-to the weakness it documents (lotus-gateway#743); all three are canonical gaps, none closable from
-the table side.
+control. Three comparison gaps are stated in the table rather than implied: source `app_id`
+bindings (lotus-gateway#740), four protection controls the API returns but the checker's hard-coded
+allowlist ignores (lotus-gateway#742), and only the zero-approval exception being bound to the
+weakness it documents (lotus-gateway#743) — so an exception the offline validation does not name
+can be deleted while the weakness it excused persists, and only the zero-approval case is genuinely
+bound. All three are canonical gaps, none closable from the table side.
 
 Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
 `ENTERPRISE_ENFORCE_READ_AUTHZ=true` and `ENTERPRISE_PRIMARY_KEY_ID`.
