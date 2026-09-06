@@ -19,6 +19,9 @@ dependencies = [
   "starlette>=1.6.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/sgajbi/lotus-report"
+
 [project.optional-dependencies]
 dev = [
   "PyYAML>=6.0",
