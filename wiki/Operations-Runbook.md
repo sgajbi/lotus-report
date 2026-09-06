@@ -12,14 +12,15 @@ for the implementation-backed `lotus-report` runtime.
 5. [Observability vocabulary owner](#observability-vocabulary-owner)
 6. [Operational truths](#operational-truths)
 7. [Schema Upgrade And Startup Recovery](#schema-upgrade-and-startup-recovery)
-8. [Durable Report-Job Worker](#durable-report-job-worker)
-9. [RFC-0104 batch reporting posture](#rfc-0104-batch-reporting-posture)
-10. [RFC-0100 gateway-first job flow](#rfc-0100-gateway-first-job-flow)
-11. [RFC-0101 snapshot and lineage flow](#rfc-0101-snapshot-and-lineage-flow)
-12. [Runtime configuration defaults](#runtime-configuration-defaults)
-13. [PostgreSQL ledger operations](#postgresql-ledger-operations)
-14. [Practical probes](#practical-probes)
-15. [Key references](#key-references)
+8. [Cutover: Idea intake ledger to PostgreSQL](#cutover-idea-intake-ledger-to-postgresql)
+9. [Durable Report-Job Worker](#durable-report-job-worker)
+10. [RFC-0104 batch reporting posture](#rfc-0104-batch-reporting-posture)
+11. [RFC-0100 gateway-first job flow](#rfc-0100-gateway-first-job-flow)
+12. [RFC-0101 snapshot and lineage flow](#rfc-0101-snapshot-and-lineage-flow)
+13. [Runtime configuration defaults](#runtime-configuration-defaults)
+14. [PostgreSQL ledger operations](#postgresql-ledger-operations)
+15. [Practical probes](#practical-probes)
+16. [Key references](#key-references)
 
 ## First Response Matrix
 
@@ -332,6 +333,67 @@ cleanup exported ledger deleted
 An earlier run copied from a *running* container and is not evidence for this
 procedure, which forbids that. The shared `lotus-report` stack was not used as the
 source and was never stopped.
+
+## Cutover: Idea intake ledger to PostgreSQL
+
+**Move the records first, verify, and only then change the backend.** Reversing the last two steps
+starts the service on an empty intake ledger. Nothing errors: a replayed intake is accepted as new,
+and the materialization route refuses the replays it can no longer verify. Same silent-empty
+failure as the volume rollout above, from a different cause.
+
+The PostgreSQL table exists from migration 024 and `PostgresIdeaEvidenceIntakeLedger` is
+implemented, but `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` still defaults to `sqlite`. Nothing
+below happens on its own.
+
+```bash
+set -euo pipefail
+
+# 1. Stop the API so nothing accepts an intake mid-transfer.
+docker compose stop lotus-report
+
+# 2. Carry the records across. Safe to re-run: an interrupted run leaves a
+#    prefix that a re-run completes.
+REPORT_JOB_LEDGER_DATABASE_URL="$REPORT_JOB_LEDGER_DATABASE_URL" \
+  python scripts/transfer_idea_evidence_intake.py \
+    --sqlite-path data/idea-evidence-intake.sqlite3
+
+# 3. Verify by running it again. A completed transfer reports every record as
+#    already present and re-verifies its content, changing nothing.
+REPORT_JOB_LEDGER_DATABASE_URL="$REPORT_JOB_LEDGER_DATABASE_URL" \
+  python scripts/transfer_idea_evidence_intake.py \
+    --sqlite-path data/idea-evidence-intake.sqlite3
+```
+
+Step 3 must print `inserted=0` with `verified` equal to `source`, and exit `0`. Anything else means
+the transfer is not complete — **do not continue**. The tool exits non-zero on a missing or
+differing record, so it can gate the cutover directly.
+
+```bash
+# 4. Only now switch the backend, and restart.
+export REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql
+docker compose up -d lotus-report
+
+# 5. Confirm a pre-cutover key still replays to its original receipt.
+#    Use a real idempotency key from the transferred set.
+curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
+  -H "Idempotency-Key: <a key accepted before the cutover>" \
+  -H "X-Actor-Id: <actor>" -H "X-Caller-Application: lotus-idea" \
+  -H "Content-Type: application/json" -d @<the original request body>
+```
+
+Step 5 returns the **original** `intake_id` and `accepted_at_utc`. A new `intake_id` means the
+ledger did not carry the record and the cutover has lost replay identity.
+
+**Keep the SQLite file.** It is the rollback: setting
+`REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` back to `sqlite` and restarting returns to the prior
+store with its records intact, because the transfer copies rather than moves. Delete it only after
+the PostgreSQL store has been accepted in that environment.
+
+**What the transfer does not do.** It does not switch the backend, and it does not stop the API —
+both are yours above. It copies field for field, changing only representation: the two JSON
+payloads become `jsonb` and the two instants become `timestamptz`. It then re-reads every record and
+compares content, because `ON CONFLICT DO NOTHING` would otherwise skip a key that already exists
+with *different* content and report a clean transfer over a corrupted target.
 
 ## Durable Report-Job Worker
 

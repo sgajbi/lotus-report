@@ -6,9 +6,9 @@
   **PostgreSQL `idea_evidence_intake` table** created by migration 024.
 - Scope boundary for `idea_evidence_intake`: this contract governs the PostgreSQL **table**. The
   store production uses by default is still SQLite at `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, selected
-  by `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`, and no records have been transferred into
-  PostgreSQL yet. Until that transfer lands, this contract says nothing about the durability of the
-  store actually in use. Tracked as report#326.
+  by `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`. A proven transfer exists
+  (`scripts/transfer_idea_evidence_intake.py`), but no environment has run it, so this contract
+  still says nothing about the durability of the store actually in use. Tracked as report#326.
 - Migration policy: **forward-only schema management** with deterministic smoke validation.
 
 ## Deterministic Checks

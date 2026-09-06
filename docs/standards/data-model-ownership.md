@@ -19,9 +19,11 @@
   the existing migration smoke - and `PostgresIdeaEvidenceIntakeLedger`
   implements the same surface, selected by
   `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`.
-  **The default is still `sqlite`, and the gap is still open.** Nothing has
-  transferred existing records into PostgreSQL, and starting a deployment from
-  an empty intake ledger is the unverifiable-replay state report#334 refuses:
+  **The default is still `sqlite`, and the gap is still open.** A proven
+  transfer exists -- `scripts/transfer_idea_evidence_intake.py`, sequenced in
+  the Operations Runbook under *Cutover: Idea intake ledger to PostgreSQL* --
+  but no environment has run it. Until one does, starting a deployment from an
+  empty intake ledger is the unverifiable-replay state report#334 refuses:
   the report rows survive, the intake evidence does not, and no replay can then
   be told apart from a first submission. Until the transfer is delivered and
   the default changes, read the migration contract as covering the PostgreSQL
