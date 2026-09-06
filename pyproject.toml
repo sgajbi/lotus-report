@@ -36,7 +36,11 @@ dev = [
   # resolved at install time, so the same tree passes locally and fails in CI, or
   # passes today and fails tomorrow with no code change. Matches lotus-risk.
   "ruff==0.16.4",
-  "mypy>=1.19.1",
+  # Pinned for the same reason as ruff: a newer mypy reporting new errors on
+  # unchanged code is indistinguishable from a real regression, and a floor lets
+  # that arrive on a day nothing changed. 2.3.1 is what this repository runs and
+  # passes under; lotus-risk pins 2.3.0 and lotus-archive 1.19.1.
+  "mypy==2.3.1",
   "pytest-cov>=6.2.1",
   "coverage>=7.10.6",
   "pre-commit>=4.3.0",
