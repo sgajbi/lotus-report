@@ -25,10 +25,20 @@ jobs:
           set -euo pipefail
           git fetch origin main --quiet
           python scripts/audit_main_gate_coverage.py --since-days 7 --fail-on-gap
+
+  branch-protection:
+    # A SEPARATE job, not a step of the audit above: the two assert
+    # different controls, and sharing a job would let the audit's timeout
+    # (it can run hundreds of serial API calls) cancel this one - making
+    # the protection evidence unavailable during exactly the API stalls
+    # where independent evidence matters most. `if: !cancelled()` cannot
+    # save a step whose job was cancelled.
+    name: Audit / Branch Protection Matches Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
       - name: Enforce Branch Protection Policy
-        # Runs even when the audit above failed: the two assert different
-        # controls and one silence must not hide the other.
-        if: ${{ !cancelled() }}
         env:
           # github.token cannot carry administration:read, which the branch
           # protection endpoint requires. A missing or unauthorized token
