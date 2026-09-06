@@ -6,8 +6,14 @@
   `report_status_event`, `report_input_snapshot`, `report_upstream_call`,
   `report_job_relationship`, `report_rerender_attempt`, `report_request`, `report_batch`,
   `report_batch_item`, `report_batch_schedule_definition` and
-  `report_batch_schedule_audit`. It persists no portfolio, position, transaction, valuation
-  or performance entity; those are read from their owners and echoed.
+  `report_batch_schedule_audit`, all in the PostgreSQL job and batch ledgers.
+  It persists no portfolio, position, transaction, valuation or performance
+  entity; those are read from their owners and echoed.
+- Separate store: `idea_evidence_intake` is durable Report-owned state on a
+  DIFFERENT engine - SQLite at `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, created and
+  written by `src/app/idea_evidence_intake/service.py`. It carries its own
+  persistence, retention and migration boundary, so an audit of Report-owned
+  state that stops at the PostgreSQL ledgers is incomplete.
 - Domain responsibility: reporting orchestration and aggregation payload shaping.
 
 ## Service Boundaries
