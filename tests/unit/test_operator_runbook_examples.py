@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +157,34 @@ def test_snapshot_lineage_docs_require_atomic_complete_resume() -> None:
     assert "same-payload zero-call historical gap" in supported_features
 
 
+def _repository_slug() -> str:
+    """This repository's name, from git metadata rather than the folder name.
+
+    A clone or worktree may sit under any directory name, so ``ROOT.name`` would
+    make the governed unit gate depend on where the checkout was placed. The
+    identity must also come from outside the policy document: deriving it from
+    the document would let a wholly copied table agree with itself.
+    """
+    env = os.environ.get("GITHUB_REPOSITORY")
+    if env:
+        return env.rsplit("/", 1)[-1]
+
+    result = subprocess.run(
+        ["git", "config", "--get", "remote.origin.url"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    url = result.stdout.strip()
+    assert result.returncode == 0 and url, (
+        "cannot establish repository identity: no GITHUB_REPOSITORY and no "
+        "git remote.origin.url. Refusing to skip - a guard that does not run "
+        "is indistinguishable from one that passes."
+    )
+    return url.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1]
+
+
 def test_branch_protection_policy_table_describes_this_repository() -> None:
     """The lifted checker is byte-identical everywhere; the policy table is not.
 
@@ -166,13 +196,12 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     Asserted POSITIVELY on the identity-bearing fields rather than by scanning
     for foreign names: a blanket scan would reject the canonical references the
     table legitimately cites, and would need a list of sibling repositories that
-    drifts as the estate grows. The slug comes from the checkout directory, not
-    from the document, so a wholly copied document cannot agree with itself.
+    drifts as the estate grows.
 
     Interim: a canonical check would remove the need for this per-repo guard.
     Filed as lotus-gateway#745.
     """
-    slug = ROOT.name
+    slug = _repository_slug()
     policy = _read("quality/branch_protection_policy.v1.json")
     document = json.loads(policy)
 
