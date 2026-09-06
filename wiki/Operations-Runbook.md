@@ -351,8 +351,15 @@ below happens on its own.
 path either fails with a missing file or, worse, transfers an unrelated file that happens to exist
 there.
 
-```bash
-set -euo pipefail
+**Run every command from the repository root**, the directory holding `docker-compose.yml`. Each
+`docker compose` invocation resolves its project from the working directory: run from elsewhere and
+it either finds no compose file or, worse, resolves a *different* project and reports success
+against a deployment you did not mean to touch.
+
+PowerShell, matching the rest of this runbook:
+
+```powershell
+Set-Location <repository root>
 
 # 1. Stop the API so nothing accepts an intake mid-transfer.
 docker compose stop lotus-report
@@ -360,43 +367,72 @@ docker compose stop lotus-report
 # 2. Carry the records across, in a one-off container with the intake volume
 #    mounted. Safe to re-run: an interrupted run leaves a prefix that a re-run
 #    completes. REPORT_JOB_LEDGER_DATABASE_URL comes from the service
-#    environment, so it points at the compose database rather than yours.
-docker compose run --rm lotus-report \
-  python -m app.idea_evidence_intake.transfer \
-    --sqlite-path /app/data/idea-evidence-intake.sqlite3
+#    environment, so it targets the compose database rather than yours.
+docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
 
 # 3. Verify by running exactly the same command again. A completed transfer
 #    reports every record as already present and re-verifies its content,
 #    changing nothing.
-docker compose run --rm lotus-report \
-  python -m app.idea_evidence_intake.transfer \
-    --sqlite-path /app/data/idea-evidence-intake.sqlite3
+docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
+```
+
+Bash equivalent:
+
+```bash
+set -euo pipefail
+cd <repository root>
+
+docker compose stop lotus-report
+
+docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
+
+docker compose run --rm lotus-report python -m app.idea_evidence_intake.transfer --sqlite-path /app/data/idea-evidence-intake.sqlite3
 ```
 
 Step 3 must print `inserted=0` with `verified` equal to `source`, and exit `0`. Anything else means
 the transfer is not complete — **do not continue**. The tool exits non-zero on a missing or
 differing record, so it can gate the cutover directly.
 
-```bash
+```powershell
 # 4. Persist the backend selection where Compose will read it again, then
-#    restart. An `export` lives only in this shell: the interpolation defaults
-#    to sqlite, so the next `docker compose up` from a fresh shell would
-#    silently revert the service to the stale SQLite ledger -- and any intake
-#    accepted on PostgreSQL in between becomes invisible to replay checks.
-echo 'REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql' >> .env
+#    restart. A session variable lives only in this shell: the interpolation
+#    defaults to sqlite, so the next `docker compose up` from a fresh shell
+#    would silently revert the service to the stale SQLite ledger -- and any
+#    intake accepted on PostgreSQL in between becomes invisible to replay
+#    checks.
+Add-Content -Path .env -Value "REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql"
 docker compose up -d lotus-report
 
-# 5. Confirm the setting survives a shell that never exported it, and that the
-#    container actually received it. The first command is the one that catches
-#    a transient export; the second catches a missing Compose passthrough.
-env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND \
-  docker compose config | grep REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+# 5. Confirm the setting resolves in a shell that never set it, and that the
+#    container actually received it. The first catches a session-only value,
+#    the second catches a missing Compose passthrough. Either alone passes
+#    while the other fault is present.
+Remove-Item Env:REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND -ErrorAction SilentlyContinue
+docker compose config | Select-String REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 
 # 6. Confirm a pre-cutover key still replays to its original receipt. Use a
 #    real idempotency key from the transferred set, and its original body.
 #    All four caller-context headers are required: the route rejects a missing
 #    X-Tenant-Id or X-Region with HTTP 400 before it reaches the ledger.
+curl.exe -s -X POST "$env:REPORT_BASE_URL/reports/idea-evidence-packs" `
+  -H "Idempotency-Key: <a key accepted before the cutover>" `
+  -H "X-Actor-Id: <actor>" `
+  -H "X-Caller-Application: lotus-idea" `
+  -H "X-Tenant-Id: <the tenant that accepted it>" `
+  -H "X-Region: <that request's region>" `
+  -H "Content-Type: application/json" -d "@<the original request body>"
+```
+
+Bash equivalent:
+
+```bash
+echo 'REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql' >> .env
+docker compose up -d lotus-report
+
+env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND docker compose config | grep REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+
 curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "Idempotency-Key: <a key accepted before the cutover>" \
   -H "X-Actor-Id: <actor>" \
@@ -405,6 +441,11 @@ curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "X-Region: <that request's region>" \
   -H "Content-Type: application/json" -d @<the original request body>
 ```
+
+`curl.exe` rather than `curl` in PowerShell, because the bare name is not the same command in
+both editions. In Windows PowerShell 5.1 it is an alias for `Invoke-WebRequest`, which does not
+accept these arguments; in PowerShell 7 it resolves to whatever `curl` is on PATH, if any. The
+`.exe` suffix names the real binary in both.
 
 Both commands in step 5 must print `postgresql`. Step 6 returns the **original** `intake_id` and
 `accepted_at_utc`. A new `intake_id` means the ledger did not carry the record and the cutover has
