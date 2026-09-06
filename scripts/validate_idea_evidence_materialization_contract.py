@@ -92,6 +92,7 @@ REQUIRED_RECOVERY = {
     "required_capability": "report.idea-materialization.recover",
     "tenant_scoped": True,
     "owner_version_source": "append_only_report_status_event_count",
+    "owner_history_policy": "append_only_no_delete",
     "exact_replay_preserves_owner_version": True,
     "repository_query_limit": 2,
     "retries_materialization": False,

@@ -32,7 +32,10 @@ returns `409`. The route reads current Report-owned status and never calls the
 materialization command. `source_event_version` is derived from the committed append-only Report
 status-event sequence: exact replay preserves it and later Report lifecycle evidence increases it.
 Status and version are projected atomically, so a concurrent transition cannot produce a torn
-receipt. Local headers are contract proof only; production
+receipt. Report status-event history is append-only and must not be deleted while consumers rely
+on the version. A legacy materialization without persisted recovery identity can replay only
+through an exact POST whose client request hash already matched; recovery GET remains fail-closed.
+Local headers are contract proof only; production
 identity and capability attestation remain environment-owned certification.
 
 Validate locally:

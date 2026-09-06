@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import ModuleType
 
@@ -95,6 +96,7 @@ def test_idea_evidence_materialization_contract_requires_exact_read_only_recover
     contract["recovery"]["tenant_scoped"] = False
     contract["recovery"]["retries_materialization"] = True
     contract["recovery"]["owner_version_source"] = "mutable_job_status"
+    contract["recovery"]["owner_history_policy"] = "retention_may_delete"
     contract["recovery"]["exact_replay_preserves_owner_version"] = False
     contract["recovery"]["required_query_fields"].remove("conversionIntentId")
     drifted = tmp_path / "contract.json"
@@ -105,6 +107,7 @@ def test_idea_evidence_materialization_contract_requires_exact_read_only_recover
     assert "recovery.tenant_scoped must be True" in errors
     assert "recovery.retries_materialization must be False" in errors
     assert "recovery.owner_version_source must be 'append_only_report_status_event_count'" in errors
+    assert "recovery.owner_history_policy must be 'append_only_no_delete'" in errors
     assert "recovery.exact_replay_preserves_owner_version must be True" in errors
     assert "recovery.required_query_fields missing: conversionIntentId" in errors
 
@@ -127,6 +130,21 @@ def test_idea_evidence_materialization_contract_requires_owner_version(
     errors = module.validate_idea_evidence_materialization_contract(drifted)
 
     assert "response_fields missing: source_event_version" in errors
+
+
+def test_report_status_event_history_remains_append_only() -> None:
+    deletion = re.compile(r"\bDELETE\s+FROM\s+report_status_event\b", re.IGNORECASE)
+    governed_paths = [*ROOT.glob("src/**/*.py"), *ROOT.glob("migrations/*.sql")]
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in governed_paths
+        if deletion.search(path.read_text(encoding="utf-8"))
+    ]
+
+    assert offenders == [], (
+        "Report materialization owner versions depend on append-only status-event history; "
+        f"deletion was introduced in: {offenders}"
+    )
 
 
 def _load_validator() -> ModuleType:

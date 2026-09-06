@@ -10,6 +10,7 @@ from app.idea_evidence_intake.materialization_contract import (
 from app.idea_evidence_intake.models import IdeaEvidenceMaterializationRecoveryIdentity
 from app.idea_evidence_intake.recovery import (
     IdeaMaterializationIdentityConflictError,
+    IdeaMaterializationRecoveryIdentityMissingError,
     recover_idea_materialization,
 )
 from app.reporting_jobs.models import ReportJobLedgerRecord, ReportJobOwnerSnapshot
@@ -22,6 +23,22 @@ def test_recovery_fails_closed_for_malformed_stored_identity() -> None:
     with pytest.raises(
         IdeaMaterializationIdentityConflictError,
         match="idea_materialization_identity_invalid",
+    ):
+        recover_idea_materialization(
+            ledger=_Reader([record]),
+            tenant_id="tenant-sg",
+            idempotency_key="idea-materialization-001",
+            expected_identity=_identity(),
+        )
+
+
+def test_recovery_fails_closed_for_missing_stored_identity() -> None:
+    record = _record()
+    record.options.pop(IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION)
+
+    with pytest.raises(
+        IdeaMaterializationRecoveryIdentityMissingError,
+        match="idea_materialization_recovery_identity_missing",
     ):
         recover_idea_materialization(
             ledger=_Reader([record]),

@@ -18,6 +18,9 @@ from app.idea_evidence_intake.models import (
 from app.idea_evidence_intake.recovery import (
     IdeaMaterializationIdentityConflictError,
     IdeaMaterializationNotFoundError,
+    IdeaMaterializationRecoveryIdentityMissingError,
+    materialization_response,
+    read_idea_materialization_owner_snapshot,
     recover_idea_materialization,
     recovery_identity_from_request,
 )
@@ -472,9 +475,31 @@ def _materialization_response(
     # Re-read through the same exact owner projection used by recovery so the
     # command response and later GET expose one version authority. The bounded
     # SQL read binds the job row and its append-only event count in one snapshot.
-    return recover_idea_materialization(
-        ledger=ledger,
-        tenant_id=record.tenant_id,
-        idempotency_key=idempotency_key,
-        expected_identity=recovery_identity_from_request(request),
-    )
+    expected_identity = recovery_identity_from_request(request)
+    try:
+        return recover_idea_materialization(
+            ledger=ledger,
+            tenant_id=record.tenant_id,
+            idempotency_key=idempotency_key,
+            expected_identity=expected_identity,
+        )
+    except IdeaMaterializationRecoveryIdentityMissingError:
+        # Records accepted before exact recovery identity was persisted still
+        # replay through POST after the ledger has validated their client-only
+        # request hash. GET recovery remains fail-closed because it cannot make
+        # that command-bound comparison.
+        snapshot = read_idea_materialization_owner_snapshot(
+            ledger=ledger,
+            tenant_id=record.tenant_id,
+            idempotency_key=idempotency_key,
+        )
+        if snapshot.record.job_id != record.job_id:
+            raise IdeaMaterializationIdentityConflictError(
+                "idea_materialization_replay_record_changed"
+            )
+        return materialization_response(
+            record=snapshot.record,
+            source_event_version=snapshot.source_event_version,
+            identity=expected_identity,
+            idempotency_key=idempotency_key,
+        )
