@@ -341,10 +341,18 @@ carry the existing ledger into the volume, verify the row count, delete the expo
 [Operations Runbook](wiki/Operations-Runbook.md) under *One-time rollout: Idea intake ledger
 volume*. Skipping it starts the service on an empty ledger with no error.
 
-The intake ledger's schema-upgrade **policy** remains open: `migration-contract.md` scopes itself
-to PostgreSQL and treats SQLite as a unit-test adapter, so this store has no migration standard and
-no migration gate. Tracked as [#326](https://github.com/sgajbi/lotus-report/issues/326); do not
-read the migration contract as covering it.
+The intake ledger is **migrating to PostgreSQL** ([#326](https://github.com/sgajbi/lotus-report/issues/326)).
+Migration 024 creates `idea_evidence_intake`, which is now a mandatory table in
+`make migration-smoke` and has its column types and indexes asserted by
+`make migration-upgrade-smoke`. `PostgresIdeaEvidenceIntakeLedger` implements the same surface and
+is selected by `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`.
+
+**The default is still `sqlite`, so the durability gap is not closed.** No records have been
+transferred, and pointing a deployment at the new table would start it from an empty intake
+ledger — report rows surviving while the evidence that validated them does not, which is the
+unverifiable-replay state the materialization route refuses. Read the migration contract as
+covering the PostgreSQL **table**, not the store production actually uses, until the transfer and
+its rollout acceptance land.
 
 ## Validation And CI Expectations
 
