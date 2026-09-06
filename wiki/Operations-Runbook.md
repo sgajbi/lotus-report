@@ -394,24 +394,36 @@ the transfer is not complete — **do not continue**. The tool exits non-zero on
 differing record, so it can gate the cutover directly.
 
 ```powershell
-# 4. Persist the backend selection where Compose will read it again, then
-#    restart. A session variable lives only in this shell: the interpolation
-#    defaults to sqlite, so the next `docker compose up` from a fresh shell
-#    would silently revert the service to the stale SQLite ledger -- and any
-#    intake accepted on PostgreSQL in between becomes invisible to replay
-#    checks.
-Add-Content -Path .env -Value "REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql"
+# 4. Persist the backend selection where Compose will read it again. A session
+#    variable lives only in this shell: the interpolation defaults to sqlite,
+#    so the next `docker compose up` from a fresh shell would silently revert
+#    the service to the stale SQLite ledger.
+#
+#    The leading newline is not cosmetic. Appending to a .env whose last line
+#    has no terminator concatenates onto it -- `FOO=bar` becomes
+#    `FOO=barREPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql`, breaking
+#    both variables and leaving Compose on the sqlite default.
+Add-Content -Path .env -Value "`nREPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql"
+
+# 5. Prove the RESOLVED VALUE before anything starts. Matching the variable
+#    name is not a check: `Select-String` on the name alone succeeds while every
+#    line reads `sqlite`. Unsetting the session variable first is what catches
+#    a value that only lives in this shell.
+Remove-Item Env:REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND -ErrorAction SilentlyContinue
+if (-not (docker compose config |
+    Select-String "REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND: postgresql" -Quiet)) {
+  throw "Backend did not resolve to postgresql -- do not start the API"
+}
+
+# 6. Only now start the API. Until this point nothing can accept an intake on
+#    the wrong store.
 docker compose up -d lotus-report
 
-# 5. Confirm the setting resolves in a shell that never set it, and that the
-#    container actually received it. The first catches a session-only value,
-#    the second catches a missing Compose passthrough. Either alone passes
-#    while the other fault is present.
-Remove-Item Env:REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND -ErrorAction SilentlyContinue
-docker compose config | Select-String REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+# 7. Confirm the container received it, which catches a missing Compose
+#    passthrough that step 5 cannot see.
 docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 
-# 6. Confirm a pre-cutover key still replays to its original receipt. Use a
+# 8. Confirm a pre-cutover key still replays to its original receipt. Use a
 #    real idempotency key from the transferred set, and its original body.
 #    All four caller-context headers are required: the route rejects a missing
 #    X-Tenant-Id or X-Region with HTTP 400 before it reaches the ledger.
@@ -427,10 +439,16 @@ curl.exe -s -X POST "$env:REPORT_BASE_URL/reports/idea-evidence-packs" `
 Bash equivalent:
 
 ```bash
-echo 'REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql' >> .env
-docker compose up -d lotus-report
+# The leading newline guards against a .env with no trailing terminator.
+printf '\nREPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql\n' >> .env
 
-env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND docker compose config | grep REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+# Assert the resolved VALUE, and do it before the API starts. Matching the
+# name alone exits 0 while the value is still sqlite.
+env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND docker compose config \
+  | grep -q 'REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND: postgresql' \
+  || { echo "Backend did not resolve to postgresql -- do not start the API"; exit 1; }
+
+docker compose up -d lotus-report
 docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 
 curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
@@ -447,10 +465,13 @@ both editions. In Windows PowerShell 5.1 it is an alias for `Invoke-WebRequest`,
 accept these arguments; in PowerShell 7 it resolves to whatever `curl` is on PATH, if any. The
 `.exe` suffix names the real binary in both.
 
-Both commands in step 5 must print `postgresql`. Step 6 returns the **original** `intake_id` and
-`accepted_at_utc`. A new `intake_id` means the ledger did not carry the record and the cutover has
-lost replay identity. An HTTP 400 with `missing_caller_context` means the probe is wrong, not the
-cutover.
+Step 5 fails loudly rather than printing something for the operator to read, because it runs while
+the API is still stopped: anything it lets through would be accepted on the wrong store before
+anyone noticed. Step 7 must print `postgresql`.
+
+Step 8 returns the **original** `intake_id` and `accepted_at_utc`. A new `intake_id` means the
+ledger did not carry the record and the cutover has lost replay identity. An HTTP 400 with
+`missing_caller_context` means the probe is wrong, not the cutover.
 
 **Keep the SQLite file, and know how long it is a rollback.** The transfer copies rather than
 moves, so until the service accepts its first intake on PostgreSQL, reverting
