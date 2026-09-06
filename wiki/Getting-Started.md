@@ -37,6 +37,24 @@ Prerequisites, before anything else:
   The `python -V` line is the check that matters: it is the reader's own environment answering,
   rather than this document guessing at it.
 
+  **Windows: PowerShell's default execution policy blocks `Activate.ps1`.** A fresh install is
+  `Restricted`, so activation fails before `make install` runs. Either allow signed and local
+  scripts for your own account only — the scope Python's venv documentation recommends —
+
+  ```powershell
+  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+  ```
+
+  or skip PowerShell scripting entirely and activate from `cmd.exe`, which needs no policy
+  change:
+
+  ```bat
+  .venv\Scripts\activate.bat
+  ```
+
+  Prefer the second if you would rather not change a security setting to install a project. Both
+  end in the same activated environment, and `python -V` confirms it either way.
+
 ```bash
 make install
 ```
