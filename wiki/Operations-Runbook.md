@@ -174,54 +174,75 @@ export COMPOSE_PROJECT_NAME=<the project the stack runs under>   # omit only if 
 ```
 
 ```shell
-# 0. STOP the API first. Everything after this reads a quiesced file.
+set -euo pipefail        # every step below is fail-stop; do not continue past an error
+
+# 1. STOP the API. Everything after this reads a quiesced file.
 docker compose stop lotus-report
 
-# 1. copy the ledger out of the STOPPED container, to a path OUTSIDE the repository.
+# 2. Copy the ledger out of the STOPPED container, to a path OUTSIDE the repository.
 #    The ledger holds caller context and operational identifiers; it must not land
 #    somewhere it can be committed or swept into a backup.
 export ROLLOUT_DIR="$(mktemp -d)"
-if docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" 2>/dev/null; then
-  echo "ledger found; continuing with the rollout"
-else
-  echo "no ledger in this deployment - it has taken no intake requests. Nothing to carry:"
-  echo "restart with 'docker compose up -d' and skip the remaining steps."
+if ! docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 \
+      "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" 2>/dev/null; then
+  echo "No ledger in this deployment: it has taken no intake requests."
+  echo "Nothing to carry. Run 'docker compose up -d' and STOP HERE."
+  rmdir "$ROLLOUT_DIR"; exit 0
 fi
 
-# 2. take the baseline FROM THE QUIESCED COPY, not from the live service
-python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
+# 3. Baseline FROM THE QUIESCED COPY, not from the live service.
+BASELINE="$(python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])")"
+echo "baseline: $BASELINE record(s)"
 
-# 3. let Compose create the container so it names the volume itself, then READ that name.
-#    Do not guess it: Compose prefixes the declared name with the project name, which comes
-#    from the directory, COMPOSE_PROJECT_NAME or -p, and `config --volumes` prints only the
-#    DECLARED name without the prefix.
+# 4. Let Compose name the volume, then READ that name. Never type it: Compose prefixes
+#    the declared name with the project name, and `config --volumes` prints only the
+#    DECLARED name, so it cannot confirm what will be mounted.
+#    NOTE: this replaces the old container and removes its writable layer.
 docker compose create lotus-report
 VOLUME="$(docker inspect lotus-report --format '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Name}}{{end}}{{end}}')"
+if [ -z "$VOLUME" ]; then
+  echo "FAILED to discover the volume mounted at /app/data. Do not continue:"
+  echo "the export in $ROLLOUT_DIR is now the only copy. Investigate before proceeding."
+  exit 1
+fi
 echo "seeding volume: $VOLUME"
 
-# 4. copy the ledger into that volume
+# 5. Copy the ledger into that volume.
 docker run -d --name intake-rollout -v "$VOLUME":/app/data lotus-report:local sleep 120
 docker cp "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" intake-rollout:/app/data/idea-evidence-intake.sqlite3
 docker rm -f intake-rollout
 
-# 3. recreate the stack, then CONFIRM the count matches what step 1 carried
+# 6. VERIFY ON THE VOLUME, BEFORE resuming service. Count AND replay identities.
+docker run --rm -v "$VOLUME":/app/data lotus-report:local python -c "
+import sqlite3, os, sys
+con = sqlite3.connect('data/idea-evidence-intake.sqlite3')
+rows = con.execute('select count(*) from idea_evidence_intake').fetchone()[0]
+keys = [r[0] for r in con.execute('select idempotency_key from idea_evidence_intake order by 1')]
+print('on volume:', rows, 'record(s)')
+print('replay identities:', keys)
+sys.exit(0 if rows == int(os.environ['BASELINE']) else 1)
+"
+
+# 7. Only now resume service.
 docker compose up -d
-docker exec lotus-report python -c "import sqlite3;print(sqlite3.connect('data/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
+
+# 8. Only after verification passed: delete the export.
+rm -rf "$ROLLOUT_DIR"
 ```
+
 
 **Why the API must be stopped, not merely copied from.** Copying while it still serves
 leaves two silent failures. A record committed after the copy but before the container is
 replaced is absent from the new volume, so idempotency resets for exactly those keys and
 nothing reports it. And a byte-level copy of a live SQLite database can overlap an
 in-flight transaction, producing a torn file that may not fail until it is read. Stopping
-the container closes both, which is why step 0 stops it and it stays stopped until
-`docker compose up -d` brings it back on the volume.
+the container closes both, which is why step 1 stops it and it stays stopped until step 7.
 
 **A deployment that has never taken an intake request has no ledger file** — the schema is
 created lazily on first write, and the image ships no file. That is a valid zero-record state,
-not a fault: the copy in step 1 finds nothing, there is nothing to carry, and the correct
-action is to restart on the new volume. The conditional above is why the procedure reports that
-rather than failing with the API already stopped.
+not a fault: the copy in step 2 finds nothing, there is nothing to carry, and the correct
+action is to restart on the new volume. The procedure exits there rather than falling through
+into a baseline query that would fail with the API already stopped.
 
 Once the counts match, **delete the export** — it is a complete ledger:
 
@@ -229,10 +250,20 @@ Once the counts match, **delete the export** — it is a complete ledger:
 rm -rf "$ROLLOUT_DIR"
 ```
 
-Step 3's count is the check that matters: compare it against the baseline from step 2. Taking
-that baseline from the copied file rather than from the live service is deliberate — counting
-before the stop lets a record commit in between, which makes the post-rollout count legitimately
-exceed the baseline and turns a successful rollout into an apparent failure. Equal counts mean the rollout carried;
+Step 6 is the check that matters, and its position is deliberate: it runs **against the volume,
+before service resumes and before the export is deleted**, so a mismatch is caught while the
+export is still the recoverable copy. It compares the count *and* the replay identities, because
+a matching count with different keys is still a broken idempotency guarantee.
+
+Taking the baseline from the copied file rather than from the live service is likewise
+deliberate: counting before the stop lets a record commit in between, which makes the final
+count legitimately exceed the baseline and turns a successful rollout into an apparent failure.
+
+**There is no recovery window after step 4.** `docker compose create` replaces the old container
+and removes its writable layer, so the pre-rollout ledger ceases to exist at that moment — the
+export in `$ROLLOUT_DIR` becomes the only copy. That is why every step is fail-stop and why the
+export is deleted last. If step 4's volume discovery fails, stop and investigate; do not retry
+blindly, and do not remove `$ROLLOUT_DIR`. Equal counts mean the rollout carried;
 zero means the volume was mounted empty and the prior evidence is still in the
 old container's layer, recoverable only until that container is pruned.
 
