@@ -301,9 +301,12 @@ count legitimately exceed the baseline and turns a successful rollout into an ap
 and removes its writable layer, so the pre-rollout ledger ceases to exist at that moment — the
 export in `$ROLLOUT_DIR` becomes the only copy. That is why every step is fail-stop and why the
 export is deleted last. If step 4's volume discovery fails, stop and investigate; do not retry
-blindly, and do not remove `$ROLLOUT_DIR`. Equal counts mean the rollout carried;
-zero means the volume was mounted empty and the prior evidence is still in the
-old container's layer, recoverable only until that container is pruned.
+blindly, and do not remove `$ROLLOUT_DIR`.
+
+Equal counts and a matching key digest mean the rollout carried. **Zero rows against a nonzero
+baseline means the seed did not land — re-seed from `$ROLLOUT_DIR`, which is the only remaining
+copy.** Do not go looking in the old container: step 4 replaced it. Do not resume service, and
+do not delete the export, until a re-run of step 6 matches.
 
 The volume name is **read from the created container**, never typed. `docker compose config
 --volumes` prints only the declared name (`lotus-report-intake-data`) without the project
