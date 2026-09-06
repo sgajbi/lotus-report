@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -69,6 +71,17 @@ class Settings(BaseSettings):
         "data/idea-evidence-intake.sqlite3",
         min_length=1,
         alias="IDEA_EVIDENCE_INTAKE_LEDGER_PATH",
+    )
+    #: Which store backs the intake ledger. Defaults to `sqlite` deliberately:
+    #: the PostgreSQL table exists (migration 024) but nothing has transferred
+    #: existing records into it yet, and starting a live deployment from an
+    #: empty ledger is the unverifiable-replay state report#334 refuses --
+    #: report rows survive, intake evidence does not, and no replay can then be
+    #: told apart from a first submission. Flip it on migration evidence, not
+    #: in passing (report#326).
+    idea_evidence_intake_ledger_backend: Literal["sqlite", "postgresql"] = Field(
+        "sqlite",
+        alias="REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND",
     )
     report_job_worker_metrics_port: int = Field(
         8301,

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
-from typing import Iterator, Mapping
+from typing import Iterator, Mapping, Protocol
 
 from app.idea_evidence_intake.materialization_contract import (
     IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION,
@@ -54,6 +54,79 @@ class IdeaEvidenceIntakeRecord:
     created_at_utc: datetime
 
 
+class IdeaEvidenceIntakePort(Protocol):
+    """What the intake route needs from a ledger, whatever backs it.
+
+    Three methods, and `has_record` is not incidental: report#334 refuses a
+    legacy replay that no prior intake validated, and that question must be
+    answerable before `accept()` stores anything. A backend that cannot answer
+    it cannot host this route.
+    """
+
+    def accept(
+        self,
+        request: IdeaEvidencePackIntakeRequest,
+        *,
+        idempotency_key: str,
+        accepted_at_utc: datetime | None = None,
+        correlation_id: str | None = None,
+        trace_id: str | None = None,
+        caller_context: ReportCallerContext | None = None,
+    ) -> IdeaEvidencePackIntakeResponse: ...
+
+    def has_record(self, idempotency_key: str) -> bool: ...
+
+    def snapshot(self) -> Mapping[str, IdeaEvidenceIntakeRecord]: ...
+
+
+def build_intake_record(
+    request: IdeaEvidencePackIntakeRequest,
+    *,
+    idempotency_key: str,
+    payload_fingerprint: str,
+    accepted_at_utc: datetime | None = None,
+    correlation_id: str | None = None,
+    caller_context: ReportCallerContext | None = None,
+) -> IdeaEvidenceIntakeRecord:
+    """The record a newly accepted request produces, independent of storage.
+
+    Shared by the SQLite and PostgreSQL ledgers (report#326). What a request
+    means is not a property of where it is kept, and duplicating this per engine
+    is how the two would drift into disagreeing about the same intake.
+    """
+    accepted_at = accepted_at_utc or datetime.now(UTC)
+    intake_id = _intake_id(idempotency_key, payload_fingerprint)
+    response = IdeaEvidencePackIntakeResponse(
+        intake_id=intake_id,
+        intake_status="accepted",
+        report_evidence_pack_id=request.report_evidence_pack_id,
+        conversion_intent_id=request.conversion_intent_id,
+        candidate_id=request.candidate_id,
+        producer="lotus-idea",
+        owned_product="lotus-report:ClientReportEvidencePack:v1",
+        supportability_status="not_certified",
+        route_existence_proven=True,
+        materialization_proven=False,
+        creates_report_job=False,
+        creates_rendered_output=False,
+        creates_archive_record=False,
+        grants_client_publication_authority=False,
+        remaining_blockers=REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS,
+        evidence_refs=REPORT_IDEA_EVIDENCE_INTAKE_EVIDENCE_REFS,
+        accepted_at_utc=accepted_at,
+        correlation_id=correlation_id,
+    )
+    return IdeaEvidenceIntakeRecord(
+        intake_id=intake_id,
+        idempotency_key=idempotency_key,
+        payload_fingerprint=payload_fingerprint,
+        response=response,
+        caller_context=caller_context.model_dump(mode="json") if caller_context else {},
+        accepted_at_utc=accepted_at,
+        created_at_utc=datetime.now(UTC),
+    )
+
+
 class IdeaEvidenceIntakeLedger:
     def __init__(self, database_path: Path | str | None = None) -> None:
         self._database_path = Path(database_path) if database_path is not None else None
@@ -71,43 +144,20 @@ class IdeaEvidenceIntakeLedger:
         trace_id: str | None = None,
         caller_context: ReportCallerContext | None = None,
     ) -> IdeaEvidencePackIntakeResponse:
-        payload_fingerprint = _payload_fingerprint(request)
+        payload_fingerprint = payload_fingerprint_of(request)
         existing = self._get_record(idempotency_key)
         if existing:
             if existing.payload_fingerprint != payload_fingerprint:
                 raise IdeaEvidenceIntakeConflictError("idea evidence intake payload changed")
             return existing.response
 
-        accepted_at = accepted_at_utc or datetime.now(UTC)
-        intake_id = _intake_id(idempotency_key, payload_fingerprint)
-        response = IdeaEvidencePackIntakeResponse(
-            intake_id=intake_id,
-            intake_status="accepted",
-            report_evidence_pack_id=request.report_evidence_pack_id,
-            conversion_intent_id=request.conversion_intent_id,
-            candidate_id=request.candidate_id,
-            producer="lotus-idea",
-            owned_product="lotus-report:ClientReportEvidencePack:v1",
-            supportability_status="not_certified",
-            route_existence_proven=True,
-            materialization_proven=False,
-            creates_report_job=False,
-            creates_rendered_output=False,
-            creates_archive_record=False,
-            grants_client_publication_authority=False,
-            remaining_blockers=REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS,
-            evidence_refs=REPORT_IDEA_EVIDENCE_INTAKE_EVIDENCE_REFS,
-            accepted_at_utc=accepted_at,
-            correlation_id=correlation_id,
-        )
-        record = IdeaEvidenceIntakeRecord(
-            intake_id=intake_id,
+        record = build_intake_record(
+            request,
             idempotency_key=idempotency_key,
             payload_fingerprint=payload_fingerprint,
-            response=response,
-            caller_context=caller_context.model_dump(mode="json") if caller_context else {},
-            accepted_at_utc=accepted_at,
-            created_at_utc=datetime.now(UTC),
+            accepted_at_utc=accepted_at_utc,
+            correlation_id=correlation_id,
+            caller_context=caller_context,
         )
         stored_record = self._store_record(
             record,
@@ -263,7 +313,13 @@ class IdeaEvidenceIntakeLedger:
             )
 
 
-def _payload_fingerprint(request: IdeaEvidencePackIntakeRequest) -> str:
+def payload_fingerprint_of(request: IdeaEvidencePackIntakeRequest) -> str:
+    """The fingerprint that decides replay from conflict.
+
+    Public because the SQLite and PostgreSQL ledgers must compute it
+    identically: a request that replays on one engine and conflicts on the
+    other would make the store an input to the decision (report#326).
+    """
     payload = request.model_dump(mode="json")
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
