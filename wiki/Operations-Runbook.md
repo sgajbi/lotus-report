@@ -183,11 +183,20 @@ docker compose stop lotus-report
 #    The ledger holds caller context and operational identifiers; it must not land
 #    somewhere it can be committed or swept into a backup.
 export ROLLOUT_DIR="$(mktemp -d)"
-if ! docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 \
-      "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" 2>/dev/null; then
+if docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 \
+     "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" 2>"$ROLLOUT_DIR/cp.err"; then
+  :                                             # exported; continue
+elif grep -qi "could not find the file" "$ROLLOUT_DIR/cp.err"; then
   echo "No ledger in this deployment: it has taken no intake requests."
   echo "Nothing to carry. Run 'docker compose up -d' and STOP HERE."
-  rmdir "$ROLLOUT_DIR"; exit 0
+  rm -rf "$ROLLOUT_DIR"; exit 0
+else
+  echo "EXPORT FAILED, and this is NOT an absent ledger:"
+  cat "$ROLLOUT_DIR/cp.err"
+  echo
+  echo "Do NOT run 'docker compose up -d'. Recreating the container destroys the"
+  echo "writable layer that still holds the only copy. Investigate first."
+  exit 1
 fi
 
 # 3. Baseline FROM THE QUIESCED COPY, not from the live service.
@@ -213,7 +222,7 @@ docker cp "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" intake-rollout:/app/data/i
 docker rm -f intake-rollout
 
 # 6. VERIFY ON THE VOLUME, BEFORE resuming service. Count AND replay identities.
-docker run --rm -v "$VOLUME":/app/data lotus-report:local python -c "
+docker run --rm --env BASELINE="$BASELINE" -v "$VOLUME":/app/data lotus-report:local python -c "
 import sqlite3, os, sys
 con = sqlite3.connect('data/idea-evidence-intake.sqlite3')
 rows = con.execute('select count(*) from idea_evidence_intake').fetchone()[0]
@@ -237,6 +246,17 @@ replaced is absent from the new volume, so idempotency resets for exactly those 
 nothing reports it. And a byte-level copy of a live SQLite database can overlap an
 in-flight transaction, producing a torn file that may not fail until it is read. Stopping
 the container closes both, which is why step 1 stops it and it stays stopped until step 7.
+
+**A failed export is not an absent ledger**, and the two must never share a branch. Absence is
+recognised by the daemon's own message — `Could not find the file … in container` — and anything
+else stops. That distinction is load-bearing rather than tidy: the absent-ledger branch tells the
+operator to run `docker compose up -d`, which recreates the container and destroys the writable
+layer still holding the only copy. Issuing that instruction after a daemon or read error would
+cause exactly the loss this procedure exists to prevent.
+
+**The verification container receives `BASELINE` explicitly** via `--env`. Containers do not
+inherit the invoking shell's variables, so without it the comparison raises `KeyError` — the step
+that exists to catch a bad rollout would instead fail for an unrelated reason on every run.
 
 **A deployment that has never taken an intake request has no ledger file** — the schema is
 created lazily on first write, and the image ships no file. That is a valid zero-record state,
