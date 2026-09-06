@@ -2848,6 +2848,13 @@ class ReportJobLedgerRecord(BaseModel):
     archive_completed_at: datetime | None = None
 
 
+class ReportJobOwnerSnapshot(BaseModel):
+    """One Report job and its atomically observed lifecycle version."""
+
+    record: ReportJobLedgerRecord
+    source_event_version: int = Field(..., ge=1)
+
+
 class ReportJobArchiveStatusRecord(BaseModel):
     """Bounded source projection used by batch status composition."""
 

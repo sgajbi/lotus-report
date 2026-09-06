@@ -18,7 +18,6 @@ from app.idea_evidence_intake.models import (
 from app.idea_evidence_intake.recovery import (
     IdeaMaterializationIdentityConflictError,
     IdeaMaterializationNotFoundError,
-    materialization_response,
     recover_idea_materialization,
     recovery_identity_from_request,
 )
@@ -310,6 +309,7 @@ async def materialize_idea_evidence_pack(
         duration_seconds=perf_counter() - started_at,
     )
     return _materialization_response(
+        ledger=ledger,
         record=record,
         request=request,
         idempotency_key=record.idempotency_key,
@@ -464,12 +464,17 @@ async def recover_idea_evidence_pack_materialization(
 
 def _materialization_response(
     *,
+    ledger: ReportJobLedger,
     record: ReportJobLedgerRecord,
     request: IdeaEvidencePackMaterializationRequest,
     idempotency_key: str,
 ) -> IdeaEvidencePackMaterializationResponse:
-    return materialization_response(
-        record=record,
-        identity=recovery_identity_from_request(request),
+    # Re-read through the same exact owner projection used by recovery so the
+    # command response and later GET expose one version authority. The bounded
+    # SQL read binds the job row and its append-only event count in one snapshot.
+    return recover_idea_materialization(
+        ledger=ledger,
+        tenant_id=record.tenant_id,
         idempotency_key=idempotency_key,
+        expected_identity=recovery_identity_from_request(request),
     )

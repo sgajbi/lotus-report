@@ -320,7 +320,60 @@ def test_idea_evidence_materialization_recovers_exact_receipt_after_restart(tmp_
     assert submitted.status_code == 202
     assert recovered.status_code == 200
     assert recovered.json() == submitted.json()
+    assert submitted.json()["source_event_version"] > 0
     assert len(restarted_ledger.list_jobs(filters=ReportJobListFilters(limit=2))) == 1
+
+
+def test_idea_materialization_recovery_advances_only_with_owner_events(tmp_path) -> None:
+    ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    client = TestClient(app)
+    key = "idea-report-materialization-owner-version"
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers(key),
+        )
+        unchanged = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query(key),
+            headers=_recovery_headers(),
+        )
+        job_id = submitted.json()["report_job_id"]
+        ledger.mark_failed(
+            job_id=job_id,
+            actor="report-worker",
+            correlation_id="corr-owner-version",
+            trace_id="trace-owner-version",
+            failure_category="operator_intervention_required",
+            failure_message="Owner-side materialization correction required.",
+            retry_eligible=True,
+        )
+        advanced = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query(key),
+            headers=_recovery_headers(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert unchanged.status_code == 200
+    assert advanced.status_code == 200
+    assert unchanged.json() == submitted.json()
+    assert advanced.json()["source_event_version"] == (submitted.json()["source_event_version"] + 1)
+    assert advanced.json()["materialization_status"] == "failed"
+    assert advanced.json()["report_job_id"] == submitted.json()["report_job_id"]
 
 
 @pytest.mark.parametrize(
@@ -431,7 +484,8 @@ def test_idea_evidence_materialization_recovery_denies_before_repository_io(
 
 
 def test_idea_evidence_materialization_recovery_openapi_is_exact_and_read_only() -> None:
-    operation = app.openapi()["paths"]["/reports/idea-evidence-packs/materializations"]["get"]
+    openapi = app.openapi()
+    operation = openapi["paths"]["/reports/idea-evidence-packs/materializations"]["get"]
     query_parameters = {
         parameter["name"]: parameter
         for parameter in operation["parameters"]
@@ -450,6 +504,9 @@ def test_idea_evidence_materialization_recovery_openapi_is_exact_and_read_only()
     assert all(parameter["required"] for parameter in query_parameters.values())
     assert {"200", "403", "404", "409", "422"} <= set(operation["responses"])
     assert "requestBody" not in operation
+    response_schema = openapi["components"]["schemas"]["IdeaEvidencePackMaterializationResponse"]
+    assert "source_event_version" in response_schema["required"]
+    assert response_schema["properties"]["source_event_version"]["exclusiveMinimum"] == 0
 
 
 def test_idea_evidence_materialization_rejects_non_idea_caller_before_side_effects(
@@ -1008,5 +1065,5 @@ class _MissingKeyReportJobLedger:
 
 
 class _UnexpectedListLedger:
-    def list_jobs(self, **kwargs):
+    def list_job_owner_snapshots(self, **kwargs):
         raise AssertionError(f"Unauthorized recovery must not query the repository: {kwargs}")
