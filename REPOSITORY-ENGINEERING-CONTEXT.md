@@ -9,7 +9,24 @@ here is only interesting because of when it shipped, it belongs there instead.
 
 ---
 
-## 1. What Report owns
+## Repository Role
+
+`lotus-report` composes governed client reporting from evidence owned by other services. It decides
+which reports exist, what they mean, and what evidence may enter them. It computes no financial
+values, renders no pages, generates no narrative and stores no durable documents; those boundaries
+are enumerated in [What Report Must Never Own](#what-report-must-never-own) and are load-bearing
+rather than aspirational.
+
+## Current-State Summary
+
+The service is in production shape: durable job lifecycle, immutable evidence snapshots, typed
+status events, and governed render and archive handoffs, all proven against real PostgreSQL. The
+governing workstream and its remaining dependency are stated in
+[Active Priorities](#active-priorities); anything genuinely blocked is in
+[Known Blockers](#known-blockers). Where a fact is not yet proven, this document says so rather
+than rounding up - proof boundaries are stated with their doubles named.
+
+## Business And Domain Responsibility
 
 `lotus-report` is the **governed report composition layer**: it assembles authoritative Lotus
 truth into coherent, explainable, reproducible client and advisor communication.
@@ -28,7 +45,7 @@ truth into coherent, explainable, reproducible client and advisor communication.
 6. **Handoff identity** — render job identity, archive request identity, and the
    one-document-per-lineage guarantee.
 
-## 2. What Report must never own
+## What Report Must Never Own
 
 1. **Financial calculation.** Valuation, performance, risk and contribution are computed by
    `lotus-core`, `lotus-performance` and `lotus-risk`. Report composes; it never recomputes,
@@ -42,7 +59,7 @@ truth into coherent, explainable, reproducible client and advisor communication.
 5. **Tenant ownership truth.** The source owns which tenant owns a portfolio. Report verifies; it
    never manufactures attribution from its own configuration.
 
-## 3. Architecture
+## Architecture And Module Map
 
 FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 
@@ -57,7 +74,12 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 | `src/app/clients/` | typed upstream clients (core, performance, risk, render, archive, ai) |
 | `scripts/`, `contracts/`, `wiki/` | governance gates, domain-product declarations, operator docs |
 
-## 4. The report lifecycle
+## Runtime And Integration Boundaries
+
+Every boundary below is a service boundary: each arrow crosses into a system that owns its
+own truth, and Report holds only the identity it was handed back.
+
+### The report lifecycle
 
 ```
 order accepted (durable job, idempotent)
@@ -71,7 +93,7 @@ order accepted (durable job, idempotent)
 Recovery paths: **replay** (re-run a failed job), **rerender** (new artifact from the same
 snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcome *before* acting.
 
-## 5. Major contracts
+### Major contracts
 
 - **Upstream (read):** `lotus-core` portfolio summary and asset allocation; `lotus-performance`
   workspace summary and contribution; `lotus-risk` analytics; `lotus-ai` accepted-output
@@ -85,7 +107,7 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   `lotus-risk` remain **watchlisted** consumers, so analytics-enriched evidence must not publish
   complete, unblocked trust telemetry.
 
-## 6. Key invariants
+## Known Constraints And Implementation Notes
 
 1. **Explicit unavailable beats plausible but wrong.** Every absence has a bounded reason code;
    nothing is defaulted into looking complete.
@@ -114,7 +136,7 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 9. **An optional section may fail without failing the report** — but a section the order promised
    is never silently omitted.
 
-## 7. Active priorities
+## Active Priorities
 
 1. **#283 — canonical report revision and evidence identity v2 (P0, governing).**
    Make every report explainable through one chain: admitted tenant → accepted
@@ -224,7 +246,7 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    scope is only the evidence-gated default-on decision. #271 fallback
    deletion stays evidence-gated on the Render deployment window.
 
-## 8. Known blockers
+## Known Blockers
 
 | Blocked | On | Why |
 |---|---|---|
@@ -258,7 +280,7 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   [GitHub issue #109](https://github.com/sgajbi/lotus-report/issues/109). Active backlog state
   lives in GitHub issues, never only in the local ledger.
 
-## Commands
+## Repo-Native Commands
 
 | Purpose | Command |
 |---|---|
@@ -269,6 +291,14 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 | coverage gate | `make test-coverage` |
 | prior-schema upgrade proof | `make migration-upgrade-smoke` |
 | docker build | `make docker-build` |
+
+Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
+`ENTERPRISE_ENFORCE_READ_AUTHZ=true` and `ENTERPRISE_PRIMARY_KEY_ID`.
+
+## Validation And CI Expectations
+
+The commands above are the entry points; these are the expectations they exist to satisfy.
+Every governed lane must be able to fail for a real reason, and be proven to.
 
 Gate reachability is itself enforced: `tests/unit/test_gate_reachability.py` requires every
 gate-shaped target to be reachable from `check`/`ci` **and** executed by both `pr-merge-gate.yml`
@@ -302,10 +332,33 @@ weakness it documents (lotus-gateway#743) — so an exception the offline valida
 can be deleted while the weakness it excused persists, and only the zero-approval case is genuinely
 bound. All three are canonical gaps, none closable from the table side.
 
-Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
-`ENTERPRISE_ENFORCE_READ_AUTHZ=true` and `ENTERPRISE_PRIMARY_KEY_ID`.
+## Standards And RFCs That Govern This Repository
 
-## Keep this document current when
+Repository-local standards live in [`docs/standards/`](docs/standards/) and are binding on changes
+in their area rather than advisory:
+
+| Standard | Governs |
+|---|---|
+| [`data-model-ownership.md`](docs/standards/data-model-ownership.md) | which service owns each field, and what Report may only echo |
+| [`durability-consistency.md`](docs/standards/durability-consistency.md) | what must survive restart, and what a retry may observe |
+| [`migration-contract.md`](docs/standards/migration-contract.md) | schema change rules, including what must never be deleted for audit and reconciliation |
+| [`rounding-precision.md`](docs/standards/rounding-precision.md) | monetary and numeric handling, enforced by the float guard |
+| [`batch-orchestration-source-map.md`](docs/standards/batch-orchestration-source-map.md) | batch posture fields and their sources |
+| [`enterprise-readiness.md`](docs/standards/enterprise-readiness.md) | authz, key handling and production-like posture |
+| [`scalability-availability.md`](docs/standards/scalability-availability.md) | load, concurrency and degradation expectations |
+| [`dependency-vulnerability-exceptions.md`](docs/standards/dependency-vulnerability-exceptions.md) | which advisories are accepted, with expiry |
+
+RFCs authored here live in [`rfcs/`](rfcs/).
+[`docs/standards/rfc-traceability.md`](docs/standards/rfc-traceability.md) maps every active RFC to
+the code and tests that implement it, and is the file to update when an RFC gains or loses
+implementation evidence - a traceability entry with no evidence pointer is a claim, not a record.
+
+Estate-wide contracts bind this document itself: `lotus-platform/context/AGENTS-OPERATING-CONTRACT.md`
+governs how a session works here, and `lotus-platform/context/Repository-Engineering-Context-Contract.md`
+sets the minimum section shape below. Sections beyond that minimum, such as
+[What Report Must Never Own](#what-report-must-never-own), are deliberate additions.
+
+## Context Maintenance Rule
 
 report ownership or boundaries move · the lifecycle or its recovery paths change · a major contract
 is added or retired · an invariant is added, removed or weakened · priorities or blockers change.
@@ -313,7 +366,7 @@ is added or retired · an invariant is added, removed or weakened · priorities 
 Everything else — what shipped, when, and under which RFC slice — belongs in the review ledger,
 the RFCs, the wiki, or GitHub issues.
 
-## Cross-links
+## Cross-Links
 
 1. `../lotus-platform/context/LOTUS-QUICKSTART-CONTEXT.md`
 2. `../lotus-platform/context/LOTUS-ENGINEERING-CONTEXT.md`
