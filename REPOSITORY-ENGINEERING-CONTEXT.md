@@ -92,8 +92,13 @@ else is downstream-owned: Render is the single archive transmit and identity aut
 derivation RECONSTRUCTS the same id only as a rollout fallback for responses predating the field,
 guarded by a cross-repo parity test and deleted once that fallback dies. Outcome identities -
 archived document id, artifact SHA - are issued downstream and only echoed. Reconstructing an
-identity is not owning it: Report must never mint an archive identity independently or submit to
-Archive itself, which is what the render#120 cutover removed.
+identity is not owning it: Report must never mint an archive identity independently, nor submit a
+document or artifact to Archive for CREATION - that is Render's transmit authority, and removing
+it is what the render#120 cutover did. Report does call Archive directly, by design, for the
+lifecycle intent it owns: `record_archive_lineage` posts supersede and correct transitions through
+`ArchiveClient.record_lifecycle_transition` (report#266), because Report owns the
+correction/replacement intent while Archive owns the durable document lifecycle. Reconciliation
+lookups and transition calls are likewise Report's to make.
 
 ### The report lifecycle
 
