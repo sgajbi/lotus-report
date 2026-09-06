@@ -147,7 +147,12 @@ def _build_event(
         "report_job_id": record.job_id,
         "report_type": record.report_type,
         "status_event_id": status_event.status_event_id,
-        "event_type": event_type,
+        # The DURABLE ledger event type, never the presentation mapping
+        # above: a later release that adds a mapping for an event type
+        # currently falling back to REPORT_LIFECYCLE_EVENT would otherwise
+        # restate the identity of every historical instance - the same
+        # defect class in a slower form.
+        "event_type": status_event.event_type,
         "status": status_event.to_status,
         "portfolio_id": _primary_portfolio_id(record),
         "created_at": status_event.created_at.isoformat(),
@@ -216,7 +221,7 @@ def _source_refs(
     # body they saw, so a body that grew later would never reach them
     # anyway - stating it only from the producing step onward keeps body
     # and identity telling the same story.
-    if snapshot is not None and status_event.to_status in _SNAPSHOT_BEARING_STATUSES:
+    if snapshot is not None and _snapshot_existed_at(status_event, snapshot):
         refs.append(
             ReportPortfolioMemorySourceRef(
                 source_system="lotus-report",
@@ -239,6 +244,29 @@ def _source_refs(
                 )
             )
     return refs
+
+
+def _snapshot_existed_at(
+    status_event: ReportStatusEvent,
+    snapshot: ReportInputSnapshotRecord,
+) -> bool:
+    """Whether this event happened at or after the snapshot's creation.
+
+    Two independent readings, because either alone has a blind spot. The
+    timestamp comparison is the direct question and catches events that
+    record the snapshot's own creation while the job is still
+    ``collecting_data`` - the retained-snapshot replay clone appends
+    ``job_replay_snapshot_cloned`` before the transition to
+    ``data_ready``, and that event of all events must cite the snapshot
+    it created. The status floor stands behind it: any event at or after
+    ``data_ready`` certainly follows capture, whatever the recorded
+    timestamps do.
+    """
+
+    return (
+        snapshot.created_at <= status_event.created_at
+        or status_event.to_status in _SNAPSHOT_BEARING_STATUSES
+    )
 
 
 def _artifact_refs(
