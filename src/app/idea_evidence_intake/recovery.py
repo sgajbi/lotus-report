@@ -29,6 +29,10 @@ class IdeaMaterializationIdentityConflictError(ValueError):
     pass
 
 
+class IdeaMaterializationRecoveryIdentityMissingError(IdeaMaterializationIdentityConflictError):
+    pass
+
+
 class ReportJobRecoveryReader(Protocol):
     def list_job_owner_snapshots(
         self, *, filters: ReportJobListFilters
@@ -56,6 +60,29 @@ def recover_idea_materialization(
     idempotency_key: str,
     expected_identity: IdeaEvidenceMaterializationRecoveryIdentity,
 ) -> IdeaEvidencePackMaterializationResponse:
+    snapshot = read_idea_materialization_owner_snapshot(
+        ledger=ledger,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key,
+    )
+    record = snapshot.record
+    stored_identity = _stored_recovery_identity(record)
+    if stored_identity != expected_identity:
+        raise IdeaMaterializationIdentityConflictError("idea_materialization_identity_changed")
+    return materialization_response(
+        record=record,
+        source_event_version=snapshot.source_event_version,
+        identity=stored_identity,
+        idempotency_key=idempotency_key,
+    )
+
+
+def read_idea_materialization_owner_snapshot(
+    *,
+    ledger: ReportJobRecoveryReader,
+    tenant_id: str,
+    idempotency_key: str,
+) -> ReportJobOwnerSnapshot:
     snapshots = ledger.list_job_owner_snapshots(
         filters=ReportJobListFilters(
             tenant_id=tenant_id,
@@ -67,19 +94,7 @@ def recover_idea_materialization(
         raise IdeaMaterializationNotFoundError("idea_materialization_not_found")
     if len(snapshots) != 1:
         raise IdeaMaterializationIdentityConflictError("idea_materialization_ambiguous")
-
-    snapshot = snapshots[0]
-    record = snapshot.record
-    stored_identity = _stored_recovery_identity(record)
-    if stored_identity != expected_identity:
-        raise IdeaMaterializationIdentityConflictError("idea_materialization_identity_changed")
-    _validate_record_binding(record, stored_identity)
-    return materialization_response(
-        record=record,
-        source_event_version=snapshot.source_event_version,
-        identity=stored_identity,
-        idempotency_key=idempotency_key,
-    )
+    return snapshots[0]
 
 
 def materialization_response(
@@ -89,6 +104,7 @@ def materialization_response(
     identity: IdeaEvidenceMaterializationRecoveryIdentity,
     idempotency_key: str,
 ) -> IdeaEvidencePackMaterializationResponse:
+    _validate_record_binding(record, identity)
     return IdeaEvidencePackMaterializationResponse(
         report_request_id=record.request_id,
         report_job_id=record.job_id,
@@ -111,6 +127,10 @@ def _stored_recovery_identity(
     record: ReportJobLedgerRecord,
 ) -> IdeaEvidenceMaterializationRecoveryIdentity:
     raw_identity = record.options.get(IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION)
+    if raw_identity is None:
+        raise IdeaMaterializationRecoveryIdentityMissingError(
+            "idea_materialization_recovery_identity_missing"
+        )
     try:
         identity: IdeaEvidenceMaterializationRecoveryIdentity = (
             IdeaEvidenceMaterializationRecoveryIdentity.model_validate(raw_identity)

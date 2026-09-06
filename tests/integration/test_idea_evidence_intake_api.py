@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.idea_evidence_intake.materialization_contract import (
+    IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION,
+)
 from app.idea_evidence_intake.service import IdeaEvidenceIntakeLedger
 from app.main import app
 from app.reporting_jobs.ledger import MissingIdempotencyKeyError, ReportJobLedger
@@ -322,6 +327,61 @@ def test_idea_evidence_materialization_recovers_exact_receipt_after_restart(tmp_
     assert recovered.json() == submitted.json()
     assert submitted.json()["source_event_version"] > 0
     assert len(restarted_ledger.list_jobs(filters=ReportJobListFilters(limit=2))) == 1
+
+
+def test_idea_evidence_materialization_post_replays_legacy_record_without_recovery_identity(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "jobs.sqlite3"
+    ledger = ReportJobLedger(database_path)
+    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
+    app.dependency_overrides[get_report_job_ledger] = lambda: ledger
+    app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: IdeaEvidenceIntakeLedger()
+    app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+        _IdeaEvidenceCaptureService(ledger, lineage_store)
+    )
+    app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
+        _UnexpectedRenderService()
+    )
+    payload = {**_materialization_payload(), "requested_output_formats": ["json"]}
+    client = TestClient(app)
+    try:
+        submitted = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-legacy-replay"),
+        )
+        with sqlite3.connect(database_path) as connection:
+            row = connection.execute(
+                "SELECT options_json FROM report_request WHERE idempotency_key = ?",
+                ("idea-report-materialization-legacy-replay",),
+            ).fetchone()
+            assert row is not None
+            options = json.loads(row[0])
+            options.pop(IDEA_MATERIALIZATION_RECOVERY_IDENTITY_OPTION)
+            connection.execute(
+                "UPDATE report_request SET options_json = ? WHERE idempotency_key = ?",
+                (json.dumps(options), "idea-report-materialization-legacy-replay"),
+            )
+
+        replayed = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=payload,
+            headers=_headers("idea-report-materialization-legacy-replay"),
+        )
+        recovered = client.get(
+            "/reports/idea-evidence-packs/materializations",
+            params=_recovery_query("idea-report-materialization-legacy-replay"),
+            headers=_recovery_headers(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert submitted.status_code == 202
+    assert replayed.status_code == 202
+    assert replayed.json() == submitted.json()
+    assert recovered.status_code == 409
+    assert recovered.json()["detail"]["code"] == "idea_materialization_identity_conflict"
 
 
 def test_idea_materialization_recovery_advances_only_with_owner_events(tmp_path) -> None:
