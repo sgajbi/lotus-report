@@ -143,11 +143,6 @@ _OTHER_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?\w+"?'
 #: Every statement that destroys history by naming the table. Not only DELETE:
 #: TRUNCATE and DROP remove the same rows and would decrease
 #: source_event_version identically.
-#:
-#: Anchored on the table name, so it cannot see statements that destroy the
-#: table without naming it -- DROP SCHEMA ... CASCADE, DROP DATABASE, a restore
-#: from a truncated dump. Those are out of reach of a guard of this shape, not
-#: covered by it; the append-only property depends on review for them.
 HISTORY_DESTROYING_SQL = re.compile(
     r"\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)\s+"
     rf"(?:{_OTHER_TABLE}\s*,\s*)*"
@@ -155,13 +150,37 @@ HISTORY_DESTROYING_SQL = re.compile(
     re.IGNORECASE,
 )
 
+_SQL_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_SQL_LINE_COMMENT = re.compile(r"--[^\n]*")
+
+
+def contains_history_destroying_sql(source: str) -> bool:
+    """Whether `source` destroys report_status_event history.
+
+    Comments are removed before matching. `DELETE FROM /* retention */
+    report_status_event` is valid SQL that deletes the same rows, and a pattern
+    expecting the table to follow the verb directly does not see it. Replacing
+    each comment with a space also absorbs arbitrary whitespace and newlines,
+    so the pattern only ever meets a canonical statement.
+
+    Two things stay out of reach, and are review's job rather than this guard's:
+    SQL assembled at runtime from fragments, where no single string contains the
+    statement; and destruction that never names the table, such as DROP SCHEMA
+    ... CASCADE, DROP DATABASE, or restoring from a dump taken before the rows
+    existed. Nested block comments are also only stripped to their first `*/`,
+    which PostgreSQL would nest.
+    """
+    without_comments = _SQL_BLOCK_COMMENT.sub(" ", source)
+    without_comments = _SQL_LINE_COMMENT.sub(" ", without_comments)
+    return HISTORY_DESTROYING_SQL.search(without_comments) is not None
+
 
 def test_report_status_event_history_remains_append_only() -> None:
     governed_paths = [*ROOT.glob("src/**/*.py"), *ROOT.glob("migrations/*.sql")]
     offenders = [
         str(path.relative_to(ROOT))
         for path in governed_paths
-        if HISTORY_DESTROYING_SQL.search(path.read_text(encoding="utf-8"))
+        if contains_history_destroying_sql(path.read_text(encoding="utf-8"))
     ]
 
     assert offenders == [], (
@@ -198,9 +217,16 @@ def test_append_only_guard_catches_table_named_history_destroying_forms() -> Non
         # TRUNCATE takes a list; the target need not come first.
         "TRUNCATE report_job, report_status_event",
         "TRUNCATE TABLE report_job, ONLY public.report_status_event",
+        # Comments are legal wherever whitespace is, including between the verb
+        # and the table it destroys.
+        "DELETE FROM /* retention */ report_status_event",
+        "TRUNCATE TABLE /* q1 */ ONLY public.report_status_event",
+        "DROP TABLE /* superseded */ IF EXISTS report_status_event",
+        "DELETE FROM -- retention sweep\n  report_status_event",
+        "TRUNCATE report_job, /* and */ report_status_event",
     ]
     for statement in must_match:
-        assert HISTORY_DESTROYING_SQL.search(statement), f"guard missed: {statement}"
+        assert contains_history_destroying_sql(statement), f"guard missed: {statement}"
 
     must_not_match = [
         "SELECT COUNT(*) FROM report_status_event",
@@ -211,9 +237,11 @@ def test_append_only_guard_catches_table_named_history_destroying_forms() -> Non
         "DELETE FROM audit_log WHERE id IN (SELECT id FROM report_status_event)",
         # A different table whose name merely starts the same way.
         "DELETE FROM report_status_event_archive",
+        # A comment is not a statement, however destructive it reads.
+        "/* DELETE FROM report_status_event would break Idea */",
     ]
     for statement in must_not_match:
-        assert not HISTORY_DESTROYING_SQL.search(statement), (
+        assert not contains_history_destroying_sql(statement), (
             f"guard false-positived on: {statement}"
         )
 
