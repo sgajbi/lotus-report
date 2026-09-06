@@ -296,8 +296,9 @@ Lotus repository held one when this landed, so the step FAILS CLOSED on the miss
 than passing silently, and the gate's own context is deliberately not yet self-anchored in the
 required list — requiring it would block every merge on an operator action rather than assert a
 control. Two comparison gaps are stated in the table rather than implied: source `app_id`
-bindings (lotus-gateway#740) and four protection controls the API returns but the checker's
-hard-coded allowlist ignores (lotus-gateway#742); both are canonical gaps, neither closable from
+bindings (lotus-gateway#740), four protection controls the API returns but the checker's
+hard-coded allowlist ignores (lotus-gateway#742), and only the zero-approval exception being bound
+to the weakness it documents (lotus-gateway#743); all three are canonical gaps, none closable from
 the table side.
 
 Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
