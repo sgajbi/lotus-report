@@ -337,3 +337,71 @@ def test_the_identity_preimage_states_only_event_time_facts():
         "status",
         "status_event_id",
     ]
+
+
+def test_a_new_presentation_mapping_never_restates_historical_identity():
+    """The preimage hashes the DURABLE ledger event type, so a later
+    release that gives a currently-unmapped event its own presentation
+    type does not restate the identity of every historical instance -
+    which would be report#283 again, one deployment slower."""
+
+    from app.reporting_jobs import portfolio_memory_events as builder
+
+    unmapped = _event("job_replay_snapshot_cloned", "collecting_data", 1)
+
+    def _identity() -> tuple[str, str, str]:
+        response = build_report_portfolio_memory_events(
+            record=_record(status="data_ready"),
+            status_events=[unmapped],
+            snapshot=_snapshot(),
+        )
+        event = response.events[0]
+        return event.event_identity, event.content_hash, event.event_type
+
+    before_identity, before_hash, before_type = _identity()
+    assert before_type == "REPORT_LIFECYCLE_EVENT"
+
+    mapped = dict(builder.REPORT_EVENT_TYPE_BY_LEDGER_EVENT)
+    mapped["job_replay_snapshot_cloned"] = "REPORT_REPLAY_SNAPSHOT_CLONED"
+    original = builder.REPORT_EVENT_TYPE_BY_LEDGER_EVENT
+    builder.REPORT_EVENT_TYPE_BY_LEDGER_EVENT = mapped
+    try:
+        after_identity, after_hash, after_type = _identity()
+    finally:
+        builder.REPORT_EVENT_TYPE_BY_LEDGER_EVENT = original
+
+    # The presentation type moves - that is the point of adding a mapping.
+    assert after_type == "REPORT_REPLAY_SNAPSHOT_CLONED"
+    # The identity does not.
+    assert (after_identity, after_hash) == (before_identity, before_hash)
+
+
+def test_the_clone_event_cites_the_snapshot_it_recorded_creating():
+    """The retained-snapshot replay appends job_replay_snapshot_cloned
+    while the job is still collecting_data, AFTER creating the clone. The
+    snapshot existed when that event happened, so the event that records
+    its creation must carry its lineage."""
+
+    clone_event = _event("job_replay_snapshot_cloned", "collecting_data", 2)
+    snapshot = _snapshot().model_copy(
+        update={
+            "created_at": datetime(2026, 5, 3, 9, 1, tzinfo=UTC),
+            "report_revision_id": "rrv3_cloned",
+        }
+    )
+
+    response = build_report_portfolio_memory_events(
+        record=_record(status="collecting_data"),
+        status_events=[_event("job_accepted", "accepted", 0), clone_event],
+        snapshot=snapshot,
+    )
+    accepted, cloned = response.events
+
+    # The accepted event predates the snapshot and still cites none.
+    assert [ref.source_type for ref in accepted.source_refs] == [
+        "REPORT_JOB",
+        "REPORT_STATUS_EVENT",
+    ]
+    cited = [ref.source_type for ref in cloned.source_refs]
+    assert "REPORT_INPUT_SNAPSHOT" in cited
+    assert "REPORT_REVISION" in cited
