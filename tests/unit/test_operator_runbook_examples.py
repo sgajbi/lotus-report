@@ -169,7 +169,9 @@ def _repository_slug() -> str:
     """
     with (ROOT / "pyproject.toml").open("rb") as handle:
         name = tomllib.load(handle)["project"]["name"]
-    assert name, "pyproject [project] name is empty"
+    assert isinstance(name, str) and name, (
+        f"pyproject [project] name must be a non-empty string, got {name!r}"
+    )
     return name
 
 
