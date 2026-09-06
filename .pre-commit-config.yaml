@@ -11,7 +11,10 @@ repos:
       - id: debug-statements
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.1
+    # Must match the ruff pinned in pyproject.toml. A commit hook formatting
+    # differently from CI is the same non-determinism the pin removes, moved to
+    # the one place a developer meets it first.
+    rev: v0.16.4
     hooks:
       - id: ruff
       - id: ruff-format
