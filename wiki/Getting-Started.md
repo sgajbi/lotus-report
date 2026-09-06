@@ -5,7 +5,19 @@
 Prerequisites, before anything else:
 
 - **Python 3.12 or newer** — `pyproject.toml` requires `>=3.12` and CI pins 3.12
-- **`make`** — every documented command uses it; not a default on Windows
+- **`make`** — every documented command uses it, and Windows does not ship it. On the
+  workstation this was verified on, it comes from WinGet:
+
+  ```powershell
+  winget install ezwinports.make
+  make --version                 # GNU Make 4.4.1 here
+  ```
+
+  That is the package providing the working binary on this machine, confirmed by resolving
+  `make` to `…\WinGet\Links\make.exe` and querying `winget list --id ezwinports.make`. It is
+  **not** the only route — Chocolatey, Scoop and MSYS2 also supply GNU Make and are untested
+  here — and a clean install on a machine without `make` has not been performed, so treat this
+  as the verified-working option rather than a guaranteed one.
 - **Docker** — the local run needs a real PostgreSQL ledger, not a file database. The
   repository Compose file provides `lotus-report-postgres` on host port `5439`; bring it up
   with `docker compose up -d lotus-report-postgres` before running the service

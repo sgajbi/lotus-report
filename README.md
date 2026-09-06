@@ -68,7 +68,8 @@ the governing canonical-identity work
 You need, before anything else:
 
 - **Python 3.12 or newer** — `pyproject.toml` requires `>=3.12` and CI pins 3.12
-- **`make`** — every documented command uses it; not a default on Windows
+- **`make`** — every documented command uses it. Not present on Windows by default;
+  [Getting Started](wiki/Getting-Started.md) names a verified way to obtain it
 - **Docker** — the local run needs a real PostgreSQL, provided by the repository Compose file
 - **A virtual environment, activated before `make install`.** `make install` installs into
   whichever interpreter is on `PATH`; it does not create one. On a PEP 668 distribution
