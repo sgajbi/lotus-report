@@ -103,7 +103,7 @@ check: lint typecheck code-health-gates openapi-gate monetary-float-guard domain
 # context); mark it so the integration-test session trusts the given URL instead of
 # provisioning a nested database or demanding CREATEDB (issue #179).
 ci: export REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED = true
-ci: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
+ci: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-coverage security-audit
 
 ci-local:
 	python scripts/run_isolated_ci.py

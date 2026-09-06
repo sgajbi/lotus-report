@@ -19,6 +19,17 @@ def test_make_ci_local_routes_through_the_isolation_helper() -> None:
     assert "ci-local:\n\tpython scripts/run_isolated_ci.py" in makefile
 
 
+def test_make_ci_runs_each_suite_once_through_combined_coverage() -> None:
+    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+    ci_header = next(line for line in makefile.splitlines() if line.startswith("ci: lint"))
+    prerequisites = ci_header.removeprefix("ci:").split()
+
+    assert "test-coverage" in prerequisites
+    assert "test-unit" not in prerequisites
+    assert "test-integration" not in prerequisites
+    assert "test-e2e" not in prerequisites
+
+
 def test_build_isolated_ci_database_separates_and_bounds_database_identity() -> None:
     database = run_isolated_ci.build_isolated_ci_database(
         SOURCE_DSN,
