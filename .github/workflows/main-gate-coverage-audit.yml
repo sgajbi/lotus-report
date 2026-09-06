@@ -25,3 +25,18 @@ jobs:
           set -euo pipefail
           git fetch origin main --quiet
           python scripts/audit_main_gate_coverage.py --since-days 7 --fail-on-gap
+      - name: Enforce Branch Protection Policy
+        # Runs even when the audit above failed: the two assert different
+        # controls and one silence must not hide the other.
+        if: ${{ !cancelled() }}
+        env:
+          # github.token cannot carry administration:read, which the branch
+          # protection endpoint requires. A missing or unauthorized token
+          # FAILS this gate rather than passing it silently - the absence of
+          # any such secret in the estate is exactly why the live comparison
+          # is scheduled rather than blocking today (see the second
+          # documented exception in the policy table).
+          GH_TOKEN: ${{ secrets.LOTUS_AUTOMERGE_TOKEN }}
+        # Invoked BARE: piping the checker would report the pipe's exit code
+        # and leave this step green while the checker raised on every run.
+        run: python scripts/check_branch_protection_policy.py
