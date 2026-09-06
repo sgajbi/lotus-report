@@ -345,23 +345,32 @@ The PostgreSQL table exists from migration 024 and `PostgresIdeaEvidenceIntakeLe
 implemented, but `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` still defaults to `sqlite`. Nothing
 below happens on its own.
 
+**The ledger is in a volume, not in your checkout.** `docker-compose.yml` mounts
+`lotus-report-intake-data` at `/app/data`, so the file to transfer is
+`/app/data/idea-evidence-intake.sqlite3` inside the container. Running the transfer against a host
+path either fails with a missing file or, worse, transfers an unrelated file that happens to exist
+there.
+
 ```bash
 set -euo pipefail
 
 # 1. Stop the API so nothing accepts an intake mid-transfer.
 docker compose stop lotus-report
 
-# 2. Carry the records across. Safe to re-run: an interrupted run leaves a
-#    prefix that a re-run completes.
-REPORT_JOB_LEDGER_DATABASE_URL="$REPORT_JOB_LEDGER_DATABASE_URL" \
-  python scripts/transfer_idea_evidence_intake.py \
-    --sqlite-path data/idea-evidence-intake.sqlite3
+# 2. Carry the records across, in a one-off container with the intake volume
+#    mounted. Safe to re-run: an interrupted run leaves a prefix that a re-run
+#    completes. REPORT_JOB_LEDGER_DATABASE_URL comes from the service
+#    environment, so it points at the compose database rather than yours.
+docker compose run --rm lotus-report \
+  python -m app.idea_evidence_intake.transfer \
+    --sqlite-path /app/data/idea-evidence-intake.sqlite3
 
-# 3. Verify by running it again. A completed transfer reports every record as
-#    already present and re-verifies its content, changing nothing.
-REPORT_JOB_LEDGER_DATABASE_URL="$REPORT_JOB_LEDGER_DATABASE_URL" \
-  python scripts/transfer_idea_evidence_intake.py \
-    --sqlite-path data/idea-evidence-intake.sqlite3
+# 3. Verify by running exactly the same command again. A completed transfer
+#    reports every record as already present and re-verifies its content,
+#    changing nothing.
+docker compose run --rm lotus-report \
+  python -m app.idea_evidence_intake.transfer \
+    --sqlite-path /app/data/idea-evidence-intake.sqlite3
 ```
 
 Step 3 must print `inserted=0` with `verified` equal to `source`, and exit `0`. Anything else means
@@ -369,11 +378,17 @@ the transfer is not complete — **do not continue**. The tool exits non-zero on
 differing record, so it can gate the cutover directly.
 
 ```bash
-# 4. Only now switch the backend, and restart.
+# 4. Only now switch the backend, and restart. The Compose environment passes
+#    this variable through, defaulting to sqlite when it is unset.
 export REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql
 docker compose up -d lotus-report
 
-# 5. Confirm a pre-cutover key still replays to its original receipt.
+# 5. Confirm the container actually received it. An exported variable with no
+#    Compose passthrough silently leaves the service on SQLite, and step 6
+#    would then "confirm" the cutover by replaying from the untouched file.
+docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
+
+# 6. Confirm a pre-cutover key still replays to its original receipt.
 #    Use a real idempotency key from the transferred set.
 curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "Idempotency-Key: <a key accepted before the cutover>" \
@@ -381,8 +396,9 @@ curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "Content-Type: application/json" -d @<the original request body>
 ```
 
-Step 5 returns the **original** `intake_id` and `accepted_at_utc`. A new `intake_id` means the
-ledger did not carry the record and the cutover has lost replay identity.
+Step 5 must print `postgresql`. Step 6 returns the **original** `intake_id` and `accepted_at_utc`.
+A new `intake_id` means the ledger did not carry the record and the cutover has lost replay
+identity.
 
 **Keep the SQLite file.** It is the rollback: setting
 `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` back to `sqlite` and restarting returns to the prior
@@ -390,7 +406,8 @@ store with its records intact, because the transfer copies rather than moves. De
 the PostgreSQL store has been accepted in that environment.
 
 **What the transfer does not do.** It does not switch the backend, and it does not stop the API —
-both are yours above. It copies field for field, changing only representation: the two JSON
+both are yours above. It also does not reach into the container for you: step 2 runs it *in* one,
+because the image ships `src/` and not `scripts/`, and the ledger is in a volume mounted there. It copies field for field, changing only representation: the two JSON
 payloads become `jsonb` and the two instants become `timestamptz`. It then re-reads every record and
 compares content, because `ON CONFLICT DO NOTHING` would otherwise skip a key that already exists
 with *different* content and report a clean transfer over a corrupted target.
