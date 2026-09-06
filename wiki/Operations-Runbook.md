@@ -378,32 +378,54 @@ the transfer is not complete — **do not continue**. The tool exits non-zero on
 differing record, so it can gate the cutover directly.
 
 ```bash
-# 4. Only now switch the backend, and restart. The Compose environment passes
-#    this variable through, defaulting to sqlite when it is unset.
-export REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql
+# 4. Persist the backend selection where Compose will read it again, then
+#    restart. An `export` lives only in this shell: the interpolation defaults
+#    to sqlite, so the next `docker compose up` from a fresh shell would
+#    silently revert the service to the stale SQLite ledger -- and any intake
+#    accepted on PostgreSQL in between becomes invisible to replay checks.
+echo 'REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND=postgresql' >> .env
 docker compose up -d lotus-report
 
-# 5. Confirm the container actually received it. An exported variable with no
-#    Compose passthrough silently leaves the service on SQLite, and step 6
-#    would then "confirm" the cutover by replaying from the untouched file.
+# 5. Confirm the setting survives a shell that never exported it, and that the
+#    container actually received it. The first command is the one that catches
+#    a transient export; the second catches a missing Compose passthrough.
+env -u REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND \
+  docker compose config | grep REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 docker compose exec lotus-report printenv REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND
 
-# 6. Confirm a pre-cutover key still replays to its original receipt.
-#    Use a real idempotency key from the transferred set.
+# 6. Confirm a pre-cutover key still replays to its original receipt. Use a
+#    real idempotency key from the transferred set, and its original body.
+#    All four caller-context headers are required: the route rejects a missing
+#    X-Tenant-Id or X-Region with HTTP 400 before it reaches the ledger.
 curl -s -X POST "$REPORT_BASE_URL/reports/idea-evidence-packs" \
   -H "Idempotency-Key: <a key accepted before the cutover>" \
-  -H "X-Actor-Id: <actor>" -H "X-Caller-Application: lotus-idea" \
+  -H "X-Actor-Id: <actor>" \
+  -H "X-Caller-Application: lotus-idea" \
+  -H "X-Tenant-Id: <the tenant that accepted it>" \
+  -H "X-Region: <that request's region>" \
   -H "Content-Type: application/json" -d @<the original request body>
 ```
 
-Step 5 must print `postgresql`. Step 6 returns the **original** `intake_id` and `accepted_at_utc`.
-A new `intake_id` means the ledger did not carry the record and the cutover has lost replay
-identity.
+Both commands in step 5 must print `postgresql`. Step 6 returns the **original** `intake_id` and
+`accepted_at_utc`. A new `intake_id` means the ledger did not carry the record and the cutover has
+lost replay identity. An HTTP 400 with `missing_caller_context` means the probe is wrong, not the
+cutover.
 
-**Keep the SQLite file.** It is the rollback: setting
-`REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` back to `sqlite` and restarting returns to the prior
-store with its records intact, because the transfer copies rather than moves. Delete it only after
-the PostgreSQL store has been accepted in that environment.
+**Keep the SQLite file, and know how long it is a rollback.** The transfer copies rather than
+moves, so until the service accepts its first intake on PostgreSQL, reverting
+`REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND` to `sqlite` and restarting returns to the prior store
+with every record intact.
+
+**That window closes with the first post-cutover intake.** A record accepted on PostgreSQL was
+never written to the SQLite file, so after reverting `has_record` returns false for it and a replay
+is accepted as new — the exact failure this migration exists to prevent, caused by the rollback
+itself. There is no reverse transfer today, so past that point treat the cutover as one-way: if the
+PostgreSQL store has a problem, fix it forward rather than reverting.
+
+If a revert is genuinely necessary after traffic, it is a manual reconciliation and not a procedure
+this runbook covers: quiesce intake, identify the PostgreSQL-only records, and carry them back
+before switching. Delete the SQLite file only after the PostgreSQL store has been accepted in that
+environment.
 
 **What the transfer does not do.** It does not switch the backend, and it does not stop the API —
 both are yours above. It also does not reach into the container for you: step 2 runs it *in* one,
