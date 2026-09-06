@@ -156,23 +156,37 @@ def test_snapshot_lineage_docs_require_atomic_complete_resume() -> None:
     assert "same-payload zero-call historical gap" in supported_features
 
 
-def _repository_slug() -> str:
-    """This repository's name, from the packaging metadata.
+def _repository_identifier() -> str:
+    """This repository's full ``owner/name``, from the packaging metadata.
 
-    Checked in, so it needs no git remote and no CI environment -- a source
-    snapshot or a checkout with no origin still runs this gate. Load-bearing for
-    packaging, so it cannot be silently wrong. And outside the governance file
-    set, so it stays independent of the policy document: deriving identity from
-    the document would let a wholly copied table agree with itself, and a
-    hand-written constant here would repeat the per-repo edit whose omission
-    caused the defect this test exists for.
+    Checked in, so no git remote and no CI environment are required. Load-bearing
+    for packaging, so it cannot sit silently wrong. And outside the governance
+    file set, so it stays independent of the policy document -- deriving identity
+    from that document would let a wholly copied table agree with itself.
+
+    The FULL identifier is compared, not the name suffix: the live checker
+    interpolates the policy value into ``repos/{repository}/branches/...``, so a
+    URL or another owner's same-named repository would audit the wrong
+    repository, or build a malformed endpoint, while this guard stayed green.
     """
     with (ROOT / "pyproject.toml").open("rb") as handle:
-        name = tomllib.load(handle)["project"]["name"]
-    assert isinstance(name, str) and name, (
-        f"pyproject [project] name must be a non-empty string, got {name!r}"
+        project = tomllib.load(handle)["project"]
+
+    url = project["urls"]["Repository"]
+    assert isinstance(url, str), f"[project.urls] Repository must be a string, got {url!r}"
+    prefix = "https://github.com/"
+    assert url.startswith(prefix), f"[project.urls] Repository must be a GitHub URL: {url!r}"
+
+    identifier = url.removeprefix(prefix).removesuffix(".git").strip("/")
+    assert re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", identifier), (
+        f"[project.urls] Repository must resolve to owner/name, got {identifier!r}"
     )
-    return name
+
+    name = project["name"]
+    assert identifier.endswith(f"/{name}"), (
+        f"packaging name {name!r} disagrees with [project.urls] Repository {identifier!r}"
+    )
+    return identifier
 
 
 def test_branch_protection_policy_table_describes_this_repository() -> None:
@@ -191,12 +205,13 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     Interim: a canonical check would remove the need for this per-repo guard.
     Filed as lotus-gateway#745.
     """
-    slug = _repository_slug()
+    identifier = _repository_identifier()
+    slug = identifier.split("/", 1)[1]
     policy = _read("quality/branch_protection_policy.v1.json")
     document = json.loads(policy)
 
-    assert document["repository"].endswith(f"/{slug}"), (
-        f"policy repository is {document['repository']!r} in the {slug} package"
+    assert document["repository"] == identifier, (
+        f"policy repository is {document['repository']!r}, packaging says {identifier!r}"
     )
 
     review_lead = document["review_authority"]["review_lead"]
