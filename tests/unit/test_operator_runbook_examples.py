@@ -163,18 +163,27 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     the wrong repository is evidence the text was never read in the context it
     governs, which is the exact failure the table exists to prevent.
 
-    Derived from the table's own required ``repository`` field rather than a
-    hard-coded name, so this test is itself immune to the copy it guards
-    against and can be lifted verbatim by any adopter.
+    Asserted POSITIVELY on the identity-bearing fields rather than by scanning
+    for foreign names: a blanket scan would reject the canonical references the
+    table legitimately cites, and would need a list of sibling repositories that
+    drifts as the estate grows. The slug comes from the checkout directory, not
+    from the document, so a wholly copied document cannot agree with itself.
 
     Interim: a canonical check would remove the need for this per-repo guard.
     Filed as lotus-gateway#745.
     """
+    slug = ROOT.name
     policy = _read("quality/branch_protection_policy.v1.json")
-    service = json.loads(policy)["repository"].split("/")[-1]
-    expected = service.removeprefix("lotus-").capitalize()
+    document = json.loads(policy)
 
-    named = {match.group(1) for match in re.finditer(r"(?<![A-Za-z])([A-Z][a-z]+)-only", policy)}
+    assert document["repository"].endswith(f"/{slug}"), (
+        f"policy repository is {document['repository']!r} in a {slug} checkout"
+    )
+
+    review_lead = document["review_authority"]["review_lead"]
+    assert slug in review_lead, f"review_lead does not name {slug}: {review_lead!r}"
+
+    expected = slug.removeprefix("lotus-").capitalize()
+    named = {m.group(1) for m in re.finditer("(?<![A-Za-z])([A-Z][a-z]+)-only", policy)}
     foreign = sorted(named - {expected})
-
-    assert not foreign, f"policy table for {service} describes another repository: {foreign}"
+    assert not foreign, f"policy table for {slug} describes another repository: {foreign}"
