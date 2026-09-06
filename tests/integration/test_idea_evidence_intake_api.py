@@ -459,6 +459,14 @@ def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_
             json=altered,
             headers=_headers("idea-report-materialization-lost-intake"),
         )
+        # The same altered request again. If the refused attempt was itself
+        # stored in the intake ledger, this one finds a prior record and the
+        # refusal turns into an acceptance -- the guard defeated by a retry.
+        retried = client.post(
+            "/reports/idea-evidence-packs/materializations",
+            json=altered,
+            headers=_headers("idea-report-materialization-lost-intake"),
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -467,6 +475,12 @@ def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_
     assert replayed.json()["detail"]["code"] == "idea_materialization_identity_conflict"
     # Not the original receipt under a different candidate.
     assert replayed.json() != submitted.json()
+    # A refusal must be repeatable. Refusing once and accepting the identical
+    # request on retry is not a refusal, and is what happens if the rejected
+    # attempt is persisted as history for the next one to find.
+    assert retried.status_code == 409
+    assert retried.json()["detail"]["code"] == "idea_materialization_identity_conflict"
+    assert retried.json() != submitted.json()
     # The refusal came before any work: _UnexpectedCaptureService and
     # _UnexpectedRenderService raise if the rejected request reached them, so a
     # 409 that had already advanced the job would fail here rather than pass.
@@ -1228,6 +1242,13 @@ class _UnexpectedRenderClient:
 
 
 class _MissingKeyReportJobLedger:
+    def list_job_owner_snapshots(self, **kwargs):
+        # The route verifies legacy identity before storing anything, so this
+        # is reached before create_proof_pack_report_job. Empty means no prior
+        # row, which is not a refusal -- letting the request through to the
+        # missing-key failure this fake exists to produce.
+        return []
+
     def create_proof_pack_report_job(self, **kwargs):
         raise MissingIdempotencyKeyError("missing idempotency key")
 
