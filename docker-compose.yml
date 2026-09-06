@@ -38,6 +38,16 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8300:8300"
+    volumes:
+      # The Idea evidence intake ledger is SQLite at data/idea-evidence-intake.sqlite3,
+      # relative to the image's /app working directory. Without this volume it lives in
+      # the container's ephemeral layer, so container replacement destroys intake and
+      # idempotency evidence and a replayed intake is accepted as new.
+      #
+      # Mounted on this service only: the API router is the sole constructor of
+      # IdeaEvidenceIntakeLedger, and sharing one SQLite file between containers would
+      # replace a durability gap with a multi-writer corruption risk.
+      - lotus-report-intake-data:/app/data
 
   lotus-report-job-worker:
     build: .
@@ -111,3 +121,4 @@ services:
 
 volumes:
   lotus-report-postgres-data:
+  lotus-report-intake-data:
