@@ -82,8 +82,12 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 
 Not every arrow below is a service boundary. `order accepted -> capture` and `capture -> compose`
 are internal steps in one transaction domain. The crossings are the authoritative reads performed
-during capture, and the Render, Archive and consumer handoffs - and at each of those Report holds
-only the identity it was handed back.
+during capture, and the Render, Archive and consumer handoffs. At those crossings, distinguish the
+two kinds of identity: Report CREATES the request identities it sends (`render_job_id`, and
+`archive_request_id` when Render omits it), while the OUTCOME identities - archived document id,
+artifact SHA - are issued downstream and only ever echoed here. Retry and reconciliation work
+depends on that split: a request identity is reproducible locally, an outcome identity is not and
+may not exist yet.
 
 ### The report lifecycle
 
@@ -345,7 +349,7 @@ in their area rather than advisory:
 
 | Standard | Governs |
 |---|---|
-| [`data-model-ownership.md`](docs/standards/data-model-ownership.md) | which service owns each field, and what Report may only echo |
+| [`data-model-ownership.md`](docs/standards/data-model-ownership.md) | the service boundary for domain data, the persisted entities Report does own, and the glossary rule against service-local synonyms |
 | [`durability-consistency.md`](docs/standards/durability-consistency.md) | what must survive restart, and what a retry may observe |
 | [`migration-contract.md`](docs/standards/migration-contract.md) | schema change rules, including what must never be deleted for audit and reconciliation |
 | [`rounding-precision.md`](docs/standards/rounding-precision.md) | monetary and numeric handling, enforced by the float guard |
