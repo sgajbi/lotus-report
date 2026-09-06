@@ -81,7 +81,10 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 ## Runtime And Integration Boundaries
 
 Not every arrow below is a service boundary. `order accepted -> capture` and `capture -> compose`
-are internal steps in one transaction domain. The crossings are the authoritative reads performed
+are internal workflow steps - service-local, but NOT atomic: capture commits the snapshot and its
+upstream calls through the snapshot store, then marks the job `data_ready` through the job ledger
+as a separate operation, so a failure is observable between them and recovery must expect that
+state rather than assume it cannot exist. The crossings are the authoritative reads performed
 during capture, and the Render, Archive and consumer handoffs. At those crossings, distinguish the
 two kinds of identity: Report CREATES the request identities it sends (`render_job_id`, and
 `archive_request_id` when Render omits it), while the OUTCOME identities - archived document id,
