@@ -18,6 +18,22 @@ Prerequisites, before anything else:
   **not** the only route — Chocolatey, Scoop and MSYS2 also supply GNU Make and are untested
   here — and a clean install on a machine without `make` has not been performed, so treat this
   as the verified-working option rather than a guaranteed one.
+
+- **A POSIX shell, which `make` alone does not provide.** Recipes here use POSIX syntax —
+  `Makefile:62` runs `COVERAGE_FILE=… python …`, a shell assignment `cmd.exe` would treat as
+  a command name. GNU Make runs recipes through `SHELL`, and with only the WinGet package on a
+  host that has no POSIX shell that resolves to the Windows interpreter and the recipe fails.
+
+  On this workstation it resolves to Git Bash, which is why the targets work here:
+
+  ```shell
+  make -f probe.mk shellcheck      # SHELL=/usr/bin/sh ; POSIX assignment worked
+  ```
+
+  Installing Git for Windows supplies that shell. **Not verified**: a host with the WinGet
+  `make` and no POSIX shell — the failure above is read from the Makefile and GNU Make's
+  documented `SHELL` selection, not reproduced here, because this machine cannot be put in
+  that state without removing tooling other work depends on.
 - **Docker** — the local run needs a real PostgreSQL ledger, not a file database. The
   repository Compose file provides `lotus-report-postgres` on host port `5439`; bring it up
   with `docker compose up -d lotus-report-postgres` before running the service
