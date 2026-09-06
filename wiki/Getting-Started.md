@@ -35,18 +35,12 @@ Prerequisites, before anything else:
   its `bin` directory must be on `PATH`, which the installer's "Git from the command line and
   also from 3rd-party software" option does. Running `make` from Git Bash guarantees it.
 
-  **Activate in whichever shell you run `make` from.** Activation changes only the invoking
-  shell's environment, so a virtualenv activated in PowerShell has no effect in a Git Bash
+  **Activation is per-shell.** A virtualenv activated in PowerShell has no effect in a Git Bash
   window opened afterwards — `make install` there would resolve the system interpreter and
-  install outside `.venv`. In Git Bash the activation is:
-
-  ```shell
-  source .venv/Scripts/activate
-  python -V                      # must report 3.12 or newer, in THIS shell
-  ```
-
-  Run the `python -V` check in the same shell you are about to run `make` in; that is what it
-  is for.
+  install outside `.venv`. So activate in whichever shell you run `make` from, using that
+  shell's form; the commands are with the virtual-environment step below, including the Git Bash
+  one. Run the `python -V` check in that same shell: it confirms the environment `make` will
+  actually use.
 
   Both halves are measured here, with the same probe recipe:
 
@@ -88,6 +82,13 @@ Prerequisites, before anything else:
   ```powershell
   py -3.12 -m venv .venv         # or the full path to your >= 3.12 interpreter
   .venv\Scripts\Activate.ps1
+  python -V                      # must report 3.12 or newer before continuing
+  ```
+
+  In Git Bash, create it the same way and activate with that shell's script:
+
+  ```shell
+  source .venv/Scripts/activate
   python -V                      # must report 3.12 or newer before continuing
   ```
 
