@@ -165,17 +165,22 @@ Carry the file across first. **Stop the API before copying** — the service mus
 quiesced for the whole rollout, not just at the moment of the copy:
 
 ```shell
-# 0. record the count to compare against later, then STOP the API
-docker exec lotus-report python -c "import sqlite3;print(sqlite3.connect('data/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
+# 0. STOP the API first. Everything after this reads a quiesced file.
 docker compose stop lotus-report
 
-# 1. copy the ledger out of the STOPPED container (docker cp works on a stopped container)
-docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 ./idea-evidence-intake.sqlite3
+# 1. copy the ledger out of the STOPPED container, to a path OUTSIDE the repository.
+#    The ledger holds caller context and operational identifiers; it must not land
+#    somewhere it can be committed or swept into a backup.
+export ROLLOUT_DIR="$(mktemp -d)"
+docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 "$ROLLOUT_DIR/idea-evidence-intake.sqlite3"
+
+# 2. take the baseline FROM THE QUIESCED COPY, not from the live service
+python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
 
 # 2. create the volume and copy the ledger into it
 docker volume create lotus-report_lotus-report-intake-data
 docker run -d --name intake-rollout -v lotus-report_lotus-report-intake-data:/app/data lotus-report:local sleep 120
-docker cp ./idea-evidence-intake.sqlite3 intake-rollout:/app/data/idea-evidence-intake.sqlite3
+docker cp "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" intake-rollout:/app/data/idea-evidence-intake.sqlite3
 docker rm -f intake-rollout
 
 # 3. recreate the stack, then CONFIRM the count matches what step 1 carried
@@ -191,19 +196,39 @@ in-flight transaction, producing a torn file that may not fail until it is read.
 the container closes both, which is why step 0 stops it and it stays stopped until
 `docker compose up -d` brings it back on the volume.
 
-Step 3's count is the check that matters: compare it against the count recorded in step 0. Equal counts mean the rollout carried;
+Once the counts match, **delete the export** — it is a complete ledger:
+
+```shell
+rm -rf "$ROLLOUT_DIR"
+```
+
+Step 3's count is the check that matters: compare it against the baseline from step 2. Taking
+that baseline from the copied file rather than from the live service is deliberate — counting
+before the stop lets a record commit in between, which makes the post-rollout count legitimately
+exceed the baseline and turns a successful rollout into an apparent failure. Equal counts mean the rollout carried;
 zero means the volume was mounted empty and the prior evidence is still in the
 old container's layer, recoverable only until that container is pruned.
 
 Verify the volume name with `docker compose config --volumes` first — Compose
 prefixes it with the project name, which defaults to the directory name.
 
-**Evidence.** This procedure was executed against a live container holding two
-real records (`downstream-submit-1240-6a3c2f0c12`, `submit-1240-main-5a5b2f78`):
-copied out at 20480 bytes, copied into the volume, and read back from a *new*
-container with both replay identities intact. The control — the same new
-container against a volume that skipped the rollout — reported the file absent.
-The running container was never stopped.
+**Evidence.** This procedure was executed as written, against a purpose-built source
+container holding three records in its writable layer with no mounts — the state a
+deployment is in before this revision:
+
+```
+source mounts: 0
+step 0  source stopped            -> state: exited
+step 1  copied from the STOPPED container
+step 2  baseline from the quiesced copy   -> 3
+step 3  new container on the volume       -> 3   EQUAL -> rollout verified
+        replay identities: replay-alpha, replay-beta, replay-gamma
+cleanup exported ledger deleted
+```
+
+An earlier run copied from a *running* container and is not evidence for this
+procedure, which forbids that. The shared `lotus-report` stack was not used as the
+source and was never stopped.
 
 ## Durable Report-Job Worker
 
