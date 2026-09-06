@@ -404,11 +404,14 @@ def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_
     """
     database_path = tmp_path / "jobs.sqlite3"
     ledger = ReportJobLedger(database_path)
-    lineage_store = ReportInputSnapshotStore(tmp_path / "lineage.sqlite3")
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
     app.dependency_overrides[get_idea_evidence_intake_ledger] = lambda: _intake_ledger(tmp_path)
+    # A capture that leaves the job `accepted`, so the replay reaches the
+    # capture branch. With a job already carried to `data_ready` neither branch
+    # is reachable and the test passes whether or not the refusal comes first --
+    # which is exactly how the first version of this test missed the ordering.
     app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
-        _IdeaEvidenceCaptureService(ledger, lineage_store)
+        _AcceptedLeavingCaptureService()
     )
     app.dependency_overrides[get_portfolio_review_render_orchestration_service] = lambda: (
         _UnexpectedRenderService()
@@ -439,6 +442,11 @@ def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_
         # SQLite intake ledger did not survive.
         (tmp_path / "intake.sqlite3").unlink()
 
+        # From here, any work done on the replay's behalf fails the test.
+        app.dependency_overrides[get_portfolio_review_snapshot_capture_service] = lambda: (
+            _UnexpectedCaptureService()
+        )
+
         altered = {
             **payload,
             "idea_evidence_pack": {
@@ -459,6 +467,9 @@ def test_idea_evidence_materialization_refuses_legacy_replay_when_intake_ledger_
     assert replayed.json()["detail"]["code"] == "idea_materialization_identity_conflict"
     # Not the original receipt under a different candidate.
     assert replayed.json() != submitted.json()
+    # The refusal came before any work: _UnexpectedCaptureService and
+    # _UnexpectedRenderService raise if the rejected request reached them, so a
+    # 409 that had already advanced the job would fail here rather than pass.
 
 
 def test_idea_materialization_recovery_advances_only_with_owner_events(tmp_path) -> None:
@@ -1153,6 +1164,17 @@ class _IdeaEvidenceCaptureService:
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
         )
+
+
+class _AcceptedLeavingCaptureService:
+    """Returns the job untouched, leaving it `accepted`.
+
+    Not a shortcut: a test about what happens *before* capture needs a job that
+    still has capture ahead of it.
+    """
+
+    async def capture_for_job(self, job):
+        return job
 
 
 class _UnexpectedCaptureService:
