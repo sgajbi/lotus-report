@@ -132,13 +132,36 @@ def test_idea_evidence_materialization_contract_requires_owner_version(
     assert "response_fields missing: source_event_version" in errors
 
 
-#: The target table as SQL may legally spell it: bare, schema-qualified, quoted,
-#: either or both, and optionally preceded by PostgreSQL's ONLY.
-_STATUS_EVENT_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?report_status_event"?'
+#: A table name: bare, schema-qualified, quoted, or both.
+_QUALIFIED_STATUS_EVENT = r'(?:[\w"]+\s*\.\s*)?"?report_status_event"?'
+_QUALIFIED_ANY = r'(?:[\w"]+\s*\.\s*)?"?\w+"?'
+
+
+def _relation_expr(qualified_name: str) -> str:
+    """PostgreSQL's relation_expr around a table name.
+
+        relation_expr: qualified_name | qualified_name '*'
+                     | ONLY qualified_name | ONLY '(' qualified_name ')'
+
+    Written from the grammar rather than from examples, because adding one
+    spelling per review round is how the earlier versions of this guard kept
+    naming a class while matching an instance.
+
+    The word boundary sits in the unparenthesized branch only. After `)` a
+    `\\b` would require a following word character, so a statement ending in
+    `ONLY (report_status_event)` would not match. The closing paren is the
+    boundary there: `ONLY (report_status_event_archive)` still cannot match,
+    since `\\s*\\)` cannot follow the shorter name.
+    """
+    return rf"(?:ONLY\s*\(\s*{qualified_name}\s*\)|(?:ONLY\s+)?{qualified_name}\b(?:\s*\*)?)"
+
+
+#: The target this guard exists to protect.
+_STATUS_EVENT_TABLE = _relation_expr(_QUALIFIED_STATUS_EVENT)
 
 #: Any other table appearing earlier in a comma-separated list. TRUNCATE takes
 #: several tables at once, and the target is not always the first one.
-_OTHER_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?\w+"?'
+_OTHER_TABLE = _relation_expr(_QUALIFIED_ANY)
 
 #: Every statement that destroys history by naming the table. Not only DELETE:
 #: TRUNCATE and DROP remove the same rows and would decrease
@@ -146,7 +169,7 @@ _OTHER_TABLE = r'(?:ONLY\s+)?(?:[\w"]+\s*\.\s*)?"?\w+"?'
 HISTORY_DESTROYING_SQL = re.compile(
     r"\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)\s+"
     rf"(?:{_OTHER_TABLE}\s*,\s*)*"
-    rf"{_STATUS_EVENT_TABLE}\b",
+    rf"{_STATUS_EVENT_TABLE}",
     re.IGNORECASE,
 )
 
@@ -224,6 +247,13 @@ def test_append_only_guard_catches_table_named_history_destroying_forms() -> Non
         "DROP TABLE /* superseded */ IF EXISTS report_status_event",
         "DELETE FROM -- retention sweep\n  report_status_event",
         "TRUNCATE report_job, /* and */ report_status_event",
+        # relation_expr also admits ONLY with parentheses, and a trailing * for
+        # the explicit include-descendants form.
+        "DELETE FROM ONLY (report_status_event)",
+        "TRUNCATE TABLE ONLY (public.report_status_event)",
+        'DELETE FROM ONLY ( "report_status_event" )',
+        "TRUNCATE report_job, ONLY (report_status_event)",
+        "DELETE FROM report_status_event *",
     ]
     for statement in must_match:
         assert contains_history_destroying_sql(statement), f"guard missed: {statement}"
@@ -239,6 +269,8 @@ def test_append_only_guard_catches_table_named_history_destroying_forms() -> Non
         "DELETE FROM report_status_event_archive",
         # A comment is not a statement, however destructive it reads.
         "/* DELETE FROM report_status_event would break Idea */",
+        # The parenthesized form must not lose the boundary the bare form has.
+        "DELETE FROM ONLY (report_status_event_archive)",
     ]
     for statement in must_not_match:
         assert not contains_history_destroying_sql(statement), (
