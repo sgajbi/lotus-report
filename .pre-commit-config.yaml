@@ -20,7 +20,10 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    # Must match the mypy pinned in pyproject.toml, for the same reason as ruff
+    # above: a hook reporting different errors from CI trains contributors to
+    # distrust whichever one they met second.
+    rev: v2.3.1
     hooks:
       - id: mypy
         args: ["--config-file", "mypy.ini"]
