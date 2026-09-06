@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -351,7 +352,7 @@ def test_idea_evidence_materialization_post_replays_legacy_record_without_recove
             json=payload,
             headers=_headers("idea-report-materialization-legacy-replay"),
         )
-        with sqlite3.connect(database_path) as connection:
+        with closing(sqlite3.connect(database_path)) as connection:
             row = connection.execute(
                 "SELECT options_json FROM report_request WHERE idempotency_key = ?",
                 ("idea-report-materialization-legacy-replay",),
