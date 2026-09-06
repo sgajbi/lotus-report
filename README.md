@@ -96,7 +96,9 @@ You need, before anything else:
   ```
 
   The `python -V` line is the check that matters: it is the reader's own environment answering,
-  rather than this document guessing at it.
+  rather than this document guessing at it. On a fresh Windows install PowerShell's default
+  execution policy blocks `Activate.ps1`; [Getting Started](wiki/Getting-Started.md) carries the
+  two ways round it.
 
 Then:
 
