@@ -362,7 +362,7 @@ in their area rather than advisory:
 |---|---|
 | [`data-model-ownership.md`](docs/standards/data-model-ownership.md) | the service boundary for domain data, the persisted entities Report does own, and the glossary rule against service-local synonyms |
 | [`durability-consistency.md`](docs/standards/durability-consistency.md) | what must survive restart, and what a retry may observe |
-| [`migration-contract.md`](docs/standards/migration-contract.md) | schema change rules, including what must never be deleted for audit and reconciliation |
+| [`migration-contract.md`](docs/standards/migration-contract.md) | schema change rules for the **PostgreSQL** job and batch ledgers, including what must never be deleted for audit and reconciliation. It does NOT cover the SQLite intake ledger - see the gap noted in `data-model-ownership.md` |
 | [`rounding-precision.md`](docs/standards/rounding-precision.md) | monetary and numeric handling, enforced by the float guard |
 | [`batch-orchestration-source-map.md`](docs/standards/batch-orchestration-source-map.md) | batch posture fields and their sources |
 | [`enterprise-readiness.md`](docs/standards/enterprise-readiness.md) | authz, key handling and production-like posture |
