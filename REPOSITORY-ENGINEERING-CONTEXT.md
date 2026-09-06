@@ -347,9 +347,11 @@ Migration 024 creates `idea_evidence_intake`, which is now a mandatory table in
 `make migration-upgrade-smoke`. `PostgresIdeaEvidenceIntakeLedger` implements the same surface and
 is selected by `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`.
 
-**The default is still `sqlite`, so the durability gap is not closed.** No records have been
-transferred, and pointing a deployment at the new table would start it from an empty intake
-ledger — report rows surviving while the evidence that validated them does not, which is the
+**The default is still `sqlite`, so the durability gap is not closed.** The transfer exists and is
+proven — `scripts/transfer_idea_evidence_intake.py`, sequenced in
+[Operations Runbook](wiki/Operations-Runbook.md) under *Cutover: Idea intake ledger to
+PostgreSQL* — but no environment has run it. Until one does, pointing a deployment at the new
+table would start it from an empty intake ledger — report rows surviving while the evidence that validated them does not, which is the
 unverifiable-replay state the materialization route refuses. Read the migration contract as
 covering the PostgreSQL **table**, not the store production actually uses, until the transfer and
 its rollout acceptance land.
