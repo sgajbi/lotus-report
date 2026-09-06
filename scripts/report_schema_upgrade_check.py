@@ -40,6 +40,26 @@ NULLABILITY_MISMATCHES = {
     "event_payload_json": ("YES", "NO"),
     "event_idempotency_key": ("NO", "YES"),
 }
+#: The columns migration 024 chose a type for, rather than transcribed from
+#: SQLite. Asserted by type because a table created with TEXT everywhere would
+#: satisfy a presence check while delivering neither JSONB shape validation nor
+#: instant-ordered timestamps -- the two reasons for the move (report#326).
+EXPECTED_INTAKE_COLUMNS = {
+    "idempotency_key": ("text", "NO"),
+    "intake_id": ("text", "NO"),
+    "payload_fingerprint": ("text", "NO"),
+    "response_json": ("jsonb", "NO"),
+    "caller_context_json": ("jsonb", "NO"),
+    "accepted_at_utc": ("timestamp with time zone", "NO"),
+    "created_at_utc": ("timestamp with time zone", "NO"),
+    "correlation_id": ("text", "YES"),
+    "trace_id": ("text", "YES"),
+}
+EXPECTED_INTAKE_INDEXES = {
+    "idea_evidence_intake_pkey",
+    "idx_idea_evidence_intake_source",
+    "idx_idea_evidence_intake_created",
+}
 
 
 def run_upgrade_check(database_url: str) -> None:
@@ -71,6 +91,7 @@ def run_upgrade_check(database_url: str) -> None:
         _verify_contract_columns(connection)
         _verify_legacy_row(connection)
         _verify_indexes(connection)
+        _verify_intake_ledger_schema(connection)
 
         connection.execute("RESET search_path")
         connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema_name)))
@@ -151,6 +172,56 @@ def _verify_indexes(connection: psycopg.Connection[dict[str, object]]) -> None:
     if observed != EXPECTED_INDEXES:
         raise RuntimeError(
             f"legacy_upgrade_indexes_mismatch:expected={EXPECTED_INDEXES}:actual={observed}"
+        )
+
+
+def _verify_intake_ledger_schema(connection: psycopg.Connection[dict[str, object]]) -> None:
+    """Migration 024 must create the intake ledger with its intended types.
+
+    Not a populated-upgrade proof, and deliberately not named as one. The
+    pre-migration ledger is a SQLite file, so there is no PostgreSQL predecessor
+    to carry forward here and nothing this check could observe about a transfer.
+    That proof is report#326 slice 3, against a real populated file.
+
+    Closed PR #332 seeded a TEXT-typed table and asserted a row survived the
+    migration -- which CREATE TABLE IF NOT EXISTS no-ops past, so it passed
+    without converting anything. Asserting what the migration actually does is
+    the honest replacement.
+    """
+    rows = connection.execute(
+        """
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'idea_evidence_intake'
+        """
+    ).fetchall()
+    if not rows:
+        raise RuntimeError("intake_ledger_table_missing_after_migration")
+
+    observed = {
+        str(row["column_name"]): (str(row["data_type"]), str(row["is_nullable"]))
+        for row in rows
+        if str(row["column_name"]) in EXPECTED_INTAKE_COLUMNS
+    }
+    if observed != EXPECTED_INTAKE_COLUMNS:
+        raise RuntimeError(
+            f"intake_ledger_columns_mismatch:expected={EXPECTED_INTAKE_COLUMNS}:actual={observed}"
+        )
+
+    index_rows = connection.execute(
+        """
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'idea_evidence_intake'
+        """
+    ).fetchall()
+    observed_indexes = {str(row["indexname"]) for row in index_rows}
+    if observed_indexes != EXPECTED_INTAKE_INDEXES:
+        raise RuntimeError(
+            "intake_ledger_indexes_mismatch:"
+            f"expected={EXPECTED_INTAKE_INDEXES}:actual={observed_indexes}"
         )
 
 
