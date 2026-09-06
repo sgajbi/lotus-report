@@ -9,15 +9,23 @@
   `report_batch_schedule_audit`, all in the PostgreSQL job and batch ledgers.
   It persists no portfolio, position, transaction, valuation or performance
   entity; those are read from their owners and echoed.
-- Separate store: `idea_evidence_intake` is durable Report-owned state on a
-  DIFFERENT engine - SQLite at `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, created and
-  written by `src/app/idea_evidence_intake/service.py`. It carries its own
-  persistence, retention and migration boundary, so an audit of Report-owned
-  state that stops at the PostgreSQL ledgers is incomplete.
-  **Known gap:** `migration-contract.md` scopes to the PostgreSQL ledgers and
-  treats SQLite as a unit-test adapter only, so this production store has no
-  stated migration policy and no migration gate. Do not read the migration
-  contract as covering it. Tracked as report#326.
+- Separate store: `idea_evidence_intake` is durable Report-owned state, and is
+  the last Report store still on a DIFFERENT engine by default - SQLite at
+  `IDEA_EVIDENCE_INTAKE_LEDGER_PATH`, written by
+  `src/app/idea_evidence_intake/service.py`. An audit of Report-owned state
+  that stops at the PostgreSQL ledgers is incomplete while that remains true.
+  **Migrating (report#326).** A PostgreSQL home exists - migration 024, with
+  column types and indexes asserted by `report_schema_upgrade_check.py` inside
+  the existing migration smoke - and `PostgresIdeaEvidenceIntakeLedger`
+  implements the same surface, selected by
+  `REPORT_IDEA_EVIDENCE_INTAKE_LEDGER_BACKEND`.
+  **The default is still `sqlite`, and the gap is still open.** Nothing has
+  transferred existing records into PostgreSQL, and starting a deployment from
+  an empty intake ledger is the unverifiable-replay state report#334 refuses:
+  the report rows survive, the intake evidence does not, and no replay can then
+  be told apart from a first submission. Until the transfer is delivered and
+  the default changes, read the migration contract as covering the PostgreSQL
+  *table* but not the store that production actually uses.
 - Domain responsibility: reporting orchestration and aggregation payload shaping.
 
 ## Service Boundaries

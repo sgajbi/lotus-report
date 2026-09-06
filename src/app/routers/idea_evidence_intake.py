@@ -15,6 +15,7 @@ from app.idea_evidence_intake.models import (
     IdeaEvidencePackMaterializationRequest,
     IdeaEvidencePackMaterializationResponse,
 )
+from app.idea_evidence_intake.postgres_ledger import PostgresIdeaEvidenceIntakeLedger
 from app.idea_evidence_intake.recovery import (
     IdeaMaterializationIdentityConflictError,
     IdeaMaterializationNotFoundError,
@@ -33,8 +34,10 @@ from app.idea_evidence_intake.retention_policy import (
 from app.idea_evidence_intake.service import (
     IdeaEvidenceIntakeConflictError,
     IdeaEvidenceIntakeLedger,
+    IdeaEvidenceIntakePort,
     build_proof_pack_report_job_request_from_idea_evidence,
 )
+from app.postgres import get_postgres_connection_provider
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     MissingIdempotencyKeyError,
@@ -52,7 +55,18 @@ router = APIRouter(prefix="/reports/idea-evidence-packs", tags=["Report Evidence
 
 
 @lru_cache(maxsize=1)
-def get_idea_evidence_intake_ledger() -> IdeaEvidenceIntakeLedger:
+def get_idea_evidence_intake_ledger() -> IdeaEvidenceIntakePort:
+    """The configured intake ledger.
+
+    SQLite unless explicitly configured otherwise. Both present the same
+    surface -- `accept`, `has_record`, `snapshot` -- and share
+    `build_intake_record`, so the route cannot tell them apart and a request
+    means the same thing either way (report#326).
+    """
+    if settings.idea_evidence_intake_ledger_backend == "postgresql":
+        return PostgresIdeaEvidenceIntakeLedger(
+            connection_provider=get_postgres_connection_provider()
+        )
     return IdeaEvidenceIntakeLedger(Path(settings.idea_evidence_intake_ledger_path))
 
 
@@ -103,7 +117,7 @@ def _resolve_retention_policy(
 )
 async def accept_idea_evidence_pack(
     request: IdeaEvidencePackIntakeRequest,
-    ledger: IdeaEvidenceIntakeLedger = Depends(get_idea_evidence_intake_ledger),
+    ledger: IdeaEvidenceIntakePort = Depends(get_idea_evidence_intake_ledger),
     retention_policy_resolver: IdeaEvidenceRetentionPolicyResolver = Depends(
         get_idea_evidence_retention_policy_resolver
     ),
@@ -191,7 +205,7 @@ async def accept_idea_evidence_pack(
 async def materialize_idea_evidence_pack(
     request: IdeaEvidencePackMaterializationRequest,
     ledger: ReportJobLedger = Depends(get_report_job_ledger),
-    intake_ledger: IdeaEvidenceIntakeLedger = Depends(get_idea_evidence_intake_ledger),
+    intake_ledger: IdeaEvidenceIntakePort = Depends(get_idea_evidence_intake_ledger),
     retention_policy_resolver: IdeaEvidenceRetentionPolicyResolver = Depends(
         get_idea_evidence_retention_policy_resolver
     ),
@@ -506,7 +520,7 @@ def _identity_conflict_error(started_at: float) -> HTTPException:
 def _refuse_unverifiable_legacy_replay(
     *,
     ledger: ReportJobLedger,
-    intake_ledger: IdeaEvidenceIntakeLedger,
+    intake_ledger: IdeaEvidenceIntakePort,
     tenant_id: str,
     request: IdeaEvidencePackMaterializationRequest,
     idempotency_key: str,
