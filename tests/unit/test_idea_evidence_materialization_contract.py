@@ -132,19 +132,65 @@ def test_idea_evidence_materialization_contract_requires_owner_version(
     assert "response_fields missing: source_event_version" in errors
 
 
+#: The table name as SQL may legally spell it: bare, schema-qualified, quoted,
+#: or both. Matching only the bare form lets a qualified deletion through a
+#: guard whose whole purpose is to forbid deletion.
+_STATUS_EVENT_TABLE = r'(?:[\w"]+\s*\.\s*)?"?report_status_event"?'
+
+#: Every statement that destroys history, not only DELETE. TRUNCATE and DROP
+#: remove the same rows and would decrease source_event_version identically.
+HISTORY_DESTROYING_SQL = re.compile(
+    r"\b(?:DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?)"
+    rf"\s+{_STATUS_EVENT_TABLE}",
+    re.IGNORECASE,
+)
+
+
 def test_report_status_event_history_remains_append_only() -> None:
-    deletion = re.compile(r"\bDELETE\s+FROM\s+report_status_event\b", re.IGNORECASE)
     governed_paths = [*ROOT.glob("src/**/*.py"), *ROOT.glob("migrations/*.sql")]
     offenders = [
         str(path.relative_to(ROOT))
         for path in governed_paths
-        if deletion.search(path.read_text(encoding="utf-8"))
+        if HISTORY_DESTROYING_SQL.search(path.read_text(encoding="utf-8"))
     ]
 
     assert offenders == [], (
         "Report materialization owner versions depend on append-only status-event history; "
-        f"deletion was introduced in: {offenders}"
+        f"history-destroying SQL was introduced in: {offenders}"
     )
+
+
+def test_append_only_guard_catches_every_history_destroying_form() -> None:
+    """The guard must fail on each spelling, not only the bare DELETE.
+
+    Without this, broadening the pattern is an unverified claim -- which is how
+    the original guard came to match one form while reading as if it forbade a
+    class.
+    """
+    must_match = [
+        "DELETE FROM report_status_event",
+        "DELETE FROM public.report_status_event",
+        'DELETE FROM "report_status_event"',
+        'DELETE FROM public."report_status_event"',
+        "delete from REPORT_STATUS_EVENT",
+        "TRUNCATE report_status_event",
+        "TRUNCATE TABLE public.report_status_event",
+        "DROP TABLE report_status_event",
+        "DROP TABLE IF EXISTS public.report_status_event",
+    ]
+    for statement in must_match:
+        assert HISTORY_DESTROYING_SQL.search(statement), f"guard missed: {statement}"
+
+    must_not_match = [
+        "SELECT COUNT(*) FROM report_status_event",
+        "INSERT INTO report_status_event (status_event_id) VALUES (?)",
+        "DELETE FROM report_job WHERE report_job_id = ?",
+        "-- report_status_event history is append-only",
+    ]
+    for statement in must_not_match:
+        assert not HISTORY_DESTROYING_SQL.search(statement), (
+            f"guard false-positived on: {statement}"
+        )
 
 
 def _load_validator() -> ModuleType:
