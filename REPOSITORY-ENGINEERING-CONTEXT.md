@@ -86,11 +86,14 @@ upstream calls through the snapshot store, then marks the job `data_ready` throu
 as a separate operation, so a failure is observable between them and recovery must expect that
 state rather than assume it cannot exist. The crossings are the authoritative reads performed
 during capture, and the Render, Archive and consumer handoffs. At those crossings, distinguish the
-two kinds of identity: Report CREATES the request identities it sends (`render_job_id`, and
-`archive_request_id` when Render omits it), while the OUTCOME identities - archived document id,
-artifact SHA - are issued downstream and only ever echoed here. Retry and reconciliation work
-depends on that split: a request identity is reproducible locally, an outcome identity is not and
-may not exist yet.
+kinds of identity. Report creates `render_job_id`, the one request identity it owns. Everything
+else is downstream-owned: Render is the single archive transmit and identity authority
+(render#258), so `archive_request_id` is Render's - Report records it verbatim, and the local
+derivation RECONSTRUCTS the same id only as a rollout fallback for responses predating the field,
+guarded by a cross-repo parity test and deleted once that fallback dies. Outcome identities -
+archived document id, artifact SHA - are issued downstream and only echoed. Reconstructing an
+identity is not owning it: Report must never mint an archive identity independently or submit to
+Archive itself, which is what the render#120 cutover removed.
 
 ### The report lifecycle
 
