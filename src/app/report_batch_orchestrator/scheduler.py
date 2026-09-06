@@ -533,6 +533,40 @@ class StoredScheduleSource(Protocol):
     ) -> list[BatchScheduleDefinition]: ...
 
 
+def _log_candidate_dropped(
+    *,
+    portfolio_id: str,
+    schedule_id: str,
+    status_code: int,
+    reason_code: str,
+) -> None:
+    """Record a candidate Report could not read, rather than dropping it silently.
+
+    A bare `continue` made a refusing dependency indistinguishable from a
+    portfolio that is not there: the pass reported success with nothing
+    materialised, and nothing said why. Report still declines the candidate --
+    attributing a portfolio it could not read is the defect this scheduler
+    exists to avoid (issue #177) -- but the decline is now operable.
+
+    `status_code` is carried because the reasons differ operationally: a 401
+    means Report is not presenting what the source now requires, while a 404
+    means the portfolio is genuinely absent, and an operator needs to tell
+    those apart from the log alone.
+    """
+    _LOGGER.warning(
+        "scheduled_batch_candidate_dropped",
+        extra={
+            "extra_fields": {
+                "portfolio_id": portfolio_id,
+                "schedule_id": schedule_id,
+                "source_status_code": status_code,
+                "reason_code": reason_code,
+                "source_system": "lotus-core",
+            }
+        },
+    )
+
+
 def _tenant_attribution_is_a_stamp(schedule: BatchScheduleDefinition) -> bool:
     """Would materializing this schedule attribute portfolios on no evidence?
 
@@ -753,8 +787,20 @@ class ReportBatchScheduler:
                 correlation_id=caller_context.correlation_id,
             )
             if status_code != 200:
+                _log_candidate_dropped(
+                    portfolio_id=portfolio_id,
+                    schedule_id=schedule.schedule_id,
+                    status_code=status_code,
+                    reason_code="source_refused",
+                )
                 continue
             if str(payload.get("portfolio_id") or "") != portfolio_id:
+                _log_candidate_dropped(
+                    portfolio_id=portfolio_id,
+                    schedule_id=schedule.schedule_id,
+                    status_code=status_code,
+                    reason_code="source_identity_mismatch",
+                )
                 continue
             candidates.append(
                 PortfolioBatchCandidate(
@@ -785,8 +831,20 @@ class ReportBatchScheduler:
                 correlation_id=caller_context.correlation_id,
             )
             if status_code != 200:
+                _log_candidate_dropped(
+                    portfolio_id=portfolio_id,
+                    schedule_id=schedule.schedule_id,
+                    status_code=status_code,
+                    reason_code="source_refused",
+                )
                 continue
             if str(payload.get("portfolio_id") or "") != portfolio_id:
+                _log_candidate_dropped(
+                    portfolio_id=portfolio_id,
+                    schedule_id=schedule.schedule_id,
+                    status_code=status_code,
+                    reason_code="source_identity_mismatch",
+                )
                 continue
             entry = manifest_by_id[portfolio_id]
             candidates.append(

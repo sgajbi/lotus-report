@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from app.config import Settings
@@ -569,3 +571,93 @@ def test_portfolio_rows_reads_both_payload_shapes() -> None:
     assert _portfolio_rows({"items": [{"portfolio_id": "P2"}]}) == [{"portfolio_id": "P2"}]
     assert _portfolio_rows({"portfolios": "not-a-list"}) == []
     assert _portfolio_rows({}) == []
+
+
+async def test_a_source_refusal_is_recorded_rather_than_swallowed(tmp_path, caplog) -> None:
+    """A 401 from Core must not read as a portfolio that is not there.
+
+    This is the live case: Report sends no X-Tenant-Id and Core's portfolio
+    detail route now requires one, so every enumerated candidate meets a 401.
+    Before this was recorded, the pass reported success having materialized
+    nothing and nothing said why.
+    """
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource({"PB_SG_GLOBAL_BAL_001": (401, {})})
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    with caplog.at_level(logging.WARNING, logger="report_batch_scheduler"):
+        result = await scheduler.run_due_schedules(
+            config=_config(_schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])),
+            caller_context=_caller_context(),
+        )
+
+    dropped = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "scheduled_batch_candidate_dropped"
+    ]
+    assert len(dropped) == 1
+    fields = dropped[0].extra_fields
+    assert fields["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
+    assert fields["source_status_code"] == 401
+    assert fields["reason_code"] == "source_refused"
+
+    # Still dropped: attributing a portfolio Report could not read is the
+    # defect, and recording the refusal does not license keeping it.
+    assert result.materialized == ()
+
+
+async def test_an_identity_mismatch_is_recorded_separately(tmp_path, caplog) -> None:
+    """A source answering about a different portfolio is not the same failure.
+
+    It shares the outcome with a refusal and nothing else, so an operator needs
+    them distinguishable from the log alone.
+    """
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {"PB_SG_GLOBAL_BAL_001": (200, {"portfolio_id": "PB_SOMETHING_ELSE", "status": "active"})}
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    with caplog.at_level(logging.WARNING, logger="report_batch_scheduler"):
+        result = await scheduler.run_due_schedules(
+            config=_config(_schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])),
+            caller_context=_caller_context(),
+        )
+
+    dropped = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "scheduled_batch_candidate_dropped"
+    ]
+    assert len(dropped) == 1
+    assert dropped[0].extra_fields["reason_code"] == "source_identity_mismatch"
+    assert dropped[0].extra_fields["source_status_code"] == 200
+    assert result.materialized == ()
+
+
+async def test_a_readable_portfolio_is_not_reported_as_dropped(tmp_path, caplog) -> None:
+    """The control. A warning on every candidate would be noise, not signal."""
+    ledger = ReportBatchLedger(tmp_path / "scheduled.sqlite3")
+    source = _PortfolioSource(
+        {
+            "PB_SG_GLOBAL_BAL_001": (
+                200,
+                {"portfolio_id": "PB_SG_GLOBAL_BAL_001", "status": "active"},
+            )
+        }
+    )
+    scheduler = ReportBatchScheduler(batch_ledger=ledger, portfolio_source=source)
+
+    with caplog.at_level(logging.WARNING, logger="report_batch_scheduler"):
+        result = await scheduler.run_due_schedules(
+            config=_config(_schedule(portfolio_ids=["PB_SG_GLOBAL_BAL_001"])),
+            caller_context=_caller_context(),
+        )
+
+    assert not [
+        record
+        for record in caplog.records
+        if record.getMessage() == "scheduled_batch_candidate_dropped"
+    ]
+    assert len(result.materialized) == 1
