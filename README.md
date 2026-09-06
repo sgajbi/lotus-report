@@ -76,9 +76,15 @@ You need, before anything else:
   with `externally-managed-environment`. CI does not see this because `actions/setup-python`
   supplies an isolated interpreter.
 
-  ```shell
-  python -m venv .venv
-  source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
+  ```bash
+  # Debian/Ubuntu may need the venv module first: sudo apt install python3-venv
+  python3 -m venv .venv
+  source .venv/bin/activate
+  ```
+
+  ```powershell
+  py -3 -m venv .venv
+  .venv\Scripts\Activate.ps1
   ```
 
 Then:
