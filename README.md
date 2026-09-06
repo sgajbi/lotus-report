@@ -106,13 +106,28 @@ Then:
 1. Python toolchain and dependencies: `make install`
 2. A running PostgreSQL for the report ledgers — the repository Docker Compose provides
    `lotus-report-postgres` on host port `5439`. File databases are not valid runtime evidence.
-3. Environment for a local run (PowerShell):
+3. Environment for a local run. Starting through `.venv`'s own interpreter means **no
+   activation is required**, so the shell you use only decides how the variables are set:
 
 ```powershell
 $env:ENTERPRISE_RUNTIME_PROFILE="local"
 $env:REPORT_JOB_LEDGER_DATABASE_URL="postgresql://lotus_report:lotus_report@localhost:5439/lotus_report"
 $env:PYTHONPATH="src"
-uvicorn app.main:app --reload --port 8300
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8300
+```
+
+```bat
+set ENTERPRISE_RUNTIME_PROFILE=local
+set REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+set PYTHONPATH=src
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8300
+```
+
+```bash
+export ENTERPRISE_RUNTIME_PROFILE=local
+export REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+export PYTHONPATH=src
+.venv/bin/python -m uvicorn app.main:app --reload --port 8300
 ```
 
 Expected health result:
