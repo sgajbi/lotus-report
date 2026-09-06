@@ -1591,6 +1591,30 @@ async def get_report_job_portfolio_memory_events(
             detail={"code": "report_job_not_found", "message": "Report job was not found."},
         ) from exc
 
+    # Read the EVENTS first, then the state that supports them. A worker
+    # committing a transition mid-request would otherwise let a freshly
+    # visible event be described by state read before it happened - a
+    # job_data_ready event citing no snapshot, say. Under the event-time
+    # identity that body is not merely momentarily stale: the identity is
+    # permanently stable, so a consumer deduplicating on it keeps the
+    # torn body forever and never looks at the corrected one. Reading in
+    # this order makes the supporting state at least as fresh as every
+    # event returned; the opposite skew (state newer than the last event)
+    # is harmless, because the missing event simply arrives on the next
+    # read carrying its own complete body.
+    # Read the EVENTS first, then the state that supports them. A worker
+    # committing a transition mid-request would otherwise let a freshly
+    # visible event be described by state read before it happened - a
+    # job_data_ready event citing no snapshot, say. Under the event-time
+    # identity that body is not merely momentarily stale: the identity is
+    # permanently stable, so a consumer deduplicating on it keeps the
+    # torn body forever and never looks at the corrected one. Reading in
+    # this order makes the supporting state at least as fresh as every
+    # event returned; the opposite skew (state newer than the last event)
+    # is harmless, because the missing event simply arrives on the next
+    # read carrying its own complete body.
+    status_events = ledger.list_status_events(job_id)
+    record = ledger.get_job(job_id)
     snapshot: ReportInputSnapshotRecord | None = None
     try:
         snapshot = store.get_snapshot_by_job(job_id)
@@ -1604,7 +1628,7 @@ async def get_report_job_portfolio_memory_events(
 
     return build_report_portfolio_memory_events(
         record=record,
-        status_events=ledger.list_status_events(job_id),
+        status_events=status_events,
         snapshot=snapshot,
     )
 

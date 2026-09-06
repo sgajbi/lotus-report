@@ -3773,3 +3773,92 @@ def test_historical_event_identity_survives_lifecycle_progress_and_restart(tmp_p
         )
     finally:
         _clear_overrides()
+
+
+def test_events_and_their_supporting_state_come_from_one_lifecycle_point(tmp_path):
+    """A worker committing a transition mid-request must not produce an
+    event described by state read before it happened.
+
+    The event-time identity makes this permanent rather than momentary: a
+    consumer deduplicating on event_identity keeps the FIRST body it saw,
+    so a job_data_ready event that arrived citing no snapshot would never
+    be corrected. Reading events before their supporting state closes it -
+    the state is then at least as fresh as every event returned.
+    """
+
+    client, ledger, lineage_store = _client(tmp_path)
+    try:
+        payload = _payload()
+        response = client.post("/reports/portfolio-reviews", json=payload, headers=_headers())
+        assert response.status_code == 202
+        job_id = response.json()["report_job_id"]
+
+        class _CapturingMidRequestLedger:
+            """Commits the capture transition while the request is reading -
+            precisely the interleaving the route must tolerate."""
+
+            def __init__(self, inner, lineage_store):
+                self._inner = inner
+                self._lineage_store = lineage_store
+                self.captured = False
+
+            def list_status_events(self, *args, **kwargs):
+                if not self.captured:
+                    self.captured = True
+                    job = self._inner.get_job(job_id)
+                    self._inner.mark_collecting_data(
+                        job_id=job.job_id,
+                        actor=job.triggered_by,
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                    self._lineage_store.create_snapshot(
+                        ReportInputSnapshotCreateRequest(
+                            report_job_id=job.job_id,
+                            report_type=job.report_type,
+                            report_data_contract_version="v1",
+                            portfolio_scope=job.portfolio_scope,
+                            as_of_date=job.as_of_date,
+                            snapshot_payload={"report_id": "mid-request-capture"},
+                            snapshot_storage_ref=None,
+                            supportability_status="complete",
+                            completeness_status="complete",
+                            lineage_summary={"source_services": ["lotus-core"], "call_count": 1},
+                            captured_at=datetime.now(UTC),
+                            correlation_id=job.correlation_id,
+                            trace_id=job.trace_id,
+                        )
+                    )
+                    self._inner.mark_data_ready(
+                        job_id=job.job_id,
+                        actor=job.triggered_by,
+                        correlation_id=job.correlation_id,
+                        trace_id=job.trace_id,
+                    )
+                return self._inner.list_status_events(*args, **kwargs)
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        racing = _CapturingMidRequestLedger(ledger, lineage_store)
+        app.dependency_overrides[get_report_job_ledger] = lambda: racing
+
+        events = client.get(
+            f"/reports/jobs/{job_id}/portfolio-memory-events",
+            headers=_headers(),
+        )
+
+        assert events.status_code == 200
+        assert racing.captured
+        body = events.json()
+        data_ready = [
+            event for event in body["events"] if event["event_type"] == "REPORT_SNAPSHOT_CAPTURED"
+        ]
+        # The transition became visible during this request, so its event
+        # is in the response - and it carries the snapshot that made it
+        # true, not the state from before the commit.
+        assert len(data_ready) == 1
+        cited = [ref["source_type"] for ref in data_ready[0]["source_refs"]]
+        assert "REPORT_INPUT_SNAPSHOT" in cited, data_ready[0]["source_refs"]
+    finally:
+        _clear_overrides()
