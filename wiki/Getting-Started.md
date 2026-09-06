@@ -2,6 +2,27 @@
 
 ## Install
 
+Prerequisites, before anything else:
+
+- **Python 3.12 or newer** — `pyproject.toml` requires `>=3.12` and CI pins 3.12
+- **`make`** — every documented command uses it; not a default on Windows
+- **An activated virtual environment.** `make install` installs into whichever interpreter is
+  on `PATH`; it does not create one. On a PEP 668 distribution (Debian/Ubuntu, Fedora,
+  Homebrew Python) installing into the system interpreter is refused with
+  `externally-managed-environment`. CI does not see this because `actions/setup-python`
+  supplies an isolated interpreter.
+
+  ```bash
+  # Debian/Ubuntu may need the venv module first: sudo apt install python3-venv
+  python3 -m venv .venv
+  source .venv/bin/activate
+  ```
+
+  ```powershell
+  py -3 -m venv .venv
+  .venv\Scripts\Activate.ps1
+  ```
+
 ```bash
 make install
 ```
