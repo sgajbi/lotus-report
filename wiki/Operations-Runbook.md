@@ -177,9 +177,16 @@ docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 "$ROLLOUT_DIR/idea
 # 2. take the baseline FROM THE QUIESCED COPY, not from the live service
 python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
 
-# 2. create the volume and copy the ledger into it
-docker volume create lotus-report_lotus-report-intake-data
-docker run -d --name intake-rollout -v lotus-report_lotus-report-intake-data:/app/data lotus-report:local sleep 120
+# 3. let Compose create the container so it names the volume itself, then READ that name.
+#    Do not guess it: Compose prefixes the declared name with the project name, which comes
+#    from the directory, COMPOSE_PROJECT_NAME or -p, and `config --volumes` prints only the
+#    DECLARED name without the prefix.
+docker compose create lotus-report
+VOLUME="$(docker inspect lotus-report --format '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Name}}{{end}}{{end}}')"
+echo "seeding volume: $VOLUME"
+
+# 4. copy the ledger into that volume
+docker run -d --name intake-rollout -v "$VOLUME":/app/data lotus-report:local sleep 120
 docker cp "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" intake-rollout:/app/data/idea-evidence-intake.sqlite3
 docker rm -f intake-rollout
 
@@ -209,8 +216,12 @@ exceed the baseline and turns a successful rollout into an apparent failure. Equ
 zero means the volume was mounted empty and the prior evidence is still in the
 old container's layer, recoverable only until that container is pruned.
 
-Verify the volume name with `docker compose config --volumes` first — Compose
-prefixes it with the project name, which defaults to the directory name.
+The volume name is **read from the created container**, never typed. `docker compose config
+--volumes` prints only the declared name (`lotus-report-intake-data`) without the project
+prefix, so it cannot confirm what will actually be mounted — measured: under
+`COMPOSE_PROJECT_NAME=custom-project`, `config --volumes` reports `probe-data` while the
+created container mounts `custom-project_probe-data`. Seeding a guessed name leaves the real
+volume empty and resets idempotency exactly as if no rollout had run.
 
 **Evidence.** This procedure was executed as written, against a purpose-built source
 container holding three records in its writable layer with no mounts — the state a
