@@ -14,6 +14,10 @@
   written by `src/app/idea_evidence_intake/service.py`. It carries its own
   persistence, retention and migration boundary, so an audit of Report-owned
   state that stops at the PostgreSQL ledgers is incomplete.
+  **Known gap:** `migration-contract.md` scopes to the PostgreSQL ledgers and
+  treats SQLite as a unit-test adapter only, so this production store has no
+  stated migration policy and no migration gate. Do not read the migration
+  contract as covering it. Tracked as report#326.
 - Domain responsibility: reporting orchestration and aggregation payload shaping.
 
 ## Service Boundaries
