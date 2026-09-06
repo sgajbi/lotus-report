@@ -102,8 +102,16 @@ check: lint typecheck code-health-gates openapi-gate monetary-float-guard domain
 # Direct `make ci` documents a caller-owned isolated database (README, repository
 # context); mark it so the integration-test session trusts the given URL instead of
 # provisioning a nested database or demanding CREATEDB (issue #179).
+#
+# Each suite runs exactly once, through test-coverage. Listing test-integration and
+# test-e2e here as well ran them a second time against the same database, so the
+# later session inherited the earlier one's committed rows and failed on capacity
+# it had itself consumed (issue #335). test-unit was already only reached through
+# test-coverage; this makes all three consistent, and matches the merge gate,
+# which runs one test-suite-coverage job per suite against its own database.
+# test-integration and test-e2e remain for running a suite directly.
 ci: export REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED = true
-ci: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-integration test-e2e test-coverage security-audit
+ci: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate migration-smoke test-coverage security-audit
 
 ci-local:
 	python scripts/run_isolated_ci.py
