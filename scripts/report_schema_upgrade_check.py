@@ -42,6 +42,11 @@ NULLABILITY_MISMATCHES = {
 }
 
 
+#: The replay identity carried across the upgrade. Named separately because it
+#: is the value whose survival the check exists to prove.
+LEGACY_INTAKE_IDEMPOTENCY_KEY = "intake-idempotency-pre-migration-1"
+
+
 def run_upgrade_check(database_url: str) -> None:
     schema_name = f"report_upgrade_{uuid4().hex[:12]}"
     with psycopg.connect(database_url, row_factory=dict_row) as connection:
@@ -70,6 +75,7 @@ def run_upgrade_check(database_url: str) -> None:
 
         _verify_contract_columns(connection)
         _verify_legacy_row(connection)
+        _verify_intake_ledger_row(connection)
         _verify_indexes(connection)
 
         connection.execute("RESET search_path")
@@ -83,6 +89,72 @@ def _execute_fixture(connection: psycopg.Connection[dict[str, object]]) -> None:
     for statement in fixture.split(";"):
         if statement.strip():
             connection.execute(statement)
+    _seed_pre_migration_intake_ledger(connection)
+
+
+def _seed_pre_migration_intake_ledger(
+    connection: psycopg.Connection[dict[str, object]],
+) -> None:
+    """Create the intake ledger in its PRE-migration shape and populate it.
+
+    The pre-#326 ledger was SQLite: TEXT timestamps and TEXT json, because
+    SQLite has neither type. Seeding it that way is the point -- a check that
+    seeds rows already in the target shape proves the migration is harmless to
+    data it never has to convert.
+    """
+    connection.execute(
+        """
+        CREATE TABLE idea_evidence_intake (
+            idempotency_key TEXT PRIMARY KEY,
+            intake_id TEXT NOT NULL,
+            payload_fingerprint TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            caller_context_json TEXT NOT NULL,
+            report_evidence_pack_id TEXT NOT NULL,
+            conversion_intent_id TEXT NOT NULL,
+            candidate_id TEXT NOT NULL,
+            evidence_packet_id TEXT NOT NULL,
+            evidence_content_fingerprint TEXT NOT NULL,
+            producer TEXT NOT NULL,
+            supportability_status TEXT NOT NULL,
+            accepted_at_utc TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            correlation_id TEXT,
+            trace_id TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO idea_evidence_intake (
+            idempotency_key, intake_id, payload_fingerprint, response_json,
+            caller_context_json, report_evidence_pack_id, conversion_intent_id,
+            candidate_id, evidence_packet_id, evidence_content_fingerprint,
+            producer, supportability_status, accepted_at_utc, created_at_utc,
+            correlation_id, trace_id
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        (
+            LEGACY_INTAKE_IDEMPOTENCY_KEY,
+            "intake-pre-migration-1",
+            "fingerprint-pre-migration-1",
+            '{"posture": "pre_migration"}',
+            '{"tenant_id": "tenant-pre-migration"}',
+            "pack-pre-migration-1",
+            "intent-pre-migration-1",
+            "candidate-pre-migration-1",
+            "packet-pre-migration-1",
+            "content-fingerprint-pre-migration-1",
+            "lotus-idea",
+            "supported",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-01T00:00:00+00:00",
+            "corr-pre-migration",
+            "trace-pre-migration",
+        ),
+    )
 
 
 def _verify_contract_columns(connection: psycopg.Connection[dict[str, object]]) -> None:
@@ -133,6 +205,43 @@ def _verify_legacy_row(connection: psycopg.Connection[dict[str, object]]) -> Non
     }
     if row != expected:
         raise RuntimeError(f"legacy_upgrade_event_mismatch:expected={expected}:actual={row}")
+
+
+def _verify_intake_ledger_row(connection: psycopg.Connection[dict[str, object]]) -> None:
+    """The populated intake row must survive with its replay identity intact.
+
+    Compared field-by-field rather than by row count: a surviving count with a
+    rewritten `idempotency_key` is still a broken idempotency guarantee, because
+    that key is what proves a later intake is a replay.
+    """
+    row = connection.execute(
+        """
+        SELECT idempotency_key, intake_id, payload_fingerprint, report_evidence_pack_id,
+               evidence_packet_id, producer, supportability_status, correlation_id, trace_id
+        FROM idea_evidence_intake
+        WHERE idempotency_key = %s
+        """,
+        (LEGACY_INTAKE_IDEMPOTENCY_KEY,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("intake_ledger_upgrade_row_missing")
+    expected = {
+        "idempotency_key": LEGACY_INTAKE_IDEMPOTENCY_KEY,
+        "intake_id": "intake-pre-migration-1",
+        "payload_fingerprint": "fingerprint-pre-migration-1",
+        "report_evidence_pack_id": "pack-pre-migration-1",
+        "evidence_packet_id": "packet-pre-migration-1",
+        "producer": "lotus-idea",
+        "supportability_status": "supported",
+        "correlation_id": "corr-pre-migration",
+        "trace_id": "trace-pre-migration",
+    }
+    if row != expected:
+        raise RuntimeError(f"intake_ledger_upgrade_row_mismatch:expected={expected}:actual={row}")
+
+    total = connection.execute("SELECT count(*) AS n FROM idea_evidence_intake").fetchone()
+    if total is None or total["n"] != 1:
+        raise RuntimeError(f"intake_ledger_upgrade_row_count_mismatch:actual={total}")
 
 
 def _verify_indexes(connection: psycopg.Connection[dict[str, object]]) -> None:
