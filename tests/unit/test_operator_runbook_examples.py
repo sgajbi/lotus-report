@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -162,27 +163,18 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     the wrong repository is evidence the text was never read in the context it
     governs, which is the exact failure the table exists to prevent.
 
+    Derived from the table's own required ``repository`` field rather than a
+    hard-coded name, so this test is itself immune to the copy it guards
+    against and can be lifted verbatim by any adopter.
+
     Interim: a canonical check would remove the need for this per-repo guard.
     Filed as lotus-gateway#745.
     """
     policy = _read("quality/branch_protection_policy.v1.json")
-    foreign = [
-        name
-        for name in (
-            "Risk",
-            "Archive",
-            "Gateway",
-            "Core",
-            "Advise",
-            "Manage",
-            "Render",
-            "Idea",
-            "Performance",
-            "Platform",
-            "Workbench",
-        )
-        if f"{name}-only" in policy
-    ]
+    service = json.loads(policy)["repository"].split("/")[-1]
+    expected = service.removeprefix("lotus-").capitalize()
 
-    assert not foreign, f"policy table describes another repository: {foreign}"
-    assert "Report-only" in policy
+    named = {match.group(1) for match in re.finditer(r"(?<![A-Za-z])([A-Z][a-z]+)-only", policy)}
+    foreign = sorted(named - {expected})
+
+    assert not foreign, f"policy table for {service} describes another repository: {foreign}"

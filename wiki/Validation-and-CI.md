@@ -146,7 +146,9 @@ the checker compares it against what GitHub actually reports. Two halves, delibe
 2. The live half is **not yet a required merge context**. A drift finding is therefore visible but
    non-blocking; treat a red `branch-protection` job as an action item, not as noise.
 3. Drift is reported, **never auto-corrected**. Protection changes are operator-gated by design, so
-   the gate's output is a remediation command for a human to run.
+   the gate's output is *diagnostics*, not a runnable command: one bullet per
+   mismatched field giving the live value beside the policy value. Deciding and applying the
+   correction is the operator's step.
 
 The checker and its tests are lifted **byte-identically** from the canonical implementation in
 `lotus-gateway` and must stay that way, so every adopter inherits one behaviour and upstream fixes
