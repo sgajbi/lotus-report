@@ -161,10 +161,15 @@ service starts, the ledger is recreated empty, and **a replayed intake is
 accepted as new** because the `idempotency_key` proving it was a replay is
 gone.
 
-Carry the file across first:
+Carry the file across first. **Stop the API before copying** — the service must be
+quiesced for the whole rollout, not just at the moment of the copy:
 
 ```shell
-# 1. copy the ledger out of the OLD running container
+# 0. record the count to compare against later, then STOP the API
+docker exec lotus-report python -c "import sqlite3;print(sqlite3.connect('data/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
+docker compose stop lotus-report
+
+# 1. copy the ledger out of the STOPPED container (docker cp works on a stopped container)
 docker cp lotus-report:/app/data/idea-evidence-intake.sqlite3 ./idea-evidence-intake.sqlite3
 
 # 2. create the volume and copy the ledger into it
@@ -178,8 +183,15 @@ docker compose up -d
 docker exec lotus-report python -c "import sqlite3;print(sqlite3.connect('data/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])"
 ```
 
-Step 3's count is the check that matters: compare it against the same query run
-on the old container before the upgrade. Equal counts mean the rollout carried;
+**Why the API must be stopped, not merely copied from.** Copying while it still serves
+leaves two silent failures. A record committed after the copy but before the container is
+replaced is absent from the new volume, so idempotency resets for exactly those keys and
+nothing reports it. And a byte-level copy of a live SQLite database can overlap an
+in-flight transaction, producing a torn file that may not fail until it is read. Stopping
+the container closes both, which is why step 0 stops it and it stays stopped until
+`docker compose up -d` brings it back on the volume.
+
+Step 3's count is the check that matters: compare it against the count recorded in step 0. Equal counts mean the rollout carried;
 zero means the volume was mounted empty and the prior evidence is still in the
 old container's layer, recoverable only until that container is pruned.
 
