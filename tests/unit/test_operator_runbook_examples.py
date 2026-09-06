@@ -161,6 +161,9 @@ def test_branch_protection_policy_table_describes_this_repository() -> None:
     ``Risk-only`` fork, copied from the first adoption. A limitation that names
     the wrong repository is evidence the text was never read in the context it
     governs, which is the exact failure the table exists to prevent.
+
+    Interim: a canonical check would remove the need for this per-repo guard.
+    Filed as lotus-gateway#745.
     """
     policy = _read("quality/branch_protection_policy.v1.json")
     foreign = [
