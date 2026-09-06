@@ -94,6 +94,8 @@ def test_idea_evidence_materialization_contract_requires_exact_read_only_recover
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     contract["recovery"]["tenant_scoped"] = False
     contract["recovery"]["retries_materialization"] = True
+    contract["recovery"]["owner_version_source"] = "mutable_job_status"
+    contract["recovery"]["exact_replay_preserves_owner_version"] = False
     contract["recovery"]["required_query_fields"].remove("conversionIntentId")
     drifted = tmp_path / "contract.json"
     drifted.write_text(json.dumps(contract), encoding="utf-8")
@@ -102,7 +104,29 @@ def test_idea_evidence_materialization_contract_requires_exact_read_only_recover
 
     assert "recovery.tenant_scoped must be True" in errors
     assert "recovery.retries_materialization must be False" in errors
+    assert "recovery.owner_version_source must be 'append_only_report_status_event_count'" in errors
+    assert "recovery.exact_replay_preserves_owner_version must be True" in errors
     assert "recovery.required_query_fields missing: conversionIntentId" in errors
+
+
+def test_idea_evidence_materialization_contract_requires_owner_version(
+    tmp_path: Path,
+) -> None:
+    module = _load_validator()
+    contract_path = (
+        ROOT
+        / "contracts"
+        / "idea-evidence-materialization"
+        / "lotus-report-idea-evidence-pack-materialization.v1.json"
+    )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["response_fields"].remove("source_event_version")
+
+    drifted = tmp_path / "contract.json"
+    drifted.write_text(json.dumps(contract), encoding="utf-8")
+    errors = module.validate_idea_evidence_materialization_contract(drifted)
+
+    assert "response_fields missing: source_event_version" in errors
 
 
 def _load_validator() -> ModuleType:

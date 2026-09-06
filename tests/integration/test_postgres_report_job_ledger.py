@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from threading import Barrier
 from typing import Any, Iterator, Mapping
 from uuid import uuid4
 
@@ -11,7 +13,10 @@ from fastapi.testclient import TestClient
 from psycopg.errors import UniqueViolation
 
 from app.config import settings
-from app.idea_evidence_intake.models import IdeaEvidencePackMaterializationRequest
+from app.idea_evidence_intake.models import (
+    IdeaEvidencePackMaterializationRequest,
+    IdeaEvidencePackMaterializationResponse,
+)
 from app.idea_evidence_intake.recovery import (
     recover_idea_materialization,
     recovery_identity_from_request,
@@ -195,6 +200,7 @@ def test_postgres_recovers_exact_idea_materialization_after_adapter_restart() ->
     assert recovered.report_request_id == created.request_id
     assert recovered.report_package_identity.candidate_id == f"icand_{unique_suffix}"
     assert recovered.materialization_status == "accepted"
+    assert recovered.source_event_version == 1
     assert recovered.creates_rendered_output is False
     assert recovered.creates_archive_record is False
     assert (
@@ -209,6 +215,93 @@ def test_postgres_recovers_exact_idea_materialization_after_adapter_restart() ->
         )
         == 1
     )
+
+    advanced = restarted_ledger.mark_collecting_data(
+        job_id=created.job_id,
+        actor="report-worker",
+        correlation_id=f"corr-idea-advance-{unique_suffix}",
+        trace_id=f"trace-idea-advance-{unique_suffix}",
+    )
+    corrected = recover_idea_materialization(
+        ledger=_ledger(),
+        tenant_id="tenant-sg",
+        idempotency_key=idempotency_key,
+        expected_identity=recovery_identity_from_request(request),
+    )
+    exact_replay = recover_idea_materialization(
+        ledger=_ledger(),
+        tenant_id="tenant-sg",
+        idempotency_key=idempotency_key,
+        expected_identity=recovery_identity_from_request(request),
+    )
+
+    assert advanced.status == "collecting_data"
+    assert corrected.materialization_status == "collecting_data"
+    assert corrected.source_event_version == 2
+    assert exact_replay == corrected
+    assert [event.to_status for event in restarted_ledger.list_status_events(created.job_id)] == [
+        "accepted",
+        "collecting_data",
+    ]
+
+
+def test_postgres_owner_snapshot_is_not_torn_during_concurrent_advancement() -> None:
+    unique_suffix = uuid4().hex
+    idempotency_key = f"idea-materialization-concurrent-{unique_suffix}"
+    request = _idea_materialization_request(unique_suffix)
+    ledger = _ledger()
+    created = ledger.create_proof_pack_report_job(
+        request=build_proof_pack_report_job_request_from_idea_evidence(request),
+        caller_context=ReportCallerContext(
+            triggered_by="advisor-123",
+            caller_application="lotus-idea",
+            tenant_id="tenant-sg",
+            region="APAC",
+            correlation_id=f"corr-idea-concurrent-{unique_suffix}",
+            trace_id=f"trace-idea-concurrent-{unique_suffix}",
+        ),
+        idempotency_key=idempotency_key,
+    )
+    barrier = Barrier(2)
+    recovery_ledger = PostgresReportJobLedger(_database_url())
+    advancement_ledger = PostgresReportJobLedger(_database_url())
+
+    def recover_while_advancing() -> IdeaEvidencePackMaterializationResponse:
+        barrier.wait()
+        return recover_idea_materialization(
+            ledger=recovery_ledger,
+            tenant_id="tenant-sg",
+            idempotency_key=idempotency_key,
+            expected_identity=recovery_identity_from_request(request),
+        )
+
+    def advance_owner() -> None:
+        barrier.wait()
+        advancement_ledger.mark_collecting_data(
+            job_id=created.job_id,
+            actor="report-worker",
+            correlation_id=f"corr-owner-concurrent-{unique_suffix}",
+            trace_id=f"trace-owner-concurrent-{unique_suffix}",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        recovery_future = executor.submit(recover_while_advancing)
+        advancement_future = executor.submit(advance_owner)
+        observed = recovery_future.result()
+        advancement_future.result()
+
+    assert (observed.materialization_status, observed.source_event_version) in {
+        ("accepted", 1),
+        ("collecting_data", 2),
+    }
+    final = recover_idea_materialization(
+        ledger=_ledger(),
+        tenant_id="tenant-sg",
+        idempotency_key=idempotency_key,
+        expected_identity=recovery_identity_from_request(request),
+    )
+    assert final.materialization_status == "collecting_data"
+    assert final.source_event_version == 2
 
 
 def test_postgres_api_recovers_lost_materialization_response_without_second_post() -> None:

@@ -33,6 +33,7 @@ from app.reporting_jobs.models import (
     ReportJobArchiveStatusRecord,
     ReportJobLedgerRecord,
     ReportJobListFilters,
+    ReportJobOwnerSnapshot,
     ReportJobRelationshipRecord,
     ReportJobRelationshipType,
     ReportJobStatus,
@@ -1920,6 +1921,28 @@ class ReportJobLedger:
                 return failed
 
     def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
+        rows = self._list_job_rows(filters)
+        records = [_record_from_row(row) for row in rows]
+        # The Python matcher stays as the single semantic authority; the SQL
+        # predicates exist so the LIMIT applies AFTER filtering - a tenant's
+        # eligible row beyond other tenants' recent rows must still return.
+        return [record for record in records if _record_matches_filters(record, filters)]
+
+    def list_job_owner_snapshots(
+        self, *, filters: ReportJobListFilters
+    ) -> list[ReportJobOwnerSnapshot]:
+        snapshots = [
+            ReportJobOwnerSnapshot(
+                record=_record_from_row(row),
+                source_event_version=int(row["source_event_version"]),
+            )
+            for row in self._list_job_rows(filters)
+        ]
+        return [
+            snapshot for snapshot in snapshots if _record_matches_filters(snapshot.record, filters)
+        ]
+
+    def _list_job_rows(self, filters: ReportJobListFilters) -> list[sqlite3.Row]:
         where_sql, where_params = _list_jobs_predicates(filters)
         with self._connect() as connection:
             rows = connection.execute(
@@ -1970,7 +1993,12 @@ class ReportJobLedger:
                     job.archive_request_id,
                     job.archive_document_id,
                     job.archive_completed_at,
-                job.accepted_document_contract_json
+                    job.accepted_document_contract_json,
+                    (
+                        SELECT COUNT(*)
+                        FROM report_status_event event
+                        WHERE event.report_job_id = job.report_job_id
+                    ) AS source_event_version
                 FROM report_request req
                 JOIN report_job job ON job.report_request_id = req.report_request_id
                 {where}
@@ -1979,11 +2007,7 @@ class ReportJobLedger:
                 """.format(where=where_sql),
                 (*where_params, filters.limit),
             ).fetchall()
-        records = [_record_from_row(row) for row in rows]
-        # The Python matcher stays as the single semantic authority; the SQL
-        # predicates exist so the LIMIT applies AFTER filtering - a tenant's
-        # eligible row beyond other tenants' recent rows must still return.
-        return [record for record in records if _record_matches_filters(record, filters)]
+        return rows
 
     def mark_collecting_data(
         self,

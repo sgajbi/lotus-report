@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterator, Mapping, cast
 from uuid import uuid4
 
 from psycopg import Connection
@@ -42,6 +42,7 @@ from app.reporting_jobs.models import (
     ReportJobArchiveStatusRecord,
     ReportJobLedgerRecord,
     ReportJobListFilters,
+    ReportJobOwnerSnapshot,
     ReportJobRelationshipRecord,
     ReportJobRelationshipType,
     ReportJobStatus,
@@ -1553,6 +1554,20 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             return failed
 
     def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]:
+        return [_record_from_row(row) for row in self._list_job_rows(filters)]
+
+    def list_job_owner_snapshots(
+        self, *, filters: ReportJobListFilters
+    ) -> list[ReportJobOwnerSnapshot]:
+        return [
+            ReportJobOwnerSnapshot(
+                record=_record_from_row(row),
+                source_event_version=int(row["source_event_version"]),
+            )
+            for row in self._list_job_rows(filters)
+        ]
+
+    def _list_job_rows(self, filters: ReportJobListFilters) -> list[Mapping[str, Any]]:
         where_clauses = ["1=1"]
         params: list[Any] = []
 
@@ -1644,7 +1659,12 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 job.archive_request_id,
                 job.archive_document_id,
                 job.archive_completed_at,
-                job.accepted_document_contract_json
+                job.accepted_document_contract_json,
+                (
+                    SELECT COUNT(*)
+                    FROM report_status_event event
+                    WHERE event.report_job_id = job.report_job_id
+                ) AS source_event_version
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE {" AND ".join(where_clauses)}
@@ -1655,7 +1675,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
 
         with self._connect() as connection:
             rows = connection.execute(query, tuple(params)).fetchall()
-        return [_record_from_row(row) for row in rows]
+        return cast(list[Mapping[str, Any]], rows)
 
     def mark_collecting_data(
         self,

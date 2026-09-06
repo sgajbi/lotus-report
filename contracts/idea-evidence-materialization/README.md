@@ -17,7 +17,7 @@ output creation, and `lotus-archive` owns archive record creation.
 
 The response is a source-safe materialization receipt. It extends the report job
 handle with `report_package_identity`, `source_authority`,
-`materialization_status`, report-job/render/archive creation posture, optional
+`materialization_status`, positive `source_event_version`, report-job/render/archive creation posture, optional
 `render_job_id` and `archive_document_id`, evidence refs, and explicit
 remaining blockers. It never returns raw idea evidence payloads and never
 promotes client-publication authority or supported-feature status.
@@ -29,7 +29,10 @@ accepts only the `lotus-idea` application with
 `report.idea-materialization.recover`. A missing tenant-scoped record returns
 `404`; a changed, ambiguous, malformed, or internally inconsistent identity
 returns `409`. The route reads current Report-owned status and never calls the
-materialization command. Local headers are contract proof only; production
+materialization command. `source_event_version` is derived from the committed append-only Report
+status-event sequence: exact replay preserves it and later Report lifecycle evidence increases it.
+Status and version are projected atomically, so a concurrent transition cannot produce a torn
+receipt. Local headers are contract proof only; production
 identity and capability attestation remain environment-owned certification.
 
 Validate locally:

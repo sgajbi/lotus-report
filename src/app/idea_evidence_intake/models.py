@@ -208,6 +208,14 @@ class IdeaEvidencePackMaterializationResponse(ReportJobHandleResponse):
     materialization_status: str = Field(
         description="Current report-owned materialization lifecycle status."
     )
+    source_event_version: int = Field(
+        gt=0,
+        description=(
+            "Positive Report-owned version derived from the append-only lifecycle event "
+            "sequence for this materialization job. An unchanged value denotes exact owner "
+            "replay; a larger value denotes newer Report state."
+        ),
+    )
     report_package_identity: IdeaEvidenceReportPackageIdentity
     producer: Literal["lotus-idea"] = "lotus-idea"
     source_authority: IdeaEvidenceMaterializationSourceAuthority = Field(

@@ -12,7 +12,7 @@ from app.idea_evidence_intake.recovery import (
     IdeaMaterializationIdentityConflictError,
     recover_idea_materialization,
 )
-from app.reporting_jobs.models import ReportJobLedgerRecord
+from app.reporting_jobs.models import ReportJobLedgerRecord, ReportJobOwnerSnapshot
 
 
 def test_recovery_fails_closed_for_malformed_stored_identity() -> None:
@@ -66,11 +66,14 @@ class _Reader:
     def __init__(self, records: list[ReportJobLedgerRecord]) -> None:
         self._records = records
 
-    def list_jobs(self, *, filters) -> list[ReportJobLedgerRecord]:
+    def list_job_owner_snapshots(self, *, filters) -> list[ReportJobOwnerSnapshot]:
         assert filters.tenant_id == "tenant-sg"
         assert filters.idempotency_key == "idea-materialization-001"
         assert filters.limit == 2
-        return self._records
+        return [
+            ReportJobOwnerSnapshot(record=record, source_event_version=1)
+            for record in self._records
+        ]
 
 
 def _identity() -> IdeaEvidenceMaterializationRecoveryIdentity:

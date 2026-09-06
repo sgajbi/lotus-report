@@ -17,6 +17,7 @@ from app.idea_evidence_intake.models import (
 from app.reporting_jobs.models import (
     ReportJobLedgerRecord,
     ReportJobListFilters,
+    ReportJobOwnerSnapshot,
 )
 
 
@@ -29,7 +30,9 @@ class IdeaMaterializationIdentityConflictError(ValueError):
 
 
 class ReportJobRecoveryReader(Protocol):
-    def list_jobs(self, *, filters: ReportJobListFilters) -> list[ReportJobLedgerRecord]: ...
+    def list_job_owner_snapshots(
+        self, *, filters: ReportJobListFilters
+    ) -> list[ReportJobOwnerSnapshot]: ...
 
 
 def recovery_identity_from_request(
@@ -53,25 +56,27 @@ def recover_idea_materialization(
     idempotency_key: str,
     expected_identity: IdeaEvidenceMaterializationRecoveryIdentity,
 ) -> IdeaEvidencePackMaterializationResponse:
-    records = ledger.list_jobs(
+    snapshots = ledger.list_job_owner_snapshots(
         filters=ReportJobListFilters(
             tenant_id=tenant_id,
             idempotency_key=idempotency_key,
             limit=2,
         )
     )
-    if not records:
+    if not snapshots:
         raise IdeaMaterializationNotFoundError("idea_materialization_not_found")
-    if len(records) != 1:
+    if len(snapshots) != 1:
         raise IdeaMaterializationIdentityConflictError("idea_materialization_ambiguous")
 
-    record = records[0]
+    snapshot = snapshots[0]
+    record = snapshot.record
     stored_identity = _stored_recovery_identity(record)
     if stored_identity != expected_identity:
         raise IdeaMaterializationIdentityConflictError("idea_materialization_identity_changed")
     _validate_record_binding(record, stored_identity)
     return materialization_response(
         record=record,
+        source_event_version=snapshot.source_event_version,
         identity=stored_identity,
         idempotency_key=idempotency_key,
     )
@@ -80,6 +85,7 @@ def recover_idea_materialization(
 def materialization_response(
     *,
     record: ReportJobLedgerRecord,
+    source_event_version: int,
     identity: IdeaEvidenceMaterializationRecoveryIdentity,
     idempotency_key: str,
 ) -> IdeaEvidencePackMaterializationResponse:
@@ -88,6 +94,7 @@ def materialization_response(
         report_job_id=record.job_id,
         status=record.status,
         materialization_status=record.status,
+        source_event_version=source_event_version,
         status_url=f"/reports/jobs/{record.job_id}",
         idempotency_key=idempotency_key,
         report_package_identity=identity.model_dump(exclude={"portfolio_id"}),
