@@ -189,3 +189,151 @@ def test_report_portfolio_memory_events_report_pending_family_before_ready_state
         "PENDING_REVIEW",
         "PENDING_REVIEW",
     ]
+
+
+def _accepted_identity(*, record, snapshot) -> tuple[str, str]:
+    """The identity a downstream consumer deduplicates on, for the ONE
+    finished historical event every reading below shares."""
+
+    response = build_report_portfolio_memory_events(
+        record=record,
+        status_events=[_event("job_accepted", "accepted", 0)],
+        snapshot=snapshot,
+    )
+    accepted = response.events[0]
+    return accepted.event_identity, accepted.content_hash
+
+
+def test_lifecycle_progress_never_restates_a_finished_events_identity():
+    """report#283: the same accepted event read at four lifecycle points.
+    Under the v1 preimage this produced three different identities within
+    one deployment, because the job's CURRENT snapshot, artifact and
+    archive-document facts were hashed into every historical event."""
+
+    readings = {
+        "accepted": _accepted_identity(record=_record(status="accepted"), snapshot=None),
+        "captured": _accepted_identity(record=_record(status="data_ready"), snapshot=_snapshot()),
+        "rendered": _accepted_identity(record=_record(status="completed"), snapshot=_snapshot()),
+        "archived": _accepted_identity(record=_record(status="archived"), snapshot=_snapshot()),
+    }
+
+    assert len(set(readings.values())) == 1, readings
+
+
+def test_a_deployment_that_enriches_later_facts_leaves_history_untouched():
+    """The deployment-borne half: a snapshot that gains a revision binding
+    (and a job that gains custody identifiers) between two reads must not
+    move the identity of an event that finished before either existed."""
+
+    before = _accepted_identity(record=_record(status="accepted"), snapshot=None)
+    enriched_snapshot = _snapshot().model_copy(
+        update={
+            "report_revision_id": "rrv3_enriched",
+            "factual_content_digest": "sha256:facts-enriched",
+            "snapshot_hash": "sha256:snapshot-restated",
+        }
+    )
+    enriched_record = _record(status="archived").model_copy(
+        update={
+            "archive_document_id": "doc_enriched",
+            "render_artifact_sha256": "sha256:artifact-enriched",
+        }
+    )
+    after = _accepted_identity(record=enriched_record, snapshot=enriched_snapshot)
+
+    assert before == after
+
+
+def test_a_replayed_job_carries_its_own_event_identities():
+    """Replay clones the snapshot verbatim, so the SAME captured facts sit
+    under two jobs. Their events must still be distinct events - identity
+    is per event, and the replayed job's history is its own."""
+
+    source = _accepted_identity(record=_record(status="archived"), snapshot=_snapshot())
+    replayed_record = _record(status="archived").model_copy(update={"job_id": "rjob_replayed"})
+    replayed = _accepted_identity(record=replayed_record, snapshot=_snapshot())
+
+    assert source != replayed
+
+
+def test_downstream_deduplication_sees_each_historical_event_exactly_once():
+    """The consequence the reproduction exists to protect: a consumer
+    keyed on event_identity ingests the job's history once, however many
+    times it reads during the lifecycle."""
+
+    seen: dict[str, str] = {}
+    for record, snapshot in (
+        (_record(status="accepted"), None),
+        (_record(status="data_ready"), _snapshot()),
+        (_record(status="archived"), _snapshot()),
+    ):
+        response = build_report_portfolio_memory_events(
+            record=record,
+            status_events=[
+                _event("job_accepted", "accepted", 0),
+                _event("job_data_ready", "data_ready", 1),
+            ],
+            snapshot=snapshot,
+        )
+        for event in response.events:
+            seen.setdefault(event.event_identity, event.event_id)
+
+    assert len(seen) == 2, seen
+    assert sorted(seen.values()) == [
+        "report-memory:rjob_001:rse_job_accepted",
+        "report-memory:rjob_001:rse_job_data_ready",
+    ]
+
+
+def test_an_event_cites_only_what_existed_when_it_happened():
+    """Body and identity tell the same story: an accepted event cites no
+    snapshot (none existed), while the data-ready event cites both the
+    snapshot and - outside the identity preimage - its revision."""
+
+    response = build_report_portfolio_memory_events(
+        record=_record(status="data_ready"),
+        status_events=[
+            _event("job_accepted", "accepted", 0),
+            _event("job_data_ready", "data_ready", 1),
+        ],
+        snapshot=_snapshot().model_copy(
+            update={
+                "report_revision_id": "rrv3_capture",
+                "factual_content_digest": "sha256:facts-capture",
+            }
+        ),
+    )
+    accepted, data_ready = response.events
+
+    assert [ref.source_type for ref in accepted.source_refs] == [
+        "REPORT_JOB",
+        "REPORT_STATUS_EVENT",
+    ]
+    revision_refs = [ref for ref in data_ready.source_refs if ref.source_type == "REPORT_REVISION"]
+    assert [ref.source_id for ref in revision_refs] == ["rrv3_capture"]
+    assert [ref.content_hash for ref in revision_refs] == ["sha256:facts-capture"]
+
+
+def test_the_identity_preimage_states_only_event_time_facts():
+    """A guard on the preimage itself: adding a field that a later
+    lifecycle step can change would silently reintroduce report#283, so
+    the member set is pinned and must be changed deliberately."""
+
+    import inspect
+
+    from app.reporting_jobs import portfolio_memory_events as builder
+
+    source = inspect.getsource(builder._build_event)
+    preimage = source.split("safe_payload = {", 1)[1].split("}", 1)[0]
+    stated = sorted(line.split('"')[1] for line in preimage.splitlines() if '":' in line)
+
+    assert stated == [
+        "created_at",
+        "event_type",
+        "identity_preimage_version",
+        "portfolio_id",
+        "report_job_id",
+        "report_type",
+        "status",
+        "status_event_id",
+    ]

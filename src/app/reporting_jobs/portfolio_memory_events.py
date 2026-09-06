@@ -20,6 +20,38 @@ from app.reporting_lineage.models import ReportInputSnapshotRecord
 EVENT_IDENTITY_SCHEME = (
     "source_system:source_type:source_id:content_hash_or_content_hash_unavailable"
 )
+#: Version of the identity PREIMAGE, distinct from the identity's textual
+#: shape above. v2 hashes only facts that were true when the event
+#: happened and can never change afterwards; v1 additionally hashed the
+#: job's CURRENT snapshot, artifact and archive-document facts, so a
+#: finished historical event changed identity as the job progressed
+#: through capture and archiving - within one deployment, with no code
+#: change (report#283).
+EVENT_IDENTITY_PREIMAGE_VERSION = "eip2"
+#: What a consumer holding v1 identities can and cannot be promised. v1
+#: hashes were computed at read time and never persisted anywhere, so
+#: they are not reconstructible from retained evidence and this service
+#: does not claim otherwise: a consumer re-keys once on its first read
+#: under v2, matching events by the STABLE event_id
+#: (report-memory:<job>:<status event>), which never changed under either
+#: version. From v2 onward an event's identity never moves again.
+EVENT_IDENTITY_COMPATIBILITY = (
+    "v1 identities were computed at read time and never stored; they are not reconstructible. "
+    "Re-key once by event_id, which is stable across both versions. v2 identities are fixed at "
+    "event time and never change afterwards."
+)
+#: Statuses a job can only be in once its input snapshot exists; an
+#: event before that point cites no snapshot, because none existed.
+_SNAPSHOT_BEARING_STATUSES = {
+    "data_ready",
+    "rendering",
+    "completed",
+    "completed_with_warnings",
+    "archiving",
+    "archived",
+    "failed",
+    "cancelled",
+}
 RETENTION_POLICY = "DPM_PORTFOLIO_MEMORY_SOURCE_LINEAGE_7Y"
 REDACTION_POLICY = "NO_RAW_PAYLOADS"
 AUDIT_POLICY = "AUDIT_READ_AND_EXPORT"
@@ -103,16 +135,21 @@ def _build_event(
         status_event.event_type,
         "REPORT_LIFECYCLE_EVENT",
     )
+    # EVERY member is a fact of the event itself, fixed when the status
+    # event was written: the job it belongs to, the transition it records,
+    # and when. Nothing here can be changed by a later lifecycle step -
+    # which is exactly the property v1 lacked. Facts that arrive later
+    # (snapshot, artifact, archive document, report revision) reach the
+    # consumer through refs and fields OUTSIDE this preimage, each
+    # attached only to events at or after the step that produced it.
     safe_payload = {
+        "identity_preimage_version": EVENT_IDENTITY_PREIMAGE_VERSION,
         "report_job_id": record.job_id,
         "report_type": record.report_type,
         "status_event_id": status_event.status_event_id,
         "event_type": event_type,
         "status": status_event.to_status,
         "portfolio_id": _primary_portfolio_id(record),
-        "snapshot_hash": snapshot.snapshot_hash if snapshot else None,
-        "render_artifact_sha256": record.render_artifact_sha256,
-        "archive_document_id": record.archive_document_id,
         "created_at": status_event.created_at.isoformat(),
     }
     content_hash = _hash_payload(safe_payload)
@@ -173,7 +210,13 @@ def _source_refs(
             ),
         ),
     ]
-    if snapshot is not None:
+    # The snapshot did not exist when the job was accepted, so an
+    # accepted event must not cite it: an event states what was true when
+    # it happened. Consumers that deduplicate on identity keep the FIRST
+    # body they saw, so a body that grew later would never reach them
+    # anyway - stating it only from the producing step onward keeps body
+    # and identity telling the same story.
+    if snapshot is not None and status_event.to_status in _SNAPSHOT_BEARING_STATUSES:
         refs.append(
             ReportPortfolioMemorySourceRef(
                 source_system="lotus-report",
@@ -182,6 +225,19 @@ def _source_refs(
                 content_hash=snapshot.snapshot_hash,
             )
         )
+        if snapshot.report_revision_id:
+            # The canonical revision of the facts this report presents
+            # (report#283). Enrichment, deliberately OUTSIDE the identity
+            # preimage: a revision minted at capture must never restate
+            # the identity of an event that was already finished.
+            refs.append(
+                ReportPortfolioMemorySourceRef(
+                    source_system="lotus-report",
+                    source_type="REPORT_REVISION",
+                    source_id=snapshot.report_revision_id,
+                    content_hash=snapshot.factual_content_digest,
+                )
+            )
     return refs
 
 

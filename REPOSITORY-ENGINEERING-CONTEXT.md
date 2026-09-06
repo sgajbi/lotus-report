@@ -182,9 +182,32 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    the STORED bytes verbatim via `get_stored_lifecycle` — history is
    never rewritten and no version/value pair a policy never stamped can
    be persisted.
-   Remaining, in order: revision identity on portfolio-memory events
-   (blocked on an event-identity stability treatment: the payload hash IS
-   the event identity); the 17-point integrated proof.
+   The 17-point integrated proof is COMPLETE (#316, PR #317,
+   `tests/integration/test_integrated_lifecycle_proof.py`). Its evidence
+   boundary, stated exactly: real PostgreSQL for the ledger, snapshot
+   store, batch ledger and every persistence, concurrency and restart
+   assertion; owner-shaped DOUBLES at the upstream provider and the
+   Render/Archive client seams (built from those owners' shipped response
+   bodies). It does not exercise live sibling deployments, and no
+   assertion in it should be read as proving one.
+   Portfolio-memory event identity is stable from event time (#283): the
+   preimage states only facts fixed when the status event was written -
+   job, transition, portfolio, timestamp, preimage version `eip2`. It
+   previously hashed the job's CURRENT snapshot, artifact and
+   archive-document facts, so a finished historical event changed
+   identity as the job progressed through capture and archiving, within a
+   single deployment and with no code change; a consumer deduplicating on
+   it would re-ingest the same event once per lifecycle step. Facts that
+   arrive later (snapshot, artifact, archive document, and the report
+   revision) reach consumers as refs OUTSIDE the preimage, each attached
+   only to events at or after the step that produced it, so body and
+   identity tell the same story. Compatibility is stated from retained
+   evidence only: v1 hashes were computed at read time and never
+   persisted, so they are NOT reconstructible and nothing claims
+   otherwise - consumers re-key once by the stable `event_id`.
+   Remaining #283 dependency: the reconciliation policy, now owned by
+   #321 (Platform #780's promotion condition). Unknown reconciliation
+   stays unknown until an explicit policy proves otherwise.
    Design decisions (hash boundary, no circular identity, historical
    mapping) are recorded in the 2026-09-05 audit, on #283, and in
    `src/app/reporting_identity/identity.py`'s module docstring.
