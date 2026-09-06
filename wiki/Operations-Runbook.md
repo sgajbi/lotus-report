@@ -200,8 +200,16 @@ else
 fi
 
 # 3. Baseline FROM THE QUIESCED COPY, not from the live service.
+# Capture BOTH the count and a digest of the replay identities: a matching count with
+# different keys is still a broken idempotency guarantee.
 BASELINE="$(python -c "import sqlite3,os;print(sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3').execute('select count(*) from idea_evidence_intake').fetchone()[0])")"
-echo "baseline: $BASELINE record(s)"
+BASELINE_KEYS="$(python -c "
+import sqlite3, os, hashlib
+con = sqlite3.connect(os.environ['ROLLOUT_DIR']+'/idea-evidence-intake.sqlite3')
+keys = [r[0] for r in con.execute('select idempotency_key from idea_evidence_intake order by 1')]
+print(hashlib.sha256(chr(10).join(keys).encode()).hexdigest())
+")"
+echo "baseline: $BASELINE record(s), key digest ${BASELINE_KEYS:0:12}"
 
 # 4. Let Compose name the volume, then READ that name. Never type it: Compose prefixes
 #    the declared name with the project name, and `config --volumes` prints only the
@@ -222,14 +230,21 @@ docker cp "$ROLLOUT_DIR/idea-evidence-intake.sqlite3" intake-rollout:/app/data/i
 docker rm -f intake-rollout
 
 # 6. VERIFY ON THE VOLUME, BEFORE resuming service. Count AND replay identities.
-docker run --rm --env BASELINE="$BASELINE" -v "$VOLUME":/app/data lotus-report:local python -c "
-import sqlite3, os, sys
+docker run --rm --env BASELINE="$BASELINE" --env BASELINE_KEYS="$BASELINE_KEYS" \
+  -v "$VOLUME":/app/data lotus-report:local python -c "
+import sqlite3, os, sys, hashlib
 con = sqlite3.connect('data/idea-evidence-intake.sqlite3')
 rows = con.execute('select count(*) from idea_evidence_intake').fetchone()[0]
 keys = [r[0] for r in con.execute('select idempotency_key from idea_evidence_intake order by 1')]
-print('on volume:', rows, 'record(s)')
-print('replay identities:', keys)
-sys.exit(0 if rows == int(os.environ['BASELINE']) else 1)
+digest = hashlib.sha256(chr(10).join(keys).encode()).hexdigest()
+print('on volume:', rows, 'record(s), key digest', digest[:12])
+ok_rows = rows == int(os.environ['BASELINE'])
+ok_keys = digest == os.environ['BASELINE_KEYS']
+if not ok_rows:
+    print('COUNT MISMATCH: expected', os.environ['BASELINE'])
+if not ok_keys:
+    print('REPLAY IDENTITY MISMATCH: same count, different keys' if ok_rows else 'keys also differ')
+sys.exit(0 if (ok_rows and ok_keys) else 1)
 "
 
 # 7. Only now resume service.
@@ -272,8 +287,11 @@ rm -rf "$ROLLOUT_DIR"
 
 Step 6 is the check that matters, and its position is deliberate: it runs **against the volume,
 before service resumes and before the export is deleted**, so a mismatch is caught while the
-export is still the recoverable copy. It compares the count *and* the replay identities, because
-a matching count with different keys is still a broken idempotency guarantee.
+export is still the recoverable copy. It compares the count **and** a SHA-256 digest of the ordered
+replay identities, and fails on either. A matching count with different keys is still a broken
+idempotency guarantee, and the digest is what makes that a check rather than a claim — the
+earlier version printed the keys and compared only the count, so the stated guarantee was not
+the one enforced.
 
 Taking the baseline from the copied file rather than from the live service is likewise
 deliberate: counting before the stop lets a record commit in between, which makes the final
