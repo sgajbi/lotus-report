@@ -122,6 +122,13 @@ def _pinned_mypy(project: dict) -> str | None:
             continue
         if canonicalize_name(requirement.name) != "mypy":
             continue
+        # A requirement whose marker is false for this interpreter is not
+        # installed by `pip install -e ".[dev]"`, so its specifier is not the
+        # pin in force. Treating it as one lets a stale entry -- say
+        # `mypy==2.3.1; python_version < "3"` -- satisfy the check against a
+        # mypy the project would never select here.
+        if requirement.marker is not None and not requirement.marker.evaluate():
+            continue
         specifiers = list(requirement.specifier)
         if len(specifiers) == 1 and specifiers[0].operator == "==":
             return str(specifiers[0].version)
@@ -162,7 +169,11 @@ def _minimum_python(project: dict) -> tuple[int, ...] | None:
             continue
     if not versions:
         return None
-    return tuple(max(versions).release[:2])
+    # The whole release tuple, not `[:2]`. A floor of `>=3.12.7` truncated to
+    # (3, 12) accepts 3.12.0-3.12.6, which do not satisfy the metadata -- the
+    # regex this replaced kept every numeric component and this must not lose
+    # precision relative to it.
+    return tuple(max(versions).release)
 
 
 def _problems() -> list[str]:

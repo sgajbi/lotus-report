@@ -204,7 +204,7 @@ def test_a_malformed_requirement_does_not_crash_the_guard() -> None:
         (">=3.12", (3, 12)),
         (">= 3.12", (3, 12)),
         (">=3.12,<4.0", (3, 12)),  # the regex this replaced matched nothing here
-        (">=3.12.0", (3, 12)),
+        (">=3.12.0", (3, 12, 0)),  # every component kept, see the patch-floor test
         ("==3.12.*", None),  # a valid specifier, not a version to compare against
         (">3.11", None),
         ("", None),
@@ -219,6 +219,48 @@ def test_requires_python_lower_bound_is_read_from_the_specifier(
     check on it rather than failing."""
 
     assert hook._minimum_python({"requires-python": declaration}) == expected
+
+
+@pytest.mark.parametrize(
+    ("declaration", "expected"),
+    [
+        (">=3.12", (3, 12)),
+        (">=3.12.7", (3, 12, 7)),  # a patch floor must not truncate to (3, 12)
+        (">=3.12.7,<4.0", (3, 12, 7)),
+    ],
+)
+def test_a_patch_level_floor_keeps_its_patch_component(
+    declaration: str, expected: tuple[int, ...]
+) -> None:
+    """`>=3.12.7` truncated to `(3, 12)` accepts 3.12.0 through 3.12.6.
+
+    Those interpreters do not satisfy the project metadata, and the regex this
+    replaced kept every numeric component -- so losing precision here would be
+    a regression introduced by the standards-aware parser.
+    """
+
+    assert hook._minimum_python({"requires-python": declaration}) == expected
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected"),
+    [
+        ('mypy==2.3.1 ; python_version >= "3.12"', "2.3.1"),  # marker true here
+        ('mypy==2.3.1 ; python_version < "3"', None),  # marker false here
+        ('mypy==9.9.9 ; python_version < "3"', None),
+    ],
+)
+def test_a_pin_whose_marker_is_false_here_is_not_the_pin_in_force(
+    requirement: str, expected: str | None
+) -> None:
+    """`pip install -e ".[dev]"` does not select a requirement whose marker is
+    false, so its specifier is not the pin this environment must match.
+
+    Without this, a stale version-partitioned entry satisfies the check against
+    a mypy the project would never install on this interpreter.
+    """
+
+    assert hook._pinned_mypy({"dependencies": [requirement]}) == expected
 
 
 def test_dependency_names_survive_extras_markers_and_spacing() -> None:
