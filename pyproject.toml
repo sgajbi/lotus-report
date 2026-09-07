@@ -80,7 +80,16 @@ known_first_party = [
   "src",
   "dependency_vulnerability_exceptions",
 ]
-# The `dev` extra holds tooling invoked from the command line, never imported.
+# The `dev` extra holds tooling invoked from the command line. One exception,
+# stated rather than left to a silent ignore: `scripts/run_typecheck_hook.py` is
+# itself dev tooling -- it runs only from pre-commit and is not shipped -- and it
+# imports `packaging` to read this file's own pins with a standards-aware parser
+# instead of a regex. deptry is right that a dev dependency imported outside
+# tests is normally misplaced; this is the case where it is not, so the ignore
+# names the one package and this comment says why. It must not be widened.
 optional_dependencies_dev_groups = ["dev"]
+
+[tool.deptry.per_rule_ignores]
+DEP004 = ["packaging"]
 [tool.deptry.package_module_name_map]
 PyYAML = "yaml"
