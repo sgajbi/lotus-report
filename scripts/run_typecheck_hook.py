@@ -38,7 +38,6 @@ reintroduce the drifting second copy this file avoids for mypy.
 from __future__ import annotations
 
 import importlib.metadata
-import importlib.util
 import re
 import subprocess
 import sys
@@ -48,18 +47,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
 
-#: Third-party packages whose contracts the typecheck actually reads. Absence
-#: of any one of them means mypy would silently resolve that library's types
-#: to `Any` rather than checking against them.
-REQUIRED_FOR_TYPECHECK = (
-    "pydantic",
-    "pydantic_settings",
-    "fastapi",
-    "starlette",
-    "httpx",
-    "psycopg",
-    "prometheus_fastapi_instrumentator",
-)
+#: Distribution names stripped of extras and version specifiers, e.g.
+#: `psycopg[binary]>=3.2.3` -> `psycopg`.
+_REQUIREMENT_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _runtime_distributions(project: dict) -> list[str]:
+    """The runtime dependencies `pyproject.toml` declares, as distribution names.
+
+    Derived rather than listed. This began as a hand-written tuple of seven
+    import names and was wrong: `prometheus-client` was omitted, so an
+    environment missing it passed the guard while mypy resolved the direct
+    imports in `reporting_metrics.py` and `reporting_jobs/process.py` to `Any`
+    and left every metric contract unchecked. Adding the eighth entry would
+    have fixed that instance and left the next omission, because the defect was
+    that the list was maintained by hand beside the file that already states
+    the answer.
+
+    Checked as distributions rather than importable modules so no second
+    mapping is needed either: `pydantic-settings` and `prometheus-client`
+    import under names that do not match their distribution, and inferring one
+    from the other is a third place to be wrong.
+    """
+
+    names = []
+    for requirement in project.get("dependencies", []):
+        match = _REQUIREMENT_NAME.match(requirement.strip())
+        if match:
+            names.append(match.group(1))
+    return names
 
 
 def _project() -> dict:
@@ -83,6 +99,14 @@ def _pinned_mypy(project: dict) -> str | None:
         if match:
             return match.group(1)
     return None
+
+
+def _is_installed(distribution: str) -> bool:
+    try:
+        importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def _minimum_python(project: dict) -> tuple[int, ...] | None:
@@ -113,10 +137,13 @@ def _problems() -> list[str]:
             if installed != pinned:
                 problems.append(f"mypy {installed} is installed, but pyproject.toml pins {pinned}")
 
-    missing = [name for name in REQUIRED_FOR_TYPECHECK if importlib.util.find_spec(name) is None]
+    declared = _runtime_distributions(project)
+    if not declared:
+        problems.append("pyproject.toml declares no runtime dependencies for this to check")
+    missing = [name for name in declared if not _is_installed(name)]
     if missing:
         problems.append(
-            "these typechecked dependencies are absent, and `ignore_missing_imports` "
+            "these declared dependencies are absent, and `ignore_missing_imports` "
             f"would make that a silent pass: {', '.join(missing)}"
         )
 
