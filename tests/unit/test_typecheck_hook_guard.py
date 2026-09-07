@@ -76,18 +76,67 @@ def test_losing_the_pin_is_refused_rather_than_skipped(monkeypatch: pytest.Monke
     assert "no longer pins an exact mypy version" in problems[0]
 
 
-def test_a_missing_typechecked_dependency_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_missing_declared_dependency_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Bound before patching: referring to `hook._runtime_distributions` inside
+    # the replacement would resolve to the replacement itself.
+    declared = hook._runtime_distributions
     monkeypatch.setattr(
         hook,
-        "REQUIRED_FOR_TYPECHECK",
-        (*hook.REQUIRED_FOR_TYPECHECK, "a_package_no_environment_has"),
+        "_runtime_distributions",
+        lambda project: [*declared(project), "a-package-no-environment-has"],
     )
 
     problems = hook._problems()
 
     assert len(problems) == 1
-    assert "a_package_no_environment_has" in problems[0]
+    assert "a-package-no-environment-has" in problems[0]
     assert "silent pass" in problems[0]
+
+
+def test_losing_the_dependency_list_is_refused_rather_than_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty derived list must not read as "everything present"."""
+
+    monkeypatch.setattr(hook, "_runtime_distributions", lambda project: [])
+
+    problems = hook._problems()
+
+    assert len(problems) == 1
+    assert "declares no runtime dependencies" in problems[0]
+
+
+def test_every_declared_runtime_dependency_is_checked() -> None:
+    """The set checked is the set declared, not a copy someone maintains.
+
+    This started as a hand-written tuple of seven import names and omitted
+    `prometheus-client`, so an environment without it passed the guard while
+    mypy resolved `reporting_metrics.py`'s direct imports to `Any` and left
+    every metric contract unchecked. Adding an eighth entry would have fixed
+    that instance and left the next omission.
+    """
+
+    project = hook._project()
+    declared = {
+        requirement.split("[")[0].split(">")[0].split("=")[0].strip()
+        for requirement in project["dependencies"]
+    }
+
+    assert set(hook._runtime_distributions(project)) == declared
+    assert "prometheus-client" in declared, "the dependency the hand-written list missed"
+
+
+def test_extras_and_specifiers_are_stripped_from_distribution_names() -> None:
+    """`psycopg[binary]>=3.2.3` names the distribution `psycopg`.
+
+    Left unstripped, every lookup would miss and the guard would refuse every
+    correct environment -- the failure the optional-group bug already produced
+    once in this file.
+    """
+
+    project = {"dependencies": ["psycopg[binary]>=3.2.3", "uvicorn[standard]>=0.35.0", "httpx"]}
+
+    assert hook._runtime_distributions(project) == ["psycopg", "uvicorn", "httpx"]
 
 
 def test_the_pin_is_read_from_pyproject_rather_than_restated() -> None:
