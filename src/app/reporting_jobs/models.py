@@ -860,26 +860,40 @@ PORTFOLIO_REVIEW_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
     },
 }
 
+
+def _first_example(model: type[BaseModel], field_name: str) -> Any:
+    """The first declared example for a field, named if it is missing.
+
+    These request examples are module-level constants, so they are built at
+    import time. Indexing ``examples`` directly meant that a field which lost
+    its ``examples=[...]`` would fail application startup with
+    ``'NoneType' object is not subscriptable``, naming neither the model nor
+    the field, and from a stack that points at a constant rather than at the
+    declaration that changed.
+    """
+
+    examples = model.model_fields[field_name].examples
+    if not examples:
+        raise ValueError(f"{model.__name__}.{field_name} must declare at least one example")
+    return examples[0]
+
+
 OUTCOME_REVIEW_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
-    "outcome_report_input": OutcomeReviewReportJobRequest.model_fields[
-        "outcome_report_input"
-    ].examples[0],
+    "outcome_report_input": _first_example(OutcomeReviewReportJobRequest, "outcome_report_input"),
     "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",
     "options": {"retention_policy_id": "generated-report-standard"},
 }
 
 PROOF_PACK_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
-    "proof_pack_report_input": ProofPackReportJobRequest.model_fields[
-        "proof_pack_report_input"
-    ].examples[0],
+    "proof_pack_report_input": _first_example(ProofPackReportJobRequest, "proof_pack_report_input"),
     "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",
     "options": {"retention_policy_id": "generated-report-standard"},
 }
 
 WAVE_REPORT_JOB_REQUEST_EXAMPLE: dict[str, Any] = {
-    "wave_report_input": WaveReportJobRequest.model_fields["wave_report_input"].examples[0],
+    "wave_report_input": _first_example(WaveReportJobRequest, "wave_report_input"),
     "requested_output_formats": ["pdf"],
     "reporting_currency": "USD",
     "options": {"retention_policy_id": "generated-report-standard"},

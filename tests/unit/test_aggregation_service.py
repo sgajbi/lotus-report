@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.services.aggregation_service import AggregationService
@@ -86,7 +88,7 @@ async def test_live_aggregation_uses_upstream_payloads():
     )
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
-        as_of_date="2026-02-24",
+        as_of_date=date(2026, 2, 24),
     )
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 999_999.0
@@ -107,7 +109,7 @@ async def test_live_aggregation_ignores_malformed_summary_payload():
     )
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
-        as_of_date="2026-02-24",
+        as_of_date=date(2026, 2, 24),
     )
 
     metric_map = {row.metric: row.value for row in response.rows}
@@ -166,7 +168,7 @@ async def test_live_aggregation_has_deterministic_fallbacks():
     )
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
-        as_of_date="2026-02-24",
+        as_of_date=date(2026, 2, 24),
     )
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0

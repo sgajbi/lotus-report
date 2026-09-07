@@ -238,7 +238,7 @@ def _error_response(
     *,
     example_key: str,
     description: str,
-) -> dict[int, dict[str, Any]]:
+) -> dict[int | str, dict[str, Any]]:
     return {
         status_code: {
             "model": ApiErrorResponse,

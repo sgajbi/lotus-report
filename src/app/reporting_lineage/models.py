@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,12 @@ UpstreamFailureCategory = Literal[
     "timeout",
     "redacted",
 ]
+
+
+#: The alias members at runtime, for narrowing text read back from storage.
+#: Derived from the aliases above so the permitted set cannot drift from them.
+SNAPSHOT_POSTURES: tuple[SnapshotPosture, ...] = get_args(SnapshotPosture)
+UPSTREAM_FAILURE_CATEGORIES: tuple[UpstreamFailureCategory, ...] = get_args(UpstreamFailureCategory)
 
 
 class ReportInputSnapshotCreateRequest(BaseModel):

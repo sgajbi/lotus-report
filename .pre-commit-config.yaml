@@ -19,12 +19,28 @@ repos:
       - id: ruff
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    # Must match the mypy pinned in pyproject.toml, for the same reason as ruff
-    # above: a hook reporting different errors from CI trains contributors to
-    # distrust whichever one they met second.
-    rev: v2.3.1
+  # mypy runs from the repository environment rather than an isolated hook
+  # environment, which is the only arrangement that makes it the same checker
+  # CI runs. `mirrors-mypy` installs mypy alone, so every project import
+  # resolves to `Any` under `ignore_missing_imports` and the hook silently
+  # stops seeing an entire class of error: with the plugin's dependencies
+  # added it still passed a real `prometheus_fastapi_instrumentator`
+  # signature mismatch that `make typecheck` caught. Listing the full
+  # typechecked dependency set here instead would be a second copy of
+  # `pyproject.toml` maintained by hand, drifting exactly where it matters.
+  #
+  # The cost is that this hook needs the project environment on PATH. That is
+  # a real dependency and is stated in the README rather than left to surface
+  # as `mypy: command not found`.
+  - repo: local
     hooks:
       - id: mypy
-        args: ["--config-file", "mypy.ini"]
+        name: mypy (repository environment)
+        entry: python -m mypy --config-file mypy.ini
+        language: system
         pass_filenames: false
+        # Always, not only when a `.py` file is staged. The hook already
+        # checks the whole tree regardless of what changed, so gating it on
+        # file type would mean a commit editing `mypy.ini` alone -- a change
+        # to the gate's own configuration -- never runs the gate.
+        always_run: true

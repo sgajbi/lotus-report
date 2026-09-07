@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from app.report_batch_orchestrator.models import ReportBatchRecord
-from app.reporting_jobs.models import ReportJobLedgerRecord, ReportJobListFilters
+from app.reporting_jobs.models import (
+    ReportJobLedgerRecord,
+    ReportJobListFilters,
+    ReportJobStatus,
+)
 from app.reporting_metrics import record_attention_scan_metrics, record_report_operation
 from app.reporting_operations.models import (
     AttentionSeverity,
@@ -14,7 +18,7 @@ from app.reporting_operations.models import (
     ReportingAttentionScanResponse,
 )
 
-ACTIVE_REPORT_JOB_STATUSES = (
+ACTIVE_REPORT_JOB_STATUSES: tuple[ReportJobStatus, ...] = (
     "accepted",
     "queued",
     "collecting_data",

@@ -13,6 +13,7 @@ from app.idea_evidence_intake.models import (
     IdeaEvidenceMaterializationRecoveryIdentity,
     IdeaEvidencePackMaterializationRequest,
     IdeaEvidencePackMaterializationResponse,
+    IdeaEvidenceReportPackageIdentity,
 )
 from app.reporting_jobs.models import (
     ReportJobLedgerRecord,
@@ -113,7 +114,9 @@ def materialization_response(
         source_event_version=source_event_version,
         status_url=f"/reports/jobs/{record.job_id}",
         idempotency_key=idempotency_key,
-        report_package_identity=identity.model_dump(exclude={"portfolio_id"}),
+        report_package_identity=IdeaEvidenceReportPackageIdentity.model_validate(
+            identity.model_dump(exclude={"portfolio_id"})
+        ),
         creates_rendered_output=record.render_job_id is not None,
         creates_archive_record=record.archive_document_id is not None,
         remaining_blockers=IDEA_EVIDENCE_MATERIALIZATION_REMAINING_BLOCKERS,

@@ -101,6 +101,14 @@ You need, before anything else:
   execution policy blocks `Activate.ps1`; [Getting Started](wiki/Getting-Started.md) carries the
   two ways round it.
 
+The same activated environment is a prerequisite for the **pre-commit hooks**, not only for
+`make`. The `mypy` hook runs the repository's own mypy rather than an isolated copy, because
+that is the only arrangement in which the hook and CI are the same checker: an isolated hook
+installs mypy alone, so every project import resolves to `Any` and it silently stops seeing
+errors that depend on FastAPI, Starlette or psycopg contracts. If `git commit` reports
+`python: command not found` or mypy is missing, the environment is not active — activate it and
+retry rather than committing with `--no-verify`.
+
 Then:
 
 1. Python toolchain and dependencies: `make install`

@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import MutableMapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
@@ -11,7 +12,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_fastapi_instrumentator import routing as prometheus_routing
-from starlette.routing import Match, Mount
+from starlette.routing import BaseRoute, Match, Mount
 
 from app.reporting_metrics import validate_reporting_metric_contracts
 
@@ -194,11 +195,20 @@ def _install_fastapi_included_router_prometheus_patch() -> None:
 
 
 def _get_prometheus_route_name(
-    scope: dict[str, Any],
-    routes: list[Any],
+    scope: MutableMapping[str, Any],
+    routes: list[BaseRoute],
     route_name: str | None = None,
 ) -> str | None:
-    """Resolve route names across Starlette routes and FastAPI deferred routers."""
+    """Resolve route names across Starlette routes and FastAPI deferred routers.
+
+    The parameter types match ``prometheus_routing._get_route_name``, which this
+    replaces at line 192. They were narrower than the function it substitutes
+    for -- ``dict`` where the caller passes any ``MutableMapping`` -- which is
+    the wrong direction for a replacement: it declared a function that could
+    refuse calls the library is entitled to make. ``route_name`` is this
+    implementation's own recursion argument and is not part of that contract,
+    which a trailing default keeps compatible.
+    """
 
     for route in routes:
         match, child_scope = route.matches(scope)
@@ -226,7 +236,7 @@ def _get_prometheus_route_name(
     return None
 
 
-def _resolve_effective_route(route: Any, scope: dict[str, Any]) -> Any:
+def _resolve_effective_route(route: Any, scope: MutableMapping[str, Any]) -> Any:
     match_method = getattr(route, "_match", None)
     if not callable(match_method):
         return route

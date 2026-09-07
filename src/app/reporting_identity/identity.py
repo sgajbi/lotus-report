@@ -301,6 +301,7 @@ class SourceRevisionVector(BaseModel):
             revision.source_service for revision in revisions if revision.states_revision_evidence()
         }
         expected = set(expected_sources)
+        coverage: Literal["unknown", "partial", "complete"]
         if expected and expected <= evidenced:
             coverage = "complete"
         elif evidenced:

@@ -359,6 +359,27 @@ def test_aggregation_endpoint():
     assert len(body["rows"]) >= 1
 
 
+def test_aggregation_endpoint_refuses_a_malformed_as_of_date():
+    """A bad date is a caller error, and must be reported as one.
+
+    The query parameter was declared `str` and described as YYYY-MM-DD without
+    being validated as a date, so a malformed value travelled into the service
+    and failed inside `AggregationScope` -- a pydantic error raised after the
+    request had been accepted, which FastAPI does not convert. The caller got a
+    500 for their own bad input, and the response said nothing about which
+    parameter was wrong.
+    """
+
+    response = client.get(
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=not-a-date&live=false"
+    )
+
+    assert response.status_code == 422
+    # The refusal has to name the parameter, or it is only marginally better
+    # than the 500 it replaces.
+    assert "as_of_date" in response.text
+
+
 def test_stale_generic_report_endpoint_is_not_exposed():
     response = client.post("/reports", json={})
     assert response.status_code == 404

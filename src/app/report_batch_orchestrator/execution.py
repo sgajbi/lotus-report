@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.report_batch_orchestrator.models import (
+    BatchItemStatus,
     BatchRetryPolicy,
     ReportBatchItemRecord,
     ReportBatchRecord,
@@ -51,7 +52,7 @@ class BatchItemExecutionResult:
     batch_id: str
     batch_item_id: str
     report_job_id: str
-    item_status: str
+    item_status: BatchItemStatus
     report_job_status: str
     failure_category: str | None = None
     retry_eligible: bool = False

@@ -169,7 +169,7 @@ def _error_response(
     *,
     example_key: str,
     description: str,
-) -> dict[int, dict[str, Any]]:
+) -> dict[int | str, dict[str, Any]]:
     return {
         status_code: {
             "model": ApiErrorResponse,
@@ -441,7 +441,10 @@ def _lineage_to_diagnostics(
     upstream_calls: list[ReportUpstreamCallRecord],
 ) -> ReportJobLineageDiagnostics:
     source_services = sorted({call.service_name for call in upstream_calls if call.service_name})
-    failure_categories = sorted(
+    # Widened deliberately: the response field is `list[str]`, and narrowing it to
+    # the per-call vocabulary would change the published contract from free text
+    # to an enum. That is a contract decision, not a typing one.
+    failure_categories: list[str] = sorted(
         {
             call.failure_category
             for call in upstream_calls

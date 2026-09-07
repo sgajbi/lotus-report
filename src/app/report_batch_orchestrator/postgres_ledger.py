@@ -726,7 +726,7 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
             row = connection.execute(
                 "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
             ).fetchone()
-        return int(row["count"])
+        return _count_from(row)
 
     def count_active_items(self) -> int:
         with self._connect() as connection:
@@ -737,26 +737,26 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                 WHERE status IN ('leased', 'waiting_on_report_job')
                 """
             ).fetchone()
-        return int(row["count"])
+        return _count_from(row)
 
     def batch_pressure_snapshot(self, *, now: Any | None = None) -> BatchPressureSnapshot:
         sample_at = now or utc_now()
         with self._connect() as connection:
-            active_batches = int(
+            active_batches = _count_from(
                 connection.execute(
                     "SELECT COUNT(*) AS count FROM report_batch WHERE status = 'running'"
-                ).fetchone()["count"]
+                ).fetchone()
             )
-            active_items = int(
+            active_items = _count_from(
                 connection.execute(
                     """
                     SELECT COUNT(*) AS count
                     FROM report_batch_item
                     WHERE status IN ('leased', 'waiting_on_report_job')
                     """
-                ).fetchone()["count"]
+                ).fetchone()
             )
-            dispatch_ready_items = int(
+            dispatch_ready_items = _count_from(
                 connection.execute(
                     """
                     SELECT COUNT(*) AS count
@@ -778,9 +778,9 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                       )
                     """,
                     (sample_at, sample_at),
-                ).fetchone()["count"]
+                ).fetchone()
             )
-            retry_ready_items = int(
+            retry_ready_items = _count_from(
                 connection.execute(
                     """
                     SELECT COUNT(*) AS count
@@ -790,18 +790,18 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                       AND (next_retry_at IS NULL OR next_retry_at <= %s)
                     """,
                     (sample_at,),
-                ).fetchone()["count"]
+                ).fetchone()
             )
-            recovery_pending_items = int(
+            recovery_pending_items = _count_from(
                 connection.execute(
                     """
                     SELECT COUNT(*) AS count
                     FROM report_batch_item
                     WHERE status = 'recovery_pending'
                     """
-                ).fetchone()["count"]
+                ).fetchone()
             )
-            runnable_batches = int(
+            runnable_batches = _count_from(
                 connection.execute(
                     """
                     SELECT COUNT(*) AS count
@@ -835,7 +835,7 @@ class PostgresReportBatchLedger(ManagedPostgresAdapter):
                     ) runnable_batches
                     """,
                     (sample_at, sample_at),
-                ).fetchone()["count"]
+                ).fetchone()
             )
         return BatchPressureSnapshot(
             runnable_batches=runnable_batches,
@@ -1366,6 +1366,21 @@ def _item_from_row(row: Mapping[str, Any]) -> ReportBatchItemRecord:
         completed_at=row.get("completed_at"),
         cancelled_at=row.get("cancelled_at"),
     )
+
+
+def _count_from(row: Mapping[str, Any] | None) -> int:
+    """The count from an aggregate row, refusing a shape that cannot occur.
+
+    ``SELECT COUNT(*)`` without ``GROUP BY`` always returns exactly one row, so
+    ``fetchone()`` is never ``None`` at these call sites. Stating that here
+    keeps the reasoning in one place instead of eight, and turns a future query
+    or driver change that breaks the assumption into a named failure rather
+    than ``'NoneType' object is not subscriptable`` several frames away.
+    """
+
+    if row is None:
+        raise ValueError("aggregate_count_query_returned_no_row")
+    return int(row["count"])
 
 
 def _nullable_str(value: Any) -> str | None:

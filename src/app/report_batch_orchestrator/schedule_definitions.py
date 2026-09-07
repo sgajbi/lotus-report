@@ -55,6 +55,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.report_batch_orchestrator.contracts import BatchFrequency
 from app.report_batch_orchestrator.ledger import (
     DuplicateScheduleDefinition,
     StaleScheduleRevision,
@@ -69,7 +70,7 @@ from app.reporting_jobs.models import ReportCallerContext
 ScheduleCadence = Literal["monthly_end", "quarter_end"]
 ScheduleAuditAction = Literal["created", "updated", "enabled", "disabled"]
 
-SCHEDULE_CADENCE_FREQUENCY: dict[ScheduleCadence, str] = {
+SCHEDULE_CADENCE_FREQUENCY: dict[ScheduleCadence, BatchFrequency] = {
     "monthly_end": "monthly",
     "quarter_end": "quarterly",
 }

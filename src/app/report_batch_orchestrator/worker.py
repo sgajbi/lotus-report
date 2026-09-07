@@ -9,6 +9,7 @@ from app.report_batch_orchestrator.models import (
     BatchDispatchPolicy,
     BatchRecoveryResult,
     BatchRuntimeLoad,
+    BatchStatus,
     ReportBatchRecord,
 )
 from app.report_batch_orchestrator.tenant_admission import admit_batch
@@ -36,8 +37,8 @@ class BatchItemExecutor(Protocol):
 @dataclass(frozen=True)
 class BatchWorkerRunResult:
     batch_id: str
-    batch_status_before: str
-    batch_status_after: str
+    batch_status_before: BatchStatus
+    batch_status_after: BatchStatus
     recovered_count: int
     leased_count: int
     dispatched_count: int

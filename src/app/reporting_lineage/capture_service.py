@@ -36,6 +36,8 @@ from app.reporting_lineage.models import (
     ReportInputSnapshotRecord,
     ReportUpstreamCallCreateRequest,
     ReportUpstreamCallRecord,
+    SnapshotPosture,
+    UpstreamFailureCategory,
 )
 from app.reporting_lineage.store import (
     ReportInputSnapshotAlreadyCapturedError,
@@ -132,9 +134,9 @@ class _RecordedUpstreamCall:
     response_ref: str | None
     status_code: int
     latency_ms: int
-    supportability_status: str
-    completeness_status: str
-    failure_category: str
+    supportability_status: SnapshotPosture
+    completeness_status: SnapshotPosture
+    failure_category: UpstreamFailureCategory
     failure_message: str | None
     captured_at: datetime
     correlation_id: str
@@ -218,7 +220,7 @@ def _payload_text(payload: dict[str, Any] | None) -> str:
 def _classify_call(
     status_code: int,
     payload: dict[str, Any] | None,
-) -> tuple[str, str, str, str | None]:
+) -> tuple[SnapshotPosture, SnapshotPosture, UpstreamFailureCategory, str | None]:
     payload_text = _payload_text(payload)
     if "redacted" in payload_text:
         return "redacted", "redacted", "redacted", "Upstream response content was redacted."
@@ -315,6 +317,9 @@ class _UpstreamRecorder:
         started_at: float,
         exc: Exception,
     ) -> None:
+        supportability: SnapshotPosture
+        completeness: SnapshotPosture
+        failure_category: UpstreamFailureCategory
         if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
             status_code = 504
             supportability = "unavailable"
@@ -1599,7 +1604,7 @@ def _proof_pack_source_contract_version(source_system: str) -> str:
     return "DpmProofPackReportInput.1.0"
 
 
-def _overall_posture(calls: list[_RecordedUpstreamCall]) -> str:
+def _overall_posture(calls: list[_RecordedUpstreamCall]) -> SnapshotPosture:
     if not calls:
         return "error"
     values = {call.supportability_status for call in calls}

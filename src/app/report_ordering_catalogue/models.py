@@ -4,6 +4,31 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+#: The catalogue vocabulary, named once so the definitions that populate the
+#: catalogue can declare the same types the response models validate. These
+#: were inline on each field, which left ``definitions.py`` carrying ``str``
+#: for every one of them and the agreement between the two unchecked.
+ConfigurationInputType = Literal["business_date", "currency", "benchmark", "multi_select", "text"]
+ConfigurationRequirement = Literal["required", "optional", "conditional"]
+ConfigurationValueSource = Literal[
+    "caller",
+    "portfolio_context_or_caller",
+    "gateway_eligible_benchmark",
+    "report_catalogue",
+]
+SectionSelectionPosture = Literal["required", "optional"]
+OrderingModeId = Literal[
+    "single_portfolio",
+    "explicit_portfolio_batch",
+    "governed_schedule",
+    "source_workflow",
+]
+OutputFormatId = Literal["json", "pdf"]
+ClientReleasePosture = Literal[
+    "advisor_review_required_distribution_not_supported",
+    "internal_control_only",
+]
+
 REPORT_ORDERING_CATALOGUE_EXAMPLE = {
     "source_service": "lotus-report",
     "contract_version": "report-ordering-catalogue.v1",
@@ -95,15 +120,10 @@ class ReportConfigurationField(CatalogueModel):
     field_id: str = Field(description="Stable configuration field identifier.")
     business_label: str = Field(description="Business label shown to product users.")
     description: str = Field(description="Business meaning of the report configuration.")
-    input_type: Literal["business_date", "currency", "benchmark", "multi_select", "text"]
-    requirement: Literal["required", "optional", "conditional"]
+    input_type: ConfigurationInputType
+    requirement: ConfigurationRequirement
     defaulting_policy: str = Field(description="Stable policy used when no value is supplied.")
-    value_source: Literal[
-        "caller",
-        "portfolio_context_or_caller",
-        "gateway_eligible_benchmark",
-        "report_catalogue",
-    ]
+    value_source: ConfigurationValueSource
     options: list[ReportConfigurationOption] = Field(default_factory=list)
 
 
@@ -112,26 +132,21 @@ class ReportSectionCatalogueItem(CatalogueModel):
     business_label: str = Field(description="Business section label shown to product users.")
     description: str = Field(description="Business content covered by the section.")
     display_order: int = Field(ge=1)
-    selection_posture: Literal["required", "optional"]
+    selection_posture: SectionSelectionPosture
     default_selected: bool
     dependency_field_ids: list[str] = Field(default_factory=list)
 
 
 class ReportOrderingMode(CatalogueModel):
-    mode_id: Literal[
-        "single_portfolio",
-        "explicit_portfolio_batch",
-        "governed_schedule",
-        "source_workflow",
-    ]
+    mode_id: OrderingModeId
     business_label: str
     description: str
-    default_output_format: Literal["json", "pdf"]
+    default_output_format: OutputFormatId
     interactive: bool
 
 
 class ReportOutputFormat(CatalogueModel):
-    format_id: Literal["json", "pdf"]
+    format_id: OutputFormatId
     business_label: str
     use_posture: Literal["system_integration", "governed_document"]
     state: Literal["ready", "partial", "unavailable"]
@@ -150,10 +165,7 @@ class ReportFamilyCatalogueItem(CatalogueModel):
     description: str
     intended_use: str
     audience_roles: list[str]
-    client_release_posture: Literal[
-        "advisor_review_required_distribution_not_supported",
-        "internal_control_only",
-    ]
+    client_release_posture: ClientReleasePosture
     ordering_modes: list[ReportOrderingMode]
     output_formats: list[ReportOutputFormat]
     configuration_fields: list[ReportConfigurationField] = Field(default_factory=list)

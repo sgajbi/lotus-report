@@ -12,13 +12,21 @@ from uuid import uuid4
 
 from app.reporting_identity.snapshot_lifecycle import read_lifecycle
 from app.reporting_lineage.models import (
+    SNAPSHOT_POSTURES,
+    UPSTREAM_FAILURE_CATEGORIES,
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
     ReportUpstreamCallCreateRequest,
     ReportUpstreamCallRecord,
 )
+from app.typing_support import literal_value
 
-POSTURE_VALUES = ("complete", "partial", "unavailable", "not_supported", "redacted", "error")
+#: Interpolated into the ``CHECK`` constraints below, so the set the database
+#: enforces is the set the model declares. It was previously a second, hand
+#: written copy of the same six values: a posture added to ``SnapshotPosture``
+#: would have been accepted by the model and rejected by the column, failing at
+#: write time rather than at validation.
+POSTURE_VALUES = SNAPSHOT_POSTURES
 
 
 class ReportInputSnapshotNotFoundError(RuntimeError):
@@ -87,6 +95,22 @@ def _dt_from_text(value: str | datetime | None) -> datetime | None:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
 
+def _required_dt_from_text(value: str | datetime | None, *, field: str) -> datetime:
+    """``_dt_from_text`` for the columns declared ``TIMESTAMPTZ NOT NULL``.
+
+    ``captured_at`` and ``created_at`` cannot be null in any migration, so the
+    optional return of ``_dt_from_text`` never applies at these call sites.
+    Naming that here means a schema change or a hand-edited row surfaces as a
+    named failure rather than as a pydantic error several frames away that
+    reports the model field and not the column it came from.
+    """
+
+    parsed = _dt_from_text(value)
+    if parsed is None:
+        raise ValueError(f"{field} is null, but the column is declared NOT NULL")
+    return parsed
+
+
 def _date_to_text(value: date) -> str:
     return value.isoformat()
 
@@ -140,11 +164,15 @@ def _record_from_row(row: Mapping[str, Any]) -> ReportInputSnapshotRecord:
         source_revision_vector=dict(vector) if isinstance(vector, dict) else None,
         source_cut_coherence=dict(coherence) if isinstance(coherence, dict) else None,
         lifecycle=read_lifecycle(dict(lifecycle)) if isinstance(lifecycle, dict) else None,
-        supportability_status=str(row["supportability_status"]),
-        completeness_status=str(row["completeness_status"]),
+        supportability_status=literal_value(
+            row["supportability_status"], SNAPSHOT_POSTURES, field="supportability_status"
+        ),
+        completeness_status=literal_value(
+            row["completeness_status"], SNAPSHOT_POSTURES, field="completeness_status"
+        ),
         lineage_summary=dict(summary),
-        captured_at=_dt_from_text(row["captured_at"]),
-        created_at=_dt_from_text(row["created_at"]),
+        captured_at=_required_dt_from_text(row["captured_at"], field="captured_at"),
+        created_at=_required_dt_from_text(row["created_at"], field="created_at"),
         correlation_id=str(row["correlation_id"]),
         trace_id=str(row["trace_id"]),
     )
@@ -168,12 +196,18 @@ def _upstream_call_from_row(row: Mapping[str, Any]) -> ReportUpstreamCallRecord:
         response_ref=str(row["response_ref"]) if row["response_ref"] else None,
         status_code=int(row["status_code"]),
         latency_ms=int(row["latency_ms"]),
-        supportability_status=str(row["supportability_status"]),
-        completeness_status=str(row["completeness_status"]),
-        failure_category=str(row["failure_category"]),
+        supportability_status=literal_value(
+            row["supportability_status"], SNAPSHOT_POSTURES, field="supportability_status"
+        ),
+        completeness_status=literal_value(
+            row["completeness_status"], SNAPSHOT_POSTURES, field="completeness_status"
+        ),
+        failure_category=literal_value(
+            row["failure_category"], UPSTREAM_FAILURE_CATEGORIES, field="failure_category"
+        ),
         failure_message=str(row["failure_message"]) if row["failure_message"] else None,
-        captured_at=_dt_from_text(row["captured_at"]),
-        created_at=_dt_from_text(row["created_at"]),
+        captured_at=_required_dt_from_text(row["captured_at"], field="captured_at"),
+        created_at=_required_dt_from_text(row["created_at"], field="created_at"),
         correlation_id=str(row["correlation_id"]),
         trace_id=str(row["trace_id"]),
     )

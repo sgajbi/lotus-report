@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.routers.aggregations import get_portfolio_aggregation
@@ -6,10 +8,10 @@ from app.services.reporting_read_service import ReportingReadService
 
 
 class _LiveAggregationServiceStub:
-    async def get_portfolio_aggregation_live(self, portfolio_id: str, as_of_date: str):
+    async def get_portfolio_aggregation_live(self, portfolio_id: str, as_of_date: date):
         return {"mode": "live", "portfolio_id": portfolio_id, "as_of_date": as_of_date}
 
-    def get_portfolio_aggregation(self, portfolio_id: str, as_of_date: str):
+    def get_portfolio_aggregation(self, portfolio_id: str, as_of_date: date):
         return {"mode": "static", "portfolio_id": portfolio_id, "as_of_date": as_of_date}
 
 
@@ -21,7 +23,7 @@ async def test_aggregation_router_live_branch(monkeypatch):
     )
     response = await get_portfolio_aggregation(
         portfolio_id="P1",
-        as_of_date="2026-02-24",
+        as_of_date=date(2026, 2, 24),
         live=True,
     )
     assert response["mode"] == "live"

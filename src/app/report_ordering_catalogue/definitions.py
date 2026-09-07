@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.report_ordering_catalogue.models import (
+    ClientReleasePosture,
+    ConfigurationInputType,
+    ConfigurationRequirement,
+    ConfigurationValueSource,
+    OrderingModeId,
+    OutputFormatId,
+    SectionSelectionPosture,
+)
+
 
 @dataclass(frozen=True)
 class ReportSectionDefinition:
@@ -12,17 +22,17 @@ class ReportSectionDefinition:
     description: str
     response_key: str
     display_order: int
-    selection_posture: str
+    selection_posture: SectionSelectionPosture
     default_selected: bool
     dependency_field_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ReportOrderingModeDefinition:
-    mode_id: str
+    mode_id: OrderingModeId
     business_label: str
     description: str
-    default_output_format: str
+    default_output_format: OutputFormatId
     interactive: bool
 
 
@@ -37,10 +47,10 @@ class ReportConfigurationFieldDefinition:
     field_id: str
     business_label: str
     description: str
-    input_type: str
-    requirement: str
+    input_type: ConfigurationInputType
+    requirement: ConfigurationRequirement
     defaulting_policy: str
-    value_source: str
+    value_source: ConfigurationValueSource
     options: tuple[ReportConfigurationOptionDefinition, ...] = ()
 
 
@@ -52,7 +62,7 @@ class ReportFamilyDefinition:
     description: str
     intended_use: str
     audience_roles: tuple[str, ...]
-    client_release_posture: str
+    client_release_posture: ClientReleasePosture
     template_id: str
     template_version: str
     report_data_contract_version: str
