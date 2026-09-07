@@ -20,6 +20,19 @@ same checker are the interpreter version, the mypy version, and the dependency
 graph -- so all three are asserted, and the first two are read from
 `pyproject.toml` rather than restated here. A second copy of a pin is a pin
 that drifts, and it would drift in the direction of silently passing.
+
+What this does NOT establish, stated so it is not read as stronger than it is:
+the third-party packages are checked for presence, not version. It cannot be
+otherwise today, because nothing in this repository declares what version CI
+type-checks against. `pyproject.toml` gives unbounded `>=` floors and `make
+install` resolves them fresh on every run, so CI has no fixed answer either --
+`fastapi` currently resolves to 0.141.1 against a `>=0.116.1` floor. An
+environment satisfying the floors can therefore differ from CI's, and two CI
+runs on the same tree can differ from each other. That is a dependency
+determinism gap rather than a hook gap: until a lock or constraints set names
+the versions, there is nothing for this guard to compare against. Tracked
+separately; do not close it by hard-coding versions here, which would
+reintroduce the drifting second copy this file avoids for mypy.
 """
 
 from __future__ import annotations
