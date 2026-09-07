@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from app.services.aggregation_service import AggregationService
@@ -143,7 +145,7 @@ async def test_fetch_inputs_drops_upstream_payloads_when_services_fail():
     service = AggregationService(
         core_query_client=_CoreQueryFailClient(), performance_client=_PerformanceFailClient()
     )
-    core_query_payload, performance_payload = await service._fetch_inputs("P1", "2026-02-24")
+    core_query_payload, performance_payload = await service._fetch_inputs("P1", date(2026, 2, 24))
     assert core_query_payload == {"summary": {}, "allocation": {}}
     assert performance_payload == {}
 
@@ -152,7 +154,7 @@ def test_get_portfolio_aggregation_non_live_returns_deterministic_rows():
     service = AggregationService(
         core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
     )
-    response = service.get_portfolio_aggregation("P1", "2026-02-24")
+    response = service.get_portfolio_aggregation("P1", date(2026, 2, 24))
     assert response.scope.portfolio_id == "P1"
     assert str(response.scope.as_of_date) == "2026-02-24"
     assert len(response.rows) == 4
@@ -285,7 +287,7 @@ async def test_live_aggregation_handles_malformed_allocation_shapes(views):
         core_query_client=_CoreQueryMalformedAllocation(views),
         performance_client=_PerformanceOkClient(),
     )
-    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 250.0
     assert metric_map["position_count"] == 0.0
@@ -341,7 +343,7 @@ async def test_live_aggregation_uses_defaults_for_malformed_summary_shapes():
         performance_client=_PerformanceMissingYtd(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0
@@ -355,7 +357,7 @@ async def test_live_aggregation_defaults_invalid_position_count():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["position_count"] == 0.0
@@ -382,7 +384,7 @@ class _CoreQueryNestedInvalidSummary:
 
 
 class _AggregationServiceWithMalformedFetchedSummary(AggregationService):
-    async def _fetch_inputs(self, portfolio_id: str, as_of_date: str):
+    async def _fetch_inputs(self, portfolio_id: str, as_of_date: date):
         _ = portfolio_id, as_of_date
         return {"summary": "invalid", "allocation": {"views": []}}, {}
 
@@ -394,7 +396,7 @@ async def test_live_aggregation_defaults_when_nested_summary_is_not_a_dict():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0
@@ -408,7 +410,7 @@ async def test_live_aggregation_defaults_when_fetched_summary_is_not_a_dict():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", "2026-02-24")
+    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0

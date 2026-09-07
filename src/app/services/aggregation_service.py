@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from app.clients.core_query_client import CoreQueryClient
@@ -28,18 +28,18 @@ class AggregationService:
         )
 
     async def _fetch_inputs(
-        self, portfolio_id: str, as_of_date: str
+        self, portfolio_id: str, as_of_date: date
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         summary_status, summary_payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
-            payload={"as_of_date": as_of_date},
+            payload={"as_of_date": as_of_date.isoformat()},
         )
         if summary_status >= 400:
             summary_payload = {}
 
         allocation_status, allocation_payload = await self._core_query_client.get_asset_allocation(
             portfolio_id=portfolio_id,
-            payload={"as_of_date": as_of_date, "dimensions": ["asset_class"]},
+            payload={"as_of_date": as_of_date.isoformat(), "dimensions": ["asset_class"]},
         )
         if allocation_status >= 400:
             allocation_payload = {}
@@ -50,7 +50,7 @@ class AggregationService:
         ) = await self._performance_client.get_workspace_summary(
             {
                 "portfolio_id": portfolio_id,
-                "report_end_date": as_of_date,
+                "report_end_date": as_of_date.isoformat(),
                 "input_mode": "stateful",
                 "stateful_input": {},
                 "periods": [{"period": "YTD", "frequencies": ["daily"]}],
@@ -148,7 +148,7 @@ class AggregationService:
     def get_portfolio_aggregation(
         self,
         portfolio_id: str,
-        as_of_date: str,
+        as_of_date: date,
     ) -> PortfolioAggregationResponse:
         scope = AggregationScope(portfolio_id=portfolio_id, as_of_date=as_of_date)
         # Placeholder deterministic rows until lotus-core+lotus-performance connectors are added.
@@ -167,7 +167,7 @@ class AggregationService:
     async def get_portfolio_aggregation_live(
         self,
         portfolio_id: str,
-        as_of_date: str,
+        as_of_date: date,
     ) -> PortfolioAggregationResponse:
         scope = AggregationScope(portfolio_id=portfolio_id, as_of_date=as_of_date)
         core_query_payload, performance_payload = await self._fetch_inputs(portfolio_id, as_of_date)

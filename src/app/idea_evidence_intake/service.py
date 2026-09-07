@@ -20,7 +20,11 @@ from app.idea_evidence_intake.models import (
 )
 from app.idea_evidence_intake.recovery import recovery_identity_from_request
 from app.idea_evidence_intake.retention_policy import IdeaEvidenceRetentionPolicy
-from app.reporting_jobs.models import ProofPackReportJobRequest, ReportCallerContext
+from app.reporting_jobs.models import (
+    DpmProofPackReportInput,
+    ProofPackReportJobRequest,
+    ReportCallerContext,
+)
 
 REPORT_IDEA_EVIDENCE_INTAKE_ROUTE = "POST /reports/idea-evidence-packs"
 REPORT_IDEA_EVIDENCE_INTAKE_BLOCKERS = (
@@ -439,7 +443,7 @@ def build_proof_pack_report_job_request_from_idea_evidence(
             "archive_handoff_policy": retention_policy.archive_handoff_policy,
         }
     return ProofPackReportJobRequest(
-        proof_pack_report_input=proof_pack_input,
+        proof_pack_report_input=DpmProofPackReportInput.model_validate(proof_pack_input),
         requested_output_formats=request.requested_output_formats,
         reporting_currency=request.reporting_currency,
         options=options,

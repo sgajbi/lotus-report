@@ -7,7 +7,18 @@ from psycopg import Error as PostgresError
 
 
 class MigrationConnection(Protocol):
-    def execute(self, query: str, params: object | None = None) -> Any: ...
+    """The one capability the migration runner needs from a connection.
+
+    Deliberately narrower than it was. The parameter list previously carried
+    ``params: object | None``, which no real driver satisfies: psycopg accepts
+    a sequence or mapping, not an arbitrary object, and protocol parameters are
+    contravariant. The runner never passes parameters -- every statement it
+    executes is a literal string -- so declaring the parameter made a real
+    ``Connection`` structurally incompatible with a protocol it does in fact
+    implement, in exchange for describing an argument nothing supplies.
+    """
+
+    def execute(self, query: Any) -> Any: ...
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
