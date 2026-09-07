@@ -155,6 +155,85 @@ def test_the_pin_is_read_from_pyproject_rather_than_restated() -> None:
     assert f'"mypy=={pinned}"' in pyproject
 
 
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "mypy==2.3.1",
+        "mypy == 2.3.1",  # PEP 508 permits whitespace around the operator
+        'mypy==2.3.1 ; python_version >= "3.12"',  # environment marker
+        "mypy[faster-cache]==2.3.1",  # extra
+        "MyPy==2.3.1",  # PEP 503 name normalisation
+    ],
+)
+def test_every_pep508_spelling_of_the_same_pin_is_read(spelling: str) -> None:
+    r"""The pin must be found however it is legally written.
+
+    The hand-rolled `mypy==([0-9][^\s;]*)` this replaced matched only the first
+    of these. Every spelling it missed returned `None`, which the guard reads as
+    "the project stopped pinning mypy" and refuses -- so reformatting
+    `mypy==2.3.1` to `mypy == 2.3.1` would have blocked every commit in the
+    repository, blaming `pyproject.toml` for something it had not done.
+
+    Found by `lotus-platform-51`, who hit the same class in a pin regex that
+    rejected `ruff == 0.15.22` and `2.3.1.post1`.
+    """
+
+    assert hook._pinned_mypy({"dependencies": [spelling]}) == "2.3.1"
+
+
+@pytest.mark.parametrize("spelling", ["mypy>=2.3.1", "mypy", "mypy<3", "mypy!=2.0"])
+def test_a_requirement_that_is_not_an_exact_pin_is_not_read_as_one(spelling: str) -> None:
+    """Only `==` is a pin. A floor or a range is the absence of one, and the
+    guard must refuse rather than invent a version to compare against."""
+
+    assert hook._pinned_mypy({"dependencies": [spelling]}) is None
+
+
+def test_a_malformed_requirement_does_not_crash_the_guard() -> None:
+    """A guard that raises on unparseable input fails the commit for the wrong
+    reason and reports nothing useful."""
+
+    project = {"dependencies": ["!!!not a requirement!!!", "mypy==2.3.1"]}
+
+    assert hook._pinned_mypy(project) == "2.3.1"
+
+
+@pytest.mark.parametrize(
+    ("declaration", "expected"),
+    [
+        (">=3.12", (3, 12)),
+        (">= 3.12", (3, 12)),
+        (">=3.12,<4.0", (3, 12)),  # the regex this replaced matched nothing here
+        (">=3.12.0", (3, 12)),
+        ("==3.12.*", None),  # a valid specifier, not a version to compare against
+        (">3.11", None),
+        ("", None),
+        ("garbage", None),
+    ],
+)
+def test_requires_python_lower_bound_is_read_from_the_specifier(
+    declaration: str, expected: tuple[int, ...] | None
+) -> None:
+    """`>=3.12,<4.0` is an ordinary declaration and the previous regex, which
+    assumed the whole value was a lone `>=`, silently disabled the interpreter
+    check on it rather than failing."""
+
+    assert hook._minimum_python({"requires-python": declaration}) == expected
+
+
+def test_dependency_names_survive_extras_markers_and_spacing() -> None:
+    project = {
+        "dependencies": [
+            "psycopg[binary]>=3.2.3",
+            "uvicorn [standard] >= 0.35.0",
+            'httpx>=0.28.1 ; python_version >= "3.12"',
+            "!!!broken!!!",
+        ]
+    }
+
+    assert hook._runtime_distributions(project) == ["psycopg", "uvicorn", "httpx"]
+
+
 def test_the_pin_is_found_in_an_optional_group() -> None:
     """It lives under `[project.optional-dependencies] dev`, not the runtime list.
 
