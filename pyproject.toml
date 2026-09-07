@@ -41,6 +41,10 @@ dev = [
   # that arrive on a day nothing changed. 2.3.1 is what this repository runs and
   # passes under; lotus-risk pins 2.3.0 and lotus-archive 1.19.1.
   "mypy==2.3.1",
+  # Used by scripts/run_typecheck_hook.py to read this file's own pins with a
+  # standards-aware parser. It resolves incidentally via pip today; declaring it
+  # means the hook does not depend on that accident.
+  "packaging>=24.0",
   "pytest-cov>=6.2.1",
   "coverage>=7.10.6",
   "pre-commit>=4.3.0",
