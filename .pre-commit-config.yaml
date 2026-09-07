@@ -29,14 +29,17 @@ repos:
   # typechecked dependency set here instead would be a second copy of
   # `pyproject.toml` maintained by hand, drifting exactly where it matters.
   #
-  # The cost is that this hook needs the project environment on PATH. That is
-  # a real dependency and is stated in the README rather than left to surface
-  # as `mypy: command not found`.
+  # The cost is that this hook needs the project environment on PATH. A missing
+  # mypy fails loudly, but a mypy WITHOUT this project's dependencies does not:
+  # `ignore_missing_imports` turns every unresolvable import into `Any` and the
+  # run reports success having checked nothing. `run_typecheck_hook.py` refuses
+  # that case by name before handing over to mypy. The prerequisite is stated
+  # in the README and in wiki/Getting-Started.md.
   - repo: local
     hooks:
       - id: mypy
         name: mypy (repository environment)
-        entry: python -m mypy --config-file mypy.ini
+        entry: python scripts/run_typecheck_hook.py
         language: system
         pass_filenames: false
         # Always, not only when a `.py` file is staged. The hook already
