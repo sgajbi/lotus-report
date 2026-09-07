@@ -117,6 +117,37 @@ Prerequisites, before anything else:
 make install
 ```
 
+### The pre-commit hooks need the same activated environment
+
+Activation is not only a `make install` concern. The `mypy` hook runs the repository's own mypy
+rather than an isolated copy, because that is the only arrangement in which the hook and CI check
+the same thing: an isolated hook installs mypy alone, so every project import resolves to `Any`
+and it stops seeing errors that depend on FastAPI, Starlette, psycopg or pydantic contracts.
+
+So `git commit` must be run from a shell where the environment is active — and activation is
+per-shell, exactly as above. A commit from a fresh, unactivated window resolves whichever
+interpreter is on `PATH`.
+
+That case is refused rather than tolerated, because it would not fail on its own. An interpreter
+carrying mypy but not this project's dependencies would report `Success: no issues found` having
+checked nothing. The hook names it instead:
+
+```
+mypy would run without this project's dependencies, and `ignore_missing_imports`
+would make that a silent pass.
+  interpreter : /usr/bin/python3
+  missing     : fastapi, psycopg
+Activate the project environment and commit again (see wiki/Getting-Started.md).
+Do not use --no-verify.
+```
+
+If you see that, activate and commit again. `--no-verify` skips the check rather than satisfying
+it, and the gate it skips is the one that reads library contracts.
+
+```bash
+pre-commit install    # once per clone, from the activated environment
+```
+
 ## Run locally
 
 ```powershell

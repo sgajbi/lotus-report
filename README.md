@@ -105,9 +105,10 @@ The same activated environment is a prerequisite for the **pre-commit hooks**, n
 `make`. The `mypy` hook runs the repository's own mypy rather than an isolated copy, because
 that is the only arrangement in which the hook and CI are the same checker: an isolated hook
 installs mypy alone, so every project import resolves to `Any` and it silently stops seeing
-errors that depend on FastAPI, Starlette or psycopg contracts. If `git commit` reports
-`python: command not found` or mypy is missing, the environment is not active — activate it and
-retry rather than committing with `--no-verify`.
+errors that depend on FastAPI, Starlette or psycopg contracts. Committing from an unactivated
+shell is refused by name rather than tolerated — an interpreter with mypy but without this
+project's dependencies would otherwise report `Success: no issues found` having checked nothing.
+[Getting Started](wiki/Getting-Started.md) carries the message and what to do about it.
 
 Then:
 
