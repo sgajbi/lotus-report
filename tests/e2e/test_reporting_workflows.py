@@ -80,14 +80,18 @@ def test_e2e_reporting_review_flow():
 
 def test_e2e_aggregation_non_live_flow():
     response = client.get(
-        "/aggregations/portfolios/DEMO_CA_USD_001?as_of_date=2026-02-24&live=false",
+        "/aggregations/portfolios/DEMO_CA_USD_001?as_of_date=2026-02-24",
         headers={"X-Tenant-Id": "tenant-sg"},
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["scope"]["portfolio_id"] == "DEMO_CA_USD_001"
-    row_metrics = {row["metric"] for row in body["rows"]}
-    assert "market_value_base" in row_metrics
+    # No lotus-core is reachable in this lane, so the honest answer is a
+    # refusal naming the source. This test previously asked for `live=false`
+    # and asserted 200 against hard-coded placeholder rows -- it passed without
+    # any upstream existing, which is exactly what made the placeholder
+    # dangerous: the endpoint looked healthy with nothing behind it.
+    assert response.status_code in (404, 502), response.text
+    detail = response.json()["detail"]
+    assert detail["service"] == "lotus-core"
+    assert detail["code"].startswith("aggregation_source_")
 
 
 def test_e2e_service_observability_contract_headers():

@@ -351,13 +351,18 @@ def test_integration_capabilities_camel_case_params_do_not_override_context():
 
 def test_aggregation_endpoint():
     response = client.get(
-        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false",
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24",
         headers={"X-Tenant-Id": "tenant-sg"},
     )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["scope"]["portfolio_id"] == "DEMO_DPM_EUR_001"
-    assert len(body["rows"]) >= 1
+    # No lotus-core is reachable in this lane, so the honest answer is a
+    # refusal naming the source. This test previously asked for `live=false`
+    # and asserted 200 against hard-coded placeholder rows -- it passed without
+    # any upstream existing, which is exactly what made the placeholder
+    # dangerous: the endpoint looked healthy with nothing behind it.
+    assert response.status_code in (404, 502), response.text
+    detail = response.json()["detail"]
+    assert detail["service"] == "lotus-core"
+    assert detail["code"].startswith("aggregation_source_")
 
 
 def test_aggregation_endpoint_refuses_a_malformed_as_of_date():
@@ -658,3 +663,37 @@ def test_aggregation_endpoint_refuses_a_whitespace_only_tenant() -> None:
 
     assert response.status_code == 400
     assert response.json()["detail"]["missing_headers"] == ["X-Tenant-Id"]
+
+
+def test_aggregation_endpoint_reports_an_upstream_failure_as_a_bad_gateway(monkeypatch) -> None:
+    """An unavailable source is reported as unavailable, with the source named.
+
+    Held separately from the refusal tests above because those tolerate either
+    404 or 502 -- the lane has no lotus-core, so they take the not-found branch
+    and never exercise this one. Falsification proved it: changing the 502
+    mapping to a bare 500 passed the whole suite.
+    """
+
+    class _RefusingService:
+        async def get_portfolio_aggregation_live(self, **_: object) -> None:
+            raise ReportingUpstreamError(
+                {
+                    "code": "aggregation_source_unavailable",
+                    "message": "lotus-core did not return a portfolio summary.",
+                    "service": "lotus-core",
+                    "endpoint": "/reporting/portfolio-summary/query",
+                    "status_code": 503,
+                }
+            )
+
+    monkeypatch.setattr("app.routers.aggregations.AggregationService", _RefusingService)
+
+    response = client.get(
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24",
+        headers={"X-Tenant-Id": "tenant-sg"},
+    )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["service"] == "lotus-core"
+    assert detail["status_code"] == 503, "the caller must learn what the upstream returned"

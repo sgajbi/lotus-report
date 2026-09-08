@@ -15,11 +15,42 @@ class AggregationRow(BaseModel):
     value: float
 
 
+class UnavailableSource(BaseModel):
+    """An upstream that did not answer, named so its absence is not inferred.
+
+    A missing row and a row that was never requested look identical to a
+    consumer. This makes the difference explicit: a metric absent from `rows`
+    while its source appears here was not measured, and must not be presented
+    as zero or as a portfolio with nothing in it.
+    """
+
+    service: str = Field(description="Upstream service whose evidence is missing.")
+    endpoint: str = Field(description="The endpoint that was called.")
+    status_code: int = Field(description="Status the upstream returned.")
+    reason: Literal["no_response", "pending", "incomplete_payload"] = Field(
+        default="no_response",
+        description=(
+            "Why the evidence is missing. `no_response` is a failed call; "
+            "`pending` is a calculation still running, which is not the same as "
+            "one that finished with nothing; `incomplete_payload` is a "
+            "successful response that omitted a field this endpoint reports."
+        ),
+    )
+
+
 class PortfolioAggregationResponse(BaseModel):
     source_service: str = "lotus-report"
     scope: AggregationScope
     generated_at: datetime
     rows: list[AggregationRow]
+    unavailable_sources: list[UnavailableSource] = Field(
+        default_factory=list,
+        description=(
+            "Upstreams that did not answer for this aggregation. A metric whose "
+            "source is listed here is absent from `rows` because it was not "
+            "measured -- distinct from a metric that is genuinely zero."
+        ),
+    )
 
 
 class IntegrationCapabilitiesResponse(BaseModel):

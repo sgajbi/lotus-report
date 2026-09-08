@@ -222,7 +222,13 @@ class _CapturingPerformanceClient:
 
 class _QuietCoreClient:
     async def get_portfolio_summary(self, **_: Any) -> tuple[int, dict[str, Any]]:
-        return 200, {"totals": {}, "snapshot_metadata": {}}
+        # A real total, because an absent one is now a refusal rather than a
+        # substituted 1_250_000 (#367). This stub exists to exercise tenant
+        # propagation, so it must get past the evidence checks.
+        return 200, {
+            "totals": {"total_market_value_reporting_currency": 100.0},
+            "snapshot_metadata": {"position_count": 0},
+        }
 
     async def get_asset_allocation(self, **_: Any) -> tuple[int, dict[str, Any]]:
         return 200, {}
