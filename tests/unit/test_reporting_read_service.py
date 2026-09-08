@@ -256,7 +256,9 @@ class _PerformanceClientSuccess:
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
 
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         self.seen_payloads.append(payload)
         return 200, {
             "results_by_period": {
@@ -499,7 +501,7 @@ class _PerformanceClientSuccess:
             }
         }
 
-    async def get_contribution(self, payload: dict[str, object]):
+    async def get_contribution(self, payload: dict[str, object], *, admitted_tenant_id: str = ""):
         self.seen_payloads.append(payload)
         return 200, {
             "results_by_period": {
@@ -545,7 +547,7 @@ class _PerformanceClientSuccess:
             "audit": {"counts": {"input_positions": 2}},
         }
 
-    async def get_attribution(self, payload):
+    async def get_attribution(self, payload, *, admitted_tenant_id: str = ""):
         self.attribution_requests = getattr(self, "attribution_requests", [])
         self.attribution_requests.append(payload)
         return 200, {
@@ -901,10 +903,12 @@ class _CoreQueryClientFailure:
 
 
 class _PerformanceClientFailure:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 503, {"detail": "upstream unavailable"}
 
-    async def get_contribution(self, payload: dict[str, object]):
+    async def get_contribution(self, payload: dict[str, object], *, admitted_tenant_id: str = ""):
         return 503, {"detail": "upstream unavailable"}
 
 
@@ -1598,7 +1602,7 @@ async def test_ordering_attribution_composes_the_section_and_honours_defaulting(
 
     pending_client = _PerformanceClientSuccess()
 
-    async def _accepted(payload):
+    async def _accepted(payload, *, admitted_tenant_id: str = ""):
         return 202, {"calculation_id": "calc-9", "result_path": "/p"}
 
     pending_client.get_attribution = _accepted

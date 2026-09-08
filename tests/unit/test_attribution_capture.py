@@ -15,13 +15,13 @@ class _AttributionClient:
         self._payload = payload
         self.requests = []
 
-    async def get_attribution(self, payload):
+    async def get_attribution(self, payload, *, admitted_tenant_id: str = ""):
         self.requests.append(payload)
         return self._status_code, self._payload
 
 
 class _DownClient:
-    async def get_attribution(self, payload):
+    async def get_attribution(self, payload, *, admitted_tenant_id: str = ""):
         raise RuntimeError("connection refused")
 
 
@@ -50,6 +50,7 @@ async def _capture(client):
         portfolio_id="P1",
         as_of_date="2026-04-22",
         benchmark_code="BMK",
+        admitted_tenant_id="tenant-sg",
     )
 
 

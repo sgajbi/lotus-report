@@ -9,6 +9,24 @@ from app.clients.http_resilience import post_with_retry, response_payload
 from app.observability import propagation_headers
 
 
+#: Report already sends `X-Tenant-Id` to lotus-ai and lotus-archive with the same
+#: header and the same value. This client did not, while `admitted_tenant_id`
+#: sat three frames up the call chain -- so every async job Report submitted was
+#: recorded by lotus-performance with an absent tenant, and `lotus-performance#504`
+#: is building durable tenant authority over exactly those rows. They cannot be
+#: backfilled: the value was never transmitted, so it is unattributable in
+#: principle rather than merely un-backfilled.
+#:
+#: The header is sent ALWAYS, blank included, rather than omitted when there is
+#: no admitted tenant. lotus-performance reads absent and blank identically
+#: (`resolve_tenant_id` returns "" for both), so it makes no difference on the
+#: wire -- but it makes a regression here detectable. Omitting on blank would
+#: make code that stopped threading the value look exactly like a legitimately
+#: tenantless call, which is this defect wearing a disguise.
+def _tenant_headers(admitted_tenant_id: str) -> dict[str, str]:
+    return {**propagation_headers(), "X-Tenant-Id": admitted_tenant_id}
+
+
 class PerformanceClient:
     def __init__(
         self,
@@ -33,9 +51,11 @@ class PerformanceClient:
         self._clock = clock or time.monotonic
         self._sleeper = sleeper
 
-    async def get_workspace_summary(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def get_workspace_summary(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         url = f"{self._base_url}/performance/workspace-summary"
-        headers = propagation_headers()
+        headers = _tenant_headers(admitted_tenant_id)
         status_code, response = await post_with_retry(
             url=url,
             timeout_seconds=self._timeout_seconds,
@@ -56,9 +76,11 @@ class PerformanceClient:
             fallback_payload=response,
         )
 
-    async def get_contribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def get_contribution(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         url = f"{self._base_url}/performance/contribution"
-        headers = propagation_headers()
+        headers = _tenant_headers(admitted_tenant_id)
         status_code, response = await post_with_retry(
             url=url,
             timeout_seconds=self._timeout_seconds,
@@ -79,7 +101,9 @@ class PerformanceClient:
             fallback_payload=response,
         )
 
-    async def get_attribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def get_attribution(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         """Brinson attribution for the report window (issue #254).
 
         Same submit-then-poll shape as its siblings: a 200 carries
@@ -91,7 +115,7 @@ class PerformanceClient:
         """
 
         url = f"{self._base_url}/performance/attribution"
-        headers = propagation_headers()
+        headers = _tenant_headers(admitted_tenant_id)
         status_code, response = await post_with_retry(
             url=url,
             timeout_seconds=self._timeout_seconds,

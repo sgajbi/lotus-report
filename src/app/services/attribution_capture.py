@@ -83,7 +83,9 @@ class AttributionClient(Protocol):
     order.
     """
 
-    async def get_attribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
+    async def get_attribution(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]: ...
 
 
 STATUS_PRESENT = "present"
@@ -151,6 +153,7 @@ async def capture_attribution(
     portfolio_id: str,
     as_of_date: str,
     benchmark_code: str | None,
+    admitted_tenant_id: str,
 ) -> dict[str, Any]:
     """The attribution section of the snapshot, with its posture stated."""
 
@@ -172,7 +175,9 @@ async def capture_attribution(
     }
 
     try:
-        status_code, payload = await performance_client.get_attribution(request_payload)
+        status_code, payload = await performance_client.get_attribution(
+            request_payload, admitted_tenant_id=admitted_tenant_id
+        )
     except Exception:
         return _recorded(
             {

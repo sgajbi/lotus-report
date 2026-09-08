@@ -28,7 +28,9 @@ class _CoreQueryOkClient:
 
 
 class _PerformanceOkClient:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return (
             200,
             {
@@ -60,7 +62,9 @@ class _CoreQueryFailClient:
 
 
 class _PerformanceFailClient:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 503, {"detail": "down"}
 
 
@@ -317,7 +321,9 @@ class _CoreQueryMalformedSummary:
 
 
 class _PerformanceMissingYtd:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         _ = payload
         return 200, {"results_by_period": {}}
 

@@ -58,7 +58,9 @@ class _StubCoreQueryClient:
 
 
 class _StubPerformanceClient:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return (
             200,
             {
@@ -157,7 +159,9 @@ class _FailingCoreQueryClient:
 
 
 class _FailingPerformanceClient:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 503, {"detail": "unavailable"}
 
 

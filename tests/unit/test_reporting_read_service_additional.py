@@ -278,7 +278,9 @@ class _CoreQueryProfilePartial(_CoreQuerySuccessMinimal):
 
 
 class _PerformanceSuccessEmpty:
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 200, {
             "results_by_period": {
                 "YTD": {
@@ -310,7 +312,7 @@ class _PerformanceSuccessEmpty:
             }
         }
 
-    async def get_contribution(self, payload: dict[str, object]):
+    async def get_contribution(self, payload: dict[str, object], *, admitted_tenant_id: str = ""):
         return 200, {
             "results_by_period": {
                 "YTD": {
@@ -1870,12 +1872,16 @@ def test_core_unwrap_helpers_map_invalid_and_error_payloads(
 
 
 class _PerformanceWorkspaceStatusError(_PerformanceSuccessEmpty):
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 500, {"detail": "twr failed"}
 
 
 class _PerformanceWorkspaceNoReturns(_PerformanceSuccessEmpty):
-    async def get_workspace_summary(self, payload: dict[str, object]):
+    async def get_workspace_summary(
+        self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+    ):
         return 200, {
             "results_by_period": {"YTD": {"portfolio_twr": {"net": {"breakdowns": {"daily": []}}}}}
         }
@@ -1893,7 +1899,9 @@ async def test_build_risk_analytics_reports_workspace_summary_failure():
         performance_client=_PerformanceWorkspaceStatusError(),
         risk_client=_RiskSuccess(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    result = await service._build_risk_analytics(
+        "P1", "2026-02-24", {}, admitted_tenant_id="tenant-sg"
+    )
     assert result["supportability"]["status"] == "unavailable"
     assert result["supportability"]["notes"][0]["code"] == "risk_return_history_unavailable"
 
@@ -1905,7 +1913,9 @@ async def test_build_risk_analytics_reports_empty_daily_returns():
         performance_client=_PerformanceWorkspaceNoReturns(),
         risk_client=_RiskSuccess(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    result = await service._build_risk_analytics(
+        "P1", "2026-02-24", {}, admitted_tenant_id="tenant-sg"
+    )
     assert result["supportability"]["status"] == "unavailable"
     assert result["supportability"]["notes"][0]["code"] == "missing_return_history"
 
@@ -1917,7 +1927,9 @@ async def test_build_risk_analytics_reports_risk_call_failure():
         performance_client=_PerformanceSuccessEmpty(),
         risk_client=_RiskStatusError(),
     )
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    result = await service._build_risk_analytics(
+        "P1", "2026-02-24", {}, admitted_tenant_id="tenant-sg"
+    )
     assert result["supportability"]["status"] == "unavailable"
     assert result["supportability"]["notes"][0]["code"] == "risk_upstream_failure"
 
@@ -2043,7 +2055,9 @@ def test_build_workspace_summary_request_sets_reporting_currency():
 @pytest.mark.asyncio
 async def test_build_risk_analytics_reports_missing_portfolio_open_date():
     class _PerformanceWorkspaceNoOpenDate:
-        async def get_workspace_summary(self, payload: dict[str, object]):
+        async def get_workspace_summary(
+            self, payload: dict[str, object], *, admitted_tenant_id: str = ""
+        ):
             _ = payload
             return 200, {
                 "results_by_period": {
@@ -2070,7 +2084,9 @@ async def test_build_risk_analytics_reports_missing_portfolio_open_date():
         risk_client=_RiskSuccess(),
     )
 
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    result = await service._build_risk_analytics(
+        "P1", "2026-02-24", {}, admitted_tenant_id="tenant-sg"
+    )
 
     assert result["supportability"]["status"] == "unavailable"
     assert result["supportability"]["notes"][0]["code"] == "missing_return_history"
@@ -2084,7 +2100,9 @@ async def test_build_risk_analytics_surfaces_missing_risk_free_and_benchmark_not
         risk_client=_RiskZeroRate(),
     )
 
-    result = await service._build_risk_analytics("P1", "2026-02-24", {})
+    result = await service._build_risk_analytics(
+        "P1", "2026-02-24", {}, admitted_tenant_id="tenant-sg"
+    )
 
     notes = {note["code"]: note for note in result["supportability"]["notes"]}
     assert result["supportability"]["status"] == "ready"
