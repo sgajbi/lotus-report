@@ -159,6 +159,48 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    disagreement is invisible from inside either one.
 9. **An optional section may fail without failing the report** — but a section the order promised
    is never silently omitted.
+10. **Where a client carries the admitted tenant, it takes it as a REQUIRED keyword argument.**
+    Not defaulted: a default preserves the gap at call sites nobody found. Making the parameter
+    required is what enumerated `core_query_client`'s 20 call sites, five of them
+    recording-decorator overrides that a default would have left silently dropping the value.
+    Absence is transmitted as an empty header rather than omitted, so a regression that stops
+    threading the value looks different from a legitimately tenantless call.
+
+    **Coverage is partial, and this is the current state rather than the target.** Measured on
+    this tree by counting `X-Tenant-Id` sends per client:
+
+    | client | methods | sends the tenant |
+    |---|---|---|
+    | `core_query_client` | 6 | yes (#365) |
+    | `performance_client` | 3 | yes (#361) |
+    | `ai_client` | 2 | yes |
+    | `archive_client` | 2 | yes |
+    | `risk_client` | 4 | **no** |
+    | `render_client` | 5 | **no** |
+
+    Writing this as "every outbound call" would tell a maintainer the work is finished when nine
+    methods across two clients still send nothing. Tracked as the remaining gap in #375, not as an
+    invariant already held.
+11. **A refusing upstream is reported, never substituted.** Collapsing a `status >= 400` into an
+    empty payload and then defaulting the missing values produced `market_value_base=1250000` for
+    upstream 401, 403, 404 and 503 alike. A source that did not answer is either a refusal the
+    caller sees, or an entry in `unavailable_sources` naming the service, endpoint, status and
+    reason — `no_response`, `pending` or `incomplete_payload`. A metric absent from a response
+    while its source is listed there **was not measured**, which is the distinction a substituted
+    zero destroys: `position_count = 0` is a fact about an empty portfolio.
+12. **A tenant recovered from stored JSON must be a JSON string.** `TRIM(json_extract(...))` and
+    `->>` both render any type as text, so `123`, `true`, `{}` and `[]` became the tenants `'123'`,
+    `'1'`, `'{}'` and `'[]'`. An invented owner is worse than an absent one — `true` becoming `'1'`
+    can collide with a real tenant named `1`, and afterwards nothing separates it from a genuine
+    attribution. Classify malformed JSON, wrong type and absent separately; `json_valid` is
+    evaluated first so malformed rows leave the set before any accessor touches them.
+13. **Migrations are re-executed at every startup, so their DDL must be guarded.** The runner keeps
+    no ledger of applied files. An unconditional `ALTER TABLE` rebuilt an identity index on every
+    boot — measured as a changed `relfilenode` — and `ALTER TABLE` takes ACCESS EXCLUSIVE whether or
+    not its `IF EXISTS` clause matches anything. Guard with a `DO` block that checks
+    `pg_constraint` first. The runner's splitter is quote- and dollar-quote aware, so a `DO` body is
+    safe; it was not always, and migrations 025 and 026 were shaped around a naive
+    `schema.split(";")`.
 
 ## Active Priorities
 
