@@ -362,6 +362,101 @@ class IdeaEvidenceIntakeLedger:
         finally:
             connection.close()
 
+    #: How many offending keys to name per class. Enough for an operator to
+    #: recognise the shape of the problem, bounded so a ledger with thousands of
+    #: bad rows produces a message they can still read.
+    _DIAGNOSTIC_SAMPLE = 5
+
+    def _refuse_unattributable_rows(self, connection: sqlite3.Connection) -> None:
+        """Refuse the upgrade unless every retained row names a real owner.
+
+        Three distinct failures, reported as three, because they need different
+        operator responses:
+
+        * **malformed JSON** -- the stored context is not JSON at all. Previously
+          this aborted the whole upgrade with SQLite's bare `malformed JSON`,
+          naming no row, because `json_extract` raises before any predicate can
+          classify it (report#360).
+        * **a tenant that is not a string** -- `TRIM(json_extract(...))` renders
+          any JSON type as text, so a stored `123`, `true`, `{}` or `[]` became
+          the tenant `'123'`, `'1'`, `'{}'` or `'[]'`. Measured on the shipped
+          migration. That is an invented owner, and worse than an absent one:
+          `true` becoming `'1'` can collide with a real tenant named `1`, and
+          nothing downstream could tell the difference.
+        * **an absent or blank tenant** -- the case #344 already refused.
+
+        All three are gathered before anything is written, so a file holding a
+        mixture is refused once with every class named rather than one class at
+        a time across repeated runs.
+
+        `json_valid` is evaluated first and separately: it never raises, so the
+        malformed rows are removed from the set before any `json_*` accessor
+        touches them.
+        """
+        malformed = [
+            str(row[0])
+            for row in connection.execute(
+                """
+                SELECT idempotency_key FROM idea_evidence_intake
+                WHERE json_valid(caller_context_json) = 0
+                ORDER BY idempotency_key
+                """
+            ).fetchall()
+        ]
+
+        wrong_type: list[tuple[str, str]] = []
+        absent: list[str] = []
+        for key, tenant_type, tenant_text in connection.execute(
+            """
+            SELECT
+                idempotency_key,
+                json_type(caller_context_json, '$.tenant_id'),
+                json_extract(caller_context_json, '$.tenant_id')
+            FROM idea_evidence_intake
+            WHERE json_valid(caller_context_json) = 1
+            ORDER BY idempotency_key
+            """
+        ).fetchall():
+            if tenant_type is None or tenant_type == "null":
+                absent.append(str(key))
+            elif tenant_type != "text":
+                wrong_type.append((str(key), str(tenant_type)))
+            elif not str(tenant_text).strip():
+                absent.append(str(key))
+
+        if not (malformed or wrong_type or absent):
+            return
+
+        parts: list[str] = []
+        if malformed:
+            parts.append(
+                f"{len(malformed)} row(s) hold a caller_context_json that is not valid JSON "
+                f"(for example {self._sample(malformed)})"
+            )
+        if wrong_type:
+            named = ", ".join(
+                f"{key!r} (JSON {kind})" for key, kind in wrong_type[: self._DIAGNOSTIC_SAMPLE]
+            )
+            parts.append(
+                f"{len(wrong_type)} row(s) hold a tenant that is not a JSON string "
+                f"(for example {named})"
+            )
+        if absent:
+            parts.append(
+                f"{len(absent)} row(s) have no tenant in caller_context_json "
+                f"(for example {self._sample(absent)})"
+            )
+
+        raise IdeaEvidenceIntakeMigrationError(
+            "; ".join(parts)
+            + ". Attribute them deliberately before starting with the tenant-scoped schema; "
+            "this migration will not default, coerce or discard them (report#344, report#360). "
+            "The retained rows are untouched and the original table is intact."
+        )
+
+    def _sample(self, keys: list[str]) -> str:
+        return ", ".join(repr(key) for key in keys[: self._DIAGNOSTIC_SAMPLE])
+
     def _migrate_to_tenant_identity(self, connection: sqlite3.Connection) -> None:
         """Carry a pre-report#344 ledger file onto the tenant-scoped schema.
 
@@ -387,20 +482,7 @@ class IdeaEvidenceIntakeLedger:
         if "tenant_id" in columns:
             return
 
-        unattributed = connection.execute(
-            """
-            SELECT idempotency_key FROM idea_evidence_intake
-            WHERE COALESCE(TRIM(json_extract(caller_context_json, '$.tenant_id')), '') = ''
-            """
-        ).fetchall()
-        if unattributed:
-            keys = ", ".join(repr(str(row[0])) for row in unattributed[:5])
-            raise IdeaEvidenceIntakeMigrationError(
-                f"{len(unattributed)} intake row(s) have no tenant in caller_context_json "
-                f"(for example {keys}). Attribute them deliberately before starting with the "
-                "tenant-scoped schema; this migration will not default or discard them "
-                "(report#344)."
-            )
+        self._refuse_unattributable_rows(connection)
 
         # Explicit BEGIN. Python's sqlite3 opens a transaction implicitly before
         # DML but NOT before DDL, so without this the rename and the create
@@ -424,6 +506,10 @@ class IdeaEvidenceIntakeLedger:
                 accepted_at_utc, created_at_utc, correlation_id, trace_id
             )
             SELECT
+                -- Safe only because `_refuse_unattributable_rows` has already
+                -- established that every row's tenant is a JSON string: this
+                -- expression would otherwise render a number, boolean, object
+                -- or array as its text form and invent an owner.
                 TRIM(json_extract(caller_context_json, '$.tenant_id')),
                 idempotency_key, intake_id, payload_fingerprint, response_json,
                 caller_context_json, report_evidence_pack_id, conversion_intent_id, candidate_id,

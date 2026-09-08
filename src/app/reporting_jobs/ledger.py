@@ -60,6 +60,18 @@ ReportJobRequest: TypeAlias = (
 #: single-key UNIQUE. A second copy would drift the moment a column is added,
 #: and the rebuild would silently write a narrower table than the one the
 #: service expects.
+def _restore_rebuild_pragmas(connection: sqlite3.Connection) -> None:
+    """Re-enable the pragmas the table rebuild had to disable.
+
+    Must be called with no transaction open: `PRAGMA foreign_keys` and
+    `PRAGMA legacy_alter_table` are silently ignored inside one, so restoring
+    them in a `finally` that runs before the commit leaves the connection with
+    foreign keys OFF for the rest of its life.
+    """
+    connection.execute("PRAGMA legacy_alter_table = OFF")
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
 _REPORT_REQUEST_DDL = """
 CREATE TABLE IF NOT EXISTS report_request (
     report_request_id TEXT PRIMARY KEY,
@@ -390,6 +402,12 @@ class ReportJobLedger:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self._db_path)
         connection.row_factory = sqlite3.Row
+        # Foreign keys are OFF by default in SQLite and the setting is
+        # per-connection, so enabling it in `ensure_schema` alone left every
+        # other operation unenforced -- reads, writes and deletes all ran with
+        # the constraint declared and inert. Enabled here so it holds for every
+        # connection this ledger opens, not just the one that built the schema.
+        connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
             connection.commit()
@@ -471,15 +489,24 @@ class ReportJobLedger:
                 )
         except Exception:
             connection.rollback()
+            # Restored on the failure path too, and only once the rollback has
+            # ended the transaction -- the same no-op rule applies either way.
+            _restore_rebuild_pragmas(connection)
             raise
-        finally:
-            connection.execute("PRAGMA legacy_alter_table = OFF")
-            connection.execute("PRAGMA foreign_keys = ON")
         connection.commit()
+        # AFTER the commit, not in a `finally` before it. `PRAGMA foreign_keys`
+        # is a no-op inside a transaction -- the comment above this rebuild says
+        # so, and the restoration was written in the one place where that rule
+        # bites. Measured: setting it ON inside the transaction leaves it 0, and
+        # it stays 0 after the commit, so every later statement on this
+        # connection ran with foreign keys disabled.
+        _restore_rebuild_pragmas(connection)
 
     def ensure_schema(self) -> None:
         with self._connect() as connection:
-            connection.execute("PRAGMA foreign_keys = ON")
+            # `_connect` enables foreign keys for every connection now, so the
+            # explicit pragma that used to sit here is gone rather than
+            # duplicated -- leaving it would suggest this path is special.
             connection.execute(_REPORT_REQUEST_DDL)
             connection.execute(
                 """
