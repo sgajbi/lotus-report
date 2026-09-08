@@ -90,7 +90,8 @@ async def test_performance_client_get_workspace_summary_posts_expected_contract(
 
     client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
     status_code, payload = await client.get_workspace_summary(
-        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []},
+        admitted_tenant_id="tenant-sg",
     )
     assert status_code == 200
     assert payload == {"results_by_period": {}}
@@ -138,7 +139,8 @@ async def test_performance_client_polls_async_workspace_summary_result(monkeypat
     )
 
     status_code, payload = await client.get_workspace_summary(
-        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []},
+        admitted_tenant_id="tenant-sg",
     )
 
     assert status_code == 200
@@ -169,7 +171,8 @@ async def test_performance_client_returns_pending_workspace_summary_without_resu
     )
 
     status_code, payload = await client.get_workspace_summary(
-        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []},
+        admitted_tenant_id="tenant-sg",
     )
 
     assert status_code == 200
@@ -216,7 +219,8 @@ async def test_performance_client_returns_last_pending_result_after_polling_budg
     )
 
     status_code, payload = await client.get_workspace_summary(
-        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []}
+        {"portfolio_id": "P1", "report_end_date": "2026-02-24", "periods": []},
+        admitted_tenant_id="tenant-sg",
     )
 
     assert status_code == 200
@@ -431,7 +435,8 @@ async def test_performance_client_get_contribution_posts_expected_contract(monke
 
     client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
     status_code, payload = await client.get_contribution(
-        {"portfolio_id": "P1", "report_start_date": "2026-01-01"}
+        {"portfolio_id": "P1", "report_start_date": "2026-01-01"},
+        admitted_tenant_id="tenant-sg",
     )
 
     assert status_code == 200
@@ -467,7 +472,9 @@ async def test_performance_client_get_contribution_polls_async_result(monkeypatc
         timeout_seconds=3.0,
         retry_backoff_seconds=0,
     )
-    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_contribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results_by_period": {"YTD": {}}}
@@ -488,7 +495,9 @@ async def test_performance_client_get_contribution_returns_accepted_without_resu
     )
 
     client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
-    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_contribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert payload == {"calculation_id": "calc-1"}
@@ -524,7 +533,9 @@ async def test_performance_client_get_contribution_returns_last_pending_after_po
         max_retries=0,
         retry_backoff_seconds=0.01,
     )
-    status_code, payload = await client.get_contribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_contribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert payload == pending_result
@@ -565,7 +576,9 @@ async def test_performance_client_gets_attribution_synchronously_when_offered(mo
         retry_backoff_seconds=0.01,
     )
 
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results_by_period": {"YTD": {}}}
@@ -611,7 +624,9 @@ async def test_performance_client_polls_accepted_attribution_to_its_result(monke
         retry_backoff_seconds=0.01,
     )
 
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results_by_period": {"YTD": {}}}
@@ -653,7 +668,9 @@ async def test_attribution_exhaustion_returns_the_accepted_envelope(monkeypatch)
         retry_backoff_seconds=0.01,
     )
 
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert "results_by_period" not in payload
@@ -711,7 +728,9 @@ async def test_a_stated_wait_within_budget_is_honoured_in_full(monkeypatch):
     fake_time = _FakeTime()
 
     client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results_by_period": {"YTD": {}}}
@@ -743,7 +762,9 @@ async def test_a_stated_wait_beyond_the_budget_stops_polling_immediately(monkeyp
     fake_time = _FakeTime()
 
     client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert payload["calculation_id"] == "calc-9"
@@ -779,7 +800,9 @@ async def test_a_long_retry_after_arriving_mid_poll_ends_the_loop_truthfully(mon
     fake_time = _FakeTime()
 
     client = _budget_client(recorder, fake_time, poll_budget_seconds=10.0)
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert payload == {"calculation_id": "calc-9"}
@@ -809,7 +832,9 @@ async def test_an_unstated_cadence_never_sleeps_past_the_budget(monkeypatch):
     fake_time = _FakeTime()
 
     client = _budget_client(recorder, fake_time, poll_budget_seconds=1.0)
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert "results_by_period" not in payload
@@ -836,7 +861,9 @@ async def test_an_accepted_attribution_without_a_result_path_is_returned_as_is(m
         retry_backoff_seconds=0.01,
     )
 
-    status_code, payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 202
     assert payload == {"calculation_id": "calc-9"}
@@ -884,7 +911,9 @@ async def test_a_malformed_retry_after_header_falls_back_rather_than_crashing(mo
         retry_backoff_seconds=0.25,
     )
 
-    status_code, _payload = await client.get_attribution({"portfolio_id": "P1"})
+    status_code, _payload = await client.get_attribution(
+        {"portfolio_id": "P1"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     # The unparseable header fell back to the linear schedule (0.25 * 1).

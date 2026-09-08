@@ -370,10 +370,10 @@ class _DummyPerformanceClient:
     def __init__(self, **_kwargs):
         pass
 
-    async def get_workspace_summary(self, payload):
+    async def get_workspace_summary(self, payload, *, admitted_tenant_id: str = ""):
         return 200, {"contract_version": "v1", "workspace": payload}
 
-    async def get_contribution(self, payload):
+    async def get_contribution(self, payload, *, admitted_tenant_id: str = ""):
         return 200, {"contract_version": "v1", "contribution": payload}
 
 
@@ -389,10 +389,10 @@ class _DummyRiskClient:
 
 
 class _FailingPerformanceClient(_DummyPerformanceClient):
-    async def get_workspace_summary(self, payload):
+    async def get_workspace_summary(self, payload, *, admitted_tenant_id: str = ""):
         raise RuntimeError(f"workspace failure for {payload['portfolio_id']}")
 
-    async def get_contribution(self, payload):
+    async def get_contribution(self, payload, *, admitted_tenant_id: str = ""):
         raise RuntimeError(f"contribution failure for {payload['portfolio_id']}")
 
 
@@ -431,8 +431,10 @@ class _HappyReportingReadService:
             correlation_id,
         )
         await self._core.get_portfolio_detail(portfolio_id, correlation_id)
-        await self._performance.get_workspace_summary(request_payload)
-        await self._performance.get_contribution(request_payload)
+        await self._performance.get_workspace_summary(
+            request_payload, admitted_tenant_id="tenant-sg"
+        )
+        await self._performance.get_contribution(request_payload, admitted_tenant_id="tenant-sg")
         await self._risk.calculate_risk(request_payload)
         return {
             "report_id": f"portfolio-review:{portfolio_id}:{request_payload['as_of_date']}",
@@ -1602,8 +1604,12 @@ async def test_recording_clients_capture_success_and_failure_paths():
     await core.get_asset_allocation("PB_SG_GLOBAL_BAL_001", {"dimension": "asset_class"}, "corr")
     await core.get_portfolio_transactions("PB_SG_GLOBAL_BAL_001", {"page": 1}, "corr")
     await core.get_portfolio_detail("PB_SG_GLOBAL_BAL_001", "corr")
-    await performance.get_workspace_summary({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
-    await performance.get_contribution({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+    await performance.get_workspace_summary(
+        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+    )
+    await performance.get_contribution(
+        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+    )
     await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
 
     calls = recorder.calls
@@ -1766,9 +1772,13 @@ async def test_capture_service_additional_payload_and_failure_branches():
     risk = _RecordingRiskClient(_FailingRiskClient(), recorder)
 
     with pytest.raises(RuntimeError, match="workspace failure"):
-        await performance.get_workspace_summary({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+        await performance.get_workspace_summary(
+            {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+        )
     with pytest.raises(RuntimeError, match="contribution failure"):
-        await performance.get_contribution({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+        await performance.get_contribution(
+            {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+        )
     with pytest.raises(RuntimeError, match="risk failure"):
         await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
     with pytest.raises(RuntimeError, match="drawdown failure"):

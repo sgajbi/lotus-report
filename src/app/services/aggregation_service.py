@@ -54,7 +54,18 @@ class AggregationService:
                 "input_mode": "stateful",
                 "stateful_input": {},
                 "periods": [{"period": "YTD", "frequencies": ["daily"]}],
-            }
+            },
+            # Absence, sent deliberately. `/aggregations/{portfolio_id}` admits no
+            # tenant header and `get_portfolio_aggregation_live` never receives
+            # one, so there is nothing here to propagate. Substituting a default
+            # or a service name would manufacture an ownership claim
+            # indistinguishable from a real one -- the defect #177 removed from
+            # the batch scheduler. lotus-performance reads absent and blank
+            # identically, so this is the same wire outcome the call had before;
+            # what changes is that the absence is now stated rather than
+            # accidental. That the route admits no tenant at all is a separate
+            # finding, tracked in #363.
+            admitted_tenant_id="",
         )
         if performance_status >= 400:
             performance_payload = {}

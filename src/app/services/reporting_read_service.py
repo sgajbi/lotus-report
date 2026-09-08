@@ -323,7 +323,8 @@ class ReportingReadService:
                     as_of_date=as_of_date,
                     request_payload=request_payload,
                     periods=PERFORMANCE_REVIEW_PERIODS,
-                )
+                ),
+                admitted_tenant_id=admitted_tenant_id or "",
             )
             if self._workspace_summary_ready(performance_status, performance_payload):
                 workspace_summary_payload = performance_payload
@@ -340,7 +341,8 @@ class ReportingReadService:
                         portfolio_id=portfolio_id,
                         as_of_date=as_of_date,
                         request_payload=request_payload,
-                    )
+                    ),
+                    admitted_tenant_id=admitted_tenant_id or "",
                 )
                 contribution = self._map_performance_contribution(
                     status_code=contribution_status,
@@ -369,6 +371,7 @@ class ReportingReadService:
         if "PERFORMANCE_ATTRIBUTION" in requested_sections:
             response["attribution"] = await capture_attribution(
                 performance_client=self._performance_client,
+                admitted_tenant_id=admitted_tenant_id or "",
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 # None = portfolio's assigned benchmark; an omission, never "".
@@ -379,6 +382,7 @@ class ReportingReadService:
 
         if "RISK_ANALYTICS" in requested_sections:
             response["riskAnalytics"] = await self._build_risk_analytics(
+                admitted_tenant_id=admitted_tenant_id or "",
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 request_payload=request_payload,
@@ -691,6 +695,8 @@ class ReportingReadService:
         portfolio_id: str,
         as_of_date: str,
         request_payload: dict[str, object],
+        *,
+        admitted_tenant_id: str,
         workspace_summary_payload: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
         if workspace_summary_payload is None:
@@ -703,7 +709,8 @@ class ReportingReadService:
                     as_of_date=as_of_date,
                     request_payload=request_payload,
                     periods=["YTD", "5Y", "SI"],
-                )
+                ),
+                admitted_tenant_id=admitted_tenant_id,
             )
             if summary_status >= HTTP_BAD_REQUEST:
                 return self._risk_unavailable(

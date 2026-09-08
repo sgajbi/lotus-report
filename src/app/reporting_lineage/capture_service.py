@@ -464,10 +464,14 @@ class _RecordingPerformanceClient(PerformanceClient):
         self._inner = inner
         self._recorder = recorder
 
-    async def get_workspace_summary(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def get_workspace_summary(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.get_workspace_summary(payload)
+            status_code, response_payload = await self._inner.get_workspace_summary(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-performance",
@@ -489,10 +493,14 @@ class _RecordingPerformanceClient(PerformanceClient):
         )
         return status_code, response_payload
 
-    async def get_contribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def get_contribution(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.get_contribution(payload)
+            status_code, response_payload = await self._inner.get_contribution(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-performance",
