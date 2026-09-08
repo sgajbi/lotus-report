@@ -1,7 +1,9 @@
 from datetime import date
 
 import pytest
+from fastapi import HTTPException
 
+from app.application_errors import ReportingApplicationError
 from app.routers.aggregations import get_portfolio_aggregation
 from app.routers.reports import _apply_requested_section_limit, get_reporting_read_service
 from app.services.reporting_read_service import ReportingReadService
@@ -26,7 +28,6 @@ async def test_aggregation_router_live_branch(monkeypatch):
     response = await get_portfolio_aggregation(
         portfolio_id="P1",
         as_of_date=date(2026, 2, 24),
-        live=True,
         tenant_id="tenant-test",
     )
     assert response["mode"] == "live"
@@ -47,3 +48,29 @@ def test_apply_requested_section_limit_keeps_non_list_sections():
     payload = {"sections": "ALL"}
     limited = _apply_requested_section_limit(payload, section_limit=2)
     assert limited["sections"] == "ALL"
+
+
+@pytest.mark.asyncio
+async def test_an_unclassified_application_error_becomes_a_server_error(monkeypatch):
+    """The fall-through branch, which no other test reaches.
+
+    A `ReportingApplicationError` that is neither not-found nor upstream is not
+    the caller's fault and must not be reported as one. 500 is the honest answer
+    for a failure this mapping cannot classify -- and leaving the branch
+    unexercised is how a wrong status ships.
+    """
+
+    class _UnclassifiedService:
+        async def get_portfolio_aggregation_live(self, **_):
+            raise ReportingApplicationError({"code": "unclassified"})
+
+    monkeypatch.setattr("app.routers.aggregations.AggregationService", _UnclassifiedService)
+
+    with pytest.raises(HTTPException) as raised:
+        await get_portfolio_aggregation(
+            portfolio_id="P1",
+            as_of_date=date(2026, 2, 24),
+            tenant_id="tenant-test",
+        )
+
+    assert raised.value.status_code == 500

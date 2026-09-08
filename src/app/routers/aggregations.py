@@ -3,10 +3,30 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, status
 
+from app.application_errors import (
+    ReportingApplicationError,
+    ReportingNotFoundError,
+    ReportingUpstreamError,
+)
 from app.models.contracts import PortfolioAggregationResponse
 from app.services.aggregation_service import AggregationService
 
 router = APIRouter(prefix="/aggregations", tags=["Aggregations"])
+
+
+def _aggregation_error_to_http(exc: ReportingApplicationError) -> HTTPException:
+    """Report an unavailable source as unavailable.
+
+    The previous route could not fail: every upstream refusal was swallowed and
+    answered from constants, so a 401, 403, 404 or 503 all produced the same
+    confident `market_value_base` of 1,250,000. A refusal a caller can see is
+    the whole point of the change.
+    """
+    if isinstance(exc, ReportingNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=exc.detail)
+    if isinstance(exc, ReportingUpstreamError):
+        return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.detail)
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=exc.detail)
 
 
 def _admitted_tenant(tenant_id: str | None) -> str:
@@ -44,25 +64,17 @@ def _admitted_tenant(tenant_id: str | None) -> str:
     response_model=PortfolioAggregationResponse,
     summary="Get portfolio aggregation",
     description=(
-        "Returns reporting-ready aggregated rows for a portfolio by as-of date. "
-        "Current slice uses deterministic placeholder rows while "
-        "lotus-core/lotus-performance connectors are integrated."
+        "Returns reporting-ready aggregated rows for a portfolio by as-of date, "
+        "built only from what lotus-core and lotus-performance actually returned. "
+        "A metric whose source did not answer is absent from `rows` and its source "
+        "is named in `unavailable_sources`, so an unmeasured value is never "
+        "presented as zero. If the portfolio summary itself is unavailable the "
+        "request is refused rather than answered from substituted values."
     ),
 )
 async def get_portfolio_aggregation(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
     as_of_date: Annotated[date, Query(description="Business as-of date (YYYY-MM-DD).")],
-    live: Annotated[
-        bool,
-        Query(
-            description=(
-                "If true, fetches lotus-core and "
-                "lotus-performance upstream contracts "
-                "before aggregation."
-            ),
-            examples=[True],
-        ),
-    ] = True,
     tenant_id: Annotated[
         str | None,
         Header(
@@ -72,11 +84,11 @@ async def get_portfolio_aggregation(
     ] = None,
 ) -> PortfolioAggregationResponse:
     admitted_tenant_id = _admitted_tenant(tenant_id)
-    service = AggregationService()
-    if live:
-        return await service.get_portfolio_aggregation_live(
+    try:
+        return await AggregationService().get_portfolio_aggregation_live(
             portfolio_id=portfolio_id,
             as_of_date=as_of_date,
             admitted_tenant_id=admitted_tenant_id,
         )
-    return service.get_portfolio_aggregation(portfolio_id=portfolio_id, as_of_date=as_of_date)
+    except ReportingApplicationError as exc:
+        raise _aggregation_error_to_http(exc) from exc

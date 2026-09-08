@@ -313,10 +313,13 @@ curl "http://127.0.0.1:8300/integration/report-ordering-catalogue" \
   --config report-operator-headers.curl
 ```
 
-Aggregations:
+Aggregations. The route requires `X-Tenant-Id` and refuses without one, and the `live`
+parameter is gone -- it selected hard-coded placeholder rows, so the probe used to succeed
+with no upstream in existence. A metric whose source did not answer is absent from `rows`
+and named in `unavailable_sources`, never reported as zero:
 
 ```bash
-curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
+curl -H "X-Tenant-Id: tenant-sg" \n  "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24"
 ```
 
 Portfolio summary:

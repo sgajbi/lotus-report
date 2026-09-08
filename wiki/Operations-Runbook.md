@@ -1244,7 +1244,8 @@ regenerate replacement attempts for already archived PDF reports.
 
 ```powershell
 curl http://127.0.0.1:8300/health/ready
-curl "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
+curl -H "X-Tenant-Id: tenant-sg" `
+  "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24"
 ```
 
 ### Portfolio review proof

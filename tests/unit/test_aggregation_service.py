@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 
+from app.application_errors import ReportingUpstreamError
 from app.services.aggregation_service import AggregationService
 
 
@@ -111,21 +112,27 @@ async def test_live_aggregation_uses_upstream_payloads():
 
 
 @pytest.mark.asyncio
-async def test_live_aggregation_ignores_malformed_summary_payload():
+async def test_live_aggregation_refuses_a_summary_without_a_market_value():
+    """A 200 carrying no total is a contract violation, not an empty portfolio.
+
+    `total_market_value_reporting_currency` is how the summary states a
+    portfolio worth nothing, so its absence is missing evidence rather than a
+    zero. Substituting one invented the only number this response is really
+    about.
+    """
     service = AggregationService(
         core_query_client=_StubCoreQueryClientWithMalformedSummary(),
         performance_client=_StubPerformanceClient(),
     )
-    response = await service.get_portfolio_aggregation_live(
-        portfolio_id="P1",
-        as_of_date=date(2026, 2, 24),
-        admitted_tenant_id="tenant-test",
-    )
 
-    metric_map = {row.metric: row.value for row in response.rows}
-    assert metric_map["market_value_base"] == 1_250_000.0
-    assert metric_map["position_count"] == 0.0
-    assert metric_map["return_ytd_pct"] == 4.2
+    with pytest.raises(ReportingUpstreamError) as refusal:
+        await service.get_portfolio_aggregation_live(
+            portfolio_id="P1",
+            as_of_date=date(2026, 2, 24),
+            admitted_tenant_id="tenant-test",
+        )
+
+    assert refusal.value.detail["code"] == "aggregation_source_incomplete"
 
 
 def test_build_asset_class_rows_ignores_non_asset_class_views():
@@ -178,16 +185,29 @@ class _FailingPerformanceClient:
 
 
 @pytest.mark.asyncio
-async def test_live_aggregation_has_deterministic_fallbacks():
+async def test_live_aggregation_refuses_when_the_summary_source_fails():
+    """The defect this replaced: refusing sources produced a confident answer.
+
+    This test previously asserted `market_value_base == 1_250_000.0`,
+    `position_count == 0.0` and `return_ytd_pct == 0.0` against upstreams that
+    had all failed -- so the fabrication was not merely tolerated, it was the
+    stated requirement. Measured on the real service before the change:
+    upstream 401, 403, 404 and 503 each produced exactly those three values.
+
+    A summary that did not arrive is not a portfolio worth 1.25 million.
+    """
     service = AggregationService(
         core_query_client=_FailingCoreQueryClient(), performance_client=_FailingPerformanceClient()
     )
-    response = await service.get_portfolio_aggregation_live(
-        portfolio_id="P1",
-        as_of_date=date(2026, 2, 24),
-        admitted_tenant_id="tenant-test",
-    )
-    metric_map = {row.metric: row.value for row in response.rows}
-    assert metric_map["market_value_base"] == 1_250_000.0
-    assert metric_map["position_count"] == 0.0
-    assert metric_map["return_ytd_pct"] == 0.0
+
+    with pytest.raises(ReportingUpstreamError) as refusal:
+        await service.get_portfolio_aggregation_live(
+            portfolio_id="P1",
+            as_of_date=date(2026, 2, 24),
+            admitted_tenant_id="tenant-test",
+        )
+
+    detail = refusal.value.detail
+    assert detail["code"] == "aggregation_source_unavailable"
+    assert detail["service"] == "lotus-core"
+    assert "status_code" in detail, "the refusal must name what the upstream returned"
