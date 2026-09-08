@@ -74,6 +74,8 @@ class _CoreQueryClientSuccess:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -89,6 +91,8 @@ class _CoreQueryClientSuccess:
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -111,6 +115,8 @@ class _CoreQueryClientSuccess:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "scope": {"portfolio_id": portfolio_id},
@@ -134,6 +140,8 @@ class _CoreQueryClientSuccess:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
@@ -196,6 +204,8 @@ class _CoreQueryClientSuccess:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_holdings_as_of_metadata(as_of_date=params.get("as_of_date")),
@@ -826,6 +836,8 @@ class _CoreQueryClientNotFound:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -833,6 +845,8 @@ class _CoreQueryClientNotFound:
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -841,6 +855,8 @@ class _CoreQueryClientNotFound:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -849,6 +865,8 @@ class _CoreQueryClientNotFound:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -857,6 +875,8 @@ class _CoreQueryClientNotFound:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -867,6 +887,8 @@ class _CoreQueryClientFailure:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -874,6 +896,8 @@ class _CoreQueryClientFailure:
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -882,6 +906,8 @@ class _CoreQueryClientFailure:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -890,6 +916,8 @@ class _CoreQueryClientFailure:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -898,6 +926,8 @@ class _CoreQueryClientFailure:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "upstream unavailable"}
 
@@ -965,6 +995,8 @@ async def test_summary_honors_requested_allocation_dimensions():
             portfolio_id: str,
             payload: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             self.last_allocation_payload = payload
             return 200, {

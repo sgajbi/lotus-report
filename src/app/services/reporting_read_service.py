@@ -105,7 +105,10 @@ class ReportingReadService:
         portfolio_id: str,
         request_payload: dict[str, object],
         correlation_id: str | None,
+        *,
+        admitted_tenant_id: str | None = None,
     ) -> dict[str, object]:
+        admitted_tenant = admitted_tenant_id or ""
         as_of_date = self._request_as_of_date(request_payload)
         requested_sections = self._requested_sections(
             request_payload=request_payload,
@@ -124,6 +127,7 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             payload=summary_request,
             correlation_id=correlation_id,
+            admitted_tenant_id=admitted_tenant,
         )
         summary = self._unwrap_core_query_summary(status_code=status_code, payload=payload)
 
@@ -156,6 +160,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 payload=allocation_request,
                 correlation_id=correlation_id,
+                admitted_tenant_id=admitted_tenant,
             )
             allocation_response = self._unwrap_core_query_allocation(
                 status_code=allocation_status,
@@ -170,6 +175,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 correlation_id=correlation_id,
                 params=self._build_transaction_window_params(request_payload),
+                admitted_tenant_id=admitted_tenant_id,
             )
             transaction_rows = transaction_result.rows
             if "INCOME" in requested_sections:
@@ -186,6 +192,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 params=self._build_position_params(request_payload),
                 correlation_id=correlation_id,
+                admitted_tenant_id=admitted_tenant,
             )
             holdings = self._unwrap_core_query_positions(
                 status_code=positions_status,
@@ -196,6 +203,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
+                    admitted_tenant_id=admitted_tenant_id,
                 )
                 transaction_rows = transaction_result.rows
             response["pnlSummary"] = self._map_pnl_summary(
@@ -214,6 +222,7 @@ class ReportingReadService:
         admitted_tenant_id: str | None = None,
         evidence_posture: str = "ephemeral_composition",
     ) -> dict[str, object]:
+        admitted_tenant = admitted_tenant_id or ""
         as_of_date = self._request_as_of_date(request_payload)
         requested_sections = self._requested_sections(
             request_payload=request_payload,
@@ -234,6 +243,7 @@ class ReportingReadService:
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date},
             correlation_id=correlation_id,
+            admitted_tenant_id=admitted_tenant,
         )
         summary = self._unwrap_core_query_summary(
             status_code=summary_status, payload=summary_payload
@@ -263,6 +273,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 payload=allocation_request,
                 correlation_id=correlation_id,
+                admitted_tenant_id=admitted_tenant,
             )
             allocation_response = self._unwrap_core_query_allocation(
                 status_code=allocation_status,
@@ -277,6 +288,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
+                    admitted_tenant_id=admitted_tenant_id,
                 )
                 transaction_rows = transaction_result.rows
             response["incomeAndActivity"] = {
@@ -294,6 +306,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 params=self._build_position_params(request_payload),
                 correlation_id=correlation_id,
+                admitted_tenant_id=admitted_tenant,
             )
             response["holdings"] = self._unwrap_core_query_positions(
                 status_code=positions_status,
@@ -305,6 +318,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
+                    admitted_tenant_id=admitted_tenant_id,
                 )
                 transaction_rows = transaction_result.rows
             response["transactions"] = self._map_review_transactions(
@@ -324,7 +338,7 @@ class ReportingReadService:
                     request_payload=request_payload,
                     periods=PERFORMANCE_REVIEW_PERIODS,
                 ),
-                admitted_tenant_id=admitted_tenant_id or "",
+                admitted_tenant_id=admitted_tenant,
             )
             if self._workspace_summary_ready(performance_status, performance_payload):
                 workspace_summary_payload = performance_payload
@@ -342,7 +356,7 @@ class ReportingReadService:
                         as_of_date=as_of_date,
                         request_payload=request_payload,
                     ),
-                    admitted_tenant_id=admitted_tenant_id or "",
+                    admitted_tenant_id=admitted_tenant,
                 )
                 contribution = self._map_performance_contribution(
                     status_code=contribution_status,
@@ -371,7 +385,7 @@ class ReportingReadService:
         if "PERFORMANCE_ATTRIBUTION" in requested_sections:
             response["attribution"] = await capture_attribution(
                 performance_client=self._performance_client,
-                admitted_tenant_id=admitted_tenant_id or "",
+                admitted_tenant_id=admitted_tenant,
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 # None = portfolio's assigned benchmark; an omission, never "".
@@ -382,7 +396,7 @@ class ReportingReadService:
 
         if "RISK_ANALYTICS" in requested_sections:
             response["riskAnalytics"] = await self._build_risk_analytics(
-                admitted_tenant_id=admitted_tenant_id or "",
+                admitted_tenant_id=admitted_tenant,
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 request_payload=request_payload,
@@ -1539,12 +1553,14 @@ class ReportingReadService:
         portfolio_id: str,
         correlation_id: str | None,
         params: dict[str, object],
+        admitted_tenant_id: str | None,
     ) -> list[dict[str, object]]:
         return (
             await self._list_transaction_rows_result(
                 portfolio_id=portfolio_id,
                 correlation_id=correlation_id,
                 params=params,
+                admitted_tenant_id=admitted_tenant_id,
             )
         ).rows
 
@@ -1554,7 +1570,9 @@ class ReportingReadService:
         portfolio_id: str,
         correlation_id: str | None,
         params: dict[str, object],
+        admitted_tenant_id: str | None,
     ) -> _TransactionRowsResult:
+        admitted_tenant = admitted_tenant_id or ""
         rows: list[dict[str, object]] = []
         skip = 0
         limit = self._to_int(params.get("limit")) or 500
@@ -1579,6 +1597,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 params=query_params,
                 correlation_id=correlation_id,
+                admitted_tenant_id=admitted_tenant,
             )
             if status_code < HTTP_BAD_REQUEST:
                 fetched_pages += 1

@@ -68,6 +68,8 @@ class _CoreQuerySnapshotMissing:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"unexpected": "shape"}
 
@@ -76,6 +78,8 @@ class _CoreQuerySnapshotMissing:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"unexpected": "shape"}
 
@@ -84,6 +88,8 @@ class _CoreQuerySnapshotMissing:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"unexpected": "shape"}
 
@@ -92,6 +98,8 @@ class _CoreQuerySnapshotMissing:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"unexpected": "shape"}
 
@@ -102,6 +110,8 @@ class _CoreQuerySuccessMinimal:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -117,6 +127,8 @@ class _CoreQuerySuccessMinimal:
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -139,6 +151,8 @@ class _CoreQuerySuccessMinimal:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "scope": {"portfolio_id": portfolio_id},
@@ -150,6 +164,8 @@ class _CoreQuerySuccessMinimal:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_transaction_ledger_metadata(as_of_date=params.get("as_of_date")),
@@ -180,6 +196,8 @@ class _CoreQuerySuccessMinimal:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_holdings_as_of_metadata(as_of_date=params.get("as_of_date")),
@@ -207,6 +225,8 @@ class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_transaction_ledger_metadata(
@@ -227,6 +247,8 @@ class _CoreQueryNoActivity(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             **_holdings_as_of_metadata(
@@ -249,6 +271,8 @@ class _CoreQueryProfileUnavailable(_CoreQuerySuccessMinimal):
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "core down"}
 
@@ -258,6 +282,8 @@ class _CoreQueryProfileEmpty(_CoreQuerySuccessMinimal):
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {}
 
@@ -267,6 +293,8 @@ class _CoreQueryProfilePartial(_CoreQuerySuccessMinimal):
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -389,6 +417,8 @@ class _CoreQueryPagedTransactions(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, correlation_id
         skip = int(params.get("skip", 0))
@@ -434,6 +464,8 @@ class _CoreQueryLargeTransactionWindow(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, correlation_id
         self.seen_params.append(dict(params))
@@ -478,6 +510,8 @@ class _CoreQueryTransactionStatus:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {
@@ -491,6 +525,8 @@ class _CoreQueryTransactionStatus:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {"views": []}
@@ -500,6 +536,8 @@ class _CoreQueryTransactionStatus:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, params, correlation_id
         return self.status_code, self.payload
@@ -509,6 +547,8 @@ class _CoreQueryTransactionStatus:
         portfolio_id: str,
         params: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, params, correlation_id
         return 200, {"positions": []}
@@ -556,6 +596,8 @@ async def test_summary_forwards_reporting_currency_to_summary_and_transactions()
             portfolio_id: str,
             payload: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             self.summary_payload = payload
             return await super().get_portfolio_summary(portfolio_id, payload, correlation_id)
@@ -565,6 +607,8 @@ async def test_summary_forwards_reporting_currency_to_summary_and_transactions()
             portfolio_id: str,
             params: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             self.transaction_params = params
             return await super().get_portfolio_transactions(portfolio_id, params, correlation_id)
@@ -1129,6 +1173,8 @@ async def test_review_transactions_preserve_source_product_and_degrade_missing_t
             portfolio_id: str,
             params: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             _ = portfolio_id, params, correlation_id
             return 200, {
@@ -1208,6 +1254,8 @@ async def test_review_holdings_preserve_source_product_and_degrade_stale_posture
             portfolio_id: str,
             params: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             _ = portfolio_id, params, correlation_id
             return 200, {
@@ -1319,6 +1367,7 @@ async def test_list_transaction_rows_result_stops_at_page_budget(monkeypatch):
         portfolio_id="P1",
         correlation_id=None,
         params={"limit": 1},
+        admitted_tenant_id="tenant-test",
     )
 
     assert len(result.rows) == 2
@@ -1694,6 +1743,8 @@ async def test_summary_pnl_preserves_sourced_zero_realized_pnl():
             portfolio_id: str,
             params: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             _ = portfolio_id, params, correlation_id
             return 200, {
@@ -1715,6 +1766,8 @@ async def test_summary_pnl_preserves_sourced_zero_realized_pnl():
             portfolio_id: str,
             params: dict[str, object],
             correlation_id: str | None = None,
+            *,
+            admitted_tenant_id: str = "",
         ):
             _ = portfolio_id, params, correlation_id
             return 200, {
@@ -1815,6 +1868,7 @@ async def test_list_transaction_rows_rejects_missing_transaction_shape():
             portfolio_id="P1",
             correlation_id=None,
             params={"limit": 500},
+            admitted_tenant_id="tenant-test",
         )
 
 
@@ -1838,6 +1892,7 @@ async def test_list_transaction_rows_maps_core_errors(status_code, expected_erro
             portfolio_id="P1",
             correlation_id=None,
             params={"limit": 500},
+            admitted_tenant_id="tenant-test",
         )
 
 

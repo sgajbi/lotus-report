@@ -326,7 +326,9 @@ class _DummyCoreClient:
     def __init__(self, **_kwargs):
         pass
 
-    async def get_portfolio_summary(self, portfolio_id, payload, correlation_id=None):
+    async def get_portfolio_summary(
+        self, portfolio_id, payload, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "contract_version": "v1",
             "portfolio_id": portfolio_id,
@@ -334,7 +336,9 @@ class _DummyCoreClient:
             "correlation_id": correlation_id,
         }
 
-    async def get_asset_allocation(self, portfolio_id, payload, correlation_id=None):
+    async def get_asset_allocation(
+        self, portfolio_id, payload, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "contract_version": "v1",
             "portfolio_id": portfolio_id,
@@ -342,7 +346,9 @@ class _DummyCoreClient:
             "correlation_id": correlation_id,
         }
 
-    async def get_portfolio_transactions(self, portfolio_id, params, correlation_id=None):
+    async def get_portfolio_transactions(
+        self, portfolio_id, params, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "contract_version": "v1",
             "portfolio_id": portfolio_id,
@@ -350,7 +356,9 @@ class _DummyCoreClient:
             "correlation_id": correlation_id,
         }
 
-    async def get_portfolio_positions(self, portfolio_id, params, correlation_id=None):
+    async def get_portfolio_positions(
+        self, portfolio_id, params, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "contract_version": "v1",
             "portfolio_id": portfolio_id,
@@ -358,7 +366,9 @@ class _DummyCoreClient:
             "correlation_id": correlation_id,
         }
 
-    async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+    async def get_portfolio_detail(
+        self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "contract_version": "v1",
             "portfolio_id": portfolio_id,
@@ -418,19 +428,27 @@ class _HappyReportingReadService:
         admitted_tenant_id=None,
         evidence_posture="ephemeral_composition",
     ):
-        await self._core.get_portfolio_summary(portfolio_id, request_payload, correlation_id)
-        await self._core.get_asset_allocation(portfolio_id, request_payload, correlation_id)
+        await self._core.get_portfolio_summary(
+            portfolio_id, request_payload, correlation_id, admitted_tenant_id="tenant-test"
+        )
+        await self._core.get_asset_allocation(
+            portfolio_id, request_payload, correlation_id, admitted_tenant_id="tenant-test"
+        )
         await self._core.get_portfolio_transactions(
             portfolio_id,
             {"as_of_date": request_payload["as_of_date"]},
             correlation_id,
+            admitted_tenant_id="tenant-test",
         )
         await self._core.get_portfolio_positions(
             portfolio_id,
             {"as_of_date": request_payload["as_of_date"]},
             correlation_id,
+            admitted_tenant_id="tenant-test",
         )
-        await self._core.get_portfolio_detail(portfolio_id, correlation_id)
+        await self._core.get_portfolio_detail(
+            portfolio_id, correlation_id, admitted_tenant_id="tenant-test"
+        )
         await self._performance.get_workspace_summary(
             request_payload, admitted_tenant_id="tenant-sg"
         )
@@ -1579,7 +1597,9 @@ async def test_recording_clients_capture_success_and_failure_paths():
     recorder = _UpstreamRecorder(correlation_id="corr", trace_id="trace")
 
     class _FailingCoreClient(_DummyCoreClient):
-        async def get_portfolio_positions(self, portfolio_id, params, correlation_id=None):
+        async def get_portfolio_positions(
+            self, portfolio_id, params, correlation_id=None, *, admitted_tenant_id=""
+        ):
             raise TimeoutError("timed out")
 
     core = _RecordingCoreQueryClient(_FailingCoreClient(), recorder)
@@ -1590,6 +1610,7 @@ async def test_recording_clients_capture_success_and_failure_paths():
         "PB_SG_GLOBAL_BAL_001",
         {"as_of_date": "2026-04-22"},
         "corr",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload["portfolio_id"] == "PB_SG_GLOBAL_BAL_001"
@@ -1599,11 +1620,21 @@ async def test_recording_clients_capture_success_and_failure_paths():
             "PB_SG_GLOBAL_BAL_001",
             {"as_of_date": "2026-04-22"},
             "corr",
+            admitted_tenant_id="tenant-test",
         )
 
-    await core.get_asset_allocation("PB_SG_GLOBAL_BAL_001", {"dimension": "asset_class"}, "corr")
-    await core.get_portfolio_transactions("PB_SG_GLOBAL_BAL_001", {"page": 1}, "corr")
-    await core.get_portfolio_detail("PB_SG_GLOBAL_BAL_001", "corr")
+    await core.get_asset_allocation(
+        "PB_SG_GLOBAL_BAL_001",
+        {"dimension": "asset_class"},
+        "corr",
+        admitted_tenant_id="tenant-test",
+    )
+    await core.get_portfolio_transactions(
+        "PB_SG_GLOBAL_BAL_001", {"page": 1}, "corr", admitted_tenant_id="tenant-test"
+    )
+    await core.get_portfolio_detail(
+        "PB_SG_GLOBAL_BAL_001", "corr", admitted_tenant_id="tenant-test"
+    )
     await performance.get_workspace_summary(
         {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
     )

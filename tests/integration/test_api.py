@@ -351,7 +351,8 @@ def test_integration_capabilities_camel_case_params_do_not_override_context():
 
 def test_aggregation_endpoint():
     response = client.get(
-        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false",
+        headers={"X-Tenant-Id": "tenant-sg"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -371,7 +372,8 @@ def test_aggregation_endpoint_refuses_a_malformed_as_of_date():
     """
 
     response = client.get(
-        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=not-a-date&live=false"
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=not-a-date&live=false",
+        headers={"X-Tenant-Id": "tenant-sg"},
     )
 
     assert response.status_code == 422
@@ -387,7 +389,12 @@ def test_stale_generic_report_endpoint_is_not_exposed():
 
 class _StubReportingReadService:
     async def get_portfolio_summary(
-        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+        self,
+        portfolio_id: str,
+        request_payload: dict,
+        correlation_id: str | None,
+        *,
+        admitted_tenant_id: str = "",
     ) -> dict:
         scope = {
             "portfolio_id": portfolio_id,
@@ -419,7 +426,12 @@ class _StubReportingReadService:
 
 class _StubReportingReadServiceFailure:
     async def get_portfolio_summary(
-        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+        self,
+        portfolio_id: str,
+        request_payload: dict,
+        correlation_id: str | None,
+        *,
+        admitted_tenant_id: str = "",
     ) -> dict:
         raise ReportingValidationError("Missing required request field: as_of_date")
 
@@ -613,3 +625,36 @@ def test_ras_portfolio_summary_rejects_invalid_section_limit():
     app.dependency_overrides.pop(get_reporting_read_service, None)
 
     assert response.status_code == 422
+
+
+def test_aggregation_endpoint_refuses_a_missing_tenant() -> None:
+    """The route admitted no tenant at all, so every call it made was unowned.
+
+    Refusing is the only safe answer to a missing header. Defaulting would
+    manufacture an ownership claim indistinguishable from a real one, and
+    passing the absence through would leave the aggregation attributable to
+    nobody while looking like it succeeded (#365).
+    """
+    response = client.get(
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false"
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["missing_headers"] == ["X-Tenant-Id"]
+
+
+def test_aggregation_endpoint_refuses_a_whitespace_only_tenant() -> None:
+    """A header of spaces is not a tenant.
+
+    Stripping before the emptiness test matters because an unstripped value is
+    admitted, transmitted, and then matches no tenant at any upstream -- an
+    ownership claim that cannot be satisfied looks identical to one that simply
+    was not made.
+    """
+    response = client.get(
+        "/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24&live=false",
+        headers={"X-Tenant-Id": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["missing_headers"] == ["X-Tenant-Id"]

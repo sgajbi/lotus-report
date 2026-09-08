@@ -32,6 +32,8 @@ class _PortfolioSource:
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ) -> tuple[int, dict[str, object]]:
         self.calls.append((portfolio_id, correlation_id))
         return self.payloads.get(portfolio_id, (404, {}))
