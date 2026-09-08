@@ -424,6 +424,37 @@ the outcome the migration refuses in order to prevent.
 Re-run the query above until it returns nothing, then restart. The migration
 will then complete on its own.
 
+### Migration 026 — `report_request` identity, and why it is not the same repair
+
+**026 applies to a different table and cannot be repaired the same way.** Where 025 attributes
+retained intake rows, 026 replaces a *constraint* on `report_request`: it drops the column-level
+`UNIQUE (idempotency_key)` and adds a named composite
+
+```sql
+CONSTRAINT report_request_tenant_idempotency_key UNIQUE (tenant_id, idempotency_key)
+```
+
+so two tenants can hold their own request under one raw key. Before it, identical intent from two
+tenants resolved to a single stored `report_request_id` — the second tenant read the first's job by
+presenting a string it guessed — and differing bodies produced a `409 idempotency_conflict` naming a
+cause that was not true: tenant B had reused nothing.
+
+**There is no per-row repair for 026, and no operator query to run.** Its failure mode is not an
+unattributable row; it is that the *old* constraint refuses the second tenant's insert while it
+exists. The migration either replaces the constraint or it does not.
+
+**What is not yet proven, so do not read this section as a cutover procedure.** 026 is verified on
+schema, on unit fixtures, and against a real PostgreSQL under two-tenant contention. It has **not**
+been rehearsed against a populated production-shaped database, and its rollback has not been
+executed. That exercise is tracked in **#326** alongside 025's, and this note exists so an operator
+reaching for a cutover does not infer one from the presence of 025's repair steps above.
+
+**Related refusal, worth knowing before you meet it.** 025's repair predicate uses `json_extract`
+over the stored caller context. A retained row whose `caller_context_json` is *malformed* rather than
+merely tenantless fails with `OperationalError: malformed JSON` and names **no row** — fail-closed and
+safe, but not actionable against a large ledger. Tracked in **#360**; until it lands, a malformed
+context has to be found by inspection rather than by the query above.
+
 The transfer refuses the same case for the same reason, naming the key it could not attribute.
 
 **If the deployment has never accepted an intake there is no ledger file**, because it is created
