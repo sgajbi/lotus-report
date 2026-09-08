@@ -18,8 +18,20 @@ ALTER TABLE idea_evidence_intake ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 -- for an absent key rather than raising, so rows whose context never held a
 -- tenant stay NULL and are handled explicitly below rather than silently
 -- acquiring a value.
+--
+-- `->>` renders ANY JSON type as text, so a stored `123`, `true`, `{}` or `[]`
+-- would become the tenant strings '123', 'true', '{}' or '[]' -- an invented
+-- owner that the NOT NULL refusal below cannot see, because a coerced value is
+-- not null. `jsonb_typeof` gates on the stored type first, so a non-string
+-- tenant stays NULL and is refused through the same path as an absent one,
+-- with the same operator recovery. Matched in the SQLite ledger, which had the
+-- identical coercion through `TRIM(json_extract(...))`.
 UPDATE idea_evidence_intake
-SET tenant_id = NULLIF(btrim(caller_context_json ->> 'tenant_id'), '')
+SET tenant_id = CASE
+        WHEN jsonb_typeof(caller_context_json -> 'tenant_id') = 'string'
+            THEN NULLIF(btrim(caller_context_json ->> 'tenant_id'), '')
+        ELSE NULL
+    END
 WHERE tenant_id IS NULL;
 
 -- Refuse to continue if any row could not be attributed.
@@ -38,7 +50,13 @@ WHERE tenant_id IS NULL;
 --
 --     SELECT idempotency_key, report_evidence_pack_id, caller_context_json
 --     FROM idea_evidence_intake
---     WHERE COALESCE(btrim(caller_context_json ->> 'tenant_id'), '') = '',
+--     WHERE jsonb_typeof(caller_context_json -> 'tenant_id') IS DISTINCT FROM 'string'
+--        OR btrim(caller_context_json ->> 'tenant_id') = '',
+--
+-- Both halves matter: the first finds a tenant stored as a number, boolean,
+-- object or array, and the second finds one stored as an empty or blank
+-- string. A query testing only emptiness reports nothing for a row whose
+-- tenant is the integer 123, which is exactly the row that needs attributing.
 --
 -- Predicated on the caller context, not on tenant_id. This migration runs in a
 -- transaction, so a refusal rolls back the ADD COLUMN above it and a query
