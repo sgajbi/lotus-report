@@ -194,12 +194,16 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     can collide with a real tenant named `1`, and afterwards nothing separates it from a genuine
     attribution. Classify malformed JSON, wrong type and absent separately; `json_valid` is
     evaluated first so malformed rows leave the set before any accessor touches them.
-13. **Migrations are re-executed at every startup, so their DDL must be guarded.** The runner keeps
-    no ledger of applied files. An unconditional `ALTER TABLE` rebuilt an identity index on every
-    boot — measured as a changed `relfilenode` — and `ALTER TABLE` takes ACCESS EXCLUSIVE whether or
-    not its `IF EXISTS` clause matches anything. Guard with a `DO` block that checks
-    `pg_constraint` first. The runner's splitter is quote- and dollar-quote aware, so a `DO` body is
-    safe; it was not always, and migrations 025 and 026 were shaped around a naive
+13. **Migration files are re-executed at every startup; current-schema DDL must converge without
+    unnecessary mutation.** The runner keeps no ledger of applied files. Migration 026 previously
+    rebuilt an identity index on every boot — measured as a changed `relfilenode` — and its
+    `ALTER TABLE` statements took ACCESS EXCLUSIVE locks. It now guards both constraint operations
+    with `pg_constraint` checks, and populated repeat-startup evidence proves that migration's
+    no-op path. This is not yet a repository-wide property: historical migrations 002, 005, 006,
+    007, 013 and 016 still replace CHECK constraints on every replay, while migration 025 always
+    issues `SET NOT NULL`; issue #376 owns the convergence strategy and fresh-install, upgrade and
+    restart proof. The runner's splitter is quote- and dollar-quote aware, so guarded `DO` blocks
+    are safe; it was not always, and migrations 025 and 026 were shaped around a naive
     `schema.split(";")`.
 
 ## Active Priorities
