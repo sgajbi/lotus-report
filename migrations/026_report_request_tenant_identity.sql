@@ -22,16 +22,49 @@
 -- receipt identity are immutable. Re-deriving them would hand a consumer an
 -- identity it has never seen for a receipt it already holds.
 
-ALTER TABLE report_request
-    DROP CONSTRAINT IF EXISTS report_request_idempotency_key_key;
+-- Guarded, like the ADD below. `ALTER TABLE` takes ACCESS EXCLUSIVE on the
+-- table whether or not `IF EXISTS` matches anything, so an unconditional drop
+-- locked out every reader and writer at each startup to remove a constraint
+-- that had not existed since the first run. Measured with a concurrent
+-- connection reading pg_locks while the migration's transaction was open.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'report_request_idempotency_key_key'
+          AND conrelid = 'report_request'::regclass
+    ) THEN
+        ALTER TABLE report_request
+            DROP CONSTRAINT report_request_idempotency_key_key;
+    END IF;
+END
+$$;
 
 -- A named UNIQUE constraint rather than a bare index: identity is a contract,
 -- and `scripts/migration_contract_check.py` asserts it through pg_constraint.
--- DROP-then-ADD rather than a DO block, because the migration runner splits
--- statements on the semicolon and would tear a dollar-quoted body apart.
-ALTER TABLE report_request
-    DROP CONSTRAINT IF EXISTS report_request_tenant_idempotency_key;
-
-ALTER TABLE report_request
-    ADD CONSTRAINT report_request_tenant_idempotency_key
-    UNIQUE (tenant_id, idempotency_key);
+--
+-- ADDED ONLY WHEN ABSENT. This was a DROP followed by an unconditional ADD,
+-- which the runner re-executes on every startup: measured against a populated
+-- table, the backing index was rebuilt each time -- a new relfilenode, an
+-- ACCESS EXCLUSIVE lock and a full index build proportional to the row count,
+-- at every deployment. Worse, between the DROP and the ADD the uniqueness
+-- guarantee did not exist at all, so a concurrent writer could insert the
+-- duplicate that then made the ADD fail and the startup abort.
+--
+-- The guard is a DO block, which this file previously could not use: the
+-- runner split statements on every semicolon and would have torn the body
+-- apart. That splitter is now quote- and dollar-quote aware, so the idiomatic
+-- form is available and the migration no longer has to be shaped around it.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'report_request_tenant_idempotency_key'
+          AND conrelid = 'report_request'::regclass
+    ) THEN
+        ALTER TABLE report_request
+            ADD CONSTRAINT report_request_tenant_idempotency_key
+            UNIQUE (tenant_id, idempotency_key);
+    END IF;
+END
+$$;
