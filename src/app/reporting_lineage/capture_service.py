@@ -360,7 +360,12 @@ class _RecordingCoreQueryClient(CoreQueryClient):
         self._recorder = recorder
 
     async def get_portfolio_summary(
-        self, portfolio_id: str, payload: dict[str, Any], correlation_id: str | None = None
+        self,
+        portfolio_id: str,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         request_payload = {"portfolio_id": portfolio_id, **dict(payload)}
         return await self._record(
@@ -369,12 +374,17 @@ class _RecordingCoreQueryClient(CoreQueryClient):
             method="POST",
             request_payload=request_payload,
             operation=lambda: self._inner.get_portfolio_summary(
-                portfolio_id, payload, correlation_id
+                portfolio_id, payload, correlation_id, admitted_tenant_id=admitted_tenant_id
             ),
         )
 
     async def get_asset_allocation(
-        self, portfolio_id: str, payload: dict[str, Any], correlation_id: str | None = None
+        self,
+        portfolio_id: str,
+        payload: dict[str, Any],
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         request_payload = dict(payload)
         request_payload["scope"] = {"portfolio_id": portfolio_id}
@@ -384,12 +394,17 @@ class _RecordingCoreQueryClient(CoreQueryClient):
             method="POST",
             request_payload=request_payload,
             operation=lambda: self._inner.get_asset_allocation(
-                portfolio_id, payload, correlation_id
+                portfolio_id, payload, correlation_id, admitted_tenant_id=admitted_tenant_id
             ),
         )
 
     async def get_portfolio_transactions(
-        self, portfolio_id: str, params: dict[str, Any], correlation_id: str | None = None
+        self,
+        portfolio_id: str,
+        params: dict[str, Any],
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         return await self._record(
             service_name="lotus-core",
@@ -397,12 +412,17 @@ class _RecordingCoreQueryClient(CoreQueryClient):
             method="GET",
             request_payload=dict(params),
             operation=lambda: self._inner.get_portfolio_transactions(
-                portfolio_id, params, correlation_id
+                portfolio_id, params, correlation_id, admitted_tenant_id=admitted_tenant_id
             ),
         )
 
     async def get_portfolio_positions(
-        self, portfolio_id: str, params: dict[str, Any], correlation_id: str | None = None
+        self,
+        portfolio_id: str,
+        params: dict[str, Any],
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         return await self._record(
             service_name="lotus-core",
@@ -410,19 +430,25 @@ class _RecordingCoreQueryClient(CoreQueryClient):
             method="GET",
             request_payload=dict(params),
             operation=lambda: self._inner.get_portfolio_positions(
-                portfolio_id, params, correlation_id
+                portfolio_id, params, correlation_id, admitted_tenant_id=admitted_tenant_id
             ),
         )
 
     async def get_portfolio_detail(
-        self, portfolio_id: str, correlation_id: str | None = None
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         return await self._record(
             service_name="lotus-core",
             endpoint=f"/portfolios/{portfolio_id}",
             method="GET",
             request_payload={"portfolio_id": portfolio_id},
-            operation=lambda: self._inner.get_portfolio_detail(portfolio_id, correlation_id),
+            operation=lambda: self._inner.get_portfolio_detail(
+                portfolio_id, correlation_id, admitted_tenant_id=admitted_tenant_id
+            ),
         )
 
     async def _record(

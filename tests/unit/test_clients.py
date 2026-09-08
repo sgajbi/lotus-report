@@ -242,16 +242,43 @@ def test_core_query_client_parse_payload(payload, text, expected):
     assert client._parse_payload(response) == expected
 
 
-def test_core_query_client_headers_empty_without_correlation_id():
+def test_core_query_client_headers_carry_the_tenant_without_a_correlation_id():
+    """Absent correlation must not cost the tenant.
+
+    This asserted `== {}`, which pinned the defect: an absent correlation id
+    returned an empty dict and dropped every header with it, so a call without
+    correlation was also a call without tenant, trace or request identity. The
+    two are independent now, and the tenant is present on every Core call
+    regardless of what else the caller supplied.
+    """
     client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
-    assert client._headers(None) == {}
+
+    headers = client._headers(None, "tenant-test")
+
+    assert headers == {"X-Tenant-Id": "tenant-test"}
+
+
+def test_core_query_client_sends_absence_as_absence_not_a_substitute():
+    """A blank tenant is sent blank, never defaulted to a name.
+
+    The header is present either way so that a regression which stops threading
+    the value looks different from a legitimately tenantless call. Substituting
+    a service name would manufacture an ownership claim indistinguishable from
+    a real one -- the defect #177 removed from the batch scheduler.
+    """
+    client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
+
+    headers = client._headers("corr-1", "")
+
+    assert headers["X-Tenant-Id"] == ""
+    assert headers["X-Tenant-Id"] not in {"lotus-report", "default", "unknown"}
 
 
 def test_core_query_client_headers_with_correlation_id_uses_propagation_context():
     request_id_var.set("req-2")
     trace_id_var.set("abcdef0123456789abcdef0123456789")
     client = CoreQueryClient(base_url="http://performances", timeout_seconds=2.0)
-    headers = client._headers("corr-2")
+    headers = client._headers("corr-2", "tenant-test")
     assert headers["X-Correlation-Id"] == "corr-2"
     assert headers["X-Request-Id"] == "req-2"
 
@@ -272,6 +299,7 @@ async def test_core_query_client_get_portfolio_summary_posts_expected_contract(m
         portfolio_id="P3",
         payload=body,
         correlation_id="corr-3",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload["scope"]["portfolio_id"] == "P3"
@@ -305,6 +333,7 @@ async def test_core_query_client_get_asset_allocation_posts_expected_contract(mo
             "look_through_mode": "prefer_look_through",
         },
         correlation_id="corr-4",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload["scope"]["portfolio_id"] == "P4"
@@ -339,6 +368,7 @@ async def test_core_query_client_get_portfolio_transactions_gets_expected_contra
             "sort_by": "transaction_date",
         },
         correlation_id="corr-5",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload == {"transactions": [], "total": 0}
@@ -367,6 +397,7 @@ async def test_core_query_client_get_portfolio_positions_gets_expected_contract(
         portfolio_id="P5",
         params={"as_of_date": "2026-02-24", "reporting_currency": "USD"},
         correlation_id="corr-5b",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload == {"positions": [], "total": 0}
@@ -393,6 +424,7 @@ async def test_core_query_client_get_portfolio_detail_gets_expected_contract(mon
     status_code, payload = await client.get_portfolio_detail(
         portfolio_id="P5",
         correlation_id="corr-5c",
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload == {"portfolio_id": "P5"}
@@ -414,11 +446,15 @@ async def test_core_query_client_get_portfolio_review_posts_expected_contract(mo
         portfolio_id="P4",
         payload={"as_of_date": "2026-02-24"},
         correlation_id=None,
+        admitted_tenant_id="tenant-test",
     )
     assert status_code == 200
     assert payload["portfolio_id"] == "P4"
     assert recorder.calls[0]["url"] == "http://performances/portfolios/P4/review"
-    assert recorder.calls[0]["headers"] == {}
+    # The tenant is on every Core call, including one made without a
+    # correlation id. This asserted an empty header dict, which pinned the
+    # defect: no correlation meant no headers at all, tenant included.
+    assert recorder.calls[0]["headers"] == {"X-Tenant-Id": "tenant-test"}
 
 
 @pytest.mark.asyncio

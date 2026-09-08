@@ -407,6 +407,8 @@ class CorePortfolioSource(Protocol):
         self,
         portfolio_id: str,
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]: ...
 
 
@@ -827,6 +829,7 @@ class ReportBatchScheduler:
             status_code, payload = await self._portfolio_source.get_portfolio_detail(
                 portfolio_id,
                 correlation_id=caller_context.correlation_id,
+                admitted_tenant_id=caller_context.tenant_id,
             )
             if status_code != 200:
                 dropped.append((status_code, "source_refused"))
@@ -869,6 +872,7 @@ class ReportBatchScheduler:
             status_code, payload = await self._portfolio_source.get_portfolio_detail(
                 portfolio_id,
                 correlation_id=caller_context.correlation_id,
+                admitted_tenant_id=caller_context.tenant_id,
             )
             if status_code != 200:
                 dropped.append((status_code, "source_refused"))

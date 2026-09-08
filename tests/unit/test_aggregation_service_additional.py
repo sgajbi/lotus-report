@@ -11,6 +11,8 @@ class _CoreQueryOkClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -23,6 +25,8 @@ class _CoreQueryOkClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"views": []}
 
@@ -49,6 +53,8 @@ class _CoreQueryFailClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "down"}
 
@@ -57,6 +63,8 @@ class _CoreQueryFailClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "down"}
 
@@ -149,7 +157,9 @@ async def test_fetch_inputs_drops_upstream_payloads_when_services_fail():
     service = AggregationService(
         core_query_client=_CoreQueryFailClient(), performance_client=_PerformanceFailClient()
     )
-    core_query_payload, performance_payload = await service._fetch_inputs("P1", date(2026, 2, 24))
+    core_query_payload, performance_payload = await service._fetch_inputs(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
     assert core_query_payload == {"summary": {}, "allocation": {}}
     assert performance_payload == {}
 
@@ -261,6 +271,8 @@ class _CoreQueryMalformedAllocation:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -273,6 +285,8 @@ class _CoreQueryMalformedAllocation:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, {"views": self._views}
 
@@ -291,7 +305,9 @@ async def test_live_aggregation_handles_malformed_allocation_shapes(views):
         core_query_client=_CoreQueryMalformedAllocation(views),
         performance_client=_PerformanceOkClient(),
     )
-    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
+    response = await service.get_portfolio_aggregation_live(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 250.0
     assert metric_map["position_count"] == 0.0
@@ -303,6 +319,8 @@ class _CoreQueryMalformedSummary:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {
@@ -315,6 +333,8 @@ class _CoreQueryMalformedSummary:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {"views": []}
@@ -334,6 +354,8 @@ class _CoreQueryInvalidPositionCount(_CoreQueryMalformedSummary):
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {
@@ -349,7 +371,9 @@ async def test_live_aggregation_uses_defaults_for_malformed_summary_shapes():
         performance_client=_PerformanceMissingYtd(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
+    response = await service.get_portfolio_aggregation_live(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0
@@ -363,7 +387,9 @@ async def test_live_aggregation_defaults_invalid_position_count():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
+    response = await service.get_portfolio_aggregation_live(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["position_count"] == 0.0
@@ -375,6 +401,8 @@ class _CoreQueryNestedInvalidSummary:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {"summary": "invalid"}
@@ -384,13 +412,17 @@ class _CoreQueryNestedInvalidSummary:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         _ = portfolio_id, payload, correlation_id
         return 200, {"views": []}
 
 
 class _AggregationServiceWithMalformedFetchedSummary(AggregationService):
-    async def _fetch_inputs(self, portfolio_id: str, as_of_date: date):
+    async def _fetch_inputs(
+        self, portfolio_id: str, as_of_date: date, admitted_tenant_id="tenant-test"
+    ):
         _ = portfolio_id, as_of_date
         return {"summary": "invalid", "allocation": {"views": []}}, {}
 
@@ -402,7 +434,9 @@ async def test_live_aggregation_defaults_when_nested_summary_is_not_a_dict():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
+    response = await service.get_portfolio_aggregation_live(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0
@@ -416,7 +450,9 @@ async def test_live_aggregation_defaults_when_fetched_summary_is_not_a_dict():
         performance_client=_PerformanceOkClient(),
     )
 
-    response = await service.get_portfolio_aggregation_live("P1", date(2026, 2, 24))
+    response = await service.get_portfolio_aggregation_live(
+        "P1", date(2026, 2, 24), admitted_tenant_id="tenant-test"
+    )
 
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0

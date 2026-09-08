@@ -28,11 +28,12 @@ class AggregationService:
         )
 
     async def _fetch_inputs(
-        self, portfolio_id: str, as_of_date: date
+        self, portfolio_id: str, as_of_date: date, *, admitted_tenant_id: str
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         summary_status, summary_payload = await self._core_query_client.get_portfolio_summary(
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date.isoformat()},
+            admitted_tenant_id=admitted_tenant_id,
         )
         if summary_status >= 400:
             summary_payload = {}
@@ -40,6 +41,7 @@ class AggregationService:
         allocation_status, allocation_payload = await self._core_query_client.get_asset_allocation(
             portfolio_id=portfolio_id,
             payload={"as_of_date": as_of_date.isoformat(), "dimensions": ["asset_class"]},
+            admitted_tenant_id=admitted_tenant_id,
         )
         if allocation_status >= 400:
             allocation_payload = {}
@@ -55,17 +57,15 @@ class AggregationService:
                 "stateful_input": {},
                 "periods": [{"period": "YTD", "frequencies": ["daily"]}],
             },
-            # Absence, sent deliberately. `/aggregations/{portfolio_id}` admits no
-            # tenant header and `get_portfolio_aggregation_live` never receives
-            # one, so there is nothing here to propagate. Substituting a default
-            # or a service name would manufacture an ownership claim
-            # indistinguishable from a real one -- the defect #177 removed from
-            # the batch scheduler. lotus-performance reads absent and blank
-            # identically, so this is the same wire outcome the call had before;
-            # what changes is that the absence is now stated rather than
-            # accidental. That the route admits no tenant at all is a separate
-            # finding, tracked in #363.
-            admitted_tenant_id="",
+            # The route now admits a tenant and refuses without one, so this
+            # carries the caller's admitted tenant rather than a deliberate
+            # blank. The previous comment argued the absence was correct
+            # because the route admitted no tenant -- true of the route as it
+            # stood, and an argument for changing the route rather than for
+            # leaving every aggregation Report requested unattributable at
+            # lotus-performance. It also pointed at #363, which is a merged
+            # PR and not an open fix, so nothing was actually tracking it.
+            admitted_tenant_id=admitted_tenant_id,
         )
         if performance_status >= 400:
             performance_payload = {}
@@ -179,9 +179,13 @@ class AggregationService:
         self,
         portfolio_id: str,
         as_of_date: date,
+        *,
+        admitted_tenant_id: str,
     ) -> PortfolioAggregationResponse:
         scope = AggregationScope(portfolio_id=portfolio_id, as_of_date=as_of_date)
-        core_query_payload, performance_payload = await self._fetch_inputs(portfolio_id, as_of_date)
+        core_query_payload, performance_payload = await self._fetch_inputs(
+            portfolio_id, as_of_date, admitted_tenant_id=admitted_tenant_id
+        )
 
         summary_payload = core_query_payload.get("summary", {})
         if not isinstance(summary_payload, dict):

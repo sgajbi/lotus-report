@@ -11,6 +11,8 @@ class _StubCoreQueryClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return (
             200,
@@ -26,6 +28,8 @@ class _StubCoreQueryClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return (
             200,
@@ -79,6 +83,8 @@ class _StubCoreQueryClientWithMalformedSummary(_StubCoreQueryClient):
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 200, "not-a-dict"
 
@@ -91,6 +97,7 @@ async def test_live_aggregation_uses_upstream_payloads():
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
         as_of_date=date(2026, 2, 24),
+        admitted_tenant_id="tenant-test",
     )
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 999_999.0
@@ -112,6 +119,7 @@ async def test_live_aggregation_ignores_malformed_summary_payload():
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
         as_of_date=date(2026, 2, 24),
+        admitted_tenant_id="tenant-test",
     )
 
     metric_map = {row.metric: row.value for row in response.rows}
@@ -146,6 +154,8 @@ class _FailingCoreQueryClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "unavailable"}
 
@@ -154,6 +164,8 @@ class _FailingCoreQueryClient:
         portfolio_id: str,
         payload: dict[str, object],
         correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str = "",
     ):
         return 503, {"detail": "unavailable"}
 
@@ -173,6 +185,7 @@ async def test_live_aggregation_has_deterministic_fallbacks():
     response = await service.get_portfolio_aggregation_live(
         portfolio_id="P1",
         as_of_date=date(2026, 2, 24),
+        admitted_tenant_id="tenant-test",
     )
     metric_map = {row.metric: row.value for row in response.rows}
     assert metric_map["market_value_base"] == 1_250_000.0

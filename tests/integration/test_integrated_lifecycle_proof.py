@@ -888,7 +888,9 @@ def _schedule_config(schedule_id: str) -> "BatchSchedulerConfig":
 
 
 class _SchedulerPortfolioSource:
-    async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+    async def get_portfolio_detail(
+        self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+    ):
         # report#177: Core projects the owning tenant and the scheduler refuses a
         # candidate it cannot attribute. TENANT_A rather than a literal, so the
         # fake cannot drift away from the tenant these schedules run under.

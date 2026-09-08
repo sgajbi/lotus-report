@@ -9,7 +9,12 @@ app.state.report_job_ledger_readiness_override = lambda: True
 
 class _WorkflowReportingReadService:
     async def get_portfolio_summary(
-        self, portfolio_id: str, request_payload: dict, correlation_id: str | None
+        self,
+        portfolio_id: str,
+        request_payload: dict,
+        correlation_id: str | None,
+        *,
+        admitted_tenant_id: str = "",
     ) -> dict:
         return {
             "scope": {
@@ -75,7 +80,8 @@ def test_e2e_reporting_review_flow():
 
 def test_e2e_aggregation_non_live_flow():
     response = client.get(
-        "/aggregations/portfolios/DEMO_CA_USD_001?as_of_date=2026-02-24&live=false"
+        "/aggregations/portfolios/DEMO_CA_USD_001?as_of_date=2026-02-24&live=false",
+        headers={"X-Tenant-Id": "tenant-sg"},
     )
     assert response.status_code == 200
     body = response.json()

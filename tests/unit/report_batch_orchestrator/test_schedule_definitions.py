@@ -411,7 +411,9 @@ def test_stored_definitions_fold_into_the_scheduler_pass_itself() -> None:
             return _Batch()
 
     class _Portfolios:
-        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+        async def get_portfolio_detail(
+            self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+        ):
             return 200, {"portfolio_id": portfolio_id, "tenant_id": "tenant-sg", "status": "active"}
 
     class _StoredSource:
@@ -709,7 +711,9 @@ def test_a_failing_stored_schedule_does_not_abort_the_pass() -> None:
             return _Batch()
 
     class _Portfolios:
-        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+        async def get_portfolio_detail(
+            self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+        ):
             return 200, {"portfolio_id": portfolio_id, "tenant_id": "tenant-sg", "status": "active"}
 
     def _stored(schedule_id: str, portfolio: str):
@@ -850,7 +854,9 @@ def test_partial_candidate_resolution_refuses_the_stored_cycle() -> None:
             raise AssertionError("a partial cycle must never reach the ledger")
 
     class _FlakyPortfolios:
-        async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+        async def get_portfolio_detail(
+            self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+        ):
             if portfolio_id == "PB_DOWN":
                 return 503, {}
             return 200, {"portfolio_id": portfolio_id, "tenant_id": "tenant-sg", "status": "active"}

@@ -289,7 +289,9 @@ class _WorkerRunPaused:
 
 
 class _PortfolioSource:
-    async def get_portfolio_detail(self, portfolio_id, correlation_id=None):
+    async def get_portfolio_detail(
+        self, portfolio_id, correlation_id=None, *, admitted_tenant_id=""
+    ):
         return 200, {
             "portfolio_id": portfolio_id,
             # report#177: Core projects the owning tenant and the scheduler now
