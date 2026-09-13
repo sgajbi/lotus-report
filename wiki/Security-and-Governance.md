@@ -1,5 +1,11 @@
 # Security and Governance
 
+| Reader need | Implementation-backed evidence | Boundary |
+| --- | --- | --- |
+| Audit the dependency closure | `make security-audit` installs the exact constrained build backend and declared `dev` extra under Linux pins, validates the resolved environment, then runs `pip-audit`. | This is CI/source evidence, not a deployment claim. |
+| Understand tenant admission | Report sends admitted tenant authority only on tenant-owned clients; #375 records the released Render consumer receipt. | The receipt is isolated HTTP/SQLite evidence, not production/PostgreSQL acceptance. |
+| Respond to a vulnerability | Governed exceptions live in `docs/standards/dependency-vulnerability-exceptions.json`; none are active. | Exceptions require owner, issue, expiry and compensating controls. |
+
 ## Current governance
 
 - RFC-0050
@@ -17,12 +23,14 @@
 
 - OpenAPI quality gate is active
 - typecheck is part of the fast gate
-- migration smoke and security audit are part of PR-grade validation
+- migration smoke is part of PR-grade validation; the same repo-native security audit runs in the
+  Feature Lane, PR Merge Gate and Main Releasability Gate
 - time-bounded dependency vulnerability exceptions are governed by
   `docs/standards/dependency-vulnerability-exceptions.json`; `make security-audit` fails when an
   exception is expired, missing ownership, or not linked to a GitHub issue, and audits the exact
-  committed `constraints.txt` closure from its Linux audit container rather than resolving
-  compatibility floors afresh
+  committed `constraints.txt` closure from its Linux audit container. The target first installs the
+  exact constrained build backend, then the project with its declared dev extra, and refuses missing direct or extra-derived resolved pins,
+  rather than resolving compatibility floors afresh
 - direct write requests are bounded by `ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES`; malformed
   `Content-Length`, missing-length oversized bodies, and streamed bodies over the cap are rejected
   before route handling

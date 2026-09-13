@@ -1,0 +1,7 @@
+[project]
+name = "lotus-report-vulnerability-fixture"
+version = "0.1.0"
+dependencies = ["urllib3>=1.25"]
+
+[project.optional-dependencies]
+dev = []

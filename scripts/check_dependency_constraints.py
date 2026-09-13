@@ -34,8 +34,10 @@ from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 #: Distributions that are part of running Python/packaging itself rather than
@@ -79,19 +81,91 @@ def canonical_name(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def project_dependency_names(
+    project_root: Path, *, extras: tuple[str, ...] = ()
+) -> tuple[str, set[str]]:
+    """Return the project name plus its build, direct and selected-extra requirements.
+
+    A constraints file is not complete merely because each line has an exact
+    pin.  The project metadata defines the direct requirements and optional
+    selected development extras that the governed install requests; the resolved
+    environment proves their transitive closure.  Keeping the metadata read
+    beside the existing canonical-name and version-comparison boundary avoids
+    a second hand-maintained dependency inventory in the audit runner.
+    """
+
+    metadata_path = project_root / "pyproject.toml"
+    try:
+        metadata = tomllib.loads(metadata_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise ValueError("dependency_project_metadata_missing") from error
+    except tomllib.TOMLDecodeError as error:
+        raise ValueError("dependency_project_metadata_invalid") from error
+
+    project = metadata.get("project")
+    if not isinstance(project, dict) or not isinstance(project.get("name"), str):
+        raise ValueError("dependency_project_metadata_invalid")
+
+    dependencies = project.get("dependencies", [])
+    optional_dependencies = project.get("optional-dependencies", {})
+    build_system = metadata.get("build-system", {})
+    if (
+        not isinstance(dependencies, list)
+        or not isinstance(optional_dependencies, dict)
+        or not isinstance(build_system, dict)
+    ):
+        raise ValueError("dependency_project_metadata_invalid")
+
+    build_requirements = build_system.get("requires", [])
+    if not isinstance(build_requirements, list):
+        raise ValueError("dependency_project_metadata_invalid")
+
+    specifications = [*build_requirements, *dependencies]
+    for extra in extras:
+        group = optional_dependencies.get(extra)
+        if not isinstance(group, list):
+            raise ValueError(f"dependency_project_metadata_extra_missing:{extra}")
+        specifications.extend(group)
+
+    names: set[str] = set()
+    for specification in specifications:
+        if not isinstance(specification, str):
+            raise ValueError("dependency_project_metadata_invalid")
+        try:
+            names.add(canonical_name(Requirement(specification).name))
+        except InvalidRequirement as error:
+            raise ValueError("dependency_project_metadata_invalid") from error
+    return canonical_name(project["name"]), names
+
+
+def installed_distributions() -> dict[str, str]:
+    """Read the running interpreter's distribution inventory once for all gates."""
+
+    from importlib.metadata import distributions
+
+    return {
+        canonical_name(dist.metadata["Name"]): dist.version
+        for dist in distributions()
+        if dist.metadata["Name"]
+    }
+
+
 def compare_constraints(
     constrained: dict[str, str],
     installed: dict[str, str],
     *,
     project_name: str,
+    included_tooling: set[str] | frozenset[str] = frozenset(),
 ) -> list[str]:
     """Every difference between the two closures, stable order, empty = clean."""
     problems: list[str] = []
     project = canonical_name(project_name)
+    explicitly_required_tooling = {canonical_name(name) for name in included_tooling}
     installed_relevant = {
         name: version
         for name, version in installed.items()
-        if name != project and name not in _TOOLING_DISTRIBUTIONS
+        if name != project
+        and (name not in _TOOLING_DISTRIBUTIONS or name in explicitly_required_tooling)
     }
     for name in sorted(set(constrained) | set(installed_relevant)):
         pinned = constrained.get(name)
@@ -124,18 +198,12 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    from importlib.metadata import distributions
-
-    installed = {
-        canonical_name(dist.metadata["Name"]): dist.version
-        for dist in distributions()
-        if dist.metadata["Name"]
-    }
     try:
         constrained = parse_constraints(constraints_path.read_text(encoding="utf-8"))
     except ValueError as defect:
         print(f"Dependency constraints gate failed: {defect}", file=sys.stderr)
         return 1
+    installed = installed_distributions()
     problems = compare_constraints(constrained, installed, project_name="lotus-report")
     if problems:
         print(

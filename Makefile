@@ -74,7 +74,15 @@ test-coverage:
 security-audit:
 	# The closure is Linux-resolved. Audit it in the same Linux posture from
 	# every host rather than letting a workstation resolve a different graph.
-	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/src:ro" -w /src python:3.12-slim bash -c "python -m pip install --quiet -c constraints.txt pip-audit && python scripts/run_security_audit.py"
+	# Build only audit inputs in a temporary workspace: setuptools writes package
+	# metadata, while the committed source mount remains immutable. Do not copy
+	# checkout metadata or local artifacts into the proof environment. Install the exact constrained
+	# build backend before disabling build isolation, so the audit never executes
+	# a freshly resolved backend. Installing the project with its declared dev
+	# extra before scanning makes the audit refuse a direct or extra-derived
+	# package that is missing from the recorded closure; pip-audit never receives
+	# an incomplete pin set.
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/src:ro" python:3.12-slim bash -c "mkdir -p /tmp/report-audit/docs/standards && cp /src/pyproject.toml /src/constraints.txt /tmp/report-audit && cp -r /src/src /src/scripts /tmp/report-audit && cp /src/docs/standards/dependency-vulnerability-exceptions.json /tmp/report-audit/docs/standards && cd /tmp/report-audit && python -m pip install --quiet setuptools -c constraints.txt && python -m pip install --quiet --no-build-isolation '.[dev]' -c constraints.txt && python scripts/run_security_audit.py --repo-root /tmp/report-audit"
 
 # Equality-banked code-health thresholds: each equals today's measurement exactly, so
 # any regression fails and any improvement is banked by lowering the bound in the
@@ -107,7 +115,7 @@ dependency-constraints-gate:
 # Refresh runs in the lane image so the recorded closure stays Linux-resolved;
 # rerun `make security-audit` against the refreshed closure in the SAME slice.
 constraints-refresh:
-	docker run --rm -v "$(CURDIR):/src:ro" -w /tmp python:3.12-slim bash -c "cp -r /src /tmp/build-src && cd /tmp/build-src && pip install --quiet --upgrade pip && pip install --quiet -e '.[dev]' && pip install --quiet pre-commit && pip freeze --exclude-editable" > constraints.txt
+	docker run --rm -v "$(CURDIR):/src:ro" -w /tmp python:3.12-slim bash -c "mkdir /tmp/build-src && cp /src/pyproject.toml /tmp/build-src && cp -r /src/src /tmp/build-src && cd /tmp/build-src && pip install --quiet --upgrade pip setuptools && pip install --quiet --no-build-isolation -e '.[dev]' && pip install --quiet pre-commit && { pip freeze --exclude-editable; python -c 'from importlib.metadata import version; print(\"setuptools==\" + version(\"setuptools\"))'; } | sort -fu" > constraints.txt
 	@echo "Closure refreshed from the lane image; now run 'make security-audit' in the same slice."
 
 code-health-gates: complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate dependency-constraints-gate
