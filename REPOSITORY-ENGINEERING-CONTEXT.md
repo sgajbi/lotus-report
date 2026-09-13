@@ -376,7 +376,18 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 | PR-grade gate (helper-managed database) | `make ci-local` |
 | coverage gate | `make test-coverage` |
 | prior-schema upgrade proof | `make migration-upgrade-smoke` |
+| refresh the dependency closure (lane image, Linux resolve) | `make constraints-refresh`, then `make security-audit` in the same slice |
 | docker build | `make docker-build` |
+
+The committed `constraints.txt` is the exact dependency closure CI builds and type-checks
+against (#345): `make install` applies it, the Docker image's runtime subset installs under it,
+and `dependency-constraints-gate` (inside `code-health-gates`) fails on any drift between the
+running environment and the recorded closure. It is Linux-resolved and Linux-enforced — pip
+environment markers make one exact closure platform-specific, so on other platforms the gate
+prints an explicit not-evaluable instead of comparing against a closure wrong for the host by
+construction (the lotus-gateway Ubuntu-only-gate posture). `pyproject.toml` floors remain the
+compatibility statement; the constraints file is the reproducibility statement and never a
+vulnerability-exception mechanism.
 
 Production-like direct access must set `ENTERPRISE_ENFORCE_AUTHZ=true`,
 `ENTERPRISE_ENFORCE_READ_AUTHZ=true` and `ENTERPRISE_PRIMARY_KEY_ID`.
