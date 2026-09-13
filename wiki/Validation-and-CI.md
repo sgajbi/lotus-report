@@ -1,5 +1,18 @@
 # Validation and CI
 
+## Current Support Summary
+
+**Current scope:** this page maps repository-native evidence commands to the three governed CI
+lanes. A green local command is source evidence only; the exact merged revision needs its own Main
+Releasability run, and neither establishes deployment or production operation.
+
+| Reader decision | Authoritative path | Evidence boundary |
+| --- | --- | --- |
+| Run the fast local checks | `make check` | Local source and unit evidence. |
+| Validate an isolated PR-grade database path | `make ci-local` | Local PostgreSQL evidence, not a hosted release. |
+| Audit dependencies | `make security-audit` | Linux constrained-closure scan used by Feature, PR and Main lanes. |
+| Audit a merged revision | `gh run list --commit <full-sha>` | Exact-main CI evidence, not deployment proof. |
+
 ## Lane model
 
 `lotus-report` uses:
@@ -56,14 +69,21 @@ one exact closure platform-specific, so the gate enforces on the Ubuntu lanes (e
 and prints an explicit not-evaluable on other platforms rather than comparing against a closure
 that is wrong for the host by construction. Refresh with `make constraints-refresh` (runs the
 resolve in the lane image via Docker), then rerun `make security-audit`; the runner validates and
-audits that exact refreshed `constraints.txt` closure rather than resolving the broader
-`pyproject.toml` floors. The audit target runs its scan in a Linux container from every host, so it
-does not attempt to install a Linux closure directly on a non-Linux workstation. The typecheck hook
+copies only audit inputs from the read-only source to an ephemeral Linux workspace, installs the exact constrained build backend before disabling build isolation and then the project with its declared dev extra, validates that resulting Linux environment against
+the refreshed `constraints.txt` closure, and audits that exact closure rather than resolving the
+broader `pyproject.toml` floors. Missing direct or extra-derived resolved pins refuse before
+scanning. The audit target runs its scan in a Linux container from every host, so it does not attempt
+to install a Linux closure directly on a non-Linux workstation. The typecheck hook
 separately refuses a missing or off-pin direct runtime dependency before invoking mypy, deriving its
 expectations from the same closure parser; it is not a full non-Linux closure certification. The
 constraints file is a reproducibility statement, never a
 vulnerability-exception mechanism - that policy stays in
 `docs/standards/dependency-vulnerability-exceptions.md`.
+
+The Feature Lane, PR Merge Gate and Main Releasability Gate each invoke that same
+`make security-audit` target. `tests/unit/test_gate_reachability.py` parses executable workflow and
+Makefile paths to keep Feature Lane wired to the governed audit rather than relying on a YAML text
+match.
 
 ## Local command mapping
 
@@ -84,7 +104,7 @@ vulnerability-exception mechanism - that policy stays in
   isolated real-PostgreSQL upgrade proof from `report-status-event-pre-contract-v0` to
   `report-ledger-v1`, including legacy-row preservation and deterministic rerun
 - `make ci-local`
-  preferred workstation gate; creates one temporary PostgreSQL database, runs `make ci`, and drops
+  preferred workstation gate; creates one ephemeral PostgreSQL database, runs `make ci`, and drops
   only the helper-owned database on success or failure
 - `make docker-build`
   container build validation
@@ -109,7 +129,7 @@ vulnerability-exception mechanism - that policy stays in
 - Docker runtime readiness proof
   `docker compose up -d --build lotus-report lotus-report-job-worker lotus-report-batch-worker lotus-report-batch-scheduler`
   against both a fresh volume and a preserved supported prior-schema volume, then verify
-  `http://report.dev.lotus/health/ready` returns 200 and the PostgreSQL schema includes
+  the [readiness endpoint](http://report.dev.lotus/health/ready) returns 200 and the PostgreSQL schema includes
   `report_job`, `report_job_work_item`, `report_batch`, `report_input_snapshot`,
   `report_upstream_call`, and the typed status-event contract. A destructive volume reset is not
   upgrade evidence.

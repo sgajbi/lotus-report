@@ -187,10 +187,11 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     `tests/unit/test_risk_render_tenant_propagation.py` pins the wire behavior for both clients
     AND the partition itself: a new risk or render method fails that file until it is covered or
     classified, and `tests/unit/test_core_tenant_propagation.py` does the same for core. Sending
-    is the Report-owned half only: lotus-risk admits and refuses per its receiving contract
-    (risk#297 — stateful modes require the tenant once merged), and lotus-render admission lands
-    under its admit-if-present rollout recorded on #375; a header a receiver ignores is inert,
-    which is why the receiving halves stay owned by those services.
+    is the Report-owned half only: released lotus-risk and lotus-render receivers admit and refuse
+    the header under their recorded contracts. #375's two-tenant Report consumer receipt proves the
+    registered Render route at its isolated HTTP/SQLite boundary; it is closed, not a pending
+    admit-if-present rollout. A receiver remains responsible for its own durable admission and
+    isolation boundary.
 11. **A refusing upstream is reported, never substituted.** Collapsing a `status >= 400` into an
     empty payload and then defaulting the missing values produced `market_value_base=1250000` for
     upstream 401, 403, 404 and 503 alike. A source that did not answer is either a refusal the
@@ -381,8 +382,13 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 The committed `constraints.txt` is the exact dependency closure CI builds, type-checks and audits
 against (#345): `make install` applies it, the Docker image's runtime subset installs under it, and
-`make security-audit` starts a Linux container that validates and passes that exact closure to
-`pip-audit` (never the broader compatibility floors). `dependency-constraints-gate` (inside
+`make security-audit` starts a Linux container that copies only audit inputs from the read-only
+committed source into a temporary build workspace (not checkout metadata or local artifacts), installs the exact constrained build backend before disabling build
+isolation and installs the project with its declared dev extra under the exact pins,
+validates the resolved environment and then passes that exact closure to
+`pip-audit` (never the broader compatibility floors). It therefore refuses missing direct pins and
+extra-derived resolved packages before scanning. The Feature Lane, PR Merge Gate and Main
+Releasability Gate all call that same repo-native target. `dependency-constraints-gate` (inside
 `code-health-gates`) fails on any Linux installed-closure drift; `run_typecheck_hook.py` separately
 refuses a missing or off-pin direct runtime dependency before invoking mypy, deriving the pin from
 the shared constraints parser instead of keeping another version list. The full closure is

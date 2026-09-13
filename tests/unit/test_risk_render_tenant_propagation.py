@@ -4,8 +4,8 @@ The last two clients that sent no tenant at all: nine methods, every risk call
 Report actually makes being `input_mode: "stateful"` — the class lotus-risk's
 receiving contract (risk#297) refuses without an admitted tenant — and the
 render submission being the origin of a custody chain that ends in a retained
-document (C6-X04; Render's receiving side is lotus-render's admit-if-present
-rollout recorded on #375).
+document (C6-X04; Render's released receiving side enforces the #375 tenant
+contract, whose isolated HTTP/SQLite consumer receipt is recorded on #375).
 
 The assertions are on the headers the transport actually received, per the
 issue: a test that checks the argument reached the client proves the call

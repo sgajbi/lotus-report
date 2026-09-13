@@ -12,7 +12,12 @@ if str(REPO_ROOT) not in sys.path:
     # package import in both cases so dependency ownership stays unambiguous.
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.check_dependency_constraints import parse_constraints  # noqa: E402
+from scripts.check_dependency_constraints import (  # noqa: E402
+    compare_constraints,
+    installed_distributions,
+    parse_constraints,
+    project_dependency_names,
+)
 from scripts.dependency_vulnerability_exceptions import (  # noqa: E402
     pip_audit_ignore_args,
     validate_exception_file,
@@ -26,8 +31,12 @@ def _audit_closure_file(repo_root: Path) -> Path:
     resolution CI actually installs.  Auditing those floors lets pip-audit
     resolve a newer package than the vulnerable package committed in the
     closure, which turns a clean audit into evidence about a different build.
-    Validate the closure with the same exact-pin parser used by the installed
-    environment comparison before handing it to pip-audit.
+    Validate exact pins, declared build/direct requirements and the ``dev``
+    extra that the audit installs, then compare the closure with the resolved project
+    environment before handing it to pip-audit.  The resolved comparison is
+    what catches extra-derived transitive packages such as ``httptools`` from
+    ``uvicorn[standard]``: they must be both installed and recorded, never
+    silently resolved afresh by the scanner.
     """
 
     closure = repo_root / "constraints.txt"
@@ -37,6 +46,26 @@ def _audit_closure_file(repo_root: Path) -> Path:
         raise ValueError("dependency_audit_constraints_missing") from error
     if not pins:
         raise ValueError("dependency_audit_constraints_empty")
+
+    project_name, declared_dependencies = project_dependency_names(repo_root, extras=("dev",))
+    missing_declared_pins = sorted(declared_dependencies - set(pins))
+    if missing_declared_pins:
+        raise ValueError(
+            "dependency_audit_constraints_incomplete:missing_project_pins:"
+            + ",".join(missing_declared_pins)
+        )
+
+    closure_drift = compare_constraints(
+        pins,
+        installed_distributions(),
+        project_name=project_name,
+        included_tooling=declared_dependencies,
+    )
+    if closure_drift:
+        raise ValueError(
+            "dependency_audit_constraints_incomplete:resolved_environment_drift:"
+            + ",".join(closure_drift[:10])
+        )
     return closure
 
 
