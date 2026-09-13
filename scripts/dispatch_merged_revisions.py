@@ -71,7 +71,19 @@ class DispatchRefused(RuntimeError):
 
 def _run_gh(args: Sequence[str]) -> tuple[int, str]:
     result = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
-    return result.returncode, result.stdout.strip()
+    # `gh workflow run` reports a rejected dispatch on stderr.  Keeping only
+    # stdout turned the first real invocation of this dispatcher into an
+    # un-actionable ``gate_dispatch_failed`` (run 34749484371): the workflow
+    # correctly failed closed, but the owning team could not see *why*.  On a
+    # successful command, stdout is a machine-readable value (merge settings
+    # or a tag SHA): GH_DEBUG and other diagnostics go to stderr and must not
+    # turn a valid value into a false refusal. The caller supplies no
+    # credential as an argument and Actions redacts token values in emitted
+    # output, so include both streams only in the bounded failure diagnostic.
+    if result.returncode == 0:
+        return 0, result.stdout.strip()
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return result.returncode, output.strip()
 
 
 def assert_rebase_only_merging(*, repository: str, gh: GhRunner) -> None:
@@ -123,7 +135,7 @@ def ensure_dispatch_ref(*, repository: str, revision: str, gh: GhRunner) -> None
 
 
 def dispatch_gate(*, repository: str, revision: str, pr_number: str, gh: GhRunner) -> None:
-    code, _ = gh(
+    code, output = gh(
         [
             "workflow",
             "run",
@@ -141,7 +153,10 @@ def dispatch_gate(*, repository: str, revision: str, pr_number: str, gh: GhRunne
         ]
     )
     if code != 0:
-        raise DispatchRefused(f"report_dispatch_refused:gate_dispatch_failed:{revision}")
+        detail = output.strip().replace("\n", " ")[:500] or "no_command_output"
+        raise DispatchRefused(
+            f"report_dispatch_refused:gate_dispatch_failed:{revision}:detail={detail}"
+        )
 
 
 def dispatch_merged_revisions(
