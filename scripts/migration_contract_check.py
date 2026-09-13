@@ -39,6 +39,10 @@ REQUIRED_PHRASES = (
     # missing gates nothing. The closing backtick is what separates the table
     # from those prefixes.
     "`idea_evidence_intake`",
+    # The applied-migration ledger (report#376): the contract must state the
+    # convergence strategy the runner actually uses. Backticked for the same
+    # reason as the intake table above.
+    "`report_schema_migration`",
     "archive_request_id",
     "archive_document_id",
     "archive_completed_at",
@@ -118,7 +122,8 @@ def run_ledger_schema_checks() -> int:
                   'report_status_event',
                   'report_batch',
                   'report_batch_item',
-                  'idea_evidence_intake'
+                  'idea_evidence_intake',
+                  'report_schema_migration'
               )
             """
         ).fetchall()
@@ -130,6 +135,10 @@ def run_ledger_schema_checks() -> int:
             "report_batch",
             "report_batch_item",
             "idea_evidence_intake",
+            # The runner's applied-migration ledger is load-bearing for startup
+            # convergence (report#376): its absence after apply means the
+            # runner that just ran is not the shipped one.
+            "report_schema_migration",
         } - tables
         if missing_tables:
             print(f"Ledger schema smoke failed: missing tables {sorted(missing_tables)}")

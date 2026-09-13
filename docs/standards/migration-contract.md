@@ -54,10 +54,48 @@
   `report-status-event-pre-contract-v0` baseline and a representative legacy event, runs the same
   migration function used by the API, report job worker, batch worker, and scheduler twice, and verifies the
   `report-ledger-v1` columns, exact type/nullability contract, backfill values, indexes, row
-  preservation, and deterministic replay. It also creates four isolated wrong-nullability current
+  preservation, and that the first run applies the complete ordered file set while the second run
+  consults the applied-migration ledger and applies nothing. It also creates four isolated wrong-nullability current
   shapes and proves each is rejected before mutation. The isolated schemas are removed
   transactionally; the target database's `public` schema and local Report volume are not reset by
   this check.
+
+## Applied-Migration Ledger
+
+- The runner (`apply_report_schema_migrations`) keeps an applied-migration ledger in
+  `report_schema_migration` (`migration_name` primary key, `applied_at timestamptz`),
+  bootstrapped by the runner itself rather than by a migration file, and executes only files not
+  recorded there. A current-schema restart performs no migration DDL; each migration's DDL
+  executes once per database (report#376).
+- The whole run — ledger bootstrap, every pending file, and its ledger rows — is one caller-owned
+  transaction, serialized across concurrent startups by a transaction-scoped advisory lock keyed
+  separately from the `app.runtime_schema` session lock. An interrupted run rolls back
+  completely, ledger rows included, and the next run recomputes the same pending set.
+- A database migrated before the ledger existed has no `report_schema_migration` table. Its first
+  startup on ledger-aware code performs one bridge replay of every file — exactly the retired
+  per-boot behavior, which the historical migrations were written to converge under — and records
+  the set; replay then never happens again. No operator action is required for that rollout, and
+  a pre-ledger binary restarting later simply replays as it always did, so the overlap window of
+  a rolling deployment is safe in both directions.
+- Migration filenames are the ledger identity and are immutable once merged: renaming a shipped
+  file makes it look unapplied and replays it. Editing a shipped file's content does not re-run
+  it on databases that already recorded it; a fix that must reach existing databases needs a new
+  forward migration.
+- A pending file that sorts before a recorded one is refused before mutation with
+  `report_schema_migration_out_of_order` — interleaving a file below merged history is edited
+  history, not work. Recorded names with no matching local file are tolerated: forward-only
+  additive migrations are the promise that an older binary may start against a newer schema.
+- Deterministic repeated application now has two layers: the ledger applies each file once, and
+  each file must still be written to converge when re-run from scratch, because an interrupted,
+  rolled-back run replays the whole pending set and the bridge replay re-runs everything once.
+  New migrations therefore keep the existing convergent-DDL discipline even though steady-state
+  replay is retired.
+- Acceptance evidence is `tests/integration/test_migration_ledger_convergence.py`, against real
+  populated PostgreSQL: empty applied set and unchanged `relfilenode` for every index on a
+  current-schema restart, fresh-install versus legacy-upgrade schema-fingerprint equality, the
+  one-time bridge replay preserving receipts and the identity index, concurrent startups observed
+  serializing on the advisory lock with the loser applying nothing, interrupted-run rollback and
+  retry, and the out-of-order refusal.
 
 ## Supported Upgrade And Failure Posture
 
@@ -143,7 +181,8 @@ support diagnostics.
 Future migrations must:
 
 1. be versioned and forward-only,
-2. be deterministic under repeated application,
+2. converge under repeated application — the applied-migration ledger retires steady-state
+   replay, but an interrupted run and the pre-ledger bridge both replay files from scratch,
 3. preserve report request lineage and append-only status-event history,
 4. include explicit index, uniqueness, and foreign-key validation when new support paths are added,
 5. document any operational backfill, retention, archive, or replay implications.
