@@ -217,6 +217,8 @@ class RecordingRenderClient:
         payload: dict[str, Any],
         correlation_id: str | None = None,
         trace_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         self._submit_count += 1
         _write_capture(self._request_capture_path, payload, sequence=self._submit_count)
@@ -224,6 +226,7 @@ class RecordingRenderClient:
             payload,
             correlation_id=correlation_id,
             trace_id=trace_id,
+            admitted_tenant_id=admitted_tenant_id,
         )
         _write_capture(
             self._response_capture_path,
