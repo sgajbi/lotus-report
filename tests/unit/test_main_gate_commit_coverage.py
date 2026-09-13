@@ -19,36 +19,56 @@ WORKFLOW_ROOT = ROOT / ".github" / "workflows"
 
 
 def test_merged_pr_dispatch_gates_every_revision_the_pr_put_on_main() -> None:
-    dispatcher = (WORKFLOW_ROOT / "merged-pr-main-releasability.yml").read_text(encoding="utf-8")
+    """The dispatcher is one program in the platform contract's script form (#364).
 
-    # Enumeration of every revision, oldest first, from full history.
-    assert "COMMIT_COUNT: ${{ github.event.pull_request.commits }}" in dispatcher
-    assert 'git rev-list -n "$COMMIT_COUNT" "$MERGE_COMMIT_SHA" | tac' in dispatcher
-    assert "for revision in $revisions; do" in dispatcher
+    The behavioral halves are proven elsewhere on real machinery —
+    enumeration semantics on real git histories
+    (test_enumerate_merged_revisions.py: base..tip bounded by the BASE, never
+    commit count; dropped-duplicate; empty; contiguity; single parent;
+    fetched-main ancestry) and tag/dispatch ordering with refusal-before-
+    effect against a scripted gh (test_dispatch_merged_revisions.py). What
+    the workflow text must pin is the BINDING: the step runs exactly the
+    declared entrypoint with the inputs the program needs, so the
+    conformance declaration cannot drift from what actually executes.
+    """
+    import json
+
+    dispatcher = (WORKFLOW_ROOT / "merged-pr-main-releasability.yml").read_text(encoding="utf-8")
+    declaration = json.loads(
+        (ROOT / ".github" / "merged-revision-dispatch.conformance.json").read_text(encoding="utf-8")
+    )
+
+    # The whole dispatch step is the declared entrypoint, single line — the
+    # platform recognizer classifies script form only for a single-line run,
+    # and binds the declaration to this exact command.
+    entrypoint = str(declaration["entrypoint"])
+    assert f"run: {entrypoint}\n" in dispatcher
+    program = entrypoint.split()[1]
+    assert (ROOT / program).is_file()
+
+    # The program's inputs ride the step env; missing any of them refuses.
+    for variable in (
+        "BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+        "MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}",
+        "COMMIT_COUNT: ${{ github.event.pull_request.commits }}",
+        "PR_NUMBER: ${{ github.event.pull_request.number }}",
+    ):
+        assert variable in dispatcher
+    # Every revision the PR added must be enumerable, not just the head.
     assert "fetch-depth: 0" in dispatcher
-    # Every dispatch is pinned to its own revision, not the PR head.
-    assert 'dispatch_ref="main-releasability-${revision}"' in dispatcher
-    assert '-f expected_sha="$revision"' in dispatcher
-    # The enumeration is only correct under rebase-only merging; the
-    # dispatcher must fail loudly if the repository setting ever changes.
-    assert "allow_squash_merge" in dispatcher
-    assert '"$merge_methods" != "false,false,true"' in dispatcher
-    # Ancestry is judged against the freshly fetched main, and a revision that
-    # is not main history is refused BEFORE any tag is created or gate
-    # dispatched: the guard must sit inside the loop, after the detach onto
-    # FETCH_HEAD and ahead of both the tag write and the workflow dispatch.
-    assert "git checkout --quiet --detach FETCH_HEAD" in dispatcher
-    guard = 'if ! git merge-base --is-ancestor "$revision" HEAD; then'
-    assert guard in dispatcher
-    assert dispatcher.index("git fetch origin main --quiet") < dispatcher.index(
-        "git checkout --quiet --detach FETCH_HEAD"
-    )
-    assert dispatcher.index("for revision in $revisions; do") < dispatcher.index(guard)
-    assert dispatcher.index(guard) < dispatcher.index(
-        'dispatch_ref="main-releasability-${revision}"'
-    )
-    assert dispatcher.index(guard) < dispatcher.index('gh api "repos/$GITHUB_REPOSITORY/git/refs"')
-    assert dispatcher.index(guard) < dispatcher.index("gh workflow run main-releasability.yml")
+
+    # The declaration's substance: range enumeration (never commit count),
+    # asymmetric cross-check, immutable-ref identity, every contract
+    # semantic claimed true, and only existing test files as proofs.
+    assert declaration["form"] == "script"
+    assert declaration["enumeration"] == "range"
+    assert declaration["count_cross_check"] == "asymmetric"
+    assert declaration["tested_source_identity"] == "immutable-ref"
+    assert all(value is True for value in declaration["semantics"].values())
+    proofs = declaration["proofs"]
+    assert proofs, "a declaration without proofs verifies nothing"
+    for proof in proofs:
+        assert (ROOT / proof).is_file(), f"declared proof missing: {proof}"
 
 
 def test_coverage_audit_workflow_runs_the_fail_closed_audit() -> None:
