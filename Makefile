@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-upgrade-smoke migration-apply complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate code-health-gates test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
+.PHONY: install lint typecheck monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate openapi-gate migration-smoke migration-upgrade-smoke migration-apply complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate dependency-constraints-gate constraints-refresh code-health-gates test test-unit test-integration test-e2e test-suite-coverage coverage-gate test-coverage security-audit check ci ci-local docker-build clean
 
 TEST_SUITE ?= unit
 TEST_PATH ?= tests/$(TEST_SUITE)
@@ -7,8 +7,8 @@ COVERAGE_FAIL_UNDER ?= 97
 
 install:
 	python -m pip install --upgrade pip
-	python -m pip install -e ".[dev]"
-	python -m pip install pre-commit
+	python -m pip install -e ".[dev]" -c constraints.txt
+	python -m pip install pre-commit -c constraints.txt
 	pre-commit install
 
 lint:
@@ -95,7 +95,20 @@ dead-code-gate:
 dependency-hygiene-gate:
 	python -m deptry .
 
-code-health-gates: complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate
+# The committed constraints.txt is the reproducibility statement: the exact
+# closure CI builds and type-checks against (report#345). Enforced on Linux
+# (the lane platform); elsewhere the gate states not-evaluable, because pip's
+# environment markers make one exact closure platform-specific.
+dependency-constraints-gate:
+	python scripts/check_dependency_constraints.py
+
+# Refresh runs in the lane image so the recorded closure stays Linux-resolved;
+# rerun `make security-audit` against the refreshed closure in the SAME slice.
+constraints-refresh:
+	docker run --rm -v "$(CURDIR):/src:ro" -w /tmp python:3.12-slim bash -c "cp -r /src /tmp/build-src && cd /tmp/build-src && pip install --quiet --upgrade pip && pip install --quiet -e '.[dev]' && pip install --quiet pre-commit && pip freeze --exclude-editable" > constraints.txt
+	@echo "Closure refreshed from the lane image; now run 'make security-audit' in the same slice."
+
+code-health-gates: complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate dependency-constraints-gate
 
 check: lint typecheck code-health-gates openapi-gate monetary-float-guard domain-product-validate idea-evidence-intake-contract-gate idea-evidence-materialization-contract-gate test
 

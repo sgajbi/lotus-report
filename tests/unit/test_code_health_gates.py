@@ -132,6 +132,7 @@ def test_every_code_health_gate_is_in_the_blocking_lanes() -> None:
         "source-size-gate",
         "dead-code-gate",
         "dependency-hygiene-gate",
+        "dependency-constraints-gate",
     }, gates
 
     for lane in ("check", "ci"):

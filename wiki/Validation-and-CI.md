@@ -33,13 +33,24 @@ evidence, because consumed tags are reclaimed.
 
 ## Code-health gates
 
-`make code-health-gates` runs four equality-banked fitness functions in both governed lanes:
+`make code-health-gates` runs five fitness functions in both governed lanes:
 `complexity-gate` (max cyclomatic complexity and rank-D+ function count),
 `source-size-gate` (largest module), `dead-code-gate` (Vulture over a proven-non-empty tree,
-zero findings and no whitelist), and `dependency-hygiene-gate` (deptry). Thresholds equal
-today's measurement exactly - `tests/unit/test_code_health_gates.py` asserts the equality in
-both directions and proves each gate can fail, so a regression blocks and an improvement must
-be banked in the same commit.
+zero findings and no whitelist), `dependency-hygiene-gate` (deptry), and
+`dependency-constraints-gate` (report#345: the installed environment must equal the committed
+`constraints.txt` closure exactly - version drift, unconstrained installs and missing pins all
+fail with the offending names). The first four are equality-banked thresholds -
+`tests/unit/test_code_health_gates.py` asserts the equality in both directions and proves each
+gate can fail, so a regression blocks and an improvement must be banked in the same commit.
+
+The constraints closure is **Linux-resolved and Linux-enforced**: pip environment markers make
+one exact closure platform-specific, so the gate enforces on the Ubuntu lanes (every CI install)
+and prints an explicit not-evaluable on other platforms rather than comparing against a closure
+that is wrong for the host by construction. Refresh with `make constraints-refresh` (runs the
+resolve in the lane image via Docker), then rerun `make security-audit` against the refreshed
+closure in the same slice. The constraints file is a reproducibility statement, never a
+vulnerability-exception mechanism - that policy stays in
+`docs/standards/dependency-vulnerability-exceptions.md`.
 
 ## Local command mapping
 
