@@ -16,23 +16,19 @@ its own:
   environment that merely *has* some mypy is not the checker CI runs.
 
 Presence is therefore not the question. The three things that make this the
-same checker are the interpreter version, the mypy version, and the dependency
-graph -- so all three are asserted, and the first two are read from
-`pyproject.toml` rather than restated here. A second copy of a pin is a pin
-that drifts, and it would drift in the direction of silently passing.
+same checker are the interpreter version, the mypy version, and the runtime
+dependencies mypy reads -- so all three are asserted. The interpreter and
+mypy expectations come from `pyproject.toml`; runtime expectations come from
+the committed `constraints.txt` closure through the shared constraints parser.
+No version is repeated here.
 
-What this does NOT establish, stated so it is not read as stronger than it is:
-the third-party packages are checked for presence, not version. It cannot be
-otherwise today, because nothing in this repository declares what version CI
-type-checks against. `pyproject.toml` gives unbounded `>=` floors and `make
-install` resolves them fresh on every run, so CI has no fixed answer either --
-`fastapi` currently resolves to 0.141.1 against a `>=0.116.1` floor. An
-environment satisfying the floors can therefore differ from CI's, and two CI
-runs on the same tree can differ from each other. That is a dependency
-determinism gap rather than a hook gap: until a lock or constraints set names
-the versions, there is nothing for this guard to compare against. Tracked
-separately; do not close it by hard-coding versions here, which would
-reintroduce the drifting second copy this file avoids for mypy.
+This is deliberately a runtime-dependency guard, not a second full-closure
+certification. The committed closure is Linux-resolved because environment
+markers make it platform-specific; `dependency-constraints-gate` performs the
+full installed-closure comparison in the Linux CI lanes. This hook runs on a
+developer workstation too, and refuses a missing or off-pin direct runtime
+dependency before it invokes mypy. It does not turn a non-Linux workstation
+into evidence that every transitive package equals the Linux closure.
 """
 
 from __future__ import annotations
@@ -50,6 +46,13 @@ from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = ROOT / "pyproject.toml"
+CONSTRAINTS = ROOT / "constraints.txt"
+if str(ROOT) not in sys.path:
+    # Direct hook execution starts with scripts/ on sys.path; keep the shared
+    # constraints parser package-qualified for direct and test execution.
+    sys.path.insert(0, str(ROOT))
+
+from scripts.check_dependency_constraints import canonical_name, parse_constraints  # noqa: E402
 
 
 def _runtime_distributions(project: dict) -> list[str]:
@@ -135,12 +138,11 @@ def _pinned_mypy(project: dict) -> str | None:
     return None
 
 
-def _is_installed(distribution: str) -> bool:
+def _installed_version(distribution: str) -> str | None:
     try:
-        importlib.metadata.version(distribution)
+        return importlib.metadata.version(distribution)
     except importlib.metadata.PackageNotFoundError:
-        return False
-    return True
+        return None
 
 
 def _minimum_python(project: dict) -> tuple[int, ...] | None:
@@ -176,6 +178,47 @@ def _minimum_python(project: dict) -> tuple[int, ...] | None:
     return tuple(max(versions).release)
 
 
+def _runtime_dependency_problems(project: dict) -> list[str]:
+    """Compare direct runtime dependencies to their committed closure pins.
+
+    `pyproject.toml` owns the supported compatibility floors.  The exact
+    values are deliberately derived from the shared closure parser instead of
+    copying them into this hook, so an approved pin refresh changes both this
+    guard and the installed-closure gate together.
+    """
+
+    declared = _runtime_distributions(project)
+    if not declared:
+        return ["pyproject.toml declares no runtime dependencies for this to check"]
+
+    try:
+        constrained = parse_constraints(CONSTRAINTS.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ["constraints.txt is missing, so runtime dependency versions cannot be checked"]
+    except ValueError as error:
+        return [f"constraints.txt is not an exact dependency closure: {error}"]
+
+    problems: list[str] = []
+    for distribution in declared:
+        installed = _installed_version(distribution)
+        if installed is None:
+            problems.append(
+                "these declared dependencies are absent, and `ignore_missing_imports` "
+                f"would make that a silent pass: {distribution}"
+            )
+            continue
+        expected = constrained.get(canonical_name(distribution))
+        if expected is None:
+            problems.append(
+                f"constraints.txt does not pin declared runtime dependency {distribution}"
+            )
+        elif installed != expected:
+            problems.append(
+                f"{distribution} {installed} is installed, but constraints.txt pins {expected}"
+            )
+    return problems
+
+
 def _problems() -> list[str]:
     project = _project()
     problems: list[str] = []
@@ -199,15 +242,7 @@ def _problems() -> list[str]:
             if installed != pinned:
                 problems.append(f"mypy {installed} is installed, but pyproject.toml pins {pinned}")
 
-    declared = _runtime_distributions(project)
-    if not declared:
-        problems.append("pyproject.toml declares no runtime dependencies for this to check")
-    missing = [name for name in declared if not _is_installed(name)]
-    if missing:
-        problems.append(
-            "these declared dependencies are absent, and `ignore_missing_imports` "
-            f"would make that a silent pass: {', '.join(missing)}"
-        )
+    problems.extend(_runtime_dependency_problems(project))
 
     return problems
 

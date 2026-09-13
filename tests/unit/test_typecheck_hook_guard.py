@@ -37,6 +37,45 @@ def test_the_real_environment_is_accepted() -> None:
     assert hook._problems() == []
 
 
+def test_matching_runtime_pins_reach_mypy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A matching closure must reach mypy; a refusal-only guard proves nothing."""
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(hook.subprocess, "call", lambda command: calls.append(command) or 0)
+
+    assert hook.main() == 0
+    assert calls == [[sys.executable, "-m", "mypy", "--config-file", "mypy.ini"]]
+
+
+def test_off_pin_runtime_dependency_is_refused_before_mypy(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A known older FastAPI must not obtain a typecheck verdict.
+
+    This is the defect #345 left open: FastAPI 0.140.0 satisfied the broad
+    source floor and used to reach mypy despite the committed closure pinning
+    0.141.1.  The controlled mismatch proves both version comparison and
+    ordering before the checker can return a misleading green result.
+    """
+
+    installed_version = hook._installed_version
+
+    def version_with_stale_fastapi(distribution: str) -> str | None:
+        if distribution == "fastapi":
+            return "0.140.0"
+        return installed_version(distribution)
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(hook, "_installed_version", version_with_stale_fastapi)
+    monkeypatch.setattr(hook.subprocess, "call", lambda command: calls.append(command) or 0)
+
+    assert hook.main() == 1
+    assert calls == []
+    assert (
+        "fastapi 0.140.0 is installed, but constraints.txt pins 0.141.1" in capsys.readouterr().err
+    )
+
+
 def test_an_interpreter_below_requires_python_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hook, "_minimum_python", lambda project: (99, 0))
 

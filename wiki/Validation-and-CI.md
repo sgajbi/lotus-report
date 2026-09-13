@@ -55,8 +55,13 @@ The constraints closure is **Linux-resolved and Linux-enforced**: pip environmen
 one exact closure platform-specific, so the gate enforces on the Ubuntu lanes (every CI install)
 and prints an explicit not-evaluable on other platforms rather than comparing against a closure
 that is wrong for the host by construction. Refresh with `make constraints-refresh` (runs the
-resolve in the lane image via Docker), then rerun `make security-audit` against the refreshed
-closure in the same slice. The constraints file is a reproducibility statement, never a
+resolve in the lane image via Docker), then rerun `make security-audit`; the runner validates and
+audits that exact refreshed `constraints.txt` closure rather than resolving the broader
+`pyproject.toml` floors. The audit target runs its scan in a Linux container from every host, so it
+does not attempt to install a Linux closure directly on a non-Linux workstation. The typecheck hook
+separately refuses a missing or off-pin direct runtime dependency before invoking mypy, deriving its
+expectations from the same closure parser; it is not a full non-Linux closure certification. The
+constraints file is a reproducibility statement, never a
 vulnerability-exception mechanism - that policy stays in
 `docs/standards/dependency-vulnerability-exceptions.md`.
 

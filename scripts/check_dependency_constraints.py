@@ -36,6 +36,8 @@ import re
 import sys
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
+
 #: Distributions that are part of running Python/packaging itself rather than
 #: the resolved closure; `pip freeze` excludes them, so the comparison must
 #: too or a fresh runner image bump would read as project drift.
@@ -55,11 +57,19 @@ def parse_constraints(text: str) -> dict[str, str]:
         line = raw_line.split("#", 1)[0].strip()
         if not line:
             continue
-        match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9.!+_*-]+)", line)
+        match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s]+)", line)
         if match is None:
             defects.append(line)
             continue
-        pinned[canonical_name(match.group(1))] = match.group(2)
+        try:
+            # A wildcard (for example `urllib3==1.*`) is a PEP 440 specifier,
+            # not one concrete release. `pip-audit -r` would resolve it afresh,
+            # recreating the very mutable audit target this closure prevents.
+            pinned_version = str(Version(match.group(2)))
+        except InvalidVersion:
+            defects.append(line)
+            continue
+        pinned[canonical_name(match.group(1))] = pinned_version
     if defects:
         raise ValueError("dependency_constraints_not_exact:" + ",".join(defects[:10]))
     return pinned
