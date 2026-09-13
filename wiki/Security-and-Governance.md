@@ -20,7 +20,9 @@
 - migration smoke and security audit are part of PR-grade validation
 - time-bounded dependency vulnerability exceptions are governed by
   `docs/standards/dependency-vulnerability-exceptions.json`; `make security-audit` fails when an
-  exception is expired, missing ownership, or not linked to a GitHub issue
+  exception is expired, missing ownership, or not linked to a GitHub issue, and audits the exact
+  committed `constraints.txt` closure from its Linux audit container rather than resolving
+  compatibility floors afresh
 - direct write requests are bounded by `ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES`; malformed
   `Content-Length`, missing-length oversized bodies, and streamed bodies over the cap are rejected
   before route handling

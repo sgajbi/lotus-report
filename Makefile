@@ -72,7 +72,9 @@ test-coverage:
 	$(MAKE) coverage-gate
 
 security-audit:
-	python scripts/run_security_audit.py
+	# The closure is Linux-resolved. Audit it in the same Linux posture from
+	# every host rather than letting a workstation resolve a different graph.
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/src:ro" -w /src python:3.12-slim bash -c "python -m pip install --quiet -c constraints.txt pip-audit && python scripts/run_security_audit.py"
 
 # Equality-banked code-health thresholds: each equals today's measurement exactly, so
 # any regression fails and any improvement is banked by lowering the bound in the

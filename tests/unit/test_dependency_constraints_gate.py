@@ -60,10 +60,11 @@ def test_name_normalization_matches_pep503() -> None:
     assert compare_constraints(constrained, installed, project_name="lotus-report") == []
 
 
-def test_a_range_in_the_constraints_file_is_itself_refused() -> None:
-    """A reproducibility statement that permits a range reproduces nothing."""
-    with pytest.raises(ValueError, match="dependency_constraints_not_exact:fastapi>=0.116"):
-        parse_constraints("fastapi>=0.116\n")
+@pytest.mark.parametrize("constraint", ["fastapi>=0.116", "urllib3==1.*", "fastapi==not-a-version"])
+def test_a_nonconcrete_constraint_is_itself_refused(constraint: str) -> None:
+    """A range, wildcard or non-version cannot reproduce one closure."""
+    with pytest.raises(ValueError, match="dependency_constraints_not_exact"):
+        parse_constraints(f"{constraint}\n")
 
 
 def test_comments_and_blanks_are_ignored() -> None:

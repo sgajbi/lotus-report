@@ -1,0 +1,4 @@
+# Deliberately vulnerable audit fixture. It is never installed by this project.
+# The exact pin must remain visible to pip-audit even if a newer compatible
+# resolver result exists; see test_security_audit_closure.py.
+urllib3==1.25.0
