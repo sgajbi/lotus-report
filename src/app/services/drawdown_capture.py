@@ -16,7 +16,9 @@ HTTP_BAD_REQUEST = 400
 
 
 class _DrawdownRiskClient(Protocol):
-    async def drawdown_analytics(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]: ...
+    async def drawdown_analytics(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]: ...
 
 
 def _as_dict(value: object) -> dict[str, object]:
@@ -30,6 +32,7 @@ async def build_drawdown_capture(
     as_of_date: str,
     reporting_currency: str | None,
     client_id: str | None,
+    admitted_tenant_id: str,
 ) -> dict[str, object]:
     drawdown_payload: dict[str, object] = {
         "input_mode": "stateful",
@@ -44,7 +47,9 @@ async def build_drawdown_capture(
         "analysis_options": {"include_underwater_series": True},
     }
     try:
-        status_code, response_payload = await risk_client.drawdown_analytics(drawdown_payload)
+        status_code, response_payload = await risk_client.drawdown_analytics(
+            drawdown_payload, admitted_tenant_id=admitted_tenant_id
+        )
     except Exception:
         status_code, response_payload = 0, {}
     source = {"service": "lotus-risk", "endpoint": "/analytics/risk/drawdown"}

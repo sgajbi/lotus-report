@@ -205,7 +205,7 @@ class _CustodyRenderClient:
         self.documents: dict[str, str] = {}
         self.template_publication = "published"
 
-    async def submit_render_package(self, payload, **kwargs):
+    async def submit_render_package(self, payload, *, admitted_tenant_id: str, **kwargs):
         self.payloads.append(copy.deepcopy(payload))
         render_job_id = payload["render_job_id"]
         # Convergence here is id-keyed only; the REAL owner keys idempotency
@@ -1027,15 +1027,17 @@ class _LostResponseRenderClient(_CustodyRenderClient):
         self.committed: dict | None = None
         self.status_lookups: list[str] = []
 
-    async def submit_render_package(self, payload, **kwargs):
-        status, response = await super().submit_render_package(payload, **kwargs)
+    async def submit_render_package(self, payload, *, admitted_tenant_id: str, **kwargs):
+        status, response = await super().submit_render_package(
+            payload, admitted_tenant_id=admitted_tenant_id, **kwargs
+        )
         if not self.lost_once:
             self.lost_once = True
             self.committed = response
             raise RuntimeError("connection_lost_after_owner_commit")
         return status, response
 
-    async def get_render_status(self, render_job_id, **kwargs):
+    async def get_render_status(self, render_job_id, *, admitted_tenant_id: str, **kwargs):
         self.status_lookups.append(render_job_id)
         assert self.committed is not None
         committed = dict(self.committed)

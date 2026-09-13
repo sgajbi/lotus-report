@@ -380,6 +380,7 @@ class ReportingReadService:
                 as_of_date=as_of_date,
                 reporting_currency=self._optional_string(request_payload, *REPORTING_CURRENCY_KEYS),
                 client_id=self._optional_string(request_payload, *CLIENT_ID_KEYS),
+                admitted_tenant_id=admitted_tenant,
             )
 
         if "PERFORMANCE_ATTRIBUTION" in requested_sections:
@@ -409,6 +410,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 request_payload=request_payload,
+                admitted_tenant_id=admitted_tenant,
             )
         if "RISK_ATTRIBUTION" in requested_sections:
             # Ordered explicitly, never by default (#254's evidence gate):
@@ -417,6 +419,7 @@ class ReportingReadService:
                 portfolio_id=portfolio_id,
                 as_of_date=as_of_date,
                 request_payload=request_payload,
+                admitted_tenant_id=admitted_tenant,
             )
 
         client_sections = self._build_client_sections(
@@ -764,12 +767,15 @@ class ReportingReadService:
                 request_payload=request_payload,
             ),
         }
-        risk_status, risk_response = await self._risk_client.calculate_risk(risk_payload)
+        risk_status, risk_response = await self._risk_client.calculate_risk(
+            risk_payload, admitted_tenant_id=admitted_tenant_id
+        )
         period_failures: list[dict[str, object]] = []
         if risk_status >= HTTP_BAD_REQUEST:
             risk_response, period_failures = await self._calculate_risk_by_period(
                 risk_payload,
                 fallback_reason_code="risk_period_upstream_failure",
+                admitted_tenant_id=admitted_tenant_id,
             )
             if not self._as_dict(risk_response.get("results")):
                 return self._risk_unavailable(
@@ -812,6 +818,7 @@ class ReportingReadService:
         risk_payload: dict[str, object],
         *,
         fallback_reason_code: str,
+        admitted_tenant_id: str,
     ) -> tuple[dict[str, object], list[dict[str, object]]]:
         stateful_input = self._as_dict(risk_payload.get("stateful_input"))
         periods = self._as_list(stateful_input.get("periods"))
@@ -831,7 +838,7 @@ class ReportingReadService:
                 },
             }
             period_status, period_response = await self._risk_client.calculate_risk(
-                period_risk_payload
+                period_risk_payload, admitted_tenant_id=admitted_tenant_id
             )
             period_name = self._safe_str(period_payload.get("name")) or self._safe_str(
                 period_payload.get("type")
@@ -3666,6 +3673,8 @@ class ReportingReadService:
         portfolio_id: str,
         as_of_date: str,
         request_payload: dict[str, object],
+        *,
+        admitted_tenant_id: str,
     ) -> dict[str, object]:
         """One upstream call for risk attribution (#254, contract locked with
         Render 2026-09-04).
@@ -3707,7 +3716,7 @@ class ReportingReadService:
         }
         try:
             status_code, response_payload = await self._risk_client.historical_attribution(
-                attribution_payload
+                attribution_payload, admitted_tenant_id=admitted_tenant_id
             )
         except Exception:
             status_code, response_payload = 0, {}
@@ -3755,6 +3764,8 @@ class ReportingReadService:
         portfolio_id: str,
         as_of_date: str,
         request_payload: dict[str, object],
+        *,
+        admitted_tenant_id: str,
     ) -> dict[str, object]:
         """One upstream call for the risk-trend series (#255, agreed contract
         on report#255 + render#160).
@@ -3793,7 +3804,9 @@ class ReportingReadService:
             },
         }
         try:
-            status_code, response_payload = await self._risk_client.rolling_metrics(rolling_payload)
+            status_code, response_payload = await self._risk_client.rolling_metrics(
+                rolling_payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception:
             status_code, response_payload = 0, {}
         if status_code >= HTTP_BAD_REQUEST or status_code == 0:

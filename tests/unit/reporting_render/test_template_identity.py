@@ -198,7 +198,9 @@ def test_backfill_assigns_historical_v1_only_where_it_is_true(tmp_path) -> None:
 
 
 class _RenderClientWrongTemplate:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -236,7 +238,9 @@ class _RenderClientStatingPublication:
     def __init__(self, publication):
         self._publication = publication
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         response = {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",

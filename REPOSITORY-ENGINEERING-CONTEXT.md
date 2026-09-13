@@ -169,8 +169,9 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     Absence is transmitted as an empty header rather than omitted, so a regression that stops
     threading the value looks different from a legitimately tenantless call.
 
-    **Coverage is partial, and this is the current state rather than the target.** Measured on
-    this tree by counting `X-Tenant-Id` sends per client:
+    **Coverage is complete on every tenant-owned method (#375), and the completeness is pinned by
+    tests rather than by this table.** Measured on this tree by counting `X-Tenant-Id` sends per
+    client:
 
     | client | methods | sends the tenant |
     |---|---|---|
@@ -178,12 +179,18 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     | `performance_client` | 3 | yes (#361) |
     | `ai_client` | 2 | yes |
     | `archive_client` | 2 | yes |
-    | `risk_client` | 4 | **no** |
-    | `render_client` | 5 | **no** |
+    | `risk_client` | 4 | yes (#375) |
+    | `render_client` | 5 | 3 tenant-owned yes; 2 global-by-design carry no tenant claim (#375) |
 
-    Writing this as "every outbound call" would tell a maintainer the work is finished when nine
-    methods across two clients still send nothing. Tracked as the remaining gap in #375, not as an
-    invariant already held.
+    `render_client`'s template projection and service metadata are global publication authority —
+    a tenant header there, even blank, would state a scope the resource does not have.
+    `tests/unit/test_risk_render_tenant_propagation.py` pins the wire behavior for both clients
+    AND the partition itself: a new risk or render method fails that file until it is covered or
+    classified, and `tests/unit/test_core_tenant_propagation.py` does the same for core. Sending
+    is the Report-owned half only: lotus-risk admits and refuses per its receiving contract
+    (risk#297 — stateful modes require the tenant once merged), and lotus-render admission lands
+    under its admit-if-present rollout recorded on #375; a header a receiver ignores is inert,
+    which is why the receiving halves stay owned by those services.
 11. **A refusing upstream is reported, never substituted.** Collapsing a `status >= 400` into an
     empty payload and then defaulting the missing values produced `market_value_base=1250000` for
     upstream 401, 403, 404 and 503 alike. A source that did not answer is either a refusal the

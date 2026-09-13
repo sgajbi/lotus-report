@@ -61,16 +61,22 @@ class _ScriptedRenderClient:
         self.submitted = []
         self.status_calls = 0
 
-    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_status(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.status_calls += 1
         if len(self._status_responses) > 1:
             return self._status_responses.pop(0)
         return self._status_responses[0]
 
-    async def get_render_diagnostics(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_diagnostics(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return self._diagnostics
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.submitted.append(payload)
         return 201, {**_RENDERED, "render_job_id": payload["render_job_id"]}
 

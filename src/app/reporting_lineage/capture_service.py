@@ -597,10 +597,14 @@ class _RecordingRiskClient(RiskClient):
         self._inner = inner
         self._recorder = recorder
 
-    async def historical_attribution(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def historical_attribution(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.historical_attribution(payload)
+            status_code, response_payload = await self._inner.historical_attribution(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-risk",
@@ -622,10 +626,14 @@ class _RecordingRiskClient(RiskClient):
         )
         return status_code, response_payload
 
-    async def drawdown_analytics(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def drawdown_analytics(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.drawdown_analytics(payload)
+            status_code, response_payload = await self._inner.drawdown_analytics(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-risk",
@@ -647,10 +655,14 @@ class _RecordingRiskClient(RiskClient):
         )
         return status_code, response_payload
 
-    async def rolling_metrics(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def rolling_metrics(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.rolling_metrics(payload)
+            status_code, response_payload = await self._inner.rolling_metrics(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-risk",
@@ -672,10 +684,14 @@ class _RecordingRiskClient(RiskClient):
         )
         return status_code, response_payload
 
-    async def calculate_risk(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    async def calculate_risk(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
         started_at = perf_counter()
         try:
-            status_code, response_payload = await self._inner.calculate_risk(payload)
+            status_code, response_payload = await self._inner.calculate_risk(
+                payload, admitted_tenant_id=admitted_tenant_id
+            )
         except Exception as exc:
             self._recorder.append_failure(
                 service_name="lotus-risk",

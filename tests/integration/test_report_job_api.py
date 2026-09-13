@@ -699,7 +699,7 @@ class _RerenderRenderClient:
         self.archive_document_id = archive_document_id
         self.archive_detail = archive_detail
 
-    async def submit_render_package(self, payload, **kwargs):
+    async def submit_render_package(self, payload, *, admitted_tenant_id: str, **kwargs):
         self.payloads.append(payload)
         if self.payload is not None:
             return self.status_code, self.payload

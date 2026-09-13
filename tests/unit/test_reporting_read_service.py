@@ -575,7 +575,7 @@ class _RollingRiskClientMixin:
 
     rolling_payloads: list[dict[str, object]]
 
-    async def rolling_metrics(self, payload: dict[str, object]):
+    async def rolling_metrics(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.rolling_payloads.append(payload)
         return 200, {
             "source_service": "lotus-risk",
@@ -631,7 +631,7 @@ class _AttributionRiskClientMixin:
 
     attribution_payloads: list[dict[str, object]]
 
-    async def historical_attribution(self, payload: dict[str, object]):
+    async def historical_attribution(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.attribution_payloads.append(payload)
         return 200, {
             "source_service": "lotus-risk",
@@ -683,7 +683,7 @@ class _DrawdownRiskClientMixin:
 
     drawdown_payloads: list[dict[str, object]]
 
-    async def drawdown_analytics(self, payload: dict[str, object]):
+    async def drawdown_analytics(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.drawdown_payloads.append(payload)
         return 200, {
             "source_service": "lotus-risk",
@@ -744,7 +744,7 @@ class _RiskClientSuccess(
         self.attribution_payloads: list[dict[str, object]] = []
         self.drawdown_payloads: list[dict[str, object]] = []
 
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.seen_payloads.append(payload)
         return 200, {
             "results": {
@@ -781,7 +781,7 @@ class _RiskClientPeriodFallback:
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
 
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.seen_payloads.append(payload)
         stateful_input = payload["stateful_input"]
         assert isinstance(stateful_input, dict)
@@ -943,7 +943,7 @@ class _PerformanceClientFailure:
 
 
 class _RiskClientFailure:
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 503, {"detail": "upstream unavailable"}
 
 
@@ -1737,7 +1737,7 @@ async def test_risk_trend_without_a_benchmark_requests_volatility_only():
 @pytest.mark.asyncio
 async def test_risk_trend_upstream_failure_is_a_stated_unavailability():
     class _RollingDownRiskClient(_RiskClientSuccess):
-        async def rolling_metrics(self, payload: dict[str, object]):
+        async def rolling_metrics(self, payload: dict[str, object], *, admitted_tenant_id: str):
             return 503, {"detail": "rolling unavailable"}
 
     service = ReportingReadService(
@@ -1830,7 +1830,7 @@ async def test_risk_attribution_without_a_benchmark_requests_total_risk_only():
 @pytest.mark.asyncio
 async def test_risk_attribution_upstream_failure_is_a_stated_refusal():
     class _FailingAttribution(_RiskClientSuccess):
-        async def historical_attribution(self, payload):
+        async def historical_attribution(self, payload, *, admitted_tenant_id: str):
             return 503, {"detail": "unavailable"}
 
     service = ReportingReadService(
@@ -1853,7 +1853,7 @@ async def test_risk_attribution_upstream_failure_is_a_stated_refusal():
 @pytest.mark.asyncio
 async def test_risk_attribution_transport_failure_is_the_same_stated_refusal():
     class _RaisingAttribution(_RiskClientSuccess):
-        async def historical_attribution(self, payload):
+        async def historical_attribution(self, payload, *, admitted_tenant_id: str):
             raise RuntimeError("connection reset")
 
     service = ReportingReadService(
