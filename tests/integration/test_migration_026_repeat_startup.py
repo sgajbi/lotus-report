@@ -1,15 +1,22 @@
 """Migration 026 rehearsed against a populated table (report#326, #371).
 
-The runner keeps no ledger of applied migrations: it re-executes every file on
-every call, and `ensure_runtime_schema()` calls it more than once. So 026 does
-not run once at rollout -- it runs at every startup, forever.
-
+When these tests were written the runner kept no ledger of applied migrations:
+it re-executed every file on every call, so 026 ran at every startup, forever.
 It was a `DROP CONSTRAINT` followed by an unconditional `ADD CONSTRAINT`.
 Measured through the shipped runner against 400 populated rows, the backing
 index came back with a **new relfilenode** on the second run: a full index
 rebuild under ACCESS EXCLUSIVE, proportional to the table, at every deployment.
 And between the DROP and the ADD the uniqueness guarantee did not exist, so a
 concurrent writer could insert the duplicate that then made the ADD fail.
+
+The applied-migration ledger (report#376,
+`test_migration_ledger_convergence.py`) has since retired startup replay, so a
+repeat run now short-circuits before 026 entirely. These tests still stand,
+for two reasons: they prove the repeat-startup path preserves the identity
+index, the receipts and the constraint's enforcement whatever mechanism
+delivers the no-op, and 026's INTERNAL `pg_constraint` guard — what they were
+written to measure — still carries the one-time bridge replay a retained
+pre-ledger install performs.
 
 These rehearse the real thing: shipped migrations 000-026 through
 `apply_report_schema_migrations` with `migrations_dir`, on a populated table.

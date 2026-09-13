@@ -59,11 +59,10 @@ EXPECTED_INTAKE_COLUMNS = {
 EXPECTED_INTAKE_INDEXES = {
     # report#344 moved the admitted tenant into the intake identity, and the
     # names changed with it rather than the definitions changing underneath the
-    # old names. `apply_report_schema_migrations` keeps no ledger and re-runs
-    # every file on every call, so a rename is what makes both statements
-    # no-ops on re-execution: DROP IF EXISTS on the old name fires once,
-    # CREATE IF NOT EXISTS on the new name fires once. Reusing a name would
-    # drop and rebuild the index at every startup.
+    # old names. The rename mattered because the runner then replayed every
+    # file at every startup; the applied-migration ledger (report#376) has
+    # since retired that replay, but the renamed names remain the shipped
+    # definitions this check asserts.
     #
     # `idea_evidence_intake_pkey` is gone deliberately: uniqueness is now a
     # unique index on (tenant_id, idempotency_key), because
@@ -98,8 +97,15 @@ def run_upgrade_check(database_url: str) -> None:
                 "legacy_upgrade_target_mismatch:"
                 f"expected={CURRENT_SCHEMA_VERSION}:actual={detected_after}"
             )
-        if first_run != second_run:
-            raise RuntimeError("legacy_upgrade_migration_order_not_deterministic")
+        expected_files = tuple(path.name for path in sorted((ROOT / "migrations").glob("*.sql")))
+        if first_run != expected_files:
+            raise RuntimeError(
+                f"legacy_upgrade_first_run_incomplete:expected={expected_files}:actual={first_run}"
+            )
+        # The applied-migration ledger (report#376) retires startup replay: the
+        # second run must consult the ledger and apply nothing.
+        if second_run != ():
+            raise RuntimeError(f"legacy_upgrade_second_run_replayed:applied={second_run}")
 
         _verify_contract_columns(connection)
         _verify_legacy_row(connection)

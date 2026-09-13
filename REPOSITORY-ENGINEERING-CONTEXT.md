@@ -23,8 +23,11 @@ aspirational.
 
 ## Current-State Summary
 
-The service is in production shape: durable job lifecycle, immutable evidence snapshots, typed
-status events, and governed render and archive handoffs, all proven against real PostgreSQL. The
+The reporting lifecycle is production-shaped in source and proof: durable job lifecycle, immutable
+evidence snapshots, typed status events, and governed render and archive handoffs, all proven
+against real PostgreSQL. That is a statement about merged source and its test evidence, not about
+any deployment — deployment, cutover and operator acceptance are separate boundaries and several
+are explicitly open (#326 intake cutover, #373 audit credential). The
 governing workstream and its remaining dependency are stated in
 [Active Priorities](#active-priorities); anything genuinely blocked is in
 [Known Blockers](#known-blockers). Where a fact is not yet proven, this document says so rather
@@ -194,17 +197,23 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     can collide with a real tenant named `1`, and afterwards nothing separates it from a genuine
     attribution. Classify malformed JSON, wrong type and absent separately; `json_valid` is
     evaluated first so malformed rows leave the set before any accessor touches them.
-13. **Migration files are re-executed at every startup; current-schema DDL must converge without
-    unnecessary mutation.** The runner keeps no ledger of applied files. Migration 026 previously
-    rebuilt an identity index on every boot — measured as a changed `relfilenode` — and its
-    `ALTER TABLE` statements took ACCESS EXCLUSIVE locks. It now guards both constraint operations
-    with `pg_constraint` checks, and populated repeat-startup evidence proves that migration's
-    no-op path. This is not yet a repository-wide property: historical migrations 002, 005, 006,
-    007, 013 and 016 still replace CHECK constraints on every replay, while migration 025 always
-    issues `SET NOT NULL`; issue #376 owns the convergence strategy and fresh-install, upgrade and
-    restart proof. The runner's splitter is quote- and dollar-quote aware, so guarded `DO` blocks
-    are safe; it was not always, and migrations 025 and 026 were shaped around a naive
-    `schema.split(";")`.
+13. **The runner keeps an applied-migration ledger; startup replay is retired (#376).**
+    `apply_report_schema_migrations` records each file in `report_schema_migration` and executes
+    only unrecorded files, whole run and ledger rows in one caller-owned transaction serialized by
+    a transaction-scoped advisory lock. A current-schema restart therefore performs no migration
+    DDL at all — proven on populated PostgreSQL by an empty applied set and an unchanged
+    `relfilenode` for every index (`tests/integration/test_migration_ledger_convergence.py`),
+    which retires the per-boot CHECK replacement in historical 002/005/006/007/013/016 and 025's
+    repeated `SET NOT NULL`; their DDL now executes once per database. A database migrated before
+    the ledger existed converges through one bridge replay — exactly the retired startup
+    behavior — and 026's internal `pg_constraint` guard is what keeps that single replay from
+    rebuilding the identity index. An interrupted run rolls back completely and retries; a pending
+    file sorting below recorded history is refused fail-closed
+    (`report_schema_migration_out_of_order`); recorded names unknown to an older binary are
+    tolerated, which is the forward-only additive promise. Fresh install and the supported legacy
+    baseline are proven to converge to one schema fingerprint. The runner's splitter is quote- and
+    dollar-quote aware, so guarded `DO` blocks are safe; it was not always, and migrations 025 and
+    026 were shaped around a naive `schema.split(";")`.
 
 ## Active Priorities
 

@@ -133,6 +133,20 @@ make migration-smoke
 configured database's `public` schema and verifies legacy event identity, message, correlation,
 trace, contract defaults, and required indexes after migration.
 
+The runner keeps an applied-migration ledger (`report_schema_migration`): each migration file
+executes once per database and a current-schema restart applies no migration DDL. The first
+startup after upgrading a database migrated before the ledger existed replays every file once and
+records the set — expect that one longer boot, not a per-boot cost. Never hand-edit
+`report_schema_migration`: deleting rows replays historical DDL against a current schema, and
+inserting rows silently skips migrations.
+
+If any Report container exits with
+`lotus_report_schema_startup_failed:report_schema_migration_out_of_order`, the deployed revision
+carries a migration file that sorts below the database's recorded history — a renamed or
+interleaved file, which is a source defect, not an operational one. Do not delete ledger rows to
+force progress. Redeploy the previous good revision (older revisions tolerate newer recorded
+history) and fix forward in source with a correctly ordered new migration name.
+
 If any Report container exits with
 `lotus_report_schema_startup_failed:report_schema_upgrade_unsupported`:
 

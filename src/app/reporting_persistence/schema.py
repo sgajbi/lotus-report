@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
@@ -23,6 +24,12 @@ class MigrationConnection(Protocol):
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 CURRENT_SCHEMA_VERSION = "report-ledger-v1"
+MIGRATION_LEDGER_TABLE = "report_schema_migration"
+#: Transaction-scoped serialization for concurrent migration runs. Deliberately a
+#: different key from `app.runtime_schema`'s session-level lock: the entrypoint
+#: guard holds its key on a separate connection while this function runs, so
+#: sharing one key would make the guard deadlock against its own migration.
+_MIGRATION_LEDGER_LOCK_KEY = zlib.crc32(b"lotus-report-schema-migration-ledger")
 LEGACY_STATUS_EVENT_BASELINE = "report-status-event-pre-contract-v0"
 LEGACY_STATUS_EVENT_COLUMNS = frozenset(
     {
@@ -268,15 +275,76 @@ def apply_report_schema_migrations(
     *,
     migrations_dir: Path = MIGRATIONS_DIR,
 ) -> tuple[str, ...]:
-    """Apply the ordered, forward-only Report schema using the production path."""
+    """Apply pending Report schema migrations once each, in filename order.
 
+    The runner keeps an applied-migration ledger (`report_schema_migration`) in
+    the target schema and executes only files not yet recorded there, so a
+    current-schema restart performs no migration DDL at all (report#376). The
+    whole run — ledger bootstrap, every pending file, and its ledger rows — is
+    one caller-owned transaction, serialized across concurrent startups by a
+    transaction-scoped advisory lock: an interrupted run rolls back completely
+    and the next run recomputes the same pending set, and a concurrent starter
+    waits, then observes the winner's committed ledger and applies nothing.
+    Both properties assume the caller runs this inside a transaction, as every
+    production path does (`PostgresConnectionProvider.connection()` commits on
+    exit): on an autocommit connection the xact lock would release after its
+    own statement and each file would commit separately — do not add one.
+
+    A database migrated before the ledger existed has no `report_schema_migration`
+    table; its first run replays every file once — exactly the previous
+    startup behavior, whose convergence the historical migrations were written
+    for — and records them, after which replay is retired for good.
+
+    Returns the names actually applied by THIS run, not the full file set.
+
+    Fail-closed ordering: a pending file that sorts before an already-recorded
+    file means history was edited or a deployment skipped a revision; running
+    it out of order could apply DDL written against a schema shape that no
+    longer exists, so the run refuses instead. Recorded names with no matching
+    local file are tolerated: forward-only additive migrations are exactly the
+    promise that an older binary may start against a newer schema.
+    """
+
+    connection.execute(f"SELECT pg_advisory_xact_lock({_MIGRATION_LEDGER_LOCK_KEY})")
     validate_supported_report_schema(connection)
+    connection.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {MIGRATION_LEDGER_TABLE} (
+            migration_name text PRIMARY KEY,
+            applied_at timestamptz NOT NULL DEFAULT now()
+        )
+        """
+    )
+    recorded_rows = connection.execute(
+        f"SELECT migration_name FROM {MIGRATION_LEDGER_TABLE}"
+    ).fetchall()
+    recorded = {str(_row_value(row, "migration_name", 0)) for row in recorded_rows}
+
+    migration_paths = sorted(migrations_dir.glob("*.sql"))
+    pending = [path for path in migration_paths if path.name not in recorded]
+    recorded_known = [path.name for path in migration_paths if path.name in recorded]
+    if pending and recorded_known:
+        newest_recorded = max(recorded_known)
+        out_of_order = sorted(path.name for path in pending if path.name < newest_recorded)
+        if out_of_order:
+            raise ReportSchemaMigrationError(
+                "report_schema_migration_out_of_order:"
+                f"pending={','.join(out_of_order)}:applied_through={newest_recorded}:"
+                f"target={CURRENT_SCHEMA_VERSION}"
+            )
+
     applied: list[str] = []
-    for migration_path in sorted(migrations_dir.glob("*.sql")):
+    for migration_path in pending:
         schema = migration_path.read_text(encoding="utf-8")
+        # Migration filenames are repo-controlled `NNN_name.sql` identifiers; the
+        # quote escape keeps the inline literal total rather than trusting that.
+        name_literal = migration_path.name.replace("'", "''")
         try:
             for statement in split_sql_statements(schema):
                 connection.execute(statement)
+            connection.execute(
+                f"INSERT INTO {MIGRATION_LEDGER_TABLE} (migration_name) VALUES ('{name_literal}')"
+            )
         except PostgresError as exc:
             sqlstate = exc.sqlstate or "unknown"
             raise ReportSchemaMigrationError(

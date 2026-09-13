@@ -56,12 +56,16 @@ behind it; Render owns how it looks and is the one archive transmit authority; A
 stored document and its lifecycle; Gateway owns who may order and retrieve.
 
 Every successful capture also mints a canonical report revision identity that is persisted with
-the snapshot and carried through the render package into archive custody. Durable revision
-capture does **not** by itself close the full identity chain: the accepted document contract,
-trust-state separation, snapshot lifecycle metadata, and the integrated proof remain open under
-the governing canonical-identity work
-([#283](https://github.com/sgajbi/lotus-report/issues/283), tracked in
-[REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md)).
+the snapshot and carried through the render package into archive custody. The governing
+canonical-identity work ([#283](https://github.com/sgajbi/lotus-report/issues/283), closed
+2026-09-06) delivered the rest of that chain: the accepted document contract resolved once per
+job, snapshot lifecycle claims that state capability rather than command, event identity stable
+from event time, and a 17-point integrated lifecycle proof against real PostgreSQL. Its one
+remaining dependency moved to its own owner: the reconciliation posture — authoritative verdict
+versus unknown-by-design — is decided under
+[#321](https://github.com/sgajbi/lotus-report/issues/321), and unknown reconciliation stays
+unknown until that policy exists. Current architecture and proof boundaries are tracked in
+[REPOSITORY-ENGINEERING-CONTEXT.md](REPOSITORY-ENGINEERING-CONTEXT.md).
 
 ## Getting started
 
