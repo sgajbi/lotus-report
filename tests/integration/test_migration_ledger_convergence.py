@@ -182,10 +182,32 @@ def _schema_fingerprint(
     def _normalized(value: object) -> str:
         return str(value).replace(f"{schema_name}.", "")
 
+    # Explicit field order, never `for field in row`: these rows are dict_row
+    # mappings, so iterating one yields column NAMES — every row would collapse
+    # to the same constant key-tuple and the fingerprints could never differ.
+    # That vacuity masked a real fresh-vs-legacy default divergence (PR #378
+    # review); migration 027 is the convergence it was hiding.
     return {
-        "columns": {tuple(_normalized(field) for field in row) for row in columns},
-        "constraints": {tuple(_normalized(field) for field in row) for row in constraints},
-        "indexes": {tuple(_normalized(field) for field in row) for row in indexes},
+        "columns": {
+            tuple(
+                _normalized(row[field])
+                for field in (
+                    "table_name",
+                    "column_name",
+                    "data_type",
+                    "is_nullable",
+                    "column_default",
+                )
+            )
+            for row in columns
+        },
+        "constraints": {
+            tuple(_normalized(row[field]) for field in ("table_name", "conname", "definition"))
+            for row in constraints
+        },
+        "indexes": {
+            tuple(_normalized(row[field]) for field in ("indexname", "indexdef")) for row in indexes
+        },
     }
 
 
@@ -222,6 +244,41 @@ def test_fresh_install_and_legacy_upgrade_converge_to_the_same_schema(
                 "fresh installation and supported legacy upgrade diverged; the migration "
                 "set no longer converges to one schema"
             )
+
+            # Migration 027's effect, pinned by name: before it, the two paths
+            # left DIVERGENT defaults on event_schema_version/event_payload_json
+            # (fresh 'report-status-event.v1'/'{}' vs legacy backfill values),
+            # which the corrected fingerprint above fails on when 027 is held
+            # out. The end state is NO default on any contract column, so an
+            # INSERT omitting one fails closed instead of stamping an invented
+            # value; a reintroduced default breaks this assertion by name.
+            for schema_name in (fresh_schema, legacy_schema):
+                rows = connection.execute(
+                    """
+                    SELECT column_name, column_default
+                    FROM information_schema.columns
+                    WHERE table_schema = %s
+                      AND table_name = 'report_status_event'
+                      AND column_name IN (
+                          'event_schema_version', 'event_family', 'event_payload_json'
+                      )
+                    """,
+                    (schema_name,),
+                ).fetchall()
+                assert {str(row["column_name"]) for row in rows} == {
+                    "event_schema_version",
+                    "event_family",
+                    "event_payload_json",
+                }
+                defaulted = {
+                    str(row["column_name"]): row["column_default"]
+                    for row in rows
+                    if row["column_default"] is not None
+                }
+                assert defaulted == {}, (
+                    f"contract columns regained a default in {schema_name}: {defaulted}; "
+                    "migration 027 dropped these so omitted columns fail closed"
+                )
         finally:
             connection.execute("RESET search_path")
             for schema_name in (fresh_schema, legacy_schema):
@@ -257,6 +314,130 @@ def test_pre_ledger_install_converges_once_then_never_replays(
 
     assert apply_report_schema_migrations(_Runner(migrated), migrations_dir=MIGRATIONS_DIR) == ()
     migrated.commit()
+
+
+def test_retained_index_only_identity_promotes_without_rebuild(
+    migrated: psycopg.Connection,
+) -> None:
+    """The observed pre-change retained volume: identity as a bare unique index.
+
+    Migration 026's ORIGINAL shape left `report_request_tenant_idempotency_key`
+    as a UNIQUE INDEX with no pg_constraint row — measured on a real retained
+    volume during #376, byte-for-byte the definition recreated here. The name
+    is occupied, so the pre-fix guard's plain ADD CONSTRAINT died with 42P07
+    and startup aborted, on current main too, at every replay. The extended
+    guard promotes the index (ADD CONSTRAINT ... UNIQUE USING INDEX): the
+    constraint contract migration_contract_check asserts through pg_constraint
+    is satisfied, the SAME index backs it — a changed relfilenode would mean a
+    rebuild — receipts survive, and the bridge records the set so the volume
+    never replays again.
+    """
+    migrated.execute(
+        "ALTER TABLE report_request DROP CONSTRAINT report_request_tenant_idempotency_key"
+    )
+    migrated.execute(
+        "CREATE UNIQUE INDEX report_request_tenant_idempotency_key "
+        "ON report_request USING btree (tenant_id, idempotency_key)"
+    )
+    migrated.execute(f"DROP TABLE {MIGRATION_LEDGER_TABLE}")
+    migrated.commit()
+    request_ids = _populate(migrated, 100)
+    before = _all_index_relfilenodes(migrated)[IDENTITY_INDEX]
+
+    bridge = apply_report_schema_migrations(_Runner(migrated), migrations_dir=MIGRATIONS_DIR)
+    migrated.commit()
+
+    assert bridge == _migration_file_names()
+    constraint = migrated.execute(
+        """
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'report_request_tenant_idempotency_key'
+          AND conrelid = 'report_request'::regclass
+        """
+    ).fetchone()
+    assert constraint is not None, (
+        "the bare unique index was not promoted to the contract constraint"
+    )
+    assert _all_index_relfilenodes(migrated)[IDENTITY_INDEX] == before, (
+        "promotion must adopt the existing index; a new relfilenode means a rebuild"
+    )
+    assert _surviving_request_ids(migrated) == set(request_ids)
+    assert apply_report_schema_migrations(_Runner(migrated), migrations_dir=MIGRATIONS_DIR) == ()
+    migrated.commit()
+
+    # The promoted constraint must ENFORCE the identity, not merely exist:
+    # same-tenant reuse refused, different-tenant reuse allowed (#350).
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        migrated.execute(
+            """
+            INSERT INTO report_request (
+                report_request_id, report_type, portfolio_scope_json,
+                requested_output_formats_json, as_of_date, options_json, trigger_type,
+                triggered_by, caller_application, tenant_id, region, idempotency_key,
+                request_hash, correlation_id, trace_id, created_at
+            ) VALUES ('req-promoted-dup', 'PORTFOLIO_REVIEW', '{}', '[]', '2026-01-01', '{}',
+                      'API', 'actor', 'lotus-workbench', 'tenant-0', 'SG', 'idem-0',
+                      'hash', 'corr', 'trace', now())
+            """
+        )
+    migrated.rollback()
+    migrated.execute(
+        """
+        INSERT INTO report_request (
+            report_request_id, report_type, portfolio_scope_json,
+            requested_output_formats_json, as_of_date, options_json, trigger_type,
+            triggered_by, caller_application, tenant_id, region, idempotency_key,
+            request_hash, correlation_id, trace_id, created_at
+        ) VALUES ('req-promoted-other-tenant', 'PORTFOLIO_REVIEW', '{}', '[]', '2026-01-01',
+                  '{}', 'API', 'actor', 'lotus-workbench', 'tenant-elsewhere', 'SG', 'idem-0',
+                  'hash', 'corr', 'trace', now())
+        """
+    )
+    migrated.commit()
+
+
+def test_retained_index_with_unexpected_definition_is_refused_not_promoted(
+    migrated: psycopg.Connection,
+) -> None:
+    """A same-name index with the WRONG definition must refuse, never promote.
+
+    Promoting by name alone would bless whatever uniqueness the impostor
+    enforces as the tenant identity — an invented constraint, worse than an
+    abort. No shipped migration produces this state, so it is a refusal with a
+    stable diagnostic rather than a repair path, and the refusal must leave
+    the impostor untouched (dropping it would destroy evidence and whatever
+    uniqueness it did enforce).
+    """
+    migrated.execute(
+        "ALTER TABLE report_request DROP CONSTRAINT report_request_tenant_idempotency_key"
+    )
+    # Wrong columns: idempotency_key alone is the pre-#350 identity defect.
+    migrated.execute(
+        "CREATE UNIQUE INDEX report_request_tenant_idempotency_key "
+        "ON report_request USING btree (idempotency_key)"
+    )
+    migrated.execute(f"DROP TABLE {MIGRATION_LEDGER_TABLE}")
+    migrated.commit()
+    before = _all_index_relfilenodes(migrated)[IDENTITY_INDEX]
+
+    with pytest.raises(
+        ReportSchemaMigrationError,
+        match="migration=026_report_request_tenant_identity.sql",
+    ):
+        apply_report_schema_migrations(_Runner(migrated), migrations_dir=MIGRATIONS_DIR)
+    migrated.rollback()
+
+    diagnostic = migrated.execute(
+        """
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'report_request_tenant_idempotency_key'
+          AND conrelid = 'report_request'::regclass
+        """
+    ).fetchone()
+    assert diagnostic is None, "the impostor index must not be promoted to the identity"
+    assert _all_index_relfilenodes(migrated)[IDENTITY_INDEX] == before, (
+        "the refusal must leave the unexpected index untouched"
+    )
 
 
 def test_concurrent_startups_serialize_and_the_loser_applies_nothing(

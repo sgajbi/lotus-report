@@ -62,9 +62,58 @@ BEGIN
         WHERE conname = 'report_request_tenant_idempotency_key'
           AND conrelid = 'report_request'::regclass
     ) THEN
-        ALTER TABLE report_request
-            ADD CONSTRAINT report_request_tenant_idempotency_key
-            UNIQUE (tenant_id, idempotency_key);
+        -- A retained volume migrated by this file's ORIGINAL shape holds the
+        -- identity as a bare UNIQUE INDEX of this name with no pg_constraint
+        -- row (observed in the catalog of a real pre-change volume during
+        -- #376). The name is occupied, so a plain ADD CONSTRAINT dies with
+        -- 42P07 and startup aborts. Promote the existing index instead:
+        -- catalog-only, no rebuild, same relfilenode, and the pg_constraint
+        -- contract that migration_contract_check asserts is finally satisfied
+        -- on that path. Editing this shipped file is legitimate for exactly
+        -- this repair: every volume in the affected state predates the
+        -- applied-migration ledger, so this file still re-runs for all of
+        -- them, and a volume that already recorded it holds the constraint
+        -- form this branch would no-op on anyway.
+        IF EXISTS (
+            SELECT 1 FROM pg_class c
+            JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE c.relname = 'report_request_tenant_idempotency_key'
+              AND i.indrelid = 'report_request'::regclass
+        ) THEN
+            -- Promote ONLY the exact identity definition. Binding the name
+            -- alone would bless a same-name index with different uniqueness
+            -- as the tenant identity, which is an invented constraint and
+            -- worse than an abort. Anything else refuses without promoting
+            -- or dropping. Exact column ORDER also keeps the promoted
+            -- definition fingerprint-identical to a fresh install.
+            IF EXISTS (
+                SELECT 1 FROM pg_class c
+                JOIN pg_index i ON i.indexrelid = c.oid
+                WHERE c.relname = 'report_request_tenant_idempotency_key'
+                  AND i.indrelid = 'report_request'::regclass
+                  AND i.indisunique
+                  AND i.indnatts = 2
+                  AND i.indnkeyatts = 2
+                  AND i.indpred IS NULL
+                  AND i.indexprs IS NULL
+                  AND (
+                      SELECT array_agg(a.attname::text ORDER BY k.ord)
+                      FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                      JOIN pg_attribute a
+                        ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                  ) = ARRAY['tenant_id', 'idempotency_key']
+            ) THEN
+                ALTER TABLE report_request
+                    ADD CONSTRAINT report_request_tenant_idempotency_key
+                    UNIQUE USING INDEX report_request_tenant_idempotency_key;
+            ELSE
+                RAISE EXCEPTION 'report_request_identity_index_unexpected_definition: a relation named report_request_tenant_idempotency_key exists but is not the exact UNIQUE (tenant_id, idempotency_key) index. Refusing to promote or drop it';
+            END IF;
+        ELSE
+            ALTER TABLE report_request
+                ADD CONSTRAINT report_request_tenant_idempotency_key
+                UNIQUE (tenant_id, idempotency_key);
+        END IF;
     END IF;
 END
 $$;
