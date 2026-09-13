@@ -90,8 +90,14 @@ def test_a_dispatcher_exists_so_the_gate_does_not_depend_on_the_push_trigger() -
     dispatcher = dispatcher_path.read_text(encoding="utf-8")
     assert "types: [closed]" in dispatcher
     assert "pull_request.merged == true" in dispatcher
-    assert "gh workflow run main-releasability.yml" in dispatcher
-    assert "expected_sha" in dispatcher
+    # The dispatch moved into the script-form program (#364); the workflow
+    # invokes it and the program owns `gh workflow run` with expected_sha
+    # pinned per revision — asserted against the program source so this
+    # guard still fails if the dispatch call disappears entirely.
+    assert "run: python scripts/dispatch_merged_revisions.py" in dispatcher
+    program = (ROOT / "scripts" / "dispatch_merged_revisions.py").read_text(encoding="utf-8")
+    assert '"main-releasability.yml"' in program
+    assert "expected_sha=" in program
 
 
 def test_main_releasability_validates_the_exact_dispatched_revision() -> None:

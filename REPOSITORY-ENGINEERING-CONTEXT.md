@@ -441,6 +441,18 @@ merge or leaves the merged revision unvalidated. `scripts/audit_main_gate_covera
 fail-closed) additionally proves every commit on `main` carries a verdict-bearing releasability
 run.
 
+Per-revision dispatch follows the platform merged-revision dispatch conformance contract
+(lotus-platform `platform-contracts/ci-governance/merged-revision-dispatch-conformance.v1.json`)
+in its script form (#364): `scripts/dispatch_merged_revisions.py` is the whole dispatch step,
+enumerating landed revisions base..tip (never by commit count — the count walk overreached on
+dropped-duplicate rebases), refusing empty intervals, intervals exceeding the PR's stated
+commits, revisions off the freshly fetched main, merge commits and contiguity breaks, then
+tagging `main-releasability-<revision>` (immutable-ref identity, conflict refused) and
+dispatching sequentially oldest-first with `expected_sha` pinned. Conformance is declared in
+`.github/merged-revision-dispatch.conformance.json`, bound to the exact workflow run command,
+with the behavior tests it names as proofs (real temporary git histories plus a scripted fake
+`gh` for tag/dispatch ordering and refusal-before-effect).
+
 Branch protection is asserted, not assumed. `quality/branch_protection_policy.v1.json` records
 every protection field this repository claims — required contexts, posture flags, bypass
 allowances, CODEOWNERS posture, the review authority, and `documented_exceptions` each carrying the

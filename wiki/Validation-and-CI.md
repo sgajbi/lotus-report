@@ -31,6 +31,14 @@ never fired both leave no tag behind. The only way to distinguish them is the ru
 run, because the dispatch ref is a tag rather than `main` - and tag presence is not durable
 evidence, because consumed tags are reclaimed.
 
+Dispatch itself is one program, `scripts/dispatch_merged_revisions.py` (report#364), conforming
+to the platform merged-revision dispatch contract in its script form: landed revisions are
+enumerated base..tip (never by commit count, which overreached on dropped-duplicate rebases),
+guarded (empty interval, asymmetric count cross-check, fetched-main ancestry, single parent,
+contiguity), tagged `main-releasability-<revision>` and dispatched sequentially oldest-first with
+`expected_sha` pinned. `.github/merged-revision-dispatch.conformance.json` declares the
+semantics, bound to the workflow's exact run command, with the behavior tests as named proofs.
+
 ## Code-health gates
 
 `make code-health-gates` runs five fitness functions in both governed lanes:

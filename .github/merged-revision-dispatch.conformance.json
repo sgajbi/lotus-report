@@ -1,0 +1,22 @@
+{
+  "schema_version": "lotus.merged-revision-dispatch-declaration.v1",
+  "form": "script",
+  "entrypoint": "python scripts/dispatch_merged_revisions.py",
+  "tested_source_identity": "immutable-ref",
+  "enumeration": "range",
+  "count_cross_check": "asymmetric",
+  "semantics": {
+    "merged-main-only-trigger": true,
+    "rebase-only-merge-assertion": true,
+    "range-enumeration": true,
+    "empty-enumeration-refusal": true,
+    "count-cross-check": true,
+    "main-ancestry-guard": true,
+    "exact-revision-dispatch": true,
+    "tested-source-identity": true
+  },
+  "proofs": [
+    "tests/unit/test_enumerate_merged_revisions.py",
+    "tests/unit/test_dispatch_merged_revisions.py"
+  ]
+}
