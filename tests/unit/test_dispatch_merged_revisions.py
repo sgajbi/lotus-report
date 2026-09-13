@@ -13,11 +13,13 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.dispatch_merged_revisions import (
     DispatchRefused,
+    _run_gh,
     assert_rebase_only_merging,
     dispatch_merged_revisions,
     ensure_dispatch_ref,
@@ -206,6 +208,45 @@ def test_unreadable_merge_methods_refuse() -> None:
         assert_rebase_only_merging(repository="sgajbi/lotus-report", gh=gh)
 
 
+def test_gh_runner_retains_stderr_for_a_failed_production_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real dispatch rejection must leave an actionable fail-closed log."""
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="HTTP 403: workflow dispatch is forbidden",
+        ),
+    )
+
+    assert _run_gh(["workflow", "run", "main-releasability.yml"]) == (
+        1,
+        "HTTP 403: workflow dispatch is forbidden",
+    )
+
+
+def test_gh_runner_does_not_mix_stderr_into_a_successful_machine_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GH_DEBUG is diagnostic-only, never part of a valid API value."""
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="false,false,true\n",
+            stderr="[gh debug] request trace",
+        ),
+    )
+
+    assert _run_gh(["api", "repos/sgajbi/lotus-report"]) == (0, "false,false,true")
+
+
 def test_failed_dispatch_stops_the_sequence(repo: Path) -> None:
     """A failed dispatch is a loud stop, not a skipped revision.
 
@@ -218,7 +259,7 @@ def test_failed_dispatch_stops_the_sequence(repo: Path) -> None:
     clone = _clone(repo)
     gh = _FakeGh(failing="workflow run")
 
-    with pytest.raises(DispatchRefused, match="gate_dispatch_failed"):
+    with pytest.raises(DispatchRefused, match="gate_dispatch_failed:.*no_command_output"):
         dispatch_merged_revisions(
             repository="sgajbi/lotus-report",
             base_sha=base,
