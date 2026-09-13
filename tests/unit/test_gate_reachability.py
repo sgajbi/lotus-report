@@ -137,6 +137,7 @@ WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 # auto-merge/dispatch plumbing run other things; a gate invoked only there would be
 # advisory, not enforced, so discovery is restricted to the two governed lanes.
 BLOCKING_WORKFLOWS = ("pr-merge-gate.yml", "main-releasability.yml")
+FEATURE_WORKFLOW = "feature-lane.yml"
 
 # `make <target>` at unconditional command position: line start, or after `&&`/`;`. A command
 # after `||` runs only when the previous one failed, and conditional is not enforcement - which
@@ -296,3 +297,20 @@ def test_every_declared_gate_is_executed_by_some_workflow() -> None:
             "gate - one lane alone allows either unvalidated merges or an unvalidated exact "
             "merged revision. See #187."
         )
+
+
+def test_feature_lane_executes_the_repo_native_security_audit_target() -> None:
+    """Feature security must use the same audited-closure entrypoint as merge.
+
+    The closure-completeness guard is implemented by ``make security-audit``.
+    Parsing executable workflow commands and Make dependencies (rather than
+    matching YAML prose) keeps a future Feature Lane edit from bypassing that
+    production entrypoint while PR/Main still call it.
+    """
+
+    workflow_path = WORKFLOWS_DIR / FEATURE_WORKFLOW
+    assert workflow_path.exists(), "The Feature Lane workflow is missing."
+    assert "security-audit" in _workflow_reachable_targets(workflow_path), (
+        "Feature Lane no longer executes make security-audit, so its dependency scan can drift "
+        "from the governed closure-completeness guard."
+    )

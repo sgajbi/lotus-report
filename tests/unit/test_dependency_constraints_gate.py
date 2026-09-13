@@ -54,6 +54,18 @@ def test_project_itself_and_packaging_tooling_are_excluded() -> None:
     assert compare_constraints(constrained, installed, project_name="lotus-report") == []
 
 
+def test_declared_build_tooling_is_compared_when_the_caller_requires_it() -> None:
+    constrained = parse_constraints("setuptools==83.0.0\n")
+    installed = {"setuptools": "83.0.1"}
+
+    assert compare_constraints(
+        constrained,
+        installed,
+        project_name="lotus-report",
+        included_tooling={"setuptools"},
+    ) == ["version_drift:setuptools:constrained==83.0.0:installed==83.0.1"]
+
+
 def test_name_normalization_matches_pep503() -> None:
     constrained = parse_constraints("Prometheus_FastAPI-Instrumentator==8.1.0\n")
     installed = {"prometheus-fastapi-instrumentator": "8.1.0"}
