@@ -153,7 +153,9 @@ class _RenderClientSuccess:
     def __init__(self):
         self.packages: list[dict] = []
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.packages.append(payload)
         return 201, {
             "render_job_id": payload["render_job_id"],

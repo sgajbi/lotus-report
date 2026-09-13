@@ -139,6 +139,7 @@ class RerenderRenderClient(Protocol):
         *,
         correlation_id: str,
         trace_id: str,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]: ...
 
 
@@ -253,6 +254,7 @@ class PortfolioReviewRerenderService:
             payload,
             correlation_id=caller_context.correlation_id,
             trace_id=caller_context.trace_id,
+            admitted_tenant_id=job.tenant_id,
         )
         template_mismatch = (
             template_contract_mismatch(payload, render_response)

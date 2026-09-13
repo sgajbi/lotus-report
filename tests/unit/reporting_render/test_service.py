@@ -41,7 +41,9 @@ from app.reporting_render.waiting import RenderWaiting
 
 
 class _RenderClientSuccess:
-    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_status(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         # The real status projection: every submit field except the bytes.
         return 200, {
             "render_job_id": render_job_id,
@@ -57,7 +59,9 @@ class _RenderClientSuccess:
             "archive_document_id": "doc_archived",
         }
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         assert correlation_id == "corr-render"
         assert trace_id == "trace-render"
         assert payload["report_data"]["client_name"] == "Alex Tan"
@@ -81,7 +85,9 @@ class _RenderClientSuccess:
 
 
 class _RenderClientSuccessWithoutArtifact:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -98,7 +104,9 @@ class _RenderClientSuccessWithoutArtifact:
 
 
 class _RenderClientFailure:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 422, {
             "detail": {
                 "code": "render_package_invalid",
@@ -108,7 +116,9 @@ class _RenderClientFailure:
 
 
 class _RenderClientConflict:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 409, {
             "detail": {
                 "code": "render_job_conflict",
@@ -118,7 +128,9 @@ class _RenderClientConflict:
 
 
 class _RenderClientServerError:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 503, {"failure_message": "lotus-render unavailable"}
 
 
@@ -131,7 +143,9 @@ class _RenderClientWithArchiveOutcome:
         self._archive_document_id = archive_document_id
         self._archive_detail = archive_detail
 
-    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_status(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         status_payload = {
             "render_job_id": render_job_id,
             "status": "rendered",
@@ -149,7 +163,9 @@ class _RenderClientWithArchiveOutcome:
             status_payload["archive_detail"] = self._archive_detail
         return 200, status_payload
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
@@ -1126,7 +1142,9 @@ class _RenderClientRecording:
     def __init__(self):
         self.packages = []
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.packages.append(payload)
         return 201, {
             "render_job_id": payload["render_job_id"],
@@ -1477,9 +1495,11 @@ async def test_the_source_owned_request_id_is_recorded_verbatim(tmp_path):
     only a rollout fallback for responses predating the field."""
 
     class _RenderClientWithSourceOwnedId(_RenderClientWithArchiveOutcome):
-        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        async def submit_render_package(
+            self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+        ):
             status_code, response = await super().submit_render_package(
-                payload, correlation_id, trace_id
+                payload, correlation_id, trace_id, admitted_tenant_id=admitted_tenant_id
             )
             response["archive_request_id"] = "areq_source_owned_0123456789abcdef"
             return status_code, response
@@ -1599,7 +1619,9 @@ async def test_a_package_validation_error_fails_the_job_before_any_render_call(t
             return _Record()
 
     class _RenderMustNotBeCalled:
-        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        async def submit_render_package(
+            self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+        ):
             raise AssertionError("a package that failed validation must not be submitted")
 
     service = PortfolioReviewRenderOrchestrationService(
@@ -2633,10 +2655,14 @@ class _RenderClientHoldsNoJob:
     def __init__(self):
         self.submitted_packages = []
 
-    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_status(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 404, {"detail": {"code": "render_job_not_found"}}
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.submitted_packages.append(payload)
         return 201, {
             "render_job_id": payload["render_job_id"],
@@ -2661,13 +2687,19 @@ class _RenderClientMustNotSubmit:
             {"recovery_action": "wait_for_completion", "retryable": True},
         )
 
-    async def get_render_status(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_status(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return self._lookup
 
-    async def get_render_diagnostics(self, render_job_id, correlation_id=None, trace_id=None):
+    async def get_render_diagnostics(
+        self, render_job_id, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return self._diagnostics
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         raise AssertionError("an unresolved persisted render must never be blindly resubmitted")
 
 

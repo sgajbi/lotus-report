@@ -24,6 +24,7 @@ async def test_submit_render_package_posts_to_render_endpoint(monkeypatch):
         {"render_job_id": "rdr_123"},
         correlation_id="corr-123",
         trace_id="0123456789abcdef0123456789abcdef",
+        admitted_tenant_id="tenant-sg",
     )
 
     assert status_code == 201
@@ -37,6 +38,7 @@ async def test_submit_render_package_posts_to_render_endpoint(monkeypatch):
             "X-Correlation-ID": "corr-123",
             "X-Trace-ID": "0123456789abcdef0123456789abcdef",
             "traceparent": "00-0123456789abcdef0123456789abcdef-0000000000000001-01",
+            "X-Tenant-Id": "tenant-sg",
         },
         "max_retries": 4,
         "backoff_seconds": 0.75,
@@ -59,9 +61,12 @@ async def test_submit_render_package_omits_correlation_header_when_absent(monkey
         retry_backoff_seconds=0.1,
     )
 
-    await client.submit_render_package({"render_job_id": "rdr_456"})
+    await client.submit_render_package({"render_job_id": "rdr_456"}, admitted_tenant_id="tenant-sg")
 
-    assert captured_headers == {"Content-Type": "application/json"}
+    assert captured_headers == {
+        "Content-Type": "application/json",
+        "X-Tenant-Id": "tenant-sg",
+    }
 
 
 @pytest.mark.asyncio
@@ -80,11 +85,14 @@ async def test_submit_render_package_sends_trace_without_invalid_traceparent(mon
         retry_backoff_seconds=0.1,
     )
 
-    await client.submit_render_package({"render_job_id": "rdr_789"}, trace_id="trace-render")
+    await client.submit_render_package(
+        {"render_job_id": "rdr_789"}, trace_id="trace-render", admitted_tenant_id="tenant-sg"
+    )
 
     assert captured_headers == {
         "Content-Type": "application/json",
         "X-Trace-ID": "trace-render",
+        "X-Tenant-Id": "tenant-sg",
     }
 
 
@@ -109,11 +117,13 @@ async def test_submit_render_package_omits_traceparent_when_trace_id_is_32_char_
     await client.submit_render_package(
         {"render_job_id": "rdr_790"},
         trace_id="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        admitted_tenant_id="tenant-sg",
     )
 
     assert captured_headers == {
         "Content-Type": "application/json",
         "X-Trace-ID": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+        "X-Tenant-Id": "tenant-sg",
     }
 
 
@@ -226,6 +236,7 @@ async def test_get_render_status_resolves_the_persisted_render_by_id(monkeypatch
     status_code, payload = await client.get_render_status(
         "rdr_123",
         correlation_id="corr-123",
+        admitted_tenant_id="tenant-sg",
         trace_id="0123456789abcdef0123456789abcdef",
     )
 
@@ -260,6 +271,7 @@ async def test_get_render_diagnostics_reads_the_owner_recovery_contract(monkeypa
     status_code, payload = await client.get_render_diagnostics(
         "rdr_123",
         correlation_id="corr-123",
+        admitted_tenant_id="tenant-sg",
         trace_id="0123456789abcdef0123456789abcdef",
     )
 

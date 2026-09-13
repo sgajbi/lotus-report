@@ -1215,7 +1215,7 @@ class _SuccessfulRenderClient:
     def __init__(self, *, archive_state="archived_verified"):
         self.archive_state = archive_state
 
-    async def submit_render_package(self, payload, **kwargs):
+    async def submit_render_package(self, payload, *, admitted_tenant_id: str, **kwargs):
         return 201, {
             "status": "rendered",
             "template_id": payload["template_id"],
@@ -1240,7 +1240,7 @@ class _SuccessfulRenderClient:
 
 
 class _UnexpectedRenderClient:
-    async def submit_render_package(self, payload, **kwargs):
+    async def submit_render_package(self, payload, *, admitted_tenant_id: str, **kwargs):
         raise AssertionError("JSON-only materialization must not call render")
 
 

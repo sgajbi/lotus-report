@@ -322,7 +322,9 @@ class _RecordingRenderClient:
         self._archive_document_id = archive_document_id
         self._archive_detail = archive_detail
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         self.render_job_ids.append(payload["render_job_id"])
         response = {
             "render_job_id": payload["render_job_id"],
@@ -824,9 +826,11 @@ async def test_replay_records_incomparable_for_metadataless_render_after_archive
     incomparable rather than staying silent."""
 
     class _MetadatalessRenderClient(_RecordingRenderClient):
-        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        async def submit_render_package(
+            self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+        ):
             status_code, response = await super().submit_render_package(
-                payload, correlation_id, trace_id
+                payload, correlation_id, trace_id, admitted_tenant_id=admitted_tenant_id
             )
             for key in (
                 "artifact_sha256",
@@ -930,9 +934,11 @@ async def test_replay_records_incomparable_when_replayed_fingerprint_missing(tmp
     indistinguishable from a failed render."""
 
     class _NoFingerprintRenderClient(_RecordingRenderClient):
-        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        async def submit_render_package(
+            self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+        ):
             status_code, response = await super().submit_render_package(
-                payload, correlation_id, trace_id
+                payload, correlation_id, trace_id, admitted_tenant_id=admitted_tenant_id
             )
             response.pop("bounded_determinism_fingerprint", None)
             return status_code, response
@@ -956,9 +962,11 @@ async def test_replay_records_incomparable_when_runtime_identity_missing(tmp_pat
     match claim requires proof both renders ran the same governed runtime."""
 
     class _NoRuntimeRenderClient(_RecordingRenderClient):
-        async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+        async def submit_render_package(
+            self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+        ):
             status_code, response = await super().submit_render_package(
-                payload, correlation_id, trace_id
+                payload, correlation_id, trace_id, admitted_tenant_id=admitted_tenant_id
             )
             response.pop("runtime_engine", None)
             response.pop("runtime_engine_version", None)
@@ -1052,7 +1060,9 @@ async def test_replay_records_incomparable_when_source_fingerprint_missing(tmp_p
 
 
 class _FailingRenderClient:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 503, {"detail": "render unavailable"}
 
 

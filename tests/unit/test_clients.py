@@ -586,7 +586,9 @@ async def test_risk_client_calculate_risk_posts_expected_contract(monkeypatch):
     monkeypatch.setattr("app.clients.risk_client.post_with_retry", _fake_post_with_retry)
     client = RiskClient(base_url="http://risk/", timeout_seconds=3.0)
 
-    status_code, payload, kwargs = await client.calculate_risk({"metrics": ["VAR"]})
+    status_code, payload, kwargs = await client.calculate_risk(
+        {"metrics": ["VAR"]}, admitted_tenant_id="tenant-sg"
+    )
     assert status_code == 200
     assert payload == {"results": {}}
     assert kwargs["url"] == "http://risk/analytics/risk/calculate"

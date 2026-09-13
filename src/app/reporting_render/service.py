@@ -196,6 +196,7 @@ class PortfolioReviewRenderOrchestrationService:
                 built,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
+                admitted_tenant_id=job.tenant_id,
             )
         status_code, response_payload = outcome
         # The identity every outcome is validated against comes from the
@@ -340,6 +341,7 @@ class PortfolioReviewRenderOrchestrationService:
                 built,
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
+                admitted_tenant_id=job.tenant_id,
             )
             return submitted
         return resolution
@@ -433,6 +435,7 @@ class PortfolioReviewRenderOrchestrationService:
             render_job_id,
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
+            admitted_tenant_id=job.tenant_id,
         )
         if lookup_status == 200:
             render_status = lookup_payload.get("status")
@@ -480,6 +483,7 @@ class PortfolioReviewRenderOrchestrationService:
             render_job_id,
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
+            admitted_tenant_id=job.tenant_id,
         )
         if diag_status != 200:
             return self._leave_resolution_pending(

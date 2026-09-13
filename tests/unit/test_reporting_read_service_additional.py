@@ -361,7 +361,7 @@ class _PerformanceSuccessEmpty:
 
 
 class _RiskSuccess:
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 200, {
             "results": {
                 "YTD": {
@@ -385,7 +385,7 @@ class _RiskSuccess:
 
 
 class _RiskZeroRate:
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 200, {
             "results": {
                 "YTD": {
@@ -1943,7 +1943,7 @@ class _PerformanceWorkspaceNoReturns(_PerformanceSuccessEmpty):
 
 
 class _RiskStatusError(_RiskSuccess):
-    async def calculate_risk(self, payload: dict[str, object]):
+    async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 500, {"detail": "risk failed"}
 
 

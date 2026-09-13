@@ -391,10 +391,10 @@ class _DummyRiskClient:
     def __init__(self, **_kwargs):
         pass
 
-    async def calculate_risk(self, payload):
+    async def calculate_risk(self, payload, *, admitted_tenant_id: str):
         return 200, {"contract_version": "v1", "risk": payload}
 
-    async def drawdown_analytics(self, payload):
+    async def drawdown_analytics(self, payload, *, admitted_tenant_id: str):
         return 200, {"contract_version": "v1", "results": {}, "metadata": {}}
 
 
@@ -407,10 +407,10 @@ class _FailingPerformanceClient(_DummyPerformanceClient):
 
 
 class _FailingRiskClient(_DummyRiskClient):
-    async def calculate_risk(self, payload):
+    async def calculate_risk(self, payload, *, admitted_tenant_id: str):
         raise RuntimeError(f"risk failure for {payload['portfolio_id']}")
 
-    async def drawdown_analytics(self, payload):
+    async def drawdown_analytics(self, payload, *, admitted_tenant_id: str):
         raise RuntimeError("drawdown failure")
 
 
@@ -453,7 +453,7 @@ class _HappyReportingReadService:
             request_payload, admitted_tenant_id="tenant-sg"
         )
         await self._performance.get_contribution(request_payload, admitted_tenant_id="tenant-sg")
-        await self._risk.calculate_risk(request_payload)
+        await self._risk.calculate_risk(request_payload, admitted_tenant_id="tenant-sg")
         return {
             "report_id": f"portfolio-review:{portfolio_id}:{request_payload['as_of_date']}",
             "portfolio_id": portfolio_id,
@@ -1641,11 +1641,13 @@ async def test_recording_clients_capture_success_and_failure_paths():
     await performance.get_contribution(
         {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
     )
-    await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+    await risk.calculate_risk(
+        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+    )
 
     calls = recorder.calls
     drawdown_status, _drawdown_payload = await risk.drawdown_analytics(
-        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}
+        {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
     )
     assert drawdown_status == 200
     calls = recorder.calls
@@ -1811,9 +1813,13 @@ async def test_capture_service_additional_payload_and_failure_branches():
             {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
         )
     with pytest.raises(RuntimeError, match="risk failure"):
-        await risk.calculate_risk({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+        await risk.calculate_risk(
+            {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+        )
     with pytest.raises(RuntimeError, match="drawdown failure"):
-        await risk.drawdown_analytics({"portfolio_id": "PB_SG_GLOBAL_BAL_001"})
+        await risk.drawdown_analytics(
+            {"portfolio_id": "PB_SG_GLOBAL_BAL_001"}, admitted_tenant_id="tenant-sg"
+        )
 
     assert [call.failure_category for call in recorder.calls] == [
         "upstream_error",

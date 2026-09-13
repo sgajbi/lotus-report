@@ -22,7 +22,17 @@ class RenderClient:
         payload: dict[str, Any],
         correlation_id: str | None = None,
         trace_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
+        """Submit is where the render job's identity is created, so the
+        admitted tenant must ride the submission (#375): Render's receiving
+        contract (C6-REN-02) binds job identity, reads and Archive custody to
+        it. REQUIRED keyword, not defaulted - a default preserves the gap at
+        call sites nobody found. Sent blank when there is no admitted tenant,
+        never omitted, so a regression that stops threading the value stays
+        distinguishable from a legitimately tenantless call."""
+
         result: tuple[int, dict[str, Any]] = await post_with_retry(
             url=f"{self._base_url}/renders",
             timeout_seconds=self._timeout_seconds,
@@ -31,6 +41,7 @@ class RenderClient:
                 correlation_id=correlation_id,
                 trace_id=trace_id,
                 content_type="application/json",
+                admitted_tenant_id=admitted_tenant_id,
             ),
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
@@ -42,6 +53,8 @@ class RenderClient:
         render_job_id: str,
         correlation_id: str | None = None,
         trace_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         """GET /renders/{render_job_id} - the persisted render job's posture:
         status, template identity, artifact hash metadata, and the archive
@@ -54,7 +67,11 @@ class RenderClient:
             url=f"{self._base_url}/renders/{render_job_id}",
             timeout_seconds=self._timeout_seconds,
             params={},
-            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            headers=_request_headers(
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                admitted_tenant_id=admitted_tenant_id,
+            ),
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
         )
@@ -65,6 +82,8 @@ class RenderClient:
         render_job_id: str,
         correlation_id: str | None = None,
         trace_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]:
         """GET /renders/{render_job_id}/diagnostics - Render's stale-work
         escalation channel (report#303): recovery_action, retryable,
@@ -76,7 +95,11 @@ class RenderClient:
             url=f"{self._base_url}/renders/{render_job_id}/diagnostics",
             timeout_seconds=self._timeout_seconds,
             params={},
-            headers=_request_headers(correlation_id=correlation_id, trace_id=trace_id),
+            headers=_request_headers(
+                correlation_id=correlation_id,
+                trace_id=trace_id,
+                admitted_tenant_id=admitted_tenant_id,
+            ),
             max_retries=self._max_retries,
             backoff_seconds=self._retry_backoff_seconds,
         )
@@ -91,7 +114,12 @@ class RenderClient:
         family supportability (render#265): per registered version, its id,
         version, renderable status, publication posture, and supported report
         types/contract versions. Deliberately narrow by contract - digests,
-        locales, output formats, and runtime posture are other surfaces."""
+        locales, output formats, and runtime posture are other surfaces.
+
+        DELIBERATELY untenanted (#375): the published template catalogue is
+        global publication authority, not tenant-owned state. Adding tenant
+        scope here would be the meaningless-global-scope the Cycle 6 steering
+        forbids; the same applies to get_metadata below."""
 
         result: tuple[int, dict[str, Any]] = await get_with_retry(
             url=f"{self._base_url}/system/templates",
@@ -124,6 +152,7 @@ def _request_headers(
     correlation_id: str | None,
     trace_id: str | None,
     content_type: str | None = None,
+    admitted_tenant_id: str | None = None,
 ) -> dict[str, str]:
     headers: dict[str, str] = {}
     if content_type:
@@ -135,6 +164,11 @@ def _request_headers(
         traceparent = _traceparent_header(trace_id)
         if traceparent:
             headers["traceparent"] = traceparent
+    # None means the METHOD is global-by-design and carries no tenant claim at
+    # all; a str - blank included - is always sent, so a regression that stops
+    # threading the value never looks like a legitimately tenantless call.
+    if admitted_tenant_id is not None:
+        headers["X-Tenant-Id"] = admitted_tenant_id
     return headers
 
 

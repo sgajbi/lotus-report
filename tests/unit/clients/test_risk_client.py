@@ -25,7 +25,9 @@ async def test_rolling_metrics_posts_to_the_rolling_metrics_endpoint(monkeypatch
         retry_backoff_seconds=0.75,
     )
 
-    status_code, payload = await client.rolling_metrics({"input_mode": "stateful"})
+    status_code, payload = await client.rolling_metrics(
+        {"input_mode": "stateful"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results": {}}
@@ -33,7 +35,7 @@ async def test_rolling_metrics_posts_to_the_rolling_metrics_endpoint(monkeypatch
         "url": "http://risk.dev.lotus/analytics/risk/rolling-metrics",
         "timeout_seconds": 12.5,
         "json_body": {"input_mode": "stateful"},
-        "headers": {"X-Correlation-ID": "corr-9"},
+        "headers": {"X-Correlation-ID": "corr-9", "X-Tenant-Id": "tenant-sg"},
         "max_retries": 4,
         "backoff_seconds": 0.75,
     }
@@ -58,7 +60,9 @@ async def test_historical_attribution_posts_to_the_attribution_endpoint(monkeypa
         retry_backoff_seconds=0.5,
     )
 
-    status_code, payload = await client.historical_attribution({"input_mode": "stateful"})
+    status_code, payload = await client.historical_attribution(
+        {"input_mode": "stateful"}, admitted_tenant_id="tenant-sg"
+    )
 
     assert status_code == 200
     assert payload == {"results": {}}

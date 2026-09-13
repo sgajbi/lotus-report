@@ -185,7 +185,9 @@ class _RenderClientSuccess:
     def __init__(self):
         self.packages: list[dict] = []
 
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         assert payload["report_job_id"].startswith("rjob_")
         # The render leg now carries the DURABLE snapshot identity - the same
         # one the archive assertion below has always required. This fake
@@ -219,7 +221,9 @@ class _RenderClientSuccess:
 
 
 class _RenderClientValidationFailure:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 422, {
             "detail": {
                 "code": "render_package_invalid",
@@ -229,7 +233,9 @@ class _RenderClientValidationFailure:
 
 
 class _RenderClientArchivePending:
-    async def submit_render_package(self, payload, correlation_id=None, trace_id=None):
+    async def submit_render_package(
+        self, payload, correlation_id=None, trace_id=None, *, admitted_tenant_id: str
+    ):
         return 201, {
             "render_job_id": payload["render_job_id"],
             "status": "rendered",
