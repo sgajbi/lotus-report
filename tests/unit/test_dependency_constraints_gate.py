@@ -43,7 +43,9 @@ def test_constrained_but_missing_fails() -> None:
 
 
 def test_project_itself_and_packaging_tooling_are_excluded() -> None:
-    constrained = parse_constraints("fastapi==0.116.1\n")
+    constrained = parse_constraints(
+        "fastapi==0.116.1\npip==25.0\nsetuptools==80.0.0\nwheel==0.45.0\n"
+    )
     installed = {
         "fastapi": "0.116.1",
         "lotus-report": "0.1.0",
@@ -51,6 +53,13 @@ def test_project_itself_and_packaging_tooling_are_excluded() -> None:
         "setuptools": "80.0.0",
         "wheel": "0.45.0",
     }
+    assert compare_constraints(constrained, installed, project_name="lotus-report") == []
+
+
+def test_constrained_build_tooling_is_not_required_from_the_runtime_environment() -> None:
+    constrained = parse_constraints("fastapi==0.116.1\nsetuptools==83.0.0\n")
+    installed = {"fastapi": "0.116.1", "lotus-report": "0.1.0"}
+
     assert compare_constraints(constrained, installed, project_name="lotus-report") == []
 
 

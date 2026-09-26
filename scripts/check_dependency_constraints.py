@@ -161,14 +161,19 @@ def compare_constraints(
     problems: list[str] = []
     project = canonical_name(project_name)
     explicitly_required_tooling = {canonical_name(name) for name in included_tooling}
+    constrained_relevant = {
+        name: version
+        for name, version in constrained.items()
+        if name not in _TOOLING_DISTRIBUTIONS or name in explicitly_required_tooling
+    }
     installed_relevant = {
         name: version
         for name, version in installed.items()
         if name != project
         and (name not in _TOOLING_DISTRIBUTIONS or name in explicitly_required_tooling)
     }
-    for name in sorted(set(constrained) | set(installed_relevant)):
-        pinned = constrained.get(name)
+    for name in sorted(set(constrained_relevant) | set(installed_relevant)):
+        pinned = constrained_relevant.get(name)
         actual = installed_relevant.get(name)
         if pinned is None:
             problems.append(f"unconstrained_installed:{name}=={actual}")
