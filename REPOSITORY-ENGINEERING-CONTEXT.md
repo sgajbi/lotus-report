@@ -169,9 +169,11 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
     Absence is transmitted as an empty header rather than omitted, so a regression that stops
     threading the value looks different from a legitimately tenantless call.
 
-    **Coverage is complete on every tenant-owned method (#375), and the completeness is pinned by
-    tests rather than by this table.** Measured on this tree by counting `X-Tenant-Id` sends per
-    client:
+    **Transport coverage is complete on every tenant-owned method (#375), and the completeness is
+    pinned by tests rather than by this table.** That does not prove orchestration call-site
+    coverage: service-level fakes for tenant-owned methods must also make
+    `admitted_tenant_id` a required keyword so a dropped handoff fails before runtime. Measured on
+    this tree by counting `X-Tenant-Id` sends per client:
 
     | client | methods | sends the tenant |
     |---|---|---|

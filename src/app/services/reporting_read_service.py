@@ -258,10 +258,10 @@ class ReportingReadService:
         response["clientProfile"] = await self._portfolio_client_profile(
             portfolio_id=portfolio_id,
             correlation_id=correlation_id,
+            admitted_tenant_id=admitted_tenant,
         )
         transaction_result: _TransactionRowsResult | None = None
         transaction_rows: list[dict[str, object]] | None = None
-
         if "OVERVIEW" in requested_sections:
             response["overview"] = self._map_review_overview(summary)
         if "ALLOCATION" in requested_sections:
@@ -288,7 +288,7 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
-                    admitted_tenant_id=admitted_tenant_id,
+                    admitted_tenant_id=admitted_tenant,
                 )
                 transaction_rows = transaction_result.rows
             response["incomeAndActivity"] = {
@@ -318,14 +318,13 @@ class ReportingReadService:
                     portfolio_id=portfolio_id,
                     correlation_id=correlation_id,
                     params=self._build_transaction_window_params(request_payload),
-                    admitted_tenant_id=admitted_tenant_id,
+                    admitted_tenant_id=admitted_tenant,
                 )
                 transaction_rows = transaction_result.rows
             response["transactions"] = self._map_review_transactions(
                 transaction_rows,
                 transaction_result=transaction_result,
             )
-
         workspace_summary_payload: dict[str, object] | None = None
         if "PERFORMANCE" in requested_sections:
             (
@@ -421,7 +420,6 @@ class ReportingReadService:
                 request_payload=request_payload,
                 admitted_tenant_id=admitted_tenant,
             )
-
         client_sections = self._build_client_sections(
             response=response,
             requested_sections=requested_sections,
@@ -482,6 +480,7 @@ class ReportingReadService:
         *,
         portfolio_id: str,
         correlation_id: str | None,
+        admitted_tenant_id: str,
     ) -> dict[str, object]:
         get_detail = getattr(self._core_query_client, "get_portfolio_detail", None)
         if get_detail is None:
@@ -492,6 +491,7 @@ class ReportingReadService:
         status_code, payload = await get_detail(
             portfolio_id=portfolio_id,
             correlation_id=correlation_id,
+            admitted_tenant_id=admitted_tenant_id,
         )
         if status_code >= HTTP_BAD_REQUEST:
             return self._client_profile_unavailable(

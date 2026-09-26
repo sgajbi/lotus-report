@@ -272,7 +272,7 @@ class _CoreQueryProfileUnavailable(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 503, {"detail": "core down"}
 
@@ -283,7 +283,7 @@ class _CoreQueryProfileEmpty(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 200, {}
 
@@ -294,7 +294,7 @@ class _CoreQueryProfilePartial(_CoreQuerySuccessMinimal):
         portfolio_id: str,
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -733,7 +733,11 @@ async def test_client_profile_mapping_marks_missing_source_capability_unavailabl
         risk_client=_RiskSuccess(),
     )
 
-    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id="CID")
+    profile = await service._portfolio_client_profile(
+        portfolio_id="P1",
+        correlation_id="CID",
+        admitted_tenant_id="tenant-sg",
+    )
 
     assert profile["status"] == "unavailable"
     assert profile["reason_code"] == "source_client_does_not_support_portfolio_detail"
@@ -758,7 +762,11 @@ async def test_client_profile_mapping_marks_upstream_detail_gaps_unavailable(
         risk_client=_RiskSuccess(),
     )
 
-    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id=None)
+    profile = await service._portfolio_client_profile(
+        portfolio_id="P1",
+        correlation_id=None,
+        admitted_tenant_id="tenant-sg",
+    )
 
     assert profile["status"] == "unavailable"
     assert profile["reason_code"] == reason_code
@@ -773,7 +781,11 @@ async def test_client_profile_mapping_keeps_partial_profile_source_backed():
         risk_client=_RiskSuccess(),
     )
 
-    profile = await service._portfolio_client_profile(portfolio_id="P1", correlation_id=None)
+    profile = await service._portfolio_client_profile(
+        portfolio_id="P1",
+        correlation_id=None,
+        admitted_tenant_id="tenant-sg",
+    )
 
     assert profile["status"] == "partial"
     assert profile["identity"]["client_id"] == "CIF-1"
