@@ -321,6 +321,105 @@ class _World:
         )
 
 
+def test_durable_capture_carries_admitted_tenant_into_every_core_read(monkeypatch):
+    """The production capture provider must not drop authority between Core reads."""
+
+    tenant_calls: list[tuple[str, str]] = []
+
+    class _StrictCoreClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def get_portfolio_summary(
+            self,
+            portfolio_id,
+            payload,
+            correlation_id=None,
+            *,
+            admitted_tenant_id: str,
+        ):
+            tenant_calls.append(("summary", admitted_tenant_id))
+            return 200, {
+                "contract_version": "v1",
+                "portfolio_id": portfolio_id,
+                "totals": {
+                    "total_market_value_reporting_currency": 1_000_000.0,
+                    "cash_balance_reporting_currency": 50_000.0,
+                },
+                "snapshot_metadata": {"snapshot_date": payload["as_of_date"]},
+            }
+
+        async def get_portfolio_detail(
+            self,
+            portfolio_id,
+            correlation_id=None,
+            *,
+            admitted_tenant_id: str,
+        ):
+            tenant_calls.append(("detail", admitted_tenant_id))
+            return 200, {
+                "contract_version": "v1",
+                "portfolio_id": portfolio_id,
+                "base_currency": "USD",
+                "client_id": "CIF_SG_000184",
+                "advisor_id": "RM_SG_001",
+                "booking_center_code": "SG",
+                "portfolio_type": "discretionary",
+                "objective": "Long-term real wealth growth with controlled liquidity.",
+                "risk_exposure": "balanced",
+                "investment_time_horizon": "long_term",
+            }
+
+    monkeypatch.setattr(
+        "app.reporting_lineage.capture_service.CoreQueryClient",
+        _StrictCoreClient,
+    )
+    suffix = uuid4().hex[:12]
+    ledger = own_postgres_adapter(PostgresReportJobLedger(_database_url()))
+    store = own_postgres_adapter(PostgresReportInputSnapshotStore(_database_url()))
+    request = PortfolioReviewJobRequest.model_validate(
+        {
+            "portfolio_scope": {"portfolio_ids": [SHARED_PORTFOLIO]},
+            "as_of_date": SHARED_AS_OF,
+            "requested_output_formats": ["pdf"],
+            "reporting_currency": "USD",
+            "options": {"sections": ["OVERVIEW"]},
+        }
+    )
+    job = ledger.submit_portfolio_review_job(
+        request=request,
+        caller_context=_caller(tenant=TENANT_A, suffix=f"a14-{suffix}"),
+        idempotency_key=f"proof-a14-{suffix}",
+    )
+    capture = PortfolioReviewSnapshotCaptureService(snapshot_store=store, job_ledger=ledger)
+
+    record = asyncio.run(capture.capture_for_job(job))
+    claimed = ledger.claim_work_items(
+        worker_id=f"tenant-proof-{suffix}",
+        limit=1,
+        lease_seconds=60,
+    )
+    assert len(claimed) == 1
+    assert claimed[0].report_job_id == job.job_id
+    assert claimed[0].lease_token is not None
+    completed = ledger.complete_work_item(
+        work_item_id=claimed[0].work_item_id,
+        lease_token=claimed[0].lease_token,
+    )
+
+    assert record.status == "data_ready"
+    assert completed.status == "completed"
+    assert tenant_calls == [("summary", TENANT_A), ("detail", TENANT_A)]
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.supportability_status == "complete"
+    assert snapshot.completeness_status == "complete"
+    calls = store.list_upstream_calls(snapshot.snapshot_id)
+    assert {(call.service_name, call.endpoint) for call in calls} == {
+        ("lotus-core", "/reporting/portfolio-summary/query"),
+        ("lotus-core", f"/portfolios/{SHARED_PORTFOLIO}"),
+    }
+
+
 def _archived_cycle(
     world: _World,
     *,

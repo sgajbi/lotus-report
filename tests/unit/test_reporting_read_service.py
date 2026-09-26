@@ -75,7 +75,7 @@ class _CoreQueryClientSuccess:
         payload: dict[str, object],
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 200, {
             "portfolio_id": portfolio_id,
@@ -260,6 +260,27 @@ class _CoreQueryClientSuccess:
                 },
             ],
         }
+
+
+class _TenantCapturingCoreQueryClient(_CoreQueryClientSuccess):
+    """Strict fake that records the client-profile authority handoff."""
+
+    def __init__(self) -> None:
+        self.detail_tenants: list[str] = []
+
+    async def get_portfolio_detail(
+        self,
+        portfolio_id: str,
+        correlation_id: str | None = None,
+        *,
+        admitted_tenant_id: str,
+    ):
+        self.detail_tenants.append(admitted_tenant_id)
+        return await super().get_portfolio_detail(
+            portfolio_id,
+            correlation_id,
+            admitted_tenant_id=admitted_tenant_id,
+        )
 
 
 class _PerformanceClientSuccess:
@@ -837,7 +858,7 @@ class _CoreQueryClientNotFound:
         payload: dict[str, object],
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -856,7 +877,7 @@ class _CoreQueryClientNotFound:
         payload: dict[str, object],
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -866,7 +887,7 @@ class _CoreQueryClientNotFound:
         params: dict[str, object],
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -876,7 +897,7 @@ class _CoreQueryClientNotFound:
         params: dict[str, object],
         correlation_id: str | None = None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ):
         return 404, {"detail": "Portfolio not found"}
 
@@ -1059,8 +1080,9 @@ async def test_summary_honors_requested_allocation_dimensions():
 async def test_review_composes_core_query_performance_and_risk():
     performance_client = _PerformanceClientSuccess()
     risk_client = _RiskClientSuccess()
+    core_query_client = _TenantCapturingCoreQueryClient()
     service = ReportingReadService(
-        core_query_client=_CoreQueryClientSuccess(),
+        core_query_client=core_query_client,
         performance_client=performance_client,
         risk_client=risk_client,
     )
@@ -1081,7 +1103,9 @@ async def test_review_composes_core_query_performance_and_risk():
             ],
         },
         "CID-1",
+        admitted_tenant_id="tenant-sg",
     )
+    assert core_query_client.detail_tenants == ["tenant-sg"]
     assert response["contract_version"] == "v1"
     assert response["report_id"] == "portfolio-review:P1:2026-02-24"
     assert response["portfolio_id"] == "P1"
