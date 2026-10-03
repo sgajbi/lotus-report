@@ -48,6 +48,22 @@
 - AI readiness is metadata only; the report endpoint does not issue trade recommendations,
   suitability determinations, or inferred client-profile facts
 
+## Enterprise audit serialization
+
+The actual emitter and shipped JSON handler preserve `lotus-report.audit.v1` under `audit`:
+caller-declared actor, tenant, role and correlation (explicit null when absent), action, UTC event
+time, policy and bounded status/reason metadata. Authorization denial retains status403 and its
+policy reason; enabled reads add `access_type=read`. Generic extras cannot overwrite protected
+log/context/audit fields. Recursive sensitive-key redaction applies before any added sink receives
+the record; malformed, non-JSON and oversized envelopes produce only a fixed serialization error.
+
+The [source runbook](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/enterprise-audit-serialization.md)
+defines the typed field budgets and uncovered early payload/exception paths. Actual registered
+HTTP and the shipped handler reconcile 12 requests to 11 serialized audit events with real SQLite
+admission and reopened adapters; emitter/formatter unit controls cover redaction and safe refusal.
+This proves consumer serialization, without establishing immutable storage, delivery monitoring,
+retention, authenticated bank IAM, exported traces or PostgreSQL recovery.
+
 ## Tenant admission on report batches
 
 The principal access control in this service, and the one a reader most needs to understand before

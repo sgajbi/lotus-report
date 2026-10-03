@@ -20,12 +20,19 @@
   identifier-only and records status code plus `access_type=read`.
 - Capability rules in `ENTERPRISE_CAPABILITY_RULES_JSON` apply to both read and write paths when
   the matching enforcement toggle is enabled or the runtime profile is production-like.
-- Audit metadata includes actor/tenant/role/correlation with sensitive-field redaction.
+- The shipped JSON handler preserves the governed `lotus-report.audit.v1` envelope under `audit`,
+  with actor/tenant/role/correlation, action, UTC event time, policy and outcome metadata.
+  See [Enterprise Audit Serialization](../operations/enterprise-audit-serialization.md) for the
+  schema, recursive redaction, refusal behavior and sink boundary.
 
 Evidence:
 - `src/app/enterprise_readiness.py`
 - `src/app/main.py`
 - `tests/unit/test_enterprise_readiness.py`
+- `src/app/audit_logging.py`
+- `src/app/observability.py`
+- `tests/unit/test_enterprise_audit_envelope.py`
+- `tests/integration/test_enterprise_audit_serialization.py`
 
 ## API Governance Baseline
 

@@ -224,7 +224,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    The application scheduler repeats this admission before stored-definition discovery and source
    reads; the daemon uses its configured scope through the same guard. Ordinary reporting
    capabilities confer no estate-wide scheduler grant. This defense-in-depth boundary does not
-   certify IdP authentication or serialized audit delivery (#395).
+   certify IdP authentication or audit sink delivery. The enterprise emitter and shipped JSON
+   formatter share `lotus-report.audit.v1` validation/redaction, preserve caller-declared identity
+   (null when absent) and returned status/denial reason, and refuse malformed envelopes without
+   raw output. Generic log extras cannot overwrite protected context or audit fields. See
+   [Enterprise Audit Serialization](docs/operations/enterprise-audit-serialization.md) for the
+   schema, actual HTTP/SQLite proof and delivery/retention boundary.
 8. **One fact, one name.** When two surfaces answer the same question — the pre-order availability
    check and the capture both explain why a section is absent — they resolve through one shared
    vocabulary rather than each holding a copy. Two copies are two chances to disagree, and the

@@ -7,6 +7,9 @@ from typing import Any, Awaitable, Callable
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
+from app.audit_logging import redact_sensitive as redact_sensitive
+from app.audit_logging import validated_audit_envelope
+
 logger = logging.getLogger("enterprise_readiness")
 MiddlewareNext = Callable[[Request], Awaitable[Response]]
 MiddlewareCallable = Callable[[Request, MiddlewareNext], Awaitable[Response]]
@@ -31,15 +34,6 @@ _PRODUCTION_LIKE_RUNTIME_PROFILES = {
     "pre_production",
     "staging",
     "uat",
-}
-_REDACT_FIELDS = {
-    "password",
-    "secret",
-    "token",
-    "authorization",
-    "ssn",
-    "account_number",
-    "client_email",
 }
 
 
@@ -215,43 +209,31 @@ def authorize_request(method: str, path: str, headers: dict[str, str]) -> tuple[
     return True, None
 
 
-def redact_sensitive(value: Any) -> Any:
-    if isinstance(value, dict):
-        output: dict[str, Any] = {}
-        for key, item in value.items():
-            if key.lower() in _REDACT_FIELDS:
-                output[key] = "***REDACTED***"
-            else:
-                output[key] = redact_sensitive(item)
-        return output
-    if isinstance(value, list):
-        return [redact_sensitive(item) for item in value]
-    return value
-
-
 def emit_audit_event(
     *,
     action: str,
-    actor_id: str,
-    tenant_id: str,
-    role: str,
+    actor_id: str | None,
+    tenant_id: str | None,
+    role: str | None,
     correlation_id: str | None,
     metadata: dict[str, Any],
 ) -> None:
     logger.info(
         "enterprise_audit_event",
         extra={
-            "audit": {
-                "service": _SERVICE_NAME,
-                "action": action,
-                "actor_id": actor_id,
-                "tenant_id": tenant_id,
-                "role": role,
-                "correlation_id": correlation_id or "",
-                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                "policy_version": enterprise_policy_version(),
-                "metadata": redact_sensitive(metadata),
-            }
+            "audit": validated_audit_envelope(
+                {
+                    "service": _SERVICE_NAME,
+                    "action": action,
+                    "actor_id": actor_id,
+                    "tenant_id": tenant_id,
+                    "role": role,
+                    "correlation_id": correlation_id,
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "policy_version": enterprise_policy_version(),
+                    "metadata": metadata,
+                }
+            )
         },
     )
 
@@ -311,11 +293,11 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         if not authorized:
             emit_audit_event(
                 action=f"DENY {request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id", "unknown"),
-                tenant_id=request.headers.get("X-Tenant-Id", "default"),
-                role=request.headers.get("X-Role", "unknown"),
+                actor_id=request.headers.get("X-Actor-Id") or None,
+                tenant_id=request.headers.get("X-Tenant-Id") or None,
+                role=request.headers.get("X-Role") or None,
                 correlation_id=request.headers.get("X-Correlation-Id"),
-                metadata={"reason": reason},
+                metadata={"status_code": 403, "reason": reason},
             )
             return JSONResponse(
                 status_code=403, content={"detail": "authorization_policy_denied", "reason": reason}
@@ -332,9 +314,9 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         if method_is_write:
             emit_audit_event(
                 action=f"{request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id", "unknown"),
-                tenant_id=request.headers.get("X-Tenant-Id", "default"),
-                role=request.headers.get("X-Role", "unknown"),
+                actor_id=request.headers.get("X-Actor-Id") or None,
+                tenant_id=request.headers.get("X-Tenant-Id") or None,
+                role=request.headers.get("X-Role") or None,
                 correlation_id=request.headers.get("X-Correlation-Id"),
                 metadata={"status_code": response.status_code},
             )
@@ -343,9 +325,9 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         ):
             emit_audit_event(
                 action=f"{request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id", "unknown"),
-                tenant_id=request.headers.get("X-Tenant-Id", "default"),
-                role=request.headers.get("X-Role", "unknown"),
+                actor_id=request.headers.get("X-Actor-Id") or None,
+                tenant_id=request.headers.get("X-Tenant-Id") or None,
+                role=request.headers.get("X-Role") or None,
                 correlation_id=request.headers.get("X-Correlation-Id"),
                 metadata={"status_code": response.status_code, "access_type": "read"},
             )
