@@ -481,3 +481,18 @@ page draws the residual as its own labelled bridge segment.
 - Every capture outcome is recorded to metrics (`attribution_capture`: `ready` / `accepted`
   / `unavailable`, failure category = the section's own reason code), so a dashboard tells
   "still computing" from "refused" without reading job records.
+
+## Transaction window qualification
+
+Each consumed Core ledger page contributes trust metadata, quality, reconciliation and
+bounded source reasons. A later healthy page cannot erase an earlier limitation. Missing
+trust fields and stable scope/revision conflicts remain explicit partial qualifications;
+different per-page content hashes alone are legitimate. Source reasons are sorted and
+deduplicated, with explicit limitation notes if malformed or excessive reason evidence
+is discarded. Existing row/page budgets still surface truncation.
+
+The immutable input snapshot retains page ordinals and qualification evidence. Retained
+replay and rerender reuse it without fresh Core reads. When income/activity was requested,
+the Render earnings-statement notes retain the qualification code, severity and message.
+These are source-window qualifications; Report-wide reconciliation remains governed by
+its separate contract and policy.
