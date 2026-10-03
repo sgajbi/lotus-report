@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.models.performance_history import PortfolioReviewPerformance
+
 
 class AggregationScope(BaseModel):
     portfolio_id: str
@@ -373,6 +375,50 @@ PORTFOLIO_REVIEW_FULL_RESPONSE_EXAMPLE: dict[str, Any] = {
         "by_currency": [{"currency": "USD", "market_value": 1023300.0, "weight_pct": 77.44}],
     },
     "performance": {
+        "history_qualification": {
+            "status": "partial",
+            "coverage_scope": "calculation_union_window",
+            "source_service": "lotus-performance",
+            "source_portfolio_id": "PB_SG_GLOBAL_BAL_001",
+            "source_calculation_id": "10000000-0000-4000-8000-000000000001",
+            "source_input_mode": "stateful",
+            "source_supportability_state": "degraded",
+            "source_supportability_reason": "partial_history_coverage",
+            "source_freshness_bucket": "current",
+            "requested_periods": ["1M", "3M", "YTD", "1Y", "5Y", "SI"],
+            "returned_periods": ["YTD", "1Y"],
+            "requested_calendar_basis": "business_weekdays",
+            "return_basis": ["NET_TWR"],
+            "period_return_bases": {"YTD": ["NET_TWR"], "1Y": ["NET_TWR"]},
+            "coverage": {
+                "status": "partial",
+                "calculation_basis": "available_window",
+                "requested_start_date": "2025-04-22",
+                "requested_end_date": "2026-04-22",
+                "covered_start_date": "2025-04-24",
+                "covered_end_date": "2026-04-22",
+                "effective_start_date": "2025-04-24",
+                "effective_end_date": "2026-04-22",
+                "calendar_basis": "business_weekdays",
+                "missing_required_observation_count": 2,
+                "missing_required_observation_dates_sample": ["2025-04-22", "2025-04-23"],
+                "reason_codes": ["leading_history_missing"],
+            },
+            "reason_code": "partial_history_coverage",
+            "client_publication_allowed": False,
+        },
+        "supportability": {
+            "status": "partial",
+            "notes": [
+                {
+                    "code": "partial_history_coverage",
+                    "severity": "warning",
+                    "message": (
+                        "Available returns are retained; requested union-window history is partial."
+                    ),
+                }
+            ],
+        },
         "summary": {
             "YTD": {
                 "net_cumulative_return": 4.18,
@@ -708,7 +754,7 @@ class PortfolioReviewReportResponse(BaseModel):
             "Allocation breakdowns when requested and sourced from upstream portfolio data."
         ),
     )
-    performance: dict[str, Any] | None = Field(
+    performance: PortfolioReviewPerformance | None = Field(
         default=None,
         description="Performance periods, contribution, and supportability when sourced.",
     )

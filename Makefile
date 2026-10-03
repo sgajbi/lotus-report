@@ -86,10 +86,10 @@ security-audit:
 
 # Equality-banked code-health thresholds: each equals today's measurement exactly, so
 # any regression fails and any improvement is banked by lowering the bound in the
-# same commit (reporting_read_service.py at 4508 lines and CC 28 in
+# same commit (reporting_read_service.py at 4219 lines and CC 28 in
 # package_builder's outcome-review builder are the current ceilings, not
 # aspirations).
-SOURCE_FILE_MAX_LINES ?= 4249
+SOURCE_FILE_MAX_LINES ?= 4219
 MAX_CYCLOMATIC_COMPLEXITY ?= 28
 MAX_HIGH_COMPLEXITY_FUNCTIONS ?= 8
 

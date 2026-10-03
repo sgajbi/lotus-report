@@ -64,6 +64,10 @@ def get_capabilities(
         {"key": "lotus-report.reporting.portfolio_review", "enabled": True},
         {"key": "lotus-report.reporting.portfolio_review.first_class.v1", "enabled": True},
         {
+            "key": "lotus-report.reporting.portfolio_review.history_qualification.v1",
+            "enabled": True,
+        },
+        {
             "key": "lotus-report.reporting.portfolio_review.section_readiness.v1",
             "enabled": True,
         },

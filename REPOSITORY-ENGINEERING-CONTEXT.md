@@ -119,6 +119,13 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ### Major contracts
 
+- **Performance history qualification:** named source union-window evidence is preserved in
+  public reviews, durable snapshots and Render packages. Admission binds portfolio/date,
+  requested/returned periods, TWR bases and source calendar/supportability; compatible available
+  figures remain qualified when history is partial, unknown, missing or invalid. Foreign source
+  portfolio figures are refused before projection. Older captures receive conservative presentation
+  without hash mutation. See [qualification policy](docs/performance-history-qualification.md).
+
 - **Upstream (read):** `lotus-core` portfolio summary and asset allocation; `lotus-performance`
   workspace summary and contribution; `lotus-risk` analytics; `lotus-ai` accepted-output
   projection and latest-accepted lookup.

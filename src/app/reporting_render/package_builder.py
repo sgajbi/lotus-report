@@ -21,8 +21,13 @@ from app.reporting_render.contribution_ranking import build_contribution_ranking
 from app.reporting_render.document_reference import mint_document_reference
 from app.reporting_render.earnings_statement import build_earnings_statement
 from app.reporting_render.holdings_presentation import build_holdings_presentation
+from app.reporting_render.performance_history import (
+    qualify_governance_summary,
+    snapshot_history_qualification,
+)
 from app.reporting_render.risk_methodology import build_risk_methodology
 from app.reporting_render.risk_posture import build_risk_posture
+from app.services.performance_history import performance_history_statement
 
 
 def _build_render_package(
@@ -119,6 +124,7 @@ def _build_render_package(
         # the document never said so; the basis was carried only by a
         # field name, which no renderer is obliged to read.
         "performance_basis": _performance_basis_section(snapshot),
+        "performance_history_qualification": snapshot_history_qualification(snapshot),
         # Why the portfolio outperformed: the Brinson bridge, total ->
         # named parts -> explicit residual -> reconciled sum. Every figure is
         # the source's; the residual is presented, never allocated away.
@@ -817,7 +823,7 @@ def _governance_summary_section(
     evidence: dict[str, Any],
     trust_metadata: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
+    summary = {
         "source_services": [
             str(item)
             for item in evidence.get("source_services", [])
@@ -830,6 +836,7 @@ def _governance_summary_section(
         "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
         or "unknown",
     }
+    return qualify_governance_summary(summary, snapshot_history_qualification(snapshot))
 
 
 def template_contract_mismatch(
@@ -1559,6 +1566,9 @@ def _summary_paragraph(snapshot: dict[str, Any]) -> str:
         return executive_summary
     readiness = _as_dict(snapshot.get("readiness"))
     status = _optional_str(readiness.get("status")) or "ready"
+    qualification = snapshot_history_qualification(snapshot)
+    if qualification is not None and not qualification["client_publication_allowed"]:
+        status = "partial" if status == "ready" else status
     return (
         "Portfolio review data capture completed in lotus-report with readiness "
         f"{status} for the requested as-of date."
@@ -1580,9 +1590,7 @@ def _review_observations(
         )
         if text
     ]
-    if snapshot_observations:
-        return snapshot_observations
-    return [
+    observations = snapshot_observations or [
         text
         for text in [
             _performance_observation(performance),
@@ -1591,6 +1599,10 @@ def _review_observations(
         ]
         if text
     ]
+    qualification = snapshot_history_qualification(snapshot)
+    if qualification is not None:
+        observations.append(performance_history_statement(qualification))
+    return observations
 
 
 def _performance_observation(performance: dict[str, Any]) -> str | None:

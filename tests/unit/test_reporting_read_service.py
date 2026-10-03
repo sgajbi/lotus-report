@@ -292,6 +292,7 @@ class _PerformanceClientSuccess:
     ):
         self.seen_payloads.append(payload)
         return 200, {
+            "portfolio_id": payload["portfolio_id"],
             "results_by_period": {
                 "1M": {
                     "portfolio_twr": {
@@ -529,7 +530,7 @@ class _PerformanceClientSuccess:
                     },
                     "money_weighted_return": {"start_date": "2023-02-24", "end_date": "2026-02-24"},
                 },
-            }
+            },
         }
 
     async def get_contribution(self, payload: dict[str, object], *, admitted_tenant_id: str = ""):
@@ -1116,10 +1117,12 @@ async def test_review_composes_core_query_performance_and_risk():
         "end_date": "2026-02-24",
     }
     assert response["reportingCurrency"] == "USD"
-    assert response["readiness"] == {"status": "ready"}
+    # This legacy source fixture has figures but no history attestation.
+    assert response["readiness"]["status"] == "partial"
     assert response["audience"]["primary"] == "client_advisor"
-    assert response["audience"]["client_ready"] is True
-    assert response["disclosures"][-1]["disclosure_id"] == "reporting_view"
+    assert response["audience"]["client_ready"] is False
+    assert response["performance"]["history_qualification"]["status"] == "missing"
+    assert response["disclosures"][-1]["disclosure_id"] == "partial_supportability"
     assert response["keyFigures"]["conventions"] == {
         "currency": "USD",
         "monetary_fields": "reporting currency amounts use *_reporting_currency names",
@@ -1312,8 +1315,8 @@ async def test_review_composes_core_query_performance_and_risk():
     assert source_refs["performance_review"]["source_service"] == "lotus-performance"
     assert source_refs["risk_review"]["source_service"] == "lotus-risk"
     assert source_refs["transactions_appendix"]["source_product"]["product_version"] == "v1"
-    assert response["evidence"]["trust_metadata"]["completeness_status"] == "complete"
-    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_passed"
+    assert response["evidence"]["trust_metadata"]["completeness_status"] == "partial"
+    assert response["evidence"]["trust_metadata"]["data_quality_status"] == "quality_warning"
     assert [section["section_id"] for section in response["client_sections"]] == [
         "client_profile",
         "executive_summary",
@@ -1339,7 +1342,7 @@ async def test_review_composes_core_query_performance_and_risk():
     assert section_statuses["client_profile"] == "ready"
     assert section_statuses["executive_summary"] == "ready"
     assert section_statuses["asset_allocation"] == "ready"
-    assert section_statuses["performance_review"] == "ready"
+    assert section_statuses["performance_review"] == "partial"
     assert section_statuses["risk_review"] == "ready"
     advisor_items = _advisor_prompt_items(response)
     assert {item["prompt_id"] for item in advisor_items} == {
@@ -1382,7 +1385,10 @@ async def test_review_composes_core_query_performance_and_risk():
         "benchmark_currency": "USD",
         "reason_code": None,
     }
-    assert response["performance"]["supportability"] == {"status": "ready", "notes": []}
+    assert response["performance"]["supportability"]["status"] == "partial"
+    assert response["performance"]["supportability"]["notes"][0]["code"] == (
+        "performance_history_qualification_missing"
+    )
     # report#288: the benchmark's OWN monthly buckets, verbatim - the
     # source's period identity and base returns, no economics, no linking.
     assert response["performance"]["benchmark_monthly_history"] == [
