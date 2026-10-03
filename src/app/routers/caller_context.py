@@ -5,13 +5,23 @@ from fastapi import Header, HTTPException, status
 from app.observability import CORRELATION_ID_HEADER_ALIAS, TRACE_ID_HEADER_ALIAS
 from app.reporting_jobs.models import ReportCallerContext
 
+ADMITTED_TENANT_OPENAPI_PARAMETER = {
+    "name": "X-Tenant-Id",
+    "in": "header",
+    "required": True,
+    "description": "Tenant identifier. Required; missing or blank is refused with 400.",
+    "schema": {"type": "string", "minLength": 1},
+}
+
 
 def admitted_tenant_dependency(
     tenant_id: Annotated[
         str | None,
         Header(
             alias="X-Tenant-Id",
-            description="Tenant identifier. Required; missing or blank is refused with 400.",
+            # Publish the required contract explicitly at each consuming route, while
+            # admitting absence here so the governed refusal remains 400 rather than 422.
+            include_in_schema=False,
         ),
     ] = None,
 ) -> str:

@@ -14,7 +14,10 @@ from app.models.contracts import (
     PortfolioReviewReportRequest,
     PortfolioReviewReportResponse,
 )
-from app.routers.caller_context import admitted_tenant_dependency
+from app.routers.caller_context import (
+    ADMITTED_TENANT_OPENAPI_PARAMETER,
+    admitted_tenant_dependency,
+)
 from app.services.reporting_read_service import ReportingReadService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -46,6 +49,7 @@ def _apply_requested_section_limit(payload: dict[str, Any], section_limit: int) 
     "/portfolios/{portfolio_id}/summary",
     response_model=dict[str, Any],
     summary="Get portfolio summary (lotus-report-owned)",
+    openapi_extra={"parameters": [ADMITTED_TENANT_OPENAPI_PARAMETER]},
     description=(
         "Returns the lotus-report-owned summary payload for one portfolio and business date. "
         "Use this endpoint when a consumer needs a consolidated report-oriented summary instead "

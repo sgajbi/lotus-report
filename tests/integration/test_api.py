@@ -655,6 +655,22 @@ def test_ras_summary_refuses_missing_tenant_before_service_creation(tenant):
     assert response.json()["detail"]["missing_headers"] == ["X-Tenant-Id"]
 
 
+def test_tenant_admission_schema_is_required_and_unique_for_both_routes():
+    paths = client.get("/openapi.json").json()["paths"]
+    for path, method in (
+        ("/reports/portfolios/{portfolio_id}/summary", "post"),
+        ("/aggregations/portfolios/{portfolio_id}", "get"),
+    ):
+        tenants = [
+            parameter
+            for parameter in paths[path][method]["parameters"]
+            if parameter["name"] == "X-Tenant-Id"
+        ]
+        assert len(tenants) == 1
+        assert tenants[0]["required"] is True
+        assert tenants[0]["schema"] == {"type": "string", "minLength": 1}
+
+
 def test_ras_review_forwards_present_tenant_without_body_override():
     class StrictReviewService(_StubReportingReadService):
         async def get_portfolio_review(self, *, admitted_tenant_id, **kwargs):

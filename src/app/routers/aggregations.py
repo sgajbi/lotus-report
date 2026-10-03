@@ -9,7 +9,10 @@ from app.application_errors import (
     ReportingUpstreamError,
 )
 from app.models.contracts import PortfolioAggregationResponse
-from app.routers.caller_context import admitted_tenant_dependency
+from app.routers.caller_context import (
+    ADMITTED_TENANT_OPENAPI_PARAMETER,
+    admitted_tenant_dependency,
+)
 from app.services.aggregation_service import AggregationService
 
 router = APIRouter(prefix="/aggregations", tags=["Aggregations"])
@@ -34,6 +37,7 @@ def _aggregation_error_to_http(exc: ReportingApplicationError) -> HTTPException:
     "/portfolios/{portfolio_id}",
     response_model=PortfolioAggregationResponse,
     summary="Get portfolio aggregation",
+    openapi_extra={"parameters": [ADMITTED_TENANT_OPENAPI_PARAMETER]},
     description=(
         "Returns reporting-ready aggregated rows for a portfolio by as-of date, "
         "built only from what lotus-core and lotus-performance actually returned. "
