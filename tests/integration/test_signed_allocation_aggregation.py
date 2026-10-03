@@ -62,9 +62,10 @@ class _Performance:
     async def get_workspace_summary(self, payload, *, admitted_tenant_id):
         assert admitted_tenant_id == "tenant-signed" and payload["portfolio_id"] == "signed-net"
         return 200, {
+            "portfolio_id": "signed-net",
             "results_by_period": {
                 "YTD": {"portfolio_twr": {"net": {"summary": {"cumulative_return": {"base": 1.0}}}}}
-            }
+            },
         }
 
 

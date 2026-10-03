@@ -13,8 +13,10 @@ from app.models.contracts import (
     PortfolioAggregationResponse,
     UnavailableSource,
 )
+from app.models.performance_history import PerformanceHistoryQualification
 from app.portfolio_aggregation.allocation import build_allocation_rows
 from app.precision_policy import quantize_money, quantize_performance, quantize_quantity
+from app.services.performance_history import qualify_performance_history
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class _AggregationInputs:
     summary: dict[str, Any]
     allocation: dict[str, Any]
     ytd_return_row: AggregationRow | None
+    performance_history_qualification: PerformanceHistoryQualification | None
     unavailable: list[UnavailableSource] = field(default_factory=list)
 
 
@@ -100,20 +103,22 @@ class AggregationService:
                 )
             )
 
+        performance_request: dict[str, Any] = {
+            "portfolio_id": portfolio_id,
+            "report_end_date": as_of_date.isoformat(),
+            "input_mode": "stateful",
+            "stateful_input": {},
+            "periods": [{"period": "YTD", "frequencies": ["daily"]}],
+        }
         (
             performance_status,
             performance_payload,
         ) = await self._performance_client.get_workspace_summary(
-            {
-                "portfolio_id": portfolio_id,
-                "report_end_date": as_of_date.isoformat(),
-                "input_mode": "stateful",
-                "stateful_input": {},
-                "periods": [{"period": "YTD", "frequencies": ["daily"]}],
-            },
+            performance_request,
             admitted_tenant_id=admitted_tenant_id,
         )
         ytd_return_row = None
+        history = None
         if performance_status != 200:
             # A 202 is the accepted envelope returned after the client's polling
             # budget is exhausted: the calculation is still running. Guarding on
@@ -130,10 +135,27 @@ class AggregationService:
                 )
             )
         else:
-            ytd_return_row = self._admitted_ytd_return_row(
-                performance_payload if isinstance(performance_payload, dict) else {}
+            source = performance_payload if isinstance(performance_payload, dict) else {}
+            history = PerformanceHistoryQualification.model_validate(
+                qualify_performance_history(
+                    source,
+                    portfolio_id=portfolio_id,
+                    as_of_date=as_of_date.isoformat(),
+                    source_request=performance_request,
+                )
             )
+            ytd_return_row = self._admitted_ytd_return_row(source)
+            # History admission's missing-coverage path cannot establish source
+            # portfolio identity. A foreign figure is never this portfolio's return.
+            if ytd_return_row is not None and source.get("portfolio_id") != portfolio_id:
+                ytd_return_row = None
+                history.status = "mismatched"
+                history.reason_code = "performance_history_scope_mismatch"
+                history.client_publication_allowed = False
             if ytd_return_row is None:
+                if history.client_publication_allowed:
+                    history.client_publication_allowed = False
+                    history.reason_code = "performance_requested_return_unavailable"
                 unavailable.append(
                     UnavailableSource(
                         service="lotus-performance",
@@ -147,6 +169,7 @@ class AggregationService:
             summary=summary_payload if isinstance(summary_payload, dict) else {},
             allocation=allocation_payload if isinstance(allocation_payload, dict) else {},
             ytd_return_row=ytd_return_row,
+            performance_history_qualification=history,
             unavailable=unavailable,
         )
 
@@ -265,6 +288,7 @@ class AggregationService:
             generated_at=datetime.now(UTC),
             rows=rows,
             allocation_supportability=allocation_supportability,
+            performance_history_qualification=inputs.performance_history_qualification,
             unavailable_sources=inputs.unavailable,
         )
 

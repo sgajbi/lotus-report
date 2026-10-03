@@ -139,6 +139,16 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   `incomplete_payload` qualifier and no return row; measured zero/signed values remain available.
   Source 202 stays pending and failures stay no_response. Admission retains source status and
   carries one validated return row, avoiding later inference from an emptied payload.
+  Successful evidence also carries the existing typed source-owned history qualification. The
+  actual request binds portfolio/input mode/end date/calendar/YTD NET basis; partial/unknown/
+  missing/invalid history preserves compatible returns with client publication disallowed.
+  Absent/foreign source portfolio identity withholds the return even when history is missing.
+  Pending/failed transport keeps history null. Union scope, effective window and missing evidence
+  stay source-owned; UUID syntax and end-date binding do not attest a request-correlated
+  calculation ID or independently derived YTD start. See the shared performance history policy.
+  Shared history metadata uses recognized modes/period identities and a fourteen-period budget
+  before projection; filtering unsupported evidence records invalid qualification rather than
+  manufacturing complete history. Legacy missing mode/coverage remains missing and unpublished.
   See [aggregation policy](docs/aggregation-allocation-policy.md).
 
 - **Review allocation valuation:** `reporting_lineage/allocation_qualification.py` admits Core's

@@ -41,6 +41,31 @@ returns remain available. Admission happens while the source HTTP status is pres
 calculation. Core count and Performance gaps remain independently qualified; measured valuation
 and supported allocation rows survive the Performance gap. Raw source diagnostics are not exposed.
 
+Successful source evidence also carries `performance_history_qualification`, the existing named
+source-owned calculation union-window contract. Report binds it to the actual YTD NET request,
+portfolio, input mode, end date and calendar expectation; the unchanged request defaults to
+business-weekday coverage. Requested, covered and effective dates, missing count/sample,
+calculation/calendar basis and safe source reasons remain explicit. Partial/unknown/missing/invalid
+history does not erase a compatible available return, but prevents unqualified client publication.
+Complete history cannot override degraded/stale/unrecognized source posture or an unavailable
+requested return. Numeric strings retain the existing aggregation conversion policy, while raw
+string readings cannot manufacture stronger history attestation under the shared typed policy.
+Absent or different source portfolio identity withholds the return with bounded incomplete evidence
+and mismatched history, including when the source omits coverage. Pending/failed transport carries
+null history qualification; completed-looking response bodies cannot override the source status.
+
+History remains separate from `unavailable_sources`: that list denotes an absent metric, whereas
+partial history may accompany an available measured return. `coverage_scope=calculation_union_window`
+does not independently attest each period. Calculation-ID admission validates UUID syntax, not a
+request-correlated calculation identity; the shared policy binds requested end date without
+independently deriving YTD start or coverage. Explicit source baseline/exclusion statements and
+covered observations outside the request remain valid. See
+[performance history policy](performance-history-qualification.md).
+
+The shared public metadata guard admits only recognized input modes and workspace period identities,
+with a fourteen-entry period budget before projection. Discarded unsupported metadata yields fixed
+invalid qualification, never stronger completeness; arbitrary source diagnostic labels are omitted.
+
 The policy applies to this aggregation endpoint. Portfolio review/snapshot/Render null qualification
 uses its separately governed valuation policy. Controlled client fixtures
 and native Report HTTP prove composition and serialization, not production IAM, actual source engine

@@ -32,6 +32,26 @@ consistency without requiring effective bounds to equal the requested calendar e
 Genuine zero and negative returns retain their signs and values. An available benchmark
 does not make incomplete portfolio history ready.
 
+The aggregation endpoint exposes the same named policy in
+`performance_history_qualification`, alongside its available YTD NET row. It evaluates raw source
+evidence against the exact workspace request only on HTTP200. Compatible finite returns remain
+visible with partial/unknown/missing/invalid history; numeric availability never attests full
+history. Absent or foreign source portfolio identity withholds the scoped return and emits bounded
+incomplete evidence. Pending/failed transport keeps history null and its existing source status.
+The public qualification cannot allow publication of a requested return that failed Report's
+precision/serialization admission. See [aggregation policy](aggregation-allocation-policy.md).
+
+Binding establishes calculation UUID syntax, source portfolio/input mode, requested end date,
+calendar and returned period/NET basis. It does not establish a request-correlated calculation ID,
+derive the requested start date, or allocate union missing counts independently to periods.
+
+Public input-mode metadata accepts only `stateful` or `stateless`; arbitrary source text is not
+projected. Requested/returned period lists and basis maps admit the fourteen recognized workspace
+period identities (`1D`, `2D`, `5D`, `10D`, `1M`, `3M`, `6M`, `YTD`, `1Y`, `2Y`, `5Y`, `10Y`, `SI`,
+`EXPLICIT`) with a fourteen-entry budget checked before projection. Unsupported, oversized or
+excessive metadata receives fixed invalid qualification; filtering cannot manufacture complete
+evidence. Legacy absence of input mode and coverage remains missing, with no publication permission.
+
 Supplied net/gross cumulative and annualized TWR summaries must contain finite numeric
 readings. Boolean, string and non-finite readings cannot supply displayed summary figures
 or permit publication; valid readings in the same response remain available. A malformed
@@ -69,6 +89,6 @@ Independent API lifecycle acceptance and protected final-head/main evidence are 
 with each delivery rather than inferred from a successful compiler response.
 
 This qualification is separate from analytics watchlist/reconciliation policy (#111),
-benchmark policy (#241), attribution (#254), aggregation (#391), Risk qualification (#398)
+benchmark policy (#241), attribution (#254), Risk qualification (#398)
 and worker correlation context (#397). It does not certify IAM, production custody, capacity,
 failover or platform demo readiness.

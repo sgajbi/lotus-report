@@ -91,11 +91,12 @@ class _StubPerformanceClient:
         return (
             200,
             {
+                "portfolio_id": payload["portfolio_id"],
                 "results_by_period": {
                     "YTD": {
                         "portfolio_twr": {"net": {"summary": {"cumulative_return": {"base": 4.2}}}}
                     }
-                }
+                },
             },
         )
 

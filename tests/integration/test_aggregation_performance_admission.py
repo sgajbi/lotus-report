@@ -29,6 +29,7 @@ def _payload(value):
     result = value
     for key in reversed(PATH):
         result = {key: result}
+    result["portfolio_id"] = PORTFOLIO
     return result
 
 

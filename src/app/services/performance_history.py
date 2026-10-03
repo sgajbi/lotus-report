@@ -7,6 +7,8 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from app.models.performance_history import (
+    MAX_HISTORY_PERIODS,
+    WORKSPACE_HISTORY_PERIODS,
     PerformanceHistoryCoverage,
     PerformanceHistoryQualification,
     SourceTwrSummary,
@@ -25,6 +27,8 @@ SOURCE_REASONS = {
     "unsupported_input_mode",
 }
 SOURCE_FRESHNESS = {"current", "same_day", "stale", "unknown"}
+SOURCE_INPUT_MODES = {"stateful", "stateless"}
+SOURCE_PERIODS = set(WORKSPACE_HISTORY_PERIODS)
 TWR_BASES: dict[str, Literal["NET_TWR", "GROSS_TWR"]] = {"net": "NET_TWR", "gross": "GROSS_TWR"}
 HISTORY_REASON_TEXT = {
     "covered_window_matches_requested_window": "required history is complete",
@@ -82,11 +86,26 @@ def _bounded_source_value(value: object, allowed: set[str]) -> str | None:
     return value if isinstance(value, str) and value in allowed else None
 
 
-def _requested_periods(request: dict[str, object]) -> list[str]:
+def _returned_periods(value: object) -> tuple[dict[str, object], bool]:
+    periods = _mapping(value)
+    if len(periods) > MAX_HISTORY_PERIODS:
+        return {}, False
+    admitted = {
+        key: row for key, row in periods.items() if _bounded_source_value(key, SOURCE_PERIODS)
+    }
+    return admitted, len(admitted) == len(periods)
+
+
+def _requested_periods(request: dict[str, object]) -> tuple[list[str], bool]:
     rows = request.get("periods")
-    if not isinstance(rows, list):
-        return []
-    return [period for row in rows if (period := _identifier(_mapping(row).get("period")))]
+    if not isinstance(rows, list) or len(rows) > MAX_HISTORY_PERIODS:
+        return [], False
+    admitted = [
+        period
+        for row in rows
+        if (period := _bounded_source_value(_mapping(row).get("period"), SOURCE_PERIODS))
+    ]
+    return admitted, len(admitted) == len(rows)
 
 
 def _scope_matches(
@@ -110,6 +129,16 @@ def _scope_matches(
     )
 
 
+def _history_allows_publication(result: PerformanceHistoryQualification) -> bool:
+    return (
+        result.status == "complete"
+        and result.source_supportability_state == "ready"
+        and result.source_supportability_reason == "calculation_complete"
+        and result.source_freshness_bucket in {"current", "same_day"}
+        and set(result.returned_periods) == set(result.requested_periods)
+    )
+
+
 def qualify_performance_history(
     payload: dict[str, object],
     *,
@@ -118,10 +147,12 @@ def qualify_performance_history(
     source_request: dict[str, object] | None = None,
 ) -> dict[str, object]:
     support = _mapping(payload.get("calculation_supportability"))
-    periods = _mapping(payload.get("results_by_period"))
+    periods, periods_valid = _returned_periods(payload.get("results_by_period"))
     period_bases = _period_bases(periods)
     bases = {label for labels in period_bases.values() for label in labels}
     request = source_request or {}
+    requested_periods, request_valid = _requested_periods(request)
+    source_input_mode = _bounded_source_value(payload.get("input_mode"), SOURCE_INPUT_MODES)
     calendar = _mapping(request.get("calendar")).get("type", "BUSINESS")
     expected_calendar: Literal["natural_days", "business_weekdays"] = (
         "natural_days" if calendar == "NATURAL" else "business_weekdays"
@@ -130,19 +161,27 @@ def qualify_performance_history(
         status="missing",
         source_portfolio_id=_identifier(payload.get("portfolio_id")),
         source_calculation_id=_identifier(payload.get("calculation_id")),
-        source_input_mode=_identifier(payload.get("input_mode")),
+        source_input_mode=source_input_mode,
         source_supportability_state=_bounded_source_value(support.get("state"), SOURCE_STATES),
         source_supportability_reason=_bounded_source_value(support.get("reason"), SOURCE_REASONS),
         source_freshness_bucket=_bounded_source_value(
             support.get("freshness_bucket"), SOURCE_FRESHNESS
         ),
         returned_periods=list(periods),
-        requested_periods=_requested_periods(request),
+        requested_periods=requested_periods,
         requested_calendar_basis=expected_calendar,
         return_basis=sorted(bases),
         period_return_bases=period_bases,
         reason_code="performance_history_qualification_missing",
     )
+    if (
+        not periods_valid
+        or not request_valid
+        or (source_input_mode is None and payload.get("input_mode") is not None)
+    ):
+        result.status = "invalid"
+        result.reason_code = "performance_history_qualification_invalid"
+        return result.model_dump(mode="json")
     raw = support.get("history_coverage")
     if raw is None:
         return result.model_dump(mode="json")
@@ -167,13 +206,7 @@ def qualify_performance_history(
         "partial": "partial_history_coverage",
         "unknown": "unknown_history_coverage",
     }[coverage.status]
-    result.client_publication_allowed = (
-        coverage.status == "complete"
-        and result.source_supportability_state == "ready"
-        and result.source_supportability_reason == "calculation_complete"
-        and result.source_freshness_bucket in {"current", "same_day"}
-        and set(result.returned_periods) == set(result.requested_periods)
-    )
+    result.client_publication_allowed = _history_allows_publication(result)
     if coverage.status == "complete" and set(result.returned_periods) != set(
         result.requested_periods
     ):

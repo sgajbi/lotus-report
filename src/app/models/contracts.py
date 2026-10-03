@@ -4,7 +4,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.allocation_qualification import PortfolioReviewAllocation
-from app.models.performance_history import PortfolioReviewPerformance
+from app.models.performance_history import (
+    PerformanceHistoryQualification,
+    PortfolioReviewPerformance,
+)
 
 
 class AggregationScope(BaseModel):
@@ -48,6 +51,15 @@ class PortfolioAggregationResponse(BaseModel):
     rows: list[AggregationRow]
     allocation_supportability: "AllocationSupportability" = Field(
         description="Explicit signed net basis and supportability of all asset-class weight rows."
+    )
+    performance_history_qualification: PerformanceHistoryQualification | None = Field(
+        default=None,
+        description=(
+            "Source-owned calculation union-window history for successful Performance evidence. "
+            "Compatible available returns may remain visible with partial/unknown/missing/invalid "
+            "qualification; client_publication_allowed never attests a withheld requested return. "
+            "Null on pending or failed transport. Coverage is not independently per-period."
+        ),
     )
     unavailable_sources: list[UnavailableSource] = Field(
         default_factory=list,
