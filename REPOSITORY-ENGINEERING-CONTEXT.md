@@ -156,6 +156,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    `archived`; the `archive_document_id` is never inferred from batch or job status, and
    corrections and replacements carry their own identity rather than overwriting one.
 7. **Attribution requires evidence.** A tenant stamp from configuration is not proof of ownership.
+   Scheduler operator list/run-due admit the caller against configured tenant, region and exact
+   booking center before disclosure or replacing it with the scheduler execution identity.
+   The application scheduler repeats this admission before stored-definition discovery and source
+   reads; the daemon uses its configured scope through the same guard. Ordinary reporting
+   capabilities confer no estate-wide scheduler grant. This defense-in-depth boundary does not
+   certify IdP authentication or serialized audit delivery (#395).
 8. **One fact, one name.** When two surfaces answer the same question — the pre-order availability
    check and the capture both explain why a section is absent — they resolve through one shared
    vocabulary rather than each holding a copy. Two copies are two chances to disagree, and the

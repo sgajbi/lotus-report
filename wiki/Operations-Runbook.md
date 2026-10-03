@@ -738,6 +738,20 @@ Current implemented semantics:
   recurring definitions, and `POST /reports/batch-schedules:run-due` runs one bounded scheduler
   materialization pass over enabled schedules - configured and due stored definitions of the
   scheduler's tenant - without executing batch items
+- Both operator endpoints require the caller tenant, region and booking center to exactly
+  match the configured scheduler scope (including an absent booking center). A mismatch returns
+  `404 batch_scheduler_not_found` before configured metadata, stored-definition reads, Core
+  resolution, cycle lookups or batch writes. Reporting read/write capabilities do not grant
+  estate-wide scheduler authority. The combined list is a scheduler operator surface: callers
+  outside that configuration cannot list even their own definitions here; their scope-governed
+  stored-definition create/detail/update operations remain available.
+- After admission, run-due keeps the configured scheduler execution identity. The HTTP audit
+  emitter retains the triggering caller identity and refusal outcome; serialized audit delivery
+  remains a separate boundary (#395). The daemon constructs its scope from configuration and
+  passes the same application guard, without a bypass. Repeated configured cycles are skipped;
+  stored cycles re-echo the existing batch. Neither creates duplicate items.
+- Application scope admission and synthetic capability headers are defense in depth; they do
+  not certify production IdP integration, bank entitlements, live Core, rendering or custody.
 - stored recurring definitions are created and managed through
   `POST/GET/PATCH /reports/batch-schedules[/{schedule_id}]`: tenant-fenced, explicit portfolio
   lists only, `monthly_end`/`quarter_end` cadence, audited on every change. A stored schedule

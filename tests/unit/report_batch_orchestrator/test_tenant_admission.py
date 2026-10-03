@@ -9,9 +9,12 @@ from app.report_batch_orchestrator.models import (
     BatchCreateRequest,
     PortfolioBatchCandidate,
 )
+from app.report_batch_orchestrator.scheduler import BatchSchedulerConfig
 from app.report_batch_orchestrator.tenant_admission import (
     BATCH_NOT_FOUND,
+    SchedulerTenantAdmissionError,
     admit_batch,
+    admit_scheduler,
     load_admitted_batch,
 )
 from app.reporting_jobs.models import ReportCallerContext
@@ -130,3 +133,47 @@ def test_admission_does_not_read_durable_state_beyond_the_batch_record(tmp_path)
         )
 
     assert reads == [batch_id]
+
+
+@pytest.mark.parametrize(
+    "tenant,region,booking_center",
+    [
+        ("", "APAC", "SG"),
+        ("tenant-sg", " ", "SG"),
+        ("tenant-foreign", "APAC", "SG"),
+        ("tenant-sg", "EMEA", "SG"),
+        ("tenant-sg", "APAC", "HK"),
+        ("tenant-sg", "APAC", None),
+    ],
+)
+def test_scheduler_admission_refuses_missing_or_foreign_scope(tenant, region, booking_center):
+    config = BatchSchedulerConfig(
+        scheduler_id="scheduler-scope",
+        interval_seconds=60,
+        tenant_id=tenant,
+        region=region,
+        booking_center_code=booking_center,
+        role="system",
+        schedules=(),
+    )
+    with pytest.raises(SchedulerTenantAdmissionError, match="^batch_scheduler_not_found$"):
+        admit_scheduler(config, caller_context=_caller("tenant-sg"))
+
+
+@pytest.mark.parametrize("booking_center", [None, "SG"])
+def test_scheduler_admission_accepts_exact_scope_including_absent_booking_center(booking_center):
+    config = BatchSchedulerConfig(
+        scheduler_id="scheduler-scope",
+        interval_seconds=60,
+        tenant_id="tenant-sg",
+        region="APAC",
+        booking_center_code=booking_center,
+        role="system",
+        schedules=(),
+    )
+    admit_scheduler(
+        config,
+        caller_context=_caller("tenant-sg").model_copy(
+            update={"booking_center_code": booking_center}
+        ),
+    )
