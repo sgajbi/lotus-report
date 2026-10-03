@@ -607,6 +607,13 @@ sets the minimum section shape below. Sections beyond that minimum, such as
 
 ## Context Maintenance Rule
 
+Transaction page qualification is owned by `src/app/services/transaction_evidence.py`.
+Follow [Transaction page evidence](docs/architecture/transaction-page-evidence.md) when
+changing that boundary: later healthy pages must not heal earlier trust gaps or source
+degradation. Core reconstruction scope identifies the complete window; per-page content
+hash differences are legitimate. Preserve the captured qualification through retained
+replay/rerender and the existing Render note projection.
+
 report ownership or boundaries move · the lifecycle or its recovery paths change · a major contract
 is added or retired · an invariant is added, removed or weakened · priorities or blockers change.
 
