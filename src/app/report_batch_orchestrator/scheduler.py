@@ -100,6 +100,13 @@ class BatchScheduleDefinition(BaseModel):
 
 
 @dataclass(frozen=True)
+class BatchSchedulerScope:
+    tenant_id: str
+    region: str
+    booking_center_code: str | None
+
+
+@dataclass(frozen=True)
 class BatchSchedulerConfig:
     scheduler_id: str
     interval_seconds: float
@@ -436,14 +443,24 @@ class BatchScheduleLedger(Protocol):
     ) -> bool: ...
 
 
+def batch_scheduler_scope_from_settings(source: Settings = settings) -> BatchSchedulerScope:
+    """Read operator scope without parsing schedule definitions or exposing their health."""
+    return BatchSchedulerScope(
+        tenant_id=source.batch_scheduler_tenant_id,
+        region=source.batch_scheduler_region,
+        booking_center_code=source.batch_scheduler_booking_center_code,
+    )
+
+
 def batch_scheduler_config_from_settings(source: Settings = settings) -> BatchSchedulerConfig:
+    scope = batch_scheduler_scope_from_settings(source)
     schedules = _parse_schedule_definitions(source.batch_schedules_json)
     return BatchSchedulerConfig(
         scheduler_id=source.batch_scheduler_id,
         interval_seconds=source.batch_scheduler_interval_seconds,
-        tenant_id=source.batch_scheduler_tenant_id,
-        region=source.batch_scheduler_region,
-        booking_center_code=source.batch_scheduler_booking_center_code,
+        tenant_id=scope.tenant_id,
+        region=scope.region,
+        booking_center_code=scope.booking_center_code,
         role=source.batch_scheduler_role,
         schedules=tuple(schedules),
     )

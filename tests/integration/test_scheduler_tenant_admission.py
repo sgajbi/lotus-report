@@ -13,6 +13,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.enterprise_readiness import validate_enterprise_runtime_config
 from app.main import app
 from app.report_batch_orchestrator.ledger import ReportBatchLedger
@@ -317,6 +318,48 @@ def test_foreign_refusal_precedes_dependency_construction(
     assert response.status_code == 404, response.text
     assert response.json() == REFUSAL
     assert factory_calls == []
+
+
+@pytest.mark.parametrize("method,path", [("GET", LIST_PATH), ("POST", RUN_PATH)])
+@pytest.mark.parametrize("raw", ["{broken", '[{"schedule_id":"broken"}]'])
+def test_foreign_scope_refuses_before_schedule_config_parsing(
+    scheduler_boundary, method, path, raw, monkeypatch
+):
+    client, ledger, config, source, definitions, _ = scheduler_boundary
+    app.dependency_overrides.pop(get_report_batch_scheduler_config)
+    monkeypatch.setattr(settings, "batch_scheduler_tenant_id", config.tenant_id)
+    monkeypatch.setattr(settings, "batch_scheduler_region", config.region)
+    monkeypatch.setattr(settings, "batch_scheduler_booking_center_code", config.booking_center_code)
+    monkeypatch.setattr(settings, "batch_schedules_json", raw)
+    before = durable_counts(ledger)
+    for scope_override in (
+        {"X-Tenant-Id": "tenant-foreign"},
+        {"X-Region": "EMEA"},
+        {"X-Booking-Center-Code": "HK"},
+    ):
+        response = client.request(
+            method,
+            path,
+            headers={**headers(), **scope_override},
+            **({"json": {"pass_sequence": 5}} if method == "POST" else {}),
+        )
+        assert response.status_code == 404, response.text
+        assert response.json() == REFUSAL
+    # The admitted owner retains the existing safe configuration-health error.
+    owner = client.request(
+        method,
+        path,
+        headers=headers(),
+        **({"json": {"pass_sequence": 5}} if method == "POST" else {}),
+    )
+    assert owner.status_code == 400, owner.text
+    assert owner.json()["detail"]["code"] in {
+        "invalid_batch_schedules_json",
+        "invalid_batch_schedule_definition",
+    }
+    assert source.calls == []
+    assert definitions.reads == 0
+    assert durable_counts(ledger) == before
 
 
 @pytest.mark.asyncio

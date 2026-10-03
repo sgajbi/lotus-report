@@ -740,7 +740,8 @@ Current implemented semantics:
   scheduler's tenant - without executing batch items
 - Both operator endpoints require the caller tenant, region and booking center to exactly
   match the configured scheduler scope (including an absent booking center). A mismatch returns
-  `404 batch_scheduler_not_found` before configured metadata, stored-definition reads, Core
+  `404 batch_scheduler_not_found` before parsing schedule definitions (including malformed
+  JSON), configured metadata, stored-definition reads, Core
   resolution, cycle lookups or batch writes. Reporting read/write capabilities do not grant
   estate-wide scheduler authority. The combined list is a scheduler operator surface: callers
   outside that configuration cannot list even their own definitions here; their scope-governed
