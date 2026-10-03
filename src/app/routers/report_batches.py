@@ -63,6 +63,7 @@ from app.report_batch_orchestrator.scheduler import (
     batch_scheduler_caller_context,
     batch_scheduler_config_from_settings,
     batch_scheduler_run_response,
+    batch_scheduler_scope_from_settings,
 )
 from app.report_batch_orchestrator.selector import BatchSelectorValidationError
 from app.report_batch_orchestrator.service import (
@@ -78,6 +79,7 @@ from app.report_batch_orchestrator.status_projection import (
     load_report_job_archive_statuses,
 )
 from app.report_batch_orchestrator.tenant_admission import (
+    SchedulerScope,
     SchedulerTenantAdmissionError,
     admit_scheduler,
     load_admitted_batch,
@@ -266,7 +268,10 @@ def _status_url(batch_id: str) -> str:
     return f"/reports/batches/{batch_id}"
 
 
-def get_report_batch_scheduler_config() -> BatchSchedulerConfig:
+def get_report_batch_scheduler_config(
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchSchedulerConfig:
+    _admit_scheduler_operator(batch_scheduler_scope_from_settings(), caller_context=caller_context)
     try:
         return batch_scheduler_config_from_settings()
     except BatchScheduleConfigError as exc:
@@ -347,7 +352,7 @@ def _scheduler_config_error(exc: BatchScheduleConfigError) -> HTTPException:
 
 
 def _admit_scheduler_operator(
-    config: BatchSchedulerConfig, *, caller_context: ReportCallerContext
+    config: SchedulerScope, *, caller_context: ReportCallerContext
 ) -> None:
     try:
         admit_scheduler(config, caller_context=caller_context)

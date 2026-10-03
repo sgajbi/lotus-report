@@ -187,7 +187,8 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal list of governed report batch schedules: configured schedules plus the caller
   tenant's stored recurring definitions with a `next_run_at` projection. The caller must
   match the configured scheduler tenant, region and exact booking center; otherwise
-  `404 batch_scheduler_not_found` is returned before service construction or disclosure.
+  `404 batch_scheduler_not_found` is returned before schedule-definition parsing, service
+  construction or disclosure. Only an admitted owner can receive a configuration-health error.
 - `POST /reports/batch-schedules`
   creates a durable, tenant-fenced recurring report-pack schedule (explicit portfolio list,
   `monthly_end` or `quarter_end` cadence) validated through the governed report-ordering
