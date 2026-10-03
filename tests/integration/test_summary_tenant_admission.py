@@ -338,7 +338,7 @@ def test_summary_openapi_documents_tenant_and_local_refusal(summary_http):
     )
     assert tenant["in"] == "header"
     assert tenant["required"] is True
-    assert tenant["schema"] == {"type": "string", "minLength": 1}
+    assert tenant["schema"] == {"type": "string", "minLength": 1, "pattern": r"\S"}
     assert sum(parameter["name"] == "X-Tenant-Id" for parameter in operation["parameters"]) == 1
     assert "Required" in tenant["description"]
     assert operation["responses"]["400"]["content"]["application/json"]["example"] == {

@@ -328,16 +328,31 @@ with no upstream in existence. A metric whose source did not answer is absent fr
 and named in `unavailable_sources`, never reported as zero:
 
 ```bash
-curl -H "X-Tenant-Id: tenant-sg" \n  "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24"
+curl -H "X-Tenant-Id: tenant-sg" \
+  "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24"
 ```
 
 Portfolio summary:
 
+Use the portfolio's admitted tenant; `tenant-sg` below is an example, not an ownership default.
+Run these HTTP probes from any working directory against the configured local service.
+
 ```bash
 curl -X POST "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/summary?section_limit=10" \
   -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: tenant-sg" \
   -H "X-Correlation-ID: local-doc-probe" \
   -d "{\"as_of_date\":\"2026-02-24\",\"reporting_currency\":\"EUR\"}"
+```
+
+PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri "http://127.0.0.1:8300/reports/portfolios/DEMO_DPM_EUR_001/summary?section_limit=10" `
+  -Headers @{"X-Tenant-Id" = "tenant-sg"; "X-Correlation-ID" = "local-doc-probe"} `
+  -ContentType "application/json" `
+  -Body '{"as_of_date":"2026-02-24","reporting_currency":"EUR"}'
 ```
 
 Portfolio review:

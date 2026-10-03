@@ -10,7 +10,7 @@ ADMITTED_TENANT_OPENAPI_PARAMETER = {
     "in": "header",
     "required": True,
     "description": "Tenant identifier. Required; missing or blank is refused with 400.",
-    "schema": {"type": "string", "minLength": 1},
+    "schema": {"type": "string", "minLength": 1, "pattern": r"\S"},
 }
 
 
