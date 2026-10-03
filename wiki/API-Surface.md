@@ -336,6 +336,16 @@ the entire weight breakdown. Source totals and unrelated measured metrics still 
 derives only absent legacy weights; it does not replace stated nulls or renormalize positive rows.
 Summary/review allocation uses the separate source valuation qualification described below.
 
+The requested Performance row is the YTD NET cumulative base return. A successful response
+with missing/null/malformed containers or an unusable numeric value omits that row and adds
+one `lotus-performance` entry with `status_code=200` and `reason=incomplete_payload`.
+Values must be finite through the existing six-decimal half-even precision and numeric
+serialization boundaries. Measured zero and signed returns remain available; Report never
+substitutes another period or basis. Source 202 stays `pending` and failed responses stay
+`no_response`, including payloads that resemble a completed calculation. Core count and
+Performance gaps remain independently qualified, and source diagnostics are not exposed.
+See `docs/aggregation-allocation-policy.md` for scope and controlled HTTP evidence limits.
+
 Review and summary `allocation.by*` rows preserve independently nullable ratio weights and
 reporting-currency values. Unknown is not zero. `valuation_coverage` carries Core's bounded
 state/reason and snapshot/expected/valued/unvalued counts; `qualification` binds portfolio,

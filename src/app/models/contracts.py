@@ -19,7 +19,7 @@ class AggregationRow(BaseModel):
 
 
 class UnavailableSource(BaseModel):
-    """An upstream that did not answer, named so its absence is not inferred.
+    """Missing or unusable requested source evidence, explicitly qualified.
 
     A missing row and a row that was never requested look identical to a
     consumer. This makes the difference explicit: a metric absent from `rows`
@@ -36,7 +36,7 @@ class UnavailableSource(BaseModel):
             "Why the evidence is missing. `no_response` is a failed call; "
             "`pending` is a calculation still running, which is not the same as "
             "one that finished with nothing; `incomplete_payload` is a "
-            "successful response that omitted a field this endpoint reports."
+            "successful response that omitted or supplied an unusable field this endpoint reports."
         ),
     )
 
@@ -52,7 +52,8 @@ class PortfolioAggregationResponse(BaseModel):
     unavailable_sources: list[UnavailableSource] = Field(
         default_factory=list,
         description=(
-            "Upstreams that did not answer for this aggregation. A metric whose "
+            "Upstreams whose requested evidence was missing or unusable for this aggregation. "
+            "A metric whose "
             "source is listed here is absent from `rows` because it was not "
             "measured -- distinct from a metric that is genuinely zero."
         ),

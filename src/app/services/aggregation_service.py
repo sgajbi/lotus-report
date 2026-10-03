@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from math import isfinite
 from typing import Any
 
 from app.application_errors import ReportingNotFoundError, ReportingUpstreamError
@@ -22,7 +23,7 @@ class _AggregationInputs:
 
     summary: dict[str, Any]
     allocation: dict[str, Any]
-    performance: dict[str, Any]
+    ytd_return_row: AggregationRow | None
     unavailable: list[UnavailableSource] = field(default_factory=list)
 
 
@@ -112,6 +113,7 @@ class AggregationService:
             },
             admitted_tenant_id=admitted_tenant_id,
         )
+        ytd_return_row = None
         if performance_status != 200:
             # A 202 is the accepted envelope returned after the client's polling
             # budget is exhausted: the calculation is still running. Guarding on
@@ -119,7 +121,6 @@ class AggregationService:
             # so the row was dropped and `unavailable_sources` stayed empty --
             # exactly the empty-versus-unavailable ambiguity this change exists
             # to remove, reintroduced one status code to the left.
-            performance_payload = {}
             unavailable.append(
                 UnavailableSource(
                     service="lotus-performance",
@@ -128,11 +129,24 @@ class AggregationService:
                     reason="pending" if performance_status < 400 else "no_response",
                 )
             )
+        else:
+            ytd_return_row = self._admitted_ytd_return_row(
+                performance_payload if isinstance(performance_payload, dict) else {}
+            )
+            if ytd_return_row is None:
+                unavailable.append(
+                    UnavailableSource(
+                        service="lotus-performance",
+                        endpoint="/performance/workspace-summary",
+                        status_code=200,
+                        reason="incomplete_payload",
+                    )
+                )
 
         return _AggregationInputs(
             summary=summary_payload if isinstance(summary_payload, dict) else {},
             allocation=allocation_payload if isinstance(allocation_payload, dict) else {},
-            performance=performance_payload if isinstance(performance_payload, dict) else {},
+            ytd_return_row=ytd_return_row,
             unavailable=unavailable,
         )
 
@@ -233,15 +247,8 @@ class AggregationService:
                 )
             )
 
-        ytd_return = self._ytd_return(inputs.performance)
-        if ytd_return is not None:
-            rows.append(
-                AggregationRow(
-                    bucket="TOTAL",
-                    metric="return_ytd_pct",
-                    value=float(quantize_performance(ytd_return)),
-                )
-            )
+        if inputs.ytd_return_row is not None:
+            rows.append(inputs.ytd_return_row)
 
         allocation_rows, allocation_supportability = build_allocation_rows(
             inputs.allocation,
@@ -278,6 +285,23 @@ class AggregationService:
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def _admitted_ytd_return_row(performance_payload: dict[str, Any]) -> AggregationRow | None:
+        """Admit the requested return through existing precision and wire boundaries."""
+        value = AggregationService._ytd_return(performance_payload)
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            normalized_return = quantize_performance(value)
+            if not normalized_return.is_finite():
+                return None
+            row = AggregationRow(
+                bucket="TOTAL", metric="return_ytd_pct", value=float(normalized_return)
+            )
+            return row if isfinite(row.value) else None
+        except (TypeError, ValueError, ArithmeticError):
+            return None
 
     @staticmethod
     def _ytd_return(performance_payload: dict[str, Any]) -> object | None:
