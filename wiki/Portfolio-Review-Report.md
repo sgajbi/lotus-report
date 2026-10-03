@@ -90,6 +90,28 @@ metadata in archive handoff without approving, rewriting, or inferring memo fact
 
 ## Source Authorities
 
+### Performance history and client publication
+
+`performance.history_qualification` retains Performance's requested/covered/effective dates,
+calendar/calculation basis, missing count/sample and bounded reasons. Its scope is one
+calculation union window; returned period/net-gross identities do not imply independent
+per-period history assessments. Report binds the claim to the actual source/request identity.
+
+Partial, unknown, missing, malformed or mismatched history keeps compatible available figures
+qualified and prevents unqualified client readiness, even with an available benchmark.
+Complete coverage still requires ready/current source supportability and matching requested
+periods/bases. A different source portfolio is refused before financial projection. Baselines,
+explicit exclusions, genuine zero/negative returns and outside covered observations remain valid.
+
+The durable snapshot retains the same qualification. Rerender keeps it; regeneration captures
+new evidence while preserving the original. Older unattested captures receive conservative
+presentation without changing their hashes. The Render package carries the typed block and
+visible review observations, including when existing observations are present. The unchanged
+v1 template prints the limitation on its scope page. See the authored
+[qualification policy](https://github.com/sgajbi/lotus-report/blob/main/docs/performance-history-qualification.md)
+for publication rules and proof boundaries. This does not close independent reconciliation,
+benchmark, Risk, attribution or upstream-engine validation work.
+
 `lotus-report` composes the report from domain-authoritative services:
 
 | Source | Current report use | Ownership boundary |
@@ -407,6 +429,7 @@ Blocks, with their one load-bearing rule each:
 | `risk_methodology` (#235) | VaR method/confidence/horizon, `return_basis` | A tail-risk number without its basis is not interpretable; absent basis is published as absent |
 | `benchmark_presentation` (#241) | `available` / `unavailable` / `not_requested` + benchmark identity | A failed comparison must not render as an unbenchmarked mandate; replayed captures resolve from the ORDER, not table values |
 | `performance_basis` (#243/#247) | `return_basis: NET`, plus signed `fee_drag.gross_minus_net_pp` | Fee drag is computed from raw returns, never from displayed (rounded) numbers; sign preserved |
+| `performance_history_qualification` (#396) | Source complete/partial/unknown or Report missing/invalid/mismatched; union coverage and source/request identities | Available figures never imply requested-history completeness; visible observations and governance retain the same limitation |
 | `holdings_presentation` (#245) | Posture, `presented_/available_count`, `presented_weight_pct`, Core's `supportability_status` verbatim | Empty portfolio != unavailable holdings != unreconciled holdings != trusted-complete - four distinct states |
 | `attribution_bridge` (#254) | Brinson bridge: effects with the hierarchy slot (`grouping_dimension`+`level`), source totals, reconciliation with source-classified residual, `ready`/`pending`/`unavailable` | The residual is presented, never allocated away; totals are the source's authoritative fields, never summed from rows; a pending async calculation is said with its identity, never waited on |
 | `earnings_statement` (#249) | Income gross->withholding->net (+ by-type), realized P&L with named largest gain/loss, `completeness` | `window_truncated` sums are a floor: the page says "at least X, based on N transactions reviewed" and never the word "total"; truncated zeros never claim an empty period |

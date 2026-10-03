@@ -1076,6 +1076,17 @@ trace ids, or database internals.
 
 ## RFC-0101 snapshot and lineage flow
 
+Performance history inspection: compare `performance.history_qualification` in the retained
+snapshot with `performance_history_qualification` in the transmitted Render package, the
+Performance workspace call's supportability/completeness, section/audience readiness and
+trust metadata. Partial/unknown/missing/invalid evidence must not become ready through capture
+or rerender. Requested/covered/effective bounds and missing count/sample belong to the source
+union window; do not interpret them as independent period coverage or fill absent observations.
+An available benchmark does not repair a portfolio-history gap. Rerender uses the original
+snapshot; regenerate is the supported fresh-capture path. Legacy presentation may conservatively
+downgrade old ready flags without rewriting stored payloads/hashes. See
+[Performance history qualification](https://github.com/sgajbi/lotus-report/blob/main/docs/performance-history-qualification.md).
+
 RFC-0101 adds durable evidence capture on top of the RFC-0100 job ledger. The first wave is still
 owned by `lotus-report`; gateway remains an ingress and status boundary, not the durable evidence
 owner.

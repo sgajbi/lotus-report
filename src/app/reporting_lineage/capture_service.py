@@ -49,6 +49,10 @@ from app.reporting_metrics import (
     record_advisor_commentary_resolution,
     record_report_operation,
 )
+from app.services.performance_history import (
+    performance_history_statement,
+    qualify_performance_history,
+)
 from app.services.reporting_read_service import ReportingReadService
 
 
@@ -284,6 +288,25 @@ class _UpstreamRecorder:
         supportability, completeness, failure_category, failure_message = _classify_call(
             status_code, response_payload
         )
+        if (
+            200 <= status_code < 300
+            and service_name == "lotus-performance"
+            and endpoint == "/performance/workspace-summary"
+            and supportability not in {"redacted", "not_supported"}
+        ):
+            qualification = qualify_performance_history(
+                response_payload,
+                portfolio_id=request_payload.get("portfolio_id"),
+                as_of_date=request_payload.get("report_end_date"),
+                source_request=request_payload,
+            )
+            if not qualification["client_publication_allowed"]:
+                supportability, completeness, failure_category = (
+                    "partial",
+                    "partial",
+                    "partial_data",
+                )
+                failure_message = performance_history_statement(qualification)
         self._calls.append(
             _RecordedUpstreamCall(
                 service_name=service_name,

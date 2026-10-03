@@ -2226,10 +2226,12 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
     ]
     assert report_data["governance_summary"] == {
         "source_services": ["lotus-core", "lotus-performance", "lotus-risk"],
-        "completeness_status": "complete",
-        "data_quality_status": "quality_passed",
-        "readiness_status": "ready",
+        "completeness_status": "partial",
+        "data_quality_status": "quality_warning",
+        "readiness_status": "partial",
     }
+    assert report_data["performance_history_qualification"]["status"] == "missing"
+    assert "qualification: missing" in report_data["review_observations"][-1]
 
 
 def test_build_render_package_emits_outcome_review_contract(tmp_path):

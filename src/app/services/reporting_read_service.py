@@ -18,7 +18,9 @@ from app.services.performance_contribution import (
     map_position_contributions,
     security_id_from_position_id,
 )
+from app.services.performance_history import qualify_performance_history
 from app.services.portfolio_review_advisor import build_advisor_sections
+from app.services.review_disclosures import review_disclosures
 from app.services.review_evidence import build_review_evidence
 from app.services.risk_supportability import (
     BENCHMARK_RISK_METRICS,
@@ -35,6 +37,7 @@ from app.services.workspace_performance import (
     workspace_benchmark_history,
     workspace_breakdowns,
     workspace_performance_history,
+    workspace_twr_summary,
 )
 
 HTTP_BAD_REQUEST = 400
@@ -327,24 +330,29 @@ class ReportingReadService:
             )
         workspace_summary_payload: dict[str, object] | None = None
         if "PERFORMANCE" in requested_sections:
+            workspace_request = self._build_workspace_summary_request(
+                portfolio_id=portfolio_id,
+                as_of_date=as_of_date,
+                request_payload=request_payload,
+                periods=PERFORMANCE_REVIEW_PERIODS,
+            )
             (
                 performance_status,
                 performance_payload,
             ) = await self._performance_client.get_workspace_summary(
-                self._build_workspace_summary_request(
-                    portfolio_id=portfolio_id,
-                    as_of_date=as_of_date,
-                    request_payload=request_payload,
-                    periods=PERFORMANCE_REVIEW_PERIODS,
-                ),
+                workspace_request,
                 admitted_tenant_id=admitted_tenant,
             )
-            if self._workspace_summary_ready(performance_status, performance_payload):
+            if self._workspace_summary_ready(
+                performance_status, performance_payload, portfolio_id=portfolio_id
+            ):
                 workspace_summary_payload = performance_payload
-            if self._workspace_summary_ready(performance_status, performance_payload):
                 performance = self._map_workspace_performance(
                     performance_payload,
                     request_payload=request_payload,
+                    portfolio_id=portfolio_id,
+                    as_of_date=as_of_date,
+                    source_request=workspace_request,
                 )
                 (
                     contribution_status,
@@ -1891,8 +1899,18 @@ class ReportingReadService:
         self,
         payload: dict[str, object],
         request_payload: dict[str, object] | None = None,
+        *,
+        portfolio_id: str | None = None,
+        as_of_date: str | None = None,
+        source_request: dict[str, object] | None = None,
     ) -> dict[str, object]:
         request_payload = request_payload or {}
+        history = qualify_performance_history(
+            payload,
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+            source_request=source_request,
+        )
         results_by_period = self._as_dict(payload.get("results_by_period"))
         summary: dict[str, object] = {}
         benchmark_available = False
@@ -1902,8 +1920,6 @@ class ReportingReadService:
         for period, row in results_by_period.items():
             row_dict = self._as_dict(row)
             portfolio_twr = self._as_dict(row_dict.get("portfolio_twr"))
-            net_summary = self._as_dict(self._as_dict(portfolio_twr.get("net")).get("summary"))
-            gross_summary = self._as_dict(self._as_dict(portfolio_twr.get("gross")).get("summary"))
             benchmark = self._as_dict(row_dict.get("benchmark"))
             active = self._as_dict(row_dict.get("active"))
             active_net = self._as_dict(active.get("net"))
@@ -1919,28 +1935,15 @@ class ReportingReadService:
                     self._safe_str(benchmark.get("benchmark_currency"))
                     or resolved_benchmark_currency
                 )
-            annualized_supported = self._annualized_return_supported(period)
             summary[period] = {
                 "start_date": self._workspace_period_start(row_dict),
                 "end_date": self._workspace_period_end(row_dict),
-                "net_cumulative_return": self._return_base(net_summary, "cumulative_return"),
+                **workspace_twr_summary(period=period, portfolio_twr=portfolio_twr),
                 "benchmark_cumulative_return": self._return_base(
                     self._as_dict(benchmark.get("summary")),
                     "cumulative_return",
                 ),
                 "benchmark_relative_return": self._return_base(active_net, "cumulative_return"),
-                "net_annualized_return": (
-                    self._return_base(net_summary, "annualized_return")
-                    if annualized_supported
-                    else None
-                ),
-                "gross_cumulative_return": self._return_base(gross_summary, "cumulative_return"),
-                "gross_annualized_return": (
-                    self._return_base(gross_summary, "annualized_return")
-                    if annualized_supported
-                    else None
-                ),
-                "annualized_return_supported": annualized_supported,
             }
         return {
             "summary": summary,
@@ -1980,12 +1983,11 @@ class ReportingReadService:
                     self._optional_string(request_payload, *BENCHMARK_CODE_KEYS)
                 ),
                 benchmark_available=benchmark_available,
+                history_qualification=history,
             ),
+            "history_qualification": history,
             "methodology": self._review_methodology(request_payload),
         }
-
-    def _annualized_return_supported(self, period: object) -> bool:
-        return isinstance(period, str) and period.upper() in {"1Y", "2Y", "5Y", "10Y", "SI"}
 
     def _review_methodology(self, request_payload: dict[str, object]) -> dict[str, object]:
         benchmark_code = self._normalized_benchmark_code(
@@ -2333,45 +2335,7 @@ class ReportingReadService:
         }
 
     def _review_disclosures(self, response: dict[str, object]) -> list[dict[str, object]]:
-        disclosures: list[dict[str, object]] = [
-            {
-                "disclosure_id": "performance_methodology",
-                "severity": "standard",
-                "text": (
-                    "Performance figures use source-provided net and gross time-weighted "
-                    "returns where available; sub-year annualized returns are suppressed unless "
-                    "source support is explicit."
-                ),
-            },
-            {
-                "disclosure_id": "risk_methodology",
-                "severity": "standard",
-                "text": (
-                    "Risk figures are calculated from sourced net daily return history and "
-                    "should be reviewed with section supportability notes before client use."
-                ),
-            },
-            {
-                "disclosure_id": "reporting_view",
-                "severity": "standard",
-                "text": (
-                    "Holdings and transactions are reporting views for portfolio review and "
-                    "may differ from official custody statements."
-                ),
-            },
-        ]
-        if self._safe_str(self._as_dict(response.get("readiness")).get("status")) != "ready":
-            disclosures.append(
-                {
-                    "disclosure_id": "partial_supportability",
-                    "severity": "supportability",
-                    "text": (
-                        "One or more requested sections are partial or unavailable and require "
-                        "advisor review before client presentation."
-                    ),
-                }
-            )
-        return disclosures
+        return review_disclosures(response)
 
     def _review_key_figures(self, response: dict[str, object]) -> dict[str, object]:
         overview = self._as_dict(response.get("overview"))
@@ -3941,8 +3905,14 @@ class ReportingReadService:
         return (pnl / abs(cost_basis)) * 100
 
     @staticmethod
-    def _workspace_summary_ready(status_code: int, payload: dict[str, object]) -> bool:
-        return status_code < HTTP_BAD_REQUEST and "results_by_period" in payload
+    def _workspace_summary_ready(
+        status_code: int, payload: dict[str, object], *, portfolio_id: str | None = None
+    ) -> bool:
+        return (
+            status_code < HTTP_BAD_REQUEST
+            and "results_by_period" in payload
+            and (portfolio_id is None or payload.get("portfolio_id") == portfolio_id)
+        )
 
     def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
         section = self._as_dict(section_payload)

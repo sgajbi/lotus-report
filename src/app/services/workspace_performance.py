@@ -9,6 +9,33 @@ forwards the OWNER's stated facts; nothing derives, links, or gap-fills.
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
+from app.models.performance_history import SourceTwrReturn
+from app.services.performance_history import performance_history_notes
+
+
+def workspace_twr_summary(*, period: object, portfolio_twr: dict[str, object]) -> dict[str, object]:
+    annualized_supported = isinstance(period, str) and period.upper() in {
+        "1Y",
+        "2Y",
+        "5Y",
+        "10Y",
+        "SI",
+    }
+    result: dict[str, object] = {"annualized_return_supported": annualized_supported}
+    for basis in ("net", "gross"):
+        summary = _as_dict(_as_dict(portfolio_twr.get(basis)).get("summary"))
+        for key in ("cumulative_return", "annualized_return"):
+            value = None
+            if key == "cumulative_return" or annualized_supported:
+                try:
+                    value = SourceTwrReturn.model_validate(summary.get(key)).base
+                except ValidationError:
+                    pass
+            result[f"{basis}_{key}"] = value
+    return result
+
 
 def _as_dict(value: object) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
@@ -177,12 +204,11 @@ def performance_supportability(
     *,
     benchmark_requested: bool,
     benchmark_available: bool = False,
+    history_qualification: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    if not benchmark_requested or benchmark_available:
-        return {"status": "ready", "notes": []}
-    return {
-        "status": "partial",
-        "notes": [
+    notes = performance_history_notes(history_qualification or {})
+    if benchmark_requested and not benchmark_available:
+        notes.append(
             {
                 "code": "benchmark_comparison_unavailable",
                 "severity": "warning",
@@ -191,5 +217,5 @@ def performance_supportability(
                     "is not sourced in this report response."
                 ),
             }
-        ],
-    }
+        )
+    return {"status": "partial" if notes else "ready", "notes": notes}
