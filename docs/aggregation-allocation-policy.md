@@ -29,7 +29,19 @@ bounded reason, source/derived/mixed weight provenance when accepted, and source
 Allocation qualification does not replace that transport evidence. Source total market value,
 position count and independently measured return rows survive an unavailable allocation breakdown.
 
+The requested Performance metric is the YTD NET cumulative base return from
+`results_by_period.YTD.portfolio_twr.net.summary.cumulative_return.base`. HTTP 200 admits it only
+when present, numeric and finite through the existing six-decimal, half-even precision policy and
+public numeric serialization. Missing/null/malformed containers, booleans, unusable scalars,
+nonfinite values and conversion failures omit the return row and add one bounded
+`lotus-performance` qualification with `status_code=200` and `reason=incomplete_payload`.
+Report never substitutes zero, another period or another basis. Measured finite zero and signed
+returns remain available. Admission happens while the source HTTP status is present: 202 stays
+`pending` and failed responses stay `no_response`, even if their payload resembles a completed
+calculation. Core count and Performance gaps remain independently qualified; measured valuation
+and supported allocation rows survive the Performance gap. Raw source diagnostics are not exposed.
+
 The policy applies to this aggregation endpoint. Portfolio review/snapshot/Render null qualification
-is tracked by #399; aggregation Performance evidence is tracked by #391. Controlled client fixtures
+uses its separately governed valuation policy. Controlled client fixtures
 and native Report HTTP prove composition and serialization, not production IAM, actual source engine
 calculation, rendered documents, capacity, or client publication.

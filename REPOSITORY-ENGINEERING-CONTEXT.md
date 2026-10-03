@@ -134,8 +134,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   incomplete valuation or bucket data, incoherent source weights and currency conflicts withhold
   all allocation weights with explicit `allocation_supportability`; totals and unrelated measured
   metrics remain visible. Only an absent legacy weight can be derived; a stated null is unavailable.
-  See [allocation policy](docs/aggregation-allocation-policy.md). Aggregation Performance
-  supportability #391 remains separate work.
+  The requested YTD NET cumulative base return must be finite through native precision and
+  numeric serialization. Missing or unusable HTTP 200 Performance evidence gets one bounded
+  `incomplete_payload` qualifier and no return row; measured zero/signed values remain available.
+  Source 202 stays pending and failures stay no_response. Admission retains source status and
+  carries one validated return row, avoiding later inference from an emptied payload.
+  See [aggregation policy](docs/aggregation-allocation-policy.md).
 
 - **Review allocation valuation:** `reporting_lineage/allocation_qualification.py` admits Core's
   bounded coverage/counts and source portfolio/date/currency, preserving independent null values

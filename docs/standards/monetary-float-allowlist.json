@@ -16,19 +16,19 @@
       "review_by": "2027-03-04"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:192:market_value = float(normalized_total)",
+      "finding": "src/app/services/aggregation_service.py:206:market_value = float(normalized_total)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:232:value=float(quantize_quantity(position_count)),",
+      "finding": "src/app/services/aggregation_service.py:246:value=float(quantize_quantity(position_count)),",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:242:value=float(quantize_performance(ytd_return)),",
+      "finding": "src/app/services/aggregation_service.py:300:bucket=\"TOTAL\", metric=\"return_ytd_pct\", value=float(normalized_return)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"
