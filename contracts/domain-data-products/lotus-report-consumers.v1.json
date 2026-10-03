@@ -57,7 +57,7 @@
         "status": "current"
       },
       "consumption_mode": "api_read",
-      "business_purpose": "Build transaction and income activity sections for reporting payloads from the governed core transaction ledger window.",
+      "business_purpose": "Build transaction and income activity sections for reporting payloads from the governed core transaction ledger window, preserving every consumed page's trust gaps, source degradation and stable scope/revision conflicts under transaction-page-evidence.v1.",
       "validation_lanes": [
         "feature",
         "pr-merge"
