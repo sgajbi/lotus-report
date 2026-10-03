@@ -23,6 +23,7 @@ from app.report_batch_orchestrator.schedule import (
     materialize_cycle,
     scheduled_batch_idempotency_key,
 )
+from app.report_batch_orchestrator.tenant_admission import admit_scheduler
 from app.report_ordering_catalogue.validation import (
     ReportOrderingSubmissionError,
     validate_report_ordering_submission,
@@ -654,6 +655,7 @@ class ReportBatchScheduler:
         caller_context: ReportCallerContext,
         evaluation_date: date | None = None,
     ) -> BatchSchedulerRunResult:
+        admit_scheduler(config, caller_context=caller_context)
         materialized: list[BatchSchedulerMaterialization] = []
         skipped: list[str] = []
         refused: list[str] = []

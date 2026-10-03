@@ -185,7 +185,9 @@ boundaries, and copy-paste request examples for direct service and support workf
   registry mutation, or archive distribution behavior
 - `GET /reports/batch-schedules`
   internal list of governed report batch schedules: configured schedules plus the caller
-  tenant's stored recurring definitions with a `next_run_at` projection
+  tenant's stored recurring definitions with a `next_run_at` projection. The caller must
+  match the configured scheduler tenant, region and exact booking center; otherwise
+  `404 batch_scheduler_not_found` is returned before service construction or disclosure.
 - `POST /reports/batch-schedules`
   creates a durable, tenant-fenced recurring report-pack schedule (explicit portfolio list,
   `monthly_end` or `quarter_end` cadence) validated through the governed report-ordering
@@ -202,13 +204,15 @@ boundaries, and copy-paste request examples for direct service and support workf
   loop, so stored-schedule batches carry `batch_schedule_id` lineage exactly like configured
   ones; an optional `evaluation_date` lets an operator simulate a period-end pass
 
-  Unlike every other route on this page, this one does **not** derive its tenant from the calling
-  caller context. `run_due_report_batch_schedules` builds its context from
-  `batch_scheduler_caller_context(config, ...)`, so the tenant comes from the scheduler's own
-  configuration rather than from the `X-Caller-App` identity that invoked it. It materialises new
-  batches and performs no lookup of existing tenant-scoped state, so it is a creation path rather
-  than a cross-tenant read — but a caller cannot select the tenant a scheduler pass acts for, and
-  that assumption is tracked as [#177](https://github.com/sgajbi/lotus-report/issues/177).
+  The caller must first match the configured tenant, region and exact booking center.
+  A mismatch returns the same product-safe `404 batch_scheduler_not_found` before scheduler
+  construction, source discovery, cycle lookups or writes. Reporting capabilities confer no
+  estate-wide operator grant. Only after admission does the pass use
+  `batch_scheduler_caller_context(config, ...)` for execution. The audit emitter attributes
+  the trigger to the HTTP caller; serialized audit delivery remains separately tracked in
+  [#395](https://github.com/sgajbi/lotus-report/issues/395). Source-owned portfolio tenancy is
+  independently verified under [#177](https://github.com/sgajbi/lotus-report/issues/177), and
+  neither scope matching nor transport headers certify production IdP or bank entitlements.
 - `GET /reports/operations/attention`
   internal RFC-0105 source-backed attention scan for active report jobs and batch items; returns
   bounded stuck-state and SLA-breach events with opaque identifiers, thresholds, age, bounded

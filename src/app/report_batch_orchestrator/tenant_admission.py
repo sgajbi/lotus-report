@@ -18,6 +18,46 @@ from app.report_batch_orchestrator.models import ReportBatchRecord
 from app.reporting_jobs.models import ReportCallerContext
 
 BATCH_NOT_FOUND = "report_batch_not_found"
+SCHEDULER_NOT_FOUND = "batch_scheduler_not_found"
+
+
+class SchedulerTenantAdmissionError(ValueError):
+    """Product-safe refusal with no configured scheduler identity disclosure."""
+
+    def __init__(self) -> None:
+        super().__init__(SCHEDULER_NOT_FOUND)
+
+
+class SchedulerScope(Protocol):
+    @property
+    def tenant_id(self) -> str: ...
+
+    @property
+    def region(self) -> str: ...
+
+    @property
+    def booking_center_code(self) -> str | None: ...
+
+
+def admit_scheduler(
+    scope: SchedulerScope,
+    *,
+    caller_context: ReportCallerContext,
+) -> None:
+    """Admit the configured scope before disclosure or execution identity replacement.
+
+    Ordinary reporting capability grants no cross-scope operator authority. Exact
+    scope matches the stored-definition policy, including an absent booking center.
+    The daemon's configured context passes the same guard without a bypass.
+    """
+    if (
+        not scope.tenant_id.strip()
+        or not scope.region.strip()
+        or scope.tenant_id != caller_context.tenant_id
+        or scope.region != caller_context.region
+        or scope.booking_center_code != caller_context.booking_center_code
+    ):
+        raise SchedulerTenantAdmissionError()
 
 
 class BatchTenantAdmissionLedger(Protocol):

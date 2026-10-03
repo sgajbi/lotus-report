@@ -77,7 +77,11 @@ from app.report_batch_orchestrator.status_projection import (
     build_batch_status,
     load_report_job_archive_statuses,
 )
-from app.report_batch_orchestrator.tenant_admission import load_admitted_batch
+from app.report_batch_orchestrator.tenant_admission import (
+    SchedulerTenantAdmissionError,
+    admit_scheduler,
+    load_admitted_batch,
+)
 from app.report_batch_orchestrator.worker import BatchWorkerRunResult
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
@@ -224,6 +228,12 @@ BATCH_API_ERROR_RESPONSE_EXAMPLES: dict[str, dict[str, Any]] = {
             "message": "Report batch scheduler pass could not be completed.",
         }
     },
+    "batch_scheduler_not_found": {
+        "detail": {
+            "code": "batch_scheduler_not_found",
+            "message": "Report batch scheduler was not found.",
+        }
+    },
     "report_batch_item_cannot_be_replayed": {
         "detail": {
             "code": "report_batch_item_cannot_be_replayed",
@@ -336,6 +346,35 @@ def _scheduler_config_error(exc: BatchScheduleConfigError) -> HTTPException:
     )
 
 
+def _admit_scheduler_operator(
+    config: BatchSchedulerConfig, *, caller_context: ReportCallerContext
+) -> None:
+    try:
+        admit_scheduler(config, caller_context=caller_context)
+    except SchedulerTenantAdmissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=BATCH_API_ERROR_RESPONSE_EXAMPLES["batch_scheduler_not_found"]["detail"],
+        ) from exc
+
+
+def admitted_scheduler_config_dependency(
+    config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
+    caller_context: ReportCallerContext = Depends(caller_context_dependency),
+) -> BatchSchedulerConfig:
+    _admit_scheduler_operator(config, caller_context=caller_context)
+    return config
+
+
+def admitted_scheduler_dependency(
+    _config: BatchSchedulerConfig = Depends(admitted_scheduler_config_dependency),
+    scheduler: ReportBatchSchedulerPort = Depends(get_report_batch_scheduler),
+) -> ReportBatchSchedulerPort:
+    # Admission is a prerequisite of construction, even if route arguments move.
+    # The ordinary factory can initialize schema and resolve provider adapters.
+    return scheduler
+
+
 class StoredBatchScheduleResponse(StoredBatchSchedule):
     """A stored schedule definition plus its computed next materialization date."""
 
@@ -373,6 +412,13 @@ class BatchScheduleDefinitionDetailResponse(BaseModel):
 
 def schedule_definition_service_dependency() -> ScheduleDefinitionService:
     return get_schedule_definition_service()
+
+
+def admitted_schedule_definition_service_dependency(
+    _config: BatchSchedulerConfig = Depends(admitted_scheduler_config_dependency),
+    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+) -> ScheduleDefinitionService:
+    return service
 
 
 def _stored_schedule_response(
@@ -530,9 +576,11 @@ async def update_report_batch_schedule_definition(
     response_model=BatchScheduleDefinitionListResponse,
     summary="List governed report batch schedules",
     description=(
-        "Returns the currently configured report batch schedules from the governed scheduler "
-        "configuration source. This endpoint is read-only: schedules remain config-backed and "
-        "are not created, edited, or deleted through the API."
+        "Returns configured schedules and caller-owned stored definitions for an operator "
+        "whose tenant, region and booking center exactly match the configured scheduler scope. "
+        "A foreign scope receives a product-safe 404 before metadata or definitions are read. "
+        "Configuration schedules remain config-backed; stored definitions have separate "
+        "tenant-scoped create, detail and update operations."
     ),
     openapi_extra={
         "responses": {
@@ -556,12 +604,17 @@ async def update_report_batch_schedule_definition(
             400,
             example_key="invalid_batch_scheduler_config",
             description="Returned when the configured scheduler JSON cannot be loaded.",
-        )
+        ),
+        **_error_response(
+            404,
+            example_key="batch_scheduler_not_found",
+            description="Returned when the caller is outside the configured scheduler scope.",
+        ),
     },
 )
 async def list_report_batch_schedules(
-    config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
-    service: ScheduleDefinitionService = Depends(schedule_definition_service_dependency),
+    config: BatchSchedulerConfig = Depends(admitted_scheduler_config_dependency),
+    service: ScheduleDefinitionService = Depends(admitted_schedule_definition_service_dependency),
     caller_context: ReportCallerContext = Depends(caller_context_dependency),
 ) -> BatchScheduleDefinitionListResponse:
     try:
@@ -583,6 +636,8 @@ async def list_report_batch_schedules(
     summary="Run one bounded report batch scheduler pass",
     description=(
         "Runs one bounded operator-triggered scheduler pass over enabled configured schedules. "
+        "The caller must match the scheduler tenant, region and booking center before its "
+        "configured execution identity is used; reporting capability grants no global bypass. "
         "The pass resolves configured schedule selectors, materializes durable idempotent batches, "
         "and returns product-safe materialization results. It does not execute batch items; the "
         "batch worker remains responsible for dispatch, render, archive, and reconciliation."
@@ -628,13 +683,17 @@ async def list_report_batch_schedules(
             example_key="batch_scheduler_run_failed",
             description="Returned when the scheduler pass cannot safely materialize schedules.",
         ),
+        **_error_response(
+            404,
+            example_key="batch_scheduler_not_found",
+            description="Returned before discovery or writes for a foreign scheduler scope.",
+        ),
     },
 )
 async def run_due_report_batch_schedules(
     request: BatchSchedulerRunRequest,
-    scheduler: ReportBatchSchedulerPort = Depends(get_report_batch_scheduler),
-    config: BatchSchedulerConfig = Depends(get_report_batch_scheduler_config),
-    _operator_context: ReportCallerContext = Depends(caller_context_dependency),
+    scheduler: ReportBatchSchedulerPort = Depends(admitted_scheduler_dependency),
+    config: BatchSchedulerConfig = Depends(admitted_scheduler_config_dependency),
 ) -> BatchSchedulerRunResponse:
     started_at = perf_counter()
     scheduler_context = batch_scheduler_caller_context(
