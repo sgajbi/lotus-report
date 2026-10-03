@@ -15,16 +15,17 @@ from tests.unit.test_reporting_read_service_additional import (
 
 
 class _TransactionPages(_CoreQuerySuccessMinimal):
-    def __init__(self, pages):
+    def __init__(self, pages, *, missing_portfolio_page=None):
         self.pages = pages
         self.reads = []
+        self.missing_portfolio_page = missing_portfolio_page
 
     async def get_portfolio_transactions(
         self, portfolio_id, params, correlation_id=None, *, admitted_tenant_id=""
     ):
         page = len(self.reads)
         self.reads.append((params["skip"], admitted_tenant_id))
-        return 200, {
+        payload = {
             "portfolio_id": portfolio_id,
             "reporting_currency": "USD",
             **deepcopy(self.pages[page]),
@@ -41,10 +42,13 @@ class _TransactionPages(_CoreQuerySuccessMinimal):
                 }
             ],
         }
+        if page == self.missing_portfolio_page:
+            payload.pop("portfolio_id")
+        return 200, payload
 
 
-async def _read(pages):
-    client = _TransactionPages(pages)
+async def _read(pages, *, missing_portfolio_page=None):
+    client = _TransactionPages(pages, missing_portfolio_page=missing_portfolio_page)
     service = ReportingReadService(
         core_query_client=client,
         performance_client=_PerformanceSuccessEmpty(),
@@ -59,6 +63,59 @@ async def _read(pages):
     assert [row["transaction_id"] for row in result.rows] == ["TX-0", "TX-1"]
     assert client.reads == [(0, "default"), (1, "default")]
     return result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page", [0, 1])
+@pytest.mark.parametrize("value", [None, "", " ", 42, {"private": "customer-detail"}])
+async def test_invalid_required_portfolio_identity_on_any_page_remains_partial(page, value):
+    pages = [_transaction_ledger_metadata(), _transaction_ledger_metadata()]
+    pages[page]["portfolio_id"] = value
+    result = await _read(pages)
+    assert result.supportability["status"] == "partial"
+    note = next(
+        note
+        for note in result.supportability["notes"]
+        if note["code"] == "transaction_window_trust_metadata_incomplete"
+    )
+    assert "portfolio_id" in note["missing_fields"] and note["pages"] == [page + 1]
+    assert "customer-detail" not in str(result.source_product)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page", [0, 1])
+async def test_absent_required_portfolio_identity_on_any_page_remains_partial(page):
+    result = await _read(
+        [_transaction_ledger_metadata(), _transaction_ledger_metadata()],
+        missing_portfolio_page=page,
+    )
+    assert result.supportability["status"] == "partial"
+    assert result.source_product["page_evidence"][page]["missing_fields"] == ["portfolio_id"]
+
+
+@pytest.mark.asyncio
+async def test_optional_raw_ledger_currency_none_is_a_valid_coherent_scope():
+    pages = [_transaction_ledger_metadata(), _transaction_ledger_metadata()]
+    for page in pages:
+        page["reporting_currency"] = None
+    result = await _read(pages)
+    assert result.supportability == {"status": "ready", "notes": []}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_raw_and_restatement_currency_scopes_cannot_be_combined(reverse):
+    pages = [_transaction_ledger_metadata(), _transaction_ledger_metadata()]
+    pages[0]["reporting_currency"] = None
+    pages[1]["reporting_currency"] = "USD"
+    if reverse:
+        pages.reverse()
+    result = await _read(pages)
+    assert result.supportability["status"] == "partial"
+    assert result.source_product["reporting_currency"] == pages[0]["reporting_currency"]
+    assert any(
+        "reporting_currency" in note.get("fields", []) for note in result.supportability["notes"]
+    )
 
 
 @pytest.mark.asyncio

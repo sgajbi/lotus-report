@@ -16,6 +16,12 @@ states `RECONCILED` or `COMPLETE`. Missing or unknown status remains unknown.
 Multiple distinct adverse reconciliation states also yield unknown rather than
 choosing whichever page arrived last.
 
+In addition to the consumer trust fields, every page must carry a nonblank string
+`portfolio_id`, as required by Core's `PaginatedTransactionResponse`. Optional
+`reporting_currency` may be omitted or null for the raw ledger. A raw scope and a
+currency-restated scope cannot be
+combined as one coherent window, including when the first page's currency is null.
+
 The stable window fields are product/version, tenant, portfolio, reporting currency,
 as-of date, latest evidence timestamp, restatement version, source batch fingerprint,
 snapshot identity and policy version. Conflicting supplied values produce
