@@ -102,6 +102,85 @@ def test_source_finite_return_admission_preserves_qualification(value):
 @pytest.mark.parametrize(
     "case",
     [
+        "mode",
+        "period",
+        "long-period",
+        "too-many-periods",
+        "request-period",
+        "too-many-request-periods",
+    ],
+)
+def test_unsupported_history_metadata_cannot_leak_or_attest_filtered_source(case):
+    payload, request = source_facts(), source_request()
+    periods = payload["results_by_period"]
+    if case == "mode":
+        payload["input_mode"] = "untrusted-source-detail"
+    elif case == "period":
+        periods["untrusted-source-detail"] = copy.deepcopy(periods["YTD"])
+    elif case == "long-period":
+        periods["untrusted-source-detail" * 100] = copy.deepcopy(periods["YTD"])
+    elif case == "too-many-periods":
+        periods.update({f"untrusted-source-detail-{i}": periods["YTD"] for i in range(15)})
+    elif case == "request-period":
+        request["periods"].append({"period": "untrusted-source-detail"})
+    else:
+        request["periods"] = [{"period": "YTD"}] * 15
+    before = copy.deepcopy(payload)
+    result = qualify_performance_history(
+        payload, portfolio_id="HISTORY_OWNER", as_of_date="2026-01-09", source_request=request
+    )
+    assert "untrusted-source-detail" not in str(result)
+    assert result["status"] == "invalid" and result["client_publication_allowed"] is False
+    assert result["reason_code"] == "performance_history_qualification_invalid"
+    assert len(result["returned_periods"]) <= 14 and len(result["requested_periods"]) <= 14
+    assert payload == before
+
+
+def test_all_recognized_workspace_periods_remain_valid_at_the_admission_budget():
+    codes = [
+        "1D",
+        "2D",
+        "5D",
+        "10D",
+        "1M",
+        "3M",
+        "6M",
+        "YTD",
+        "1Y",
+        "2Y",
+        "5Y",
+        "10Y",
+        "SI",
+        "EXPLICIT",
+    ]
+    payload, request = source_facts(), source_request()
+    row = payload["results_by_period"]["YTD"]
+    payload["results_by_period"] = {code: copy.deepcopy(row) for code in codes}
+    request["periods"] = [{"period": code} for code in codes]
+    result = qualify_performance_history(
+        payload, portfolio_id="HISTORY_OWNER", as_of_date="2026-01-09", source_request=request
+    )
+    assert result["client_publication_allowed"] is True
+    assert result["returned_periods"] == result["requested_periods"] == codes
+
+
+@pytest.mark.parametrize("coverage_present,expected", [(False, "missing"), (True, "mismatched")])
+def test_absent_input_mode_preserves_legacy_missing_history_without_attestation(
+    coverage_present, expected
+):
+    payload = source_facts()
+    payload.pop("input_mode")
+    if not coverage_present:
+        payload["calculation_supportability"].pop("history_coverage")
+    result = qualify(payload)
+    assert result["status"] == expected
+    assert result["source_input_mode"] is None
+    assert result["client_publication_allowed"] is False
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
         "complete_gap_reason",
         "complete_no_observations",
         "duplicates",

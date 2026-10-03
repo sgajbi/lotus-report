@@ -4,7 +4,7 @@
   "generated_at": "2026-09-13T07:10:11Z",
   "allowlist": [
     {
-      "finding": "src/app/models/contracts.py:18:value: float",
+      "finding": "src/app/models/contracts.py:21:value: float",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-20"
@@ -16,19 +16,19 @@
       "review_by": "2027-03-04"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:206:market_value = float(normalized_total)",
+      "finding": "src/app/services/aggregation_service.py:229:market_value = float(normalized_total)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:246:value=float(quantize_quantity(position_count)),",
+      "finding": "src/app/services/aggregation_service.py:269:value=float(quantize_quantity(position_count)),",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"
     },
     {
-      "finding": "src/app/services/aggregation_service.py:300:bucket=\"TOTAL\", metric=\"return_ytd_pct\", value=float(normalized_return)",
+      "finding": "src/app/services/aggregation_service.py:324:bucket=\"TOTAL\", metric=\"return_ytd_pct\", value=float(normalized_return)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-07"

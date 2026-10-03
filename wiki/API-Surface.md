@@ -346,6 +346,20 @@ substitutes another period or basis. Source 202 stays `pending` and failed respo
 Performance gaps remain independently qualified, and source diagnostics are not exposed.
 See `docs/aggregation-allocation-policy.md` for scope and controlled HTTP evidence limits.
 
+Aggregation `performance_history_qualification` preserves the existing named source-owned
+union-window policy beside a compatible measured return. Requested/covered/effective dates,
+calendar/calculation basis, missing evidence and safe reasons remain explicit for partial,
+unknown, missing, invalid or mismatched history. Source identity and the actual YTD NET request
+bind the statement; missing/foreign portfolio identity withholds the scoped return. Numeric
+availability does not attest complete history or permit publication when the source is qualified
+or the requested return is unavailable. History is null on pending/failed transport; its
+qualification is separate from the absent-metric `unavailable_sources` list. Union scope is not
+per-period coverage; calculation UUID syntax and requested end binding do not establish a
+request-correlated calculation ID or independently derived start date.
+Recognized modes/period identities and a fourteen-period budget bound the shared public history
+metadata. Unsupported labels are omitted with invalid qualification, preserving the available
+compatible return without manufacturing stronger history or exposing arbitrary source text.
+
 Review and summary `allocation.by*` rows preserve independently nullable ratio weights and
 reporting-currency values. Unknown is not zero. `valuation_coverage` carries Core's bounded
 state/reason and snapshot/expected/valued/unvalued counts; `qualification` binds portfolio,

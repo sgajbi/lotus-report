@@ -5,6 +5,27 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
+WORKSPACE_HISTORY_PERIODS = (
+    "1D",
+    "2D",
+    "5D",
+    "10D",
+    "1M",
+    "3M",
+    "6M",
+    "YTD",
+    "1Y",
+    "2Y",
+    "5Y",
+    "10Y",
+    "SI",
+    "EXPLICIT",
+)
+MAX_HISTORY_PERIODS = len(WORKSPACE_HISTORY_PERIODS)
+HistoryPeriod = Annotated[
+    str, Field(pattern="^(" + "|".join(WORKSPACE_HISTORY_PERIODS) + ")$", max_length=8)
+]
+
 HistoryReason = Literal[
     "covered_window_matches_requested_window",
     "no_observations_in_requested_window",
@@ -133,16 +154,21 @@ class PerformanceHistoryQualification(BaseModel):
     source_service: Literal["lotus-performance"] = "lotus-performance"
     source_portfolio_id: str | None = None
     source_calculation_id: str | None = None
-    source_input_mode: str | None = None
+    source_input_mode: Annotated[str, Field(pattern="^(stateful|stateless)$")] | None = None
     source_supportability_state: str | None = None
     source_supportability_reason: str | None = None
     source_freshness_bucket: str | None = None
-    returned_periods: list[str] = Field(default_factory=list)
-    requested_periods: list[str] = Field(default_factory=list)
+    returned_periods: list[HistoryPeriod] = Field(
+        default_factory=list, max_length=MAX_HISTORY_PERIODS
+    )
+    requested_periods: list[HistoryPeriod] = Field(
+        default_factory=list, max_length=MAX_HISTORY_PERIODS
+    )
     requested_calendar_basis: Literal["natural_days", "business_weekdays"] | None = None
     return_basis: list[Literal["NET_TWR", "GROSS_TWR"]] = Field(default_factory=list)
-    period_return_bases: dict[str, list[Literal["NET_TWR", "GROSS_TWR"]]] = Field(
+    period_return_bases: dict[HistoryPeriod, list[Literal["NET_TWR", "GROSS_TWR"]]] = Field(
         default_factory=dict,
+        max_length=MAX_HISTORY_PERIODS,
         description="Returned period/basis identities; each refers to the union evidence only.",
     )
     coverage: PerformanceHistoryCoverage | None = None
