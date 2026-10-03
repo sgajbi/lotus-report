@@ -236,6 +236,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    semantics. Refusal audit never selects a duplicated identity. See
    [Direct-Service Request Header Admission](docs/operations/request-header-admission.md) for the
    13-field inventory, actual HTTP/PostgreSQL no-effect proof and Gateway/IAM boundary.
+   Native execution and the entire direct source provider bind accepted job correlation/trace
+   through one ContextVar token/finally helper. Nested, failed and cancelled calls restore their
+   enclosing scope; worker-pass request identity and explicit tenant/caller authority stay separate.
+   Missing persisted propagation identity is refused before source calls. See
+   [Report Job Propagation Context](docs/operations/report-job-propagation-context.md) for API
+   regenerate/replay behavior and wire-versus-exported-trace proof boundaries.
 8. **One fact, one name.** When two surfaces answer the same question — the pre-order availability
    check and the capture both explain why a section is absent — they resolve through one shared
    vocabulary rather than each holding a copy. Two copies are two chances to disagree, and the

@@ -3,7 +3,8 @@ import logging
 import os
 import re
 import time
-from collections.abc import MutableMapping
+from collections.abc import Iterator, MutableMapping
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
@@ -15,11 +16,25 @@ from prometheus_fastapi_instrumentator import routing as prometheus_routing
 from starlette.routing import BaseRoute, Match, Mount
 
 from app.audit_logging import redact_sensitive, validated_audit_envelope
-from app.reporting_metrics import validate_reporting_metric_contracts
 
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 trace_id_var: ContextVar[str] = ContextVar("trace_id", default="")
+
+
+@contextmanager
+def bind_propagation_context(*, correlation_id: str, trace_id: str) -> Iterator[None]:
+    """Bind attributable work while preserving its caller's operational request ID."""
+    if not correlation_id or not correlation_id.strip() or not trace_id or not trace_id.strip():
+        raise ValueError("propagation_identity_missing")
+    correlation_token = correlation_id_var.set(correlation_id)
+    trace_token = trace_id_var.set(trace_id)
+    try:
+        yield
+    finally:
+        trace_id_var.reset(trace_token)
+        correlation_id_var.reset(correlation_token)
+
 
 CORRELATION_ID_HEADER = "X-Correlation-Id"
 CORRELATION_ID_HEADER_ALIAS = "X-Correlation-ID"
@@ -155,6 +170,10 @@ def propagation_headers(correlation_id: str | None = None) -> dict[str, str]:
 
 
 def setup_observability(app: FastAPI) -> None:
+    # Metric models depend on job execution; context binding must stay importable
+    # before those application modules initialize.
+    from app.reporting_metrics import validate_reporting_metric_contracts
+
     setup_logging()
     validate_reporting_metric_contracts()
     _install_fastapi_included_router_prometheus_patch()
