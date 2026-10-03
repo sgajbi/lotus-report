@@ -83,6 +83,14 @@ exist.
 | `lotus-report.aggregation.portfolio_snapshot` | `GET /aggregations/portfolios/{portfolio_id}` | `src/app/routers/aggregations.py`, `src/app/services/aggregation_service.py`, `src/app/portfolio_aggregation/allocation.py`, `tests/integration/test_signed_allocation_aggregation.py`, `tests/integration/test_aggregation_performance_admission.py`, `tests/integration/test_aggregation_history_qualification.py`, `tests/unit/portfolio_aggregation/test_performance_admission.py` | Source-backed snapshot with complete signed net allocation weights and explicit `allocation_supportability`; negative/zero buckets remain, with no filtered renormalization. YTD NET admission uses native precision and finite public numeric serialization. Missing/unusable successful evidence gets bounded200 `incomplete_payload`; absent/foreign source portfolio identity withholds the scoped return. Measured compatible returns retain the typed source-owned history/effective window, with partial/unknown/missing/invalid evidence preventing unqualified publication. Pending/failed transport preserves its qualification and null history. Controlled Report/source HTTP proves consumer composition; Review/Render allocation remains separately governed. |
 | `lotus-report.integration.capabilities` | `GET /integration/capabilities` | `src/app/routers/integration.py`, `src/app/models/contracts.py`, `tests/integration/test_api.py` | Publishes current feature and workflow posture for downstream consumers. |
 
+Correction/replacement custody and linkage are distinct. Report confirms Archive lifecycle
+acknowledgements only with a nonblank bounded relationship ID and exact requested pair/type.
+Malformed success remains pending and can reconcile idempotently; confirmed events retain the
+validated ID. Existing recorded events without IDs remain operator review candidates, with no
+automatic history rewrite. See `docs/operations/archive-lineage-acknowledgement.md`; native
+client/parser and registered socket tests with durable SQLite establish consumer admission and
+recovery, while live Archive storage and historical repair completion remain separate evidence.
+
 ## Planned RFC-0104 Feature Candidates
 
 These rows are planning markers for future surfaces, not shipped product capability. RFC-0104

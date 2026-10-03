@@ -113,6 +113,14 @@ lifecycle intent it owns: `record_archive_lineage` posts supersede and correct t
 correction/replacement intent while Archive owns the durable document lifecycle. Reconciliation
 lookups and transition calls are likewise Report's to make.
 
+Archive correction/replacement linkage confirms only a successful acknowledgement with a
+nonblank bounded relationship ID and exact requested source/target/transition. Invalid success
+remains pending with the verified document intact and the same pair available for idempotent
+reconciliation. Replay's original reason/actor/time and later current chain head do not rebind
+the historical pair. Confirmed events retain the validated relationship ID. Earlier recorded
+events without it require operator review; automatic history rewriting/reclassification is not
+supported. See [acknowledgement and recovery](docs/operations/archive-lineage-acknowledgement.md).
+
 ### The report lifecycle
 
 ```

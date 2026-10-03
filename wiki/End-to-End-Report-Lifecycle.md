@@ -78,6 +78,18 @@ and runtime identity - evidence is never destroyed by a failure.
 
 ## Recovery commands
 
+Archive correction/replacement linkage confirms successful transport only after admitting a
+nonblank bounded relationship ID and exact requested source, target and transition. Invalid
+success stays pending; valid recovery settles the same pair once. Confirmed events retain the ID,
+while pending keys deduplicate attempts. The document and snapshot stand throughout. Replay's
+original actor/reason/time and later current chain head do not rebind the historical pair.
+
+Earlier recorded events lacking relationship IDs remain unverified review candidates and suppress
+automatic reconciliation. Operators inspect authorized job/Archive source events, preserve
+historical evidence and coordinate demonstrated missing-pair repair with Archive authority.
+No automatic history rewrite or administrative repair command is supplied. The repo source
+runbook is `docs/operations/archive-lineage-acknowledgement.md`.
+
 | Command | Eligible jobs | Guarantees |
 | --- | --- | --- |
 | `POST /reports/jobs/{id}/replay` | `failed` + `retry_eligible`, portfolio-review only, no archive document | New job under a replay idempotency key; for `render_artifact_unrecoverable` the retained snapshot is CLONED (upstream never recollected, clone lineage names the source snapshot; refuses fail-closed if the snapshot is purged); crash-resumable; fingerprint comparison recorded once per durable event; ONE replacement per LINEAGE per source - a novel idempotency key is refused while ANY member of the replay lineage - walked transitively from the lineage root, with creators serialized on the root row - is live, succeeded, or archive-ambiguous, so the original work can never gain two replacement documents through any branch |

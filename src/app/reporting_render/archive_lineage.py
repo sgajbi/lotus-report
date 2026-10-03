@@ -69,6 +69,29 @@ def _pair_key(source_document_id: str, target_document_id: str, transition_type:
     return f"{transition_type}:{source_document_id}->{target_document_id}"
 
 
+def _acknowledged_relationship_id(
+    payload: dict[str, Any],
+    *,
+    source_document_id: str,
+    target_document_id: str,
+    transition_type: str,
+) -> str | None:
+    """Admit the historical pair, without rebinding it to the chain's current head."""
+
+    relationship_id = payload.get("lifecycle_relationship_id")
+    if not isinstance(relationship_id, str) or not relationship_id.strip():
+        return None
+    if len(relationship_id) > 256:
+        return None
+    if (
+        payload.get("source_document_id") != source_document_id
+        or payload.get("target_document_id") != target_document_id
+        or payload.get("transition_type") != transition_type
+    ):
+        return None
+    return relationship_id
+
+
 async def record_archive_lineage(
     *,
     archive_client: ArchiveLineageClient,
@@ -80,15 +103,16 @@ async def record_archive_lineage(
     transition_reason: str,
     caller_context: ReportCallerContext,
 ) -> bool:
-    """Record one lineage pair; True when Archive holds it.
+    """Record one lineage pair; True after Archive acknowledges the requested pair.
 
     Never raises: the outcome - recorded or pending - is written durably to
     the job's event stream, and a pending pair is picked up by settlement.
     """
 
     pair = _pair_key(source_document_id, target_document_id, transition_type)
+    payload: dict[str, Any] = {}
     try:
-        status_code, _payload = await archive_client.record_lifecycle_transition(
+        status_code, payload = await archive_client.record_lifecycle_transition(
             source_document_id=source_document_id,
             target_document_id=target_document_id,
             transition_type=transition_type,
@@ -103,7 +127,17 @@ async def record_archive_lineage(
         )
     except Exception:
         status_code = 0
-    if status_code in {200, 201}:
+    relationship_id = (
+        _acknowledged_relationship_id(
+            payload,
+            source_document_id=source_document_id,
+            target_document_id=target_document_id,
+            transition_type=transition_type,
+        )
+        if status_code in {200, 201}
+        else None
+    )
+    if relationship_id is not None:
         ledger.append_job_event(
             job_id=event_job_id,
             event_type=LINEAGE_RECORDED_EVENT,
@@ -115,6 +149,7 @@ async def record_archive_lineage(
                 "source_document_id": source_document_id,
                 "target_document_id": target_document_id,
                 "transition_type": transition_type,
+                "lifecycle_relationship_id": relationship_id,
             },
             event_idempotency_key=f"{LINEAGE_RECORDED_EVENT}:{pair}",
             actor=caller_context.triggered_by,
@@ -156,7 +191,7 @@ async def record_archive_lineage(
         message=(
             f"Archive lifecycle linkage {source_document_id} -> "
             f"{target_document_id} ({transition_type}) is PENDING: the "
-            "lifecycle call did not succeed. The stored document stands; "
+            "requested pair has no validated acknowledgement. The stored document stands; "
             "the linkage is re-attempted on the next correction-flow entry."
         ),
         event_payload={
@@ -164,6 +199,12 @@ async def record_archive_lineage(
             "target_document_id": target_document_id,
             "transition_type": transition_type,
             "transition_reason": transition_reason,
+            "status_code": status_code,
+            "reason_code": (
+                "archive_lineage_acknowledgement_invalid"
+                if status_code in {200, 201}
+                else "archive_lineage_call_unconfirmed"
+            ),
         },
         event_idempotency_key=f"{LINEAGE_PENDING_EVENT}:{pair}",
         actor=caller_context.triggered_by,
