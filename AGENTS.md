@@ -246,12 +246,11 @@ When the task is about:
 use the governed `lotus-workbench` runtime and validation flow first:
 
 1. `lotus-workbench/docs/operations/canonical-front-office-local-runtime.md`
-2. `npm run live:stack:up`
-3. `npm run live:validate`
-4. `npm run live:stack:down`
-5. `lotus-platform/automation/Invoke-Canonical-FrontOffice-QA.ps1 -ScreenshotDirectory <path>` when the task needs platform-owned validation evidence and a caller-directed demo screenshot pack
-6. `lotus-platform/context/contracts/canonical-front-office-demo-data-contract.json`
-7. `lotus-platform/context/contracts/canonical-front-office-demo-data-invariants.json`
+2. `npm run live:stack:up:validate`
+3. `npm run live:stack:down`
+4. `lotus-platform/automation/Invoke-Canonical-FrontOffice-QA.ps1 -BringUp` when the task needs platform-owned validation evidence; pass a caller-resolved absolute screenshot directory when the default artifact path is unsuitable
+5. `lotus-platform/context/contracts/canonical-front-office-demo-data-contract.json`
+6. `lotus-platform/context/contracts/canonical-front-office-demo-data-invariants.json`
 
 Use `PB_SG_GLOBAL_BAL_001` as the governed seeded front-office portfolio unless the task explicitly requires another dataset.
 
