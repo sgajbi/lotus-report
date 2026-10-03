@@ -3,7 +3,27 @@ from datetime import date
 import pytest
 
 from app.application_errors import ReportingUpstreamError
+from app.portfolio_aggregation.allocation import build_allocation_rows
 from app.services.aggregation_service import AggregationService
+
+
+@pytest.mark.parametrize("raw", ["NaN", "Infinity", "-Infinity", True])
+@pytest.mark.asyncio
+async def test_source_summary_requires_a_finite_monetary_total(raw):
+    class _InvalidSummary(_StubCoreQueryClient):
+        async def get_portfolio_summary(self, *args, **kwargs):
+            status, payload = await super().get_portfolio_summary(*args, **kwargs)
+            payload["totals"]["total_market_value_reporting_currency"] = raw
+            return status, payload
+
+    service = AggregationService(
+        core_query_client=_InvalidSummary(), performance_client=_StubPerformanceClient()
+    )
+    with pytest.raises(ReportingUpstreamError) as refused:
+        await service.get_portfolio_aggregation_live(
+            "P1", date(2026, 4, 22), admitted_tenant_id="tenant-test"
+        )
+    assert refused.value.detail["code"] == "aggregation_source_incomplete"
 
 
 class _StubCoreQueryClient:
@@ -19,6 +39,7 @@ class _StubCoreQueryClient:
             200,
             {
                 "portfolio_id": portfolio_id,
+                "reporting_currency": "USD",
                 "totals": {"total_market_value_reporting_currency": 999_999.0},
                 "snapshot_metadata": {"position_count": 3},
             },
@@ -36,6 +57,7 @@ class _StubCoreQueryClient:
             200,
             {
                 "scope": {"portfolio_id": portfolio_id},
+                "reporting_currency": "USD",
                 "views": [
                     {
                         "dimension": "asset_class",
@@ -52,8 +74,8 @@ class _StubCoreQueryClient:
                             },
                             {
                                 "dimension_value": "CASH",
-                                "weight": 0.2000002000002,
-                                "market_value_reporting_currency": 200_000.0,
+                                "weight": 0.1999996999997,
+                                "market_value_reporting_currency": 199_999.5,
                             },
                         ],
                     }
@@ -136,23 +158,18 @@ async def test_live_aggregation_refuses_a_summary_without_a_market_value():
 
 
 def test_build_asset_class_rows_ignores_non_asset_class_views():
-    service = AggregationService(
-        core_query_client=_StubCoreQueryClient(),
-        performance_client=_StubPerformanceClient(),
-    )
-
-    rows = service._build_asset_class_rows(
-        core_query_payload={
-            "allocation": {
-                "views": [
-                    {"dimension": "sector", "buckets": [{"dimension_value": "TECH"}]},
-                ],
-            }
+    rows, posture = build_allocation_rows(
+        {
+            "reporting_currency": "USD",
+            "views": [
+                {"dimension": "sector", "buckets": [{"dimension_value": "TECH"}]},
+            ],
         },
-        total_mv=1_000_000.0,
+        1_000_000,
+        summary_currency="USD",
     )
-
     assert rows == []
+    assert posture.reason_code == "incomplete_allocation_payload"
 
 
 class _FailingCoreQueryClient:

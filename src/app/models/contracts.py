@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.performance_history import PortfolioReviewPerformance
 
@@ -45,6 +45,9 @@ class PortfolioAggregationResponse(BaseModel):
     scope: AggregationScope
     generated_at: datetime
     rows: list[AggregationRow]
+    allocation_supportability: "AllocationSupportability" = Field(
+        description="Explicit signed net basis and supportability of all asset-class weight rows."
+    )
     unavailable_sources: list[UnavailableSource] = Field(
         default_factory=list,
         description=(
@@ -53,6 +56,51 @@ class PortfolioAggregationResponse(BaseModel):
             "measured -- distinct from a metric that is genuinely zero."
         ),
     )
+
+
+class AllocationSupportability(BaseModel):
+    """Supportability of the complete asset-class weight breakdown."""
+
+    basis: Literal["signed_net_reporting_currency"] = Field(
+        "signed_net_reporting_currency",
+        description="Signed values divided by a positive net denominator in reporting currency.",
+    )
+    status: Literal["available", "empty", "unavailable"] = Field(
+        description="Whether the complete breakdown is supportable, empty, or explicitly withheld."
+    )
+    reason_code: Literal[
+        "allocation_complete",
+        "allocation_empty",
+        "source_unavailable",
+        "nonpositive_net_denominator",
+        "incomplete_allocation_payload",
+        "source_valuation_unavailable",
+        "reporting_currency_mismatch",
+        "reporting_currency_unavailable",
+        "source_denominator_mismatch",
+        "source_weight_mismatch",
+        "source_bucket_total_mismatch",
+    ] = Field(description="Bounded explanation for allocation availability or refusal.")
+    weight_source: Literal["source", "derived", "mixed"] | None = Field(
+        None,
+        description=("Weights are source-stated, derived only for legacy absent fields, or mixed."),
+    )
+    reporting_currency: str | None = Field(
+        None, description="Source reporting currency; null when legacy evidence does not state it."
+    )
+
+    @model_validator(mode="after")
+    def validate_posture(self) -> "AllocationSupportability":
+        expected = {"allocation_complete": "available", "allocation_empty": "empty"}.get(
+            self.reason_code, "unavailable"
+        )
+        if self.status != expected:
+            raise ValueError("Allocation status and reason disagree")
+        if (self.status == "available") != (self.weight_source is not None):
+            raise ValueError("Weight provenance must describe only accepted allocation")
+        if self.status == "available" and not (self.reporting_currency or "").strip():
+            raise ValueError("Accepted allocation requires stated reporting currency")
+        return self
 
 
 class IntegrationCapabilitiesResponse(BaseModel):
