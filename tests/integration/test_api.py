@@ -1,4 +1,5 @@
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -668,7 +669,11 @@ def test_tenant_admission_schema_is_required_and_unique_for_both_routes():
         ]
         assert len(tenants) == 1
         assert tenants[0]["required"] is True
-        assert tenants[0]["schema"] == {"type": "string", "minLength": 1}
+        assert tenants[0]["schema"] == {"type": "string", "minLength": 1, "pattern": r"\S"}
+        for value in ("tenant-a", " tenant-b "):
+            assert re.search(tenants[0]["schema"]["pattern"], value)
+        for value in ("", " ", "\t", " \t "):
+            assert re.search(tenants[0]["schema"]["pattern"], value) is None
 
 
 def test_ras_review_forwards_present_tenant_without_body_override():
