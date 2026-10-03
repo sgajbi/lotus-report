@@ -14,6 +14,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_fastapi_instrumentator import routing as prometheus_routing
 from starlette.routing import BaseRoute, Match, Mount
 
+from app.audit_logging import redact_sensitive, validated_audit_envelope
 from app.reporting_metrics import validate_reporting_metric_contracts
 
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -62,7 +63,7 @@ SAFE_OPERATOR_LOOKUP_FIELDS = frozenset(
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        payload = {
+        payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "service": os.getenv("SERVICE_NAME", "lotus-report"),
@@ -74,7 +75,22 @@ class JsonFormatter(logging.Formatter):
             "trace_id": trace_id_var.get() or None,
         }
         if hasattr(record, "extra_fields") and isinstance(record.extra_fields, dict):
-            payload.update(record.extra_fields)
+            protected = set(payload) | {"audit", "audit_serialization_error"}
+            payload.update(
+                redact_sensitive(
+                    {
+                        key: value
+                        for key, value in record.extra_fields.items()
+                        if key not in protected
+                    }
+                )
+            )
+        if hasattr(record, "audit"):
+            audit = validated_audit_envelope(record.audit)
+            if audit is None:
+                payload["audit_serialization_error"] = "invalid_audit_envelope"
+            else:
+                payload["audit"] = audit
         return json.dumps({k: v for k, v in payload.items() if v is not None})
 
 
