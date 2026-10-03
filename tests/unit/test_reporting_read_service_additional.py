@@ -6,6 +6,7 @@ from app.application_errors import (
     ReportingValidationError,
 )
 from app.config import settings
+from app.reporting_lineage.allocation_qualification import allocation_items, map_source_allocation
 from app.services.reporting_read_service import ReportingReadService
 from app.services.risk_supportability import (
     risk_supportability as build_risk_supportability,
@@ -901,7 +902,7 @@ def test_section_item_mappers_include_contribution_and_income_branches():
             "activitySummary": {"ignored": 1, "total_fees": 2},
         }
     )
-    allocation_items = service._allocation_items({1: [{"group": "bad"}], "byAssetClass": []})
+    mapped_allocation_items = allocation_items({1: [{"group": "bad"}], "byAssetClass": []})
 
     assert {item["item_type"] for item in performance_items} >= {
         "performance_period",
@@ -911,7 +912,7 @@ def test_section_item_mappers_include_contribution_and_income_branches():
     }
     assert income_items[0]["item_type"] == "income_summary"
     assert income_items[1]["bucket"] == "FEES"
-    assert allocation_items == []
+    assert mapped_allocation_items == []
 
 
 def test_review_supportability_and_audit_edge_paths_remain_explicit():
@@ -1049,34 +1050,22 @@ def test_allocation_dimensions_rejects_non_empty_string_list_contract(dimensions
         service._allocation_dimensions({"allocation_dimensions": dimensions})
 
 
-def test_map_allocation_views_skips_non_conforming_items_and_uses_default_key():
-    service = ReportingReadService(
-        core_query_client=_CoreQuerySuccessMinimal(),
-        performance_client=_PerformanceSuccessEmpty(),
-        risk_client=_RiskSuccess(),
+def test_allocation_rejects_non_conforming_dimensions_without_alias_key():
+    mapped = map_source_allocation(
+        {
+            "views": [
+                "bad-view",
+                {"dimension": "", "buckets": []},
+                {
+                    "dimension": "__",
+                    "buckets": [{"dimension_value": "Unclassified", "weight": "0.1"}],
+                },
+            ]
+        },
+        {},
     )
-
-    mapped = service._map_allocation_views(
-        [
-            "bad-view",
-            {"dimension": "", "buckets": []},
-            {
-                "dimension": "__",
-                "buckets": [{"dimension_value": "Unclassified", "weight": "0.1"}],
-            },
-        ]
-    )
-
-    assert mapped == {
-        "views": [
-            {
-                "group": "Unclassified",
-                "weight": 0.1,
-                "market_value": 0.0,
-                "position_count": None,
-            }
-        ]
-    }
+    assert "views" not in mapped
+    assert mapped["supportability"]["status"] == "partial"
 
 
 @pytest.mark.asyncio

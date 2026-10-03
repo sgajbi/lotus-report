@@ -1,8 +1,10 @@
+import copy
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 
+from app.application_errors import ReportingValidationError
 from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.models import (
     OutcomeReviewReportJobRequest,
@@ -11,6 +13,7 @@ from app.reporting_jobs.models import (
     ReportCallerContext,
     WaveReportJobRequest,
 )
+from app.reporting_lineage.allocation_qualification import map_source_allocation
 from app.reporting_lineage.models import ReportInputSnapshotCreateRequest
 from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render import service as render_service
@@ -609,8 +612,12 @@ def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
         "clientProfile": {"identity": {"client_name": "Alex Tan"}},
         "overview": {"total_market_value": 1000.0, "currency": "USD"},
         "allocation": {
-            "bySector": [{"name": "Financials", "weight_pct": 55.0}],
-            "byCurrency": [{"name": "USD", "weight_pct": 100.0}],
+            "bySector": [
+                {"group": "Financials", "weight": 0.55, "market_value": 550, "position_count": 1}
+            ],
+            "byCurrency": [
+                {"group": "USD", "weight": 1, "market_value": 1000, "position_count": 1}
+            ],
             "byRegion": [],
         },
         "allocation_presentation": {
@@ -639,14 +646,178 @@ def test_render_package_carries_the_resolved_allocation_decision(tmp_path):
     ]
     assert [entry["posture"] for entry in presentation["dimensions"]] == [
         "ready",
-        "empty",
+        "unavailable",
         "unavailable",
     ]
+    # A legacy empty row set has no valuation attestation. Selection is retained;
+    # the historical capture itself is never rewritten to today's qualification.
+    assert snapshot_payload["allocation_presentation"]["dimensions"][1]["posture"] == "empty"
     # All seven breakdowns still ship as evidence: an operator diagnosing
     # "why no sector" must be able to look at the rows. Presence carries no
     # presentation meaning - the resolved list does.
     assert "by_currency" in package["report_data"]["allocation_breakdowns"]
     assert "currency" not in {entry["dimension"] for entry in presentation["dimensions"]}
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        [],
+        "bad",
+        {},
+        {"dimensions": None},
+        {"dimensions": []},
+        {"dimensions": [None]},
+        {"dimensions": [{"dimension": []}]},
+        {"dimensions": [{"dimension": {}}]},
+        {"dimensions": [{"dimension": "unknown", "package_key": "by_unknown"}]},
+        {"dimensions": [{"dimension": "sector", "package_key": "by_currency"}]},
+    ],
+)
+def test_malformed_recorded_allocation_decision_has_a_typed_refusal(tmp_path, recorded):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    snapshot = {"allocation_presentation": recorded}
+    before = copy.deepcopy(snapshot)
+    with pytest.raises(ReportingValidationError, match="allocation_presentation_invalid"):
+        _build_render_package(
+            job=ledger.get_job(ready.job_id),
+            snapshot=snapshot,
+            render_job_id="rdr_test",
+            snapshot_id="rsnap_test",
+        )
+    assert snapshot == before
+
+
+@pytest.mark.parametrize(
+    "raw,status", [(None, "missing"), ({}, "missing"), ([], "invalid"), ("bad", "invalid")]
+)
+@pytest.mark.parametrize("options", [{}, {"sections": ["ALLOCATION"]}])
+def test_requested_missing_allocation_is_visible_in_the_actual_package(
+    tmp_path, raw, status, options
+):
+    ledger = ReportJobLedger(tmp_path / "jobs")
+    job = ledger.create_portfolio_review_job(
+        request=_job_request(options=options),
+        caller_context=_caller(),
+        idempotency_key="allocation-test",
+    )
+    snapshot = {"readiness": {"status": "ready"}, "allocation": raw}
+    before = copy.deepcopy(snapshot)
+    package = _build_render_package(
+        job=job, snapshot=snapshot, render_job_id="rdr_test", snapshot_id="rsnap_test"
+    )
+    data = package["report_data"]
+    assert "readiness partial" in data["summary_paragraph"]
+    assert data["allocation_valuation_qualification"]["status"] == status
+    assert data["governance_summary"]["readiness_status"] == "partial"
+    assert any("allocation" in item.lower() for item in data["review_observations"])
+    assert snapshot == before
+
+
+def test_explicitly_omitted_allocation_does_not_invent_a_warning(tmp_path):
+    ledger = ReportJobLedger(tmp_path / "jobs")
+    job = ledger.create_portfolio_review_job(
+        request=_job_request(options={"sections": ["OVERVIEW"]}),
+        caller_context=_caller(),
+        idempotency_key="allocation-test",
+    )
+    snapshot = {"readiness": {"status": "ready"}}
+    package = _build_render_package(
+        job=job, snapshot=snapshot, render_job_id="rdr_test", snapshot_id="rsnap_test"
+    )
+    assert "readiness ready" in package["report_data"]["summary_paragraph"]
+    assert not any(
+        "allocation" in item.lower() for item in package["report_data"]["review_observations"]
+    )
+
+
+@pytest.mark.parametrize("raw", [None, {}, [], "bad"])
+def test_present_malformed_allocation_is_visible_even_when_the_section_was_omitted(tmp_path, raw):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    job = ledger.get_job(ready.job_id)
+    assert "ALLOCATION" not in job.options["sections"]
+    package = _build_render_package(
+        job=job,
+        snapshot={"readiness": {"status": "ready"}, "allocation": raw},
+        render_job_id="rdr_test",
+        snapshot_id="rsnap_test",
+    )
+    assert package["report_data"]["governance_summary"]["readiness_status"] == "partial"
+    assert any(
+        "allocation" in item.lower() for item in package["report_data"]["review_observations"]
+    )
+
+
+def test_dropped_malformed_competitor_cannot_invent_a_largest_allocation(tmp_path):
+    ledger, _store, ready = _seed_data_ready_job(tmp_path)
+    source = {
+        "scope_type": "portfolio",
+        "scope": {"portfolio_id": "PB_SG_GLOBAL_BAL_001"},
+        "resolved_as_of_date": "2026-04-22",
+        "reporting_currency": "USD",
+        "total_market_value_reporting_currency": 100,
+        "valuation_coverage": {
+            "coverage_state": "COMPLETE",
+            "coverage_reason": "all_source_positions_covered",
+            "snapshot_row_count": 2,
+            "expected_open_position_count": 2,
+            "valued_position_count": 2,
+            "unvalued_position_count": 0,
+        },
+        "views": [
+            {
+                "dimension": "asset_class",
+                "total_market_value_reporting_currency": 100,
+                "buckets": [
+                    {
+                        "dimension_value": "Equity",
+                        "weight": 0.8,
+                        "market_value_reporting_currency": 80,
+                        "position_count": 1,
+                    },
+                    {
+                        "dimension_value": "Cash",
+                        "weight": 0.2,
+                        "market_value_reporting_currency": 20,
+                        "position_count": 1,
+                    },
+                ],
+            }
+        ],
+    }
+    allocation = map_source_allocation(
+        source, {"scope": source["scope"], "as_of_date": "2026-04-22", "reporting_currency": "USD"}
+    )
+    snapshot = {
+        "portfolio_id": "PB_SG_GLOBAL_BAL_001",
+        "as_of_date": "2026-04-22",
+        "reportingCurrency": "USD",
+        "allocation": allocation,
+    }
+    job = ledger.get_job(ready.job_id)
+    valid = _build_render_package(
+        job=job, snapshot=snapshot, render_job_id="rdr_test", snapshot_id="rsnap_test"
+    )
+    allocation["byAssetClass"][0]["group"] = []
+    before = copy.deepcopy(snapshot)
+    invalid = _build_render_package(
+        job=job, snapshot=snapshot, render_job_id="rdr_test", snapshot_id="rsnap_test"
+    )
+    assert invalid["report_data"]["allocation_valuation_qualification"]["status"] == "invalid"
+    assert valid["report_data"]["allocation_summary"]["largest_asset_class_name"] == "Equity"
+    assert (
+        invalid["report_data"]["allocation_summary"]["largest_asset_class_name"] == "Not available"
+    )
+    assert (
+        invalid["report_data"]["allocation_summary"]["largest_asset_class_weight_pct"]
+        == "Not available"
+    )
+    assert (
+        invalid["report_data"]["allocation_breakdowns"]["by_asset_class"][0]["weight_pct"]
+        == "Not available"
+    )
+    assert snapshot == before
+    assert valid["report_data"] != invalid["report_data"]
 
 
 def test_every_package_carries_the_document_reference_and_attempts_share_it(tmp_path):
@@ -2061,94 +2232,23 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
         "cash_balance": "50000.00",
         "cash_weight_pct": "5.00%",
     }
+    # This retained legacy capture predates valuation qualification. Its numbers
+    # cannot attest that a stored zero was measured rather than synthesized.
     assert report_data["allocation_summary"] == {
-        "largest_asset_class_name": "Equity",
-        "largest_asset_class_weight_pct": "60.00%",
-        "largest_asset_class_market_value": "600000.00",
-        "largest_asset_class_position_count": 3,
+        "largest_asset_class_name": "Not available",
+        "largest_asset_class_weight_pct": "Not available",
+        "largest_asset_class_market_value": "Not available",
+        "largest_asset_class_position_count": None,
     }
-    assert report_data["allocation_breakdowns"] == {
-        "by_asset_class": [
-            {
-                "name": "Equity",
-                "weight_pct": "60.00%",
-                "market_value": "600000.00",
-                "position_count": 3,
-            },
-            {
-                "name": "Fixed Income",
-                "weight_pct": "35.00%",
-                "market_value": "350000.00",
-                "position_count": 2,
-            },
-        ],
-        "by_currency": [
-            {
-                "name": "USD",
-                "weight_pct": "95.00%",
-                "market_value": "950000.00",
-                "position_count": 5,
-            },
-            {
-                "name": "SGD",
-                "weight_pct": "5.00%",
-                "market_value": "50000.00",
-                "position_count": 1,
-            },
-        ],
-        "by_region": [
-            {
-                "name": "North America",
-                "weight_pct": "62.00%",
-                "market_value": "620000.00",
-                "position_count": 4,
-            },
-            {
-                "name": "Asia",
-                "weight_pct": "18.00%",
-                "market_value": "180000.00",
-                "position_count": 1,
-            },
-        ],
-        "by_sector": [
-            {
-                "name": "Technology",
-                "weight_pct": "30.00%",
-                "market_value": "300000.00",
-                "position_count": 2,
-            },
-            {
-                "name": "Healthcare",
-                "weight_pct": "15.00%",
-                "market_value": "150000.00",
-                "position_count": 1,
-            },
-        ],
-        "by_country": [
-            {
-                "name": "United States",
-                "weight_pct": "55.00%",
-                "market_value": "550000.00",
-                "position_count": 3,
-            }
-        ],
-        "by_product_type": [
-            {
-                "name": "Fund",
-                "weight_pct": "95.00%",
-                "market_value": "950000.00",
-                "position_count": 5,
-            }
-        ],
-        "by_rating": [
-            {
-                "name": "A",
-                "weight_pct": "40.00%",
-                "market_value": "400000.00",
-                "position_count": 2,
-            }
-        ],
-    }
+    assert report_data["allocation_valuation_qualification"]["status"] == "missing"
+    assert len(report_data["allocation_breakdowns"]) == 7
+    assert report_data["allocation_breakdowns"]["by_asset_class"][0]["name"] == "Equity"
+    assert report_data["allocation_breakdowns"]["by_asset_class"][0]["position_count"] == 3
+    assert all(
+        row["weight_pct"] == row["market_value"] == "Not available"
+        for rows in report_data["allocation_breakdowns"].values()
+        for row in rows
+    )
     assert report_data["performance_periods"] == [
         {
             "period": "YTD",
@@ -2231,7 +2331,7 @@ def test_build_render_package_emits_richer_report_contract(tmp_path):
         "readiness_status": "partial",
     }
     assert report_data["performance_history_qualification"]["status"] == "missing"
-    assert "qualification: missing" in report_data["review_observations"][-1]
+    assert any("qualification: missing" in text for text in report_data["review_observations"])
 
 
 def test_build_render_package_emits_outcome_review_contract(tmp_path):
@@ -2607,8 +2707,8 @@ def test_render_package_helpers_ignore_malformed_collection_rows(monkeypatch):
     assert _allocation_bucket_rows(
         [
             "bad-row",
-            {"group": "Cash", "weight": "5", "market_value": "50", "position_count": "1"},
-            {"group": "Equity", "weight": "95", "market_value": "950", "position_count": 5},
+            {"group": "Cash", "weight": "0.05", "market_value": "50", "position_count": "1"},
+            {"group": "Equity", "weight": "0.95", "market_value": "950", "position_count": 5},
         ]
     ) == [
         {

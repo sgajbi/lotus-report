@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.allocation_qualification import PortfolioReviewAllocation
 from app.models.performance_history import PortfolioReviewPerformance
 
 
@@ -796,10 +797,11 @@ class PortfolioReviewReportResponse(BaseModel):
         default=None,
         description="Portfolio snapshot and headline values when the overview section is sourced.",
     )
-    allocation: dict[str, Any] | None = Field(
+    allocation: PortfolioReviewAllocation | None = Field(
         default=None,
         description=(
-            "Allocation breakdowns when requested and sourced from upstream portfolio data."
+            "Source allocation breakdowns with independent nullable values/weights "
+            "and valuation qualification."
         ),
     )
     performance: PortfolioReviewPerformance | None = Field(

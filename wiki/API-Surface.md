@@ -334,7 +334,25 @@ currency when stated, and a bounded availability reason. Nonpositive net denomin
 malformed valuation/weight fields, inconsistent weights/totals, and missing/conflicting currencies withhold
 the entire weight breakdown. Source totals and unrelated measured metrics still appear. Report
 derives only absent legacy weights; it does not replace stated nulls or renormalize positive rows.
-This aggregation contract does not certify the separate review/Render allocation path (#399).
+Summary/review allocation uses the separate source valuation qualification described below.
+
+Review and summary `allocation.by*` rows preserve independently nullable ratio weights and
+reporting-currency values. Unknown is not zero. `valuation_coverage` carries Core's bounded
+state/reason and snapshot/expected/valued/unvalued counts; `qualification` binds portfolio,
+resolved date and currency under `allocation-valuation-v1`. Missing, invalid, partial and
+carry-forward evidence prevents complete client-ready promotion. Unknown weights cannot win
+a largest-bucket ranking. Source identity/date/currency conflicts refuse figures with HTTP502.
+
+Snapshots retain those facts and raw source-call lineage. Render receives percentage text,
+`Not available` for unknown numeric fields, qualification, source lineage and a visible note.
+Older snapshots without matching valuation qualification suppress unattested allocation figures
+in presentation only; their immutable bytes/hash remain unchanged and rerender does not refresh
+upstream sources. Genuine measured zero and signed exposure remain exact in qualified captures.
+Requested absence and present malformed allocation containers remain visibly qualified;
+an absent section explicitly omitted by the captured order stays neutral. Invalid retained
+competitors cannot create a largest-bucket claim. Invalid recorded dimension selections receive
+the typed `allocation_presentation_invalid` refusal; valid selection and order stay fixed.
+See the repository's `docs/allocation-valuation-qualification.md` for the full policy and limits.
 
 ```bash
 curl -H "X-Tenant-Id: tenant-sg" \

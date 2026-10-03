@@ -124,8 +124,18 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
   incomplete valuation or bucket data, incoherent source weights and currency conflicts withhold
   all allocation weights with explicit `allocation_supportability`; totals and unrelated measured
   metrics remain visible. Only an absent legacy weight can be derived; a stated null is unavailable.
-  See [allocation policy](docs/aggregation-allocation-policy.md). Review/Render qualification #399
-  and aggregation Performance supportability #391 remain separate work.
+  See [allocation policy](docs/aggregation-allocation-policy.md). Aggregation Performance
+  supportability #391 remains separate work.
+
+- **Review allocation valuation:** `reporting_lineage/allocation_qualification.py` admits Core's
+  bounded coverage/counts and source portfolio/date/currency, preserving independent null values
+  and weights, measured zero, signed exposure and source look-through/calculation lineage.
+  Unavailable weights cannot rank as zero; an unknown competitor prevents a largest-bucket claim.
+  Public composition, capture supportability, disclosures and Render governance share the policy.
+  Retained prequalification snapshots get conservative presentation copies with unattested
+  allocation numbers withheld; stored bytes/hash remain unchanged and rerender performs no read.
+  See [valuation qualification](docs/allocation-valuation-qualification.md). Render owns drawing
+  known/unknown buckets; its consumer compatibility is governed separately by Render #331.
 
 - **Synchronous summary admission:** summary and aggregation routes share the nonblank tenant
   header dependency. Summary explicitly forwards the normalized caller tenant through all selected

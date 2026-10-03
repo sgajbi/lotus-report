@@ -82,7 +82,8 @@ def test_advisor_sections_include_fact_backed_prompts_and_readiness_detail():
     )
     construction_prompt = prompts["portfolio_construction_review"]["prompt"]
     assert "USD 1000000.50" in construction_prompt
-    assert "largest allocation Equity at 65.00%" in construction_prompt
+    # The cash competitor has an unknown weight; Equity cannot be declared largest.
+    assert "largest allocation" not in construction_prompt
     assert "12 sourced positions" in construction_prompt
     assert prompts["performance_discussion"]["prompt"] == (
         "Discuss performance using YTD net cumulative return 4.20%, benchmark "
