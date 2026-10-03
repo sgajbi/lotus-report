@@ -310,6 +310,7 @@ class _PerformanceSuccessEmpty:
         self, payload: dict[str, object], *, admitted_tenant_id: str = ""
     ):
         return 200, {
+            "portfolio_id": payload["portfolio_id"],
             "results_by_period": {
                 "YTD": {
                     "portfolio_twr": {
@@ -337,7 +338,7 @@ class _PerformanceSuccessEmpty:
                     },
                     "money_weighted_return": {"start_date": "2025-01-01", "end_date": "2026-02-24"},
                 }
-            }
+            },
         }
 
     async def get_contribution(self, payload: dict[str, object], *, admitted_tenant_id: str = ""):
@@ -1950,7 +1951,8 @@ class _PerformanceWorkspaceNoReturns(_PerformanceSuccessEmpty):
         self, payload: dict[str, object], *, admitted_tenant_id: str = ""
     ):
         return 200, {
-            "results_by_period": {"YTD": {"portfolio_twr": {"net": {"breakdowns": {"daily": []}}}}}
+            "portfolio_id": payload["portfolio_id"],
+            "results_by_period": {"YTD": {"portfolio_twr": {"net": {"breakdowns": {"daily": []}}}}},
         }
 
 
@@ -2125,8 +2127,8 @@ async def test_build_risk_analytics_reports_missing_portfolio_open_date():
         async def get_workspace_summary(
             self, payload: dict[str, object], *, admitted_tenant_id: str = ""
         ):
-            _ = payload
             return 200, {
+                "portfolio_id": payload["portfolio_id"],
                 "results_by_period": {
                     "YTD": {
                         "portfolio_twr": {
@@ -2142,7 +2144,7 @@ async def test_build_risk_analytics_reports_missing_portfolio_open_date():
                             }
                         }
                     }
-                }
+                },
             }
 
     service = ReportingReadService(

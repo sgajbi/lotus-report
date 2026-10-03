@@ -15,6 +15,16 @@ from app.models.performance_history import SourceTwrReturn
 from app.services.performance_history import performance_history_notes
 
 
+def workspace_summary_ready(
+    status_code: int, payload: dict[str, object], *, portfolio_id: str
+) -> bool:
+    return (
+        status_code < 400
+        and "results_by_period" in payload
+        and payload.get("portfolio_id") == portfolio_id
+    )
+
+
 def workspace_twr_summary(*, period: object, portfolio_twr: dict[str, object]) -> dict[str, object]:
     annualized_supported = isinstance(period, str) and period.upper() in {
         "1Y",

@@ -197,7 +197,7 @@ def source_http():
         assert not thread.is_alive()
 
 
-def public_review(source_http, payload):
+def public_review(source_http, payload, *, sections=None):
     base_url, state = source_http
     state["workspace"] = payload
     service = ReportingReadService(
@@ -218,7 +218,7 @@ def public_review(source_http, payload):
                 json={
                     "as_of_date": AS_OF,
                     "reporting_currency": "USD",
-                    "sections": ["PERFORMANCE"],
+                    "sections": sections or ["PERFORMANCE"],
                     "benchmark_code": "HISTORY_BENCHMARK",
                 },
             )
@@ -467,6 +467,31 @@ def test_public_review_never_presents_malformed_twr_readings(source_http, case):
     assert body["performance"]["history_qualification"]["status"] == "mismatched"
     assert body["readiness"]["status"] == "partial"
     assert body["audience"]["client_ready"] is False
+
+
+@pytest.mark.parametrize("sections", [["RISK_ANALYTICS"], ["PERFORMANCE", "RISK_ANALYTICS"]])
+@pytest.mark.parametrize("identity", ["owner", "foreign", "missing"])
+def test_risk_workspace_fetch_requires_matching_portfolio(source_http, sections, identity):
+    payload = workspace_payload("complete")
+    if identity == "foreign":
+        payload["portfolio_id"] = "FOREIGN_HISTORY_PORTFOLIO"
+    elif identity == "missing":
+        payload.pop("portfolio_id")
+    body = public_review(source_http, payload, sections=sections)
+    calculate_calls = [
+        call for call in source_http[1]["calls"] if call["path"] == "/analytics/risk/calculate"
+    ]
+    if identity == "owner":
+        assert calculate_calls
+        assert all(
+            call["body"]["stateful_input"]["portfolio_id"] == PORTFOLIO for call in calculate_calls
+        )
+    else:
+        assert calculate_calls == []
+        support = body["risk_analytics"]["supportability"]
+        assert support["status"] == "unavailable"
+        assert support["notes"][0]["code"] == "risk_return_history_unavailable"
+        assert body["audience"]["client_ready"] is False
 
 
 @pytest.mark.parametrize(

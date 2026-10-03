@@ -37,6 +37,7 @@ from app.services.workspace_performance import (
     workspace_benchmark_history,
     workspace_breakdowns,
     workspace_performance_history,
+    workspace_summary_ready,
     workspace_twr_summary,
 )
 
@@ -343,7 +344,7 @@ class ReportingReadService:
                 workspace_request,
                 admitted_tenant_id=admitted_tenant,
             )
-            if self._workspace_summary_ready(
+            if workspace_summary_ready(
                 performance_status, performance_payload, portfolio_id=portfolio_id
             ):
                 workspace_summary_payload = performance_payload
@@ -737,7 +738,9 @@ class ReportingReadService:
                 ),
                 admitted_tenant_id=admitted_tenant_id,
             )
-            if summary_status >= HTTP_BAD_REQUEST:
+            if not workspace_summary_ready(
+                summary_status, workspace_summary_payload, portfolio_id=portfolio_id
+            ):
                 return self._risk_unavailable(
                     reason_code="risk_return_history_unavailable",
                     message=(
@@ -3903,16 +3906,6 @@ class ReportingReadService:
         if pnl is None or cost_basis is None or cost_basis == 0:
             return None
         return (pnl / abs(cost_basis)) * 100
-
-    @staticmethod
-    def _workspace_summary_ready(
-        status_code: int, payload: dict[str, object], *, portfolio_id: str | None = None
-    ) -> bool:
-        return (
-            status_code < HTTP_BAD_REQUEST
-            and "results_by_period" in payload
-            and (portfolio_id is None or payload.get("portfolio_id") == portfolio_id)
-        )
 
     def _section_items(self, section_id: str, section_payload: object) -> list[dict[str, object]]:
         section = self._as_dict(section_payload)
