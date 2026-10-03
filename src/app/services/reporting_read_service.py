@@ -11,6 +11,12 @@ from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
 from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
+from app.reporting_lineage.allocation_qualification import (
+    allocation_items,
+    allocation_key_figure,
+    map_source_allocation,
+    top_allocation_bucket,
+)
 from app.services.attribution_capture import capture_attribution
 from app.services.drawdown_capture import build_drawdown_capture
 from app.services.performance_contribution import (
@@ -170,8 +176,14 @@ class ReportingReadService:
                 status_code=allocation_status,
                 payload=allocation_payload,
             )
-            response["allocation"] = self._map_allocation_views(
-                self._as_list(allocation_response.get("views"))
+            response["allocation"] = map_source_allocation(
+                allocation_response,
+                {
+                    "scope": {"portfolio_id": portfolio_id},
+                    "as_of_date": as_of_date,
+                    "reporting_currency": self._reporting_currency(request_payload, summary),
+                    "dimensions": allocation_request["dimensions"],
+                },
             )
 
         if "INCOME" in requested_sections or "ACTIVITY" in requested_sections:
@@ -283,8 +295,14 @@ class ReportingReadService:
                 status_code=allocation_status,
                 payload=allocation_payload,
             )
-            response["allocation"] = self._map_allocation_views(
-                self._as_list(allocation_response.get("views"))
+            response["allocation"] = map_source_allocation(
+                allocation_response,
+                {
+                    "scope": {"portfolio_id": portfolio_id},
+                    "as_of_date": as_of_date,
+                    "reporting_currency": response["reportingCurrency"],
+                    "dimensions": allocation_request["dimensions"],
+                },
             )
         if "INCOME_AND_ACTIVITY" in requested_sections:
             if transaction_rows is None:
@@ -1520,36 +1538,6 @@ class ReportingReadService:
             dimensions.append(normalized)
         return dimensions
 
-    def _map_allocation_views(self, views: list[object]) -> dict[str, object]:
-        allocation: dict[str, object] = {}
-        for item in views:
-            if not isinstance(item, dict):
-                continue
-            dimension = item.get("dimension")
-            if not isinstance(dimension, str) or not dimension:
-                continue
-            buckets = []
-            for bucket in self._as_list(item.get("buckets")):
-                bucket_payload = self._as_dict(bucket)
-                buckets.append(
-                    {
-                        "group": bucket_payload.get("dimension_value"),
-                        "weight": self._to_float(bucket_payload.get("weight")),
-                        "market_value": self._to_float(
-                            bucket_payload.get("market_value_reporting_currency")
-                        ),
-                        "position_count": bucket_payload.get("position_count"),
-                    }
-                )
-            allocation[self._allocation_view_key(dimension)] = buckets
-        return allocation
-
-    def _allocation_view_key(self, dimension: str) -> str:
-        parts = [part for part in dimension.split("_") if part]
-        if not parts:
-            return "views"
-        return "by" + "".join(part.capitalize() for part in parts)
-
     def _map_income_summary_from_rows(self, rows: list[dict[str, object]]) -> dict[str, object]:
         totals, by_income_type = self._summarize_income_rows(rows)
         return {**totals, "by_income_type": by_income_type}
@@ -2352,8 +2340,8 @@ class ReportingReadService:
         currency = self._safe_str(response.get("reportingCurrency") or overview.get("currency"))
         total_market_value = self._to_float(overview.get("total_market_value"))
         total_cash = self._to_float(overview.get("total_cash"))
-        top_asset_class = self._top_bucket(self._as_list(allocation.get("byAssetClass")))
-        top_currency = self._top_bucket(self._as_list(allocation.get("byCurrency")))
+        top_asset_class = top_allocation_bucket(self._as_list(allocation.get("byAssetClass")))
+        top_currency = top_allocation_bucket(self._as_list(allocation.get("byCurrency")))
         return {
             "conventions": {
                 "currency": currency,
@@ -2373,8 +2361,8 @@ class ReportingReadService:
                 "cash_weight_pct": self._safe_pct(total_cash, total_market_value),
             },
             "allocation": {
-                "largest_asset_class": self._bucket_key_figure(top_asset_class),
-                "largest_currency": self._bucket_key_figure(top_currency),
+                "largest_asset_class": allocation_key_figure(top_asset_class),
+                "largest_currency": allocation_key_figure(top_currency),
                 "asset_class_count": len(self._as_list(allocation.get("byAssetClass"))),
                 "currency_count": len(self._as_list(allocation.get("byCurrency"))),
             },
@@ -3474,23 +3462,6 @@ class ReportingReadService:
                 rows.append(row)
         return rows
 
-    def _top_bucket(self, buckets: list[object]) -> dict[str, object] | None:
-        rows = [self._as_dict(bucket) for bucket in buckets]
-        rows = [row for row in rows if row]
-        if not rows:
-            return None
-        return max(rows, key=lambda row: self._to_float(row.get("weight")))
-
-    def _bucket_key_figure(self, bucket: dict[str, object] | None) -> dict[str, object] | None:
-        if bucket is None:
-            return None
-        return {
-            "name": bucket.get("group"),
-            "weight_pct": self._to_float(bucket.get("weight")) * 100,
-            "market_value_reporting_currency": self._to_float(bucket.get("market_value")),
-            "position_count": self._to_int(bucket.get("position_count")),
-        }
-
     def _holding_key_figure(self, row: dict[str, object]) -> dict[str, object]:
         return {
             "security_id": row.get("security_id"),
@@ -3914,7 +3885,7 @@ class ReportingReadService:
         if section_id == "executive_summary":
             return self._overview_items(section)
         if section_id == "asset_allocation":
-            return self._allocation_items(section)
+            return allocation_items(section)
         if section_id == "performance_review":
             return self._performance_items(section)
         if section_id == "risk_review":
@@ -3982,26 +3953,6 @@ class ReportingReadService:
             for metric, label in metrics
             if metric in overview
         ]
-
-    def _allocation_items(self, allocation: dict[str, object]) -> list[dict[str, object]]:
-        items: list[dict[str, object]] = []
-        for view_key, buckets in allocation.items():
-            if not isinstance(view_key, str):
-                continue
-            for rank, bucket in enumerate(self._as_list(buckets), start=1):
-                row = self._as_dict(bucket)
-                items.append(
-                    {
-                        "item_type": "allocation_bucket",
-                        "view": view_key,
-                        "rank": rank,
-                        "group": row.get("group"),
-                        "weight": self._to_float(row.get("weight")),
-                        "market_value": self._to_float(row.get("market_value")),
-                        "position_count": self._to_int(row.get("position_count")),
-                    }
-                )
-        return items
 
     def _performance_items(self, performance: dict[str, object]) -> list[dict[str, object]]:
         summary = self._as_dict(performance.get("summary"))

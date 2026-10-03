@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from numbers import Real
 from typing import Any, Sequence
 
+from app.application_errors import ReportingValidationError
 from app.report_ordering_catalogue.template_resolution import (
     GOVERNED_BRAND_VARIANT,
     GOVERNED_LOCALE,
@@ -14,7 +15,18 @@ from app.report_ordering_catalogue.template_resolution import (
     resolve_report_family,
 )
 from app.reporting_jobs.models import ReportJobLedgerRecord
-from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
+from app.reporting_lineage.allocation_presentation import (
+    ALLOCATION_DIMENSIONS,
+    allocation_posture,
+    resolve_allocation_presentation,
+)
+from app.reporting_lineage.allocation_qualification import (
+    allocation_key_figure,
+    allocation_requested,
+    allocation_statement,
+    snapshot_allocation,
+    top_allocation_bucket,
+)
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
 from app.reporting_render.attribution_bridge import build_attribution_bridge
 from app.reporting_render.contribution_ranking import build_contribution_ranking
@@ -62,12 +74,25 @@ def _build_render_package(
             snapshot_id=snapshot_id,
             report_revision_id=report_revision_id,
         )
+    presented_allocation = snapshot_allocation(
+        snapshot, requested=allocation_requested(job.options)
+    )
+    snapshot = {**snapshot, "allocation": presented_allocation}
     client_profile = _as_dict(snapshot.get("clientProfile"))
     identity = _as_dict(client_profile.get("identity"))
     mandate_profile = _as_dict(client_profile.get("mandate_profile"))
     overview = _as_dict(snapshot.get("overview"))
     key_figures = _as_dict(snapshot.get("keyFigures"))
-    allocation = _as_dict(key_figures.get("allocation"))
+    allocation = (
+        allocation_key_figure(
+            top_allocation_bucket(
+                presented_allocation.get("byAssetClass", [])
+                if isinstance(presented_allocation.get("byAssetClass"), list)
+                else []
+            )
+        )
+        or {}
+    )
     portfolio_value = _as_dict(key_figures.get("portfolio_value"))
     performance = _as_dict(_as_dict(snapshot.get("keyFigures")).get("performance"))
     holdings = _as_dict(_as_dict(snapshot.get("keyFigures")).get("holdings"))
@@ -112,6 +137,11 @@ def _build_render_package(
         "allocation_summary": _allocation_summary_section(allocation),
         "allocation_breakdowns": _allocation_breakdowns(snapshot),
         "allocation_presentation": _allocation_presentation(job=job, snapshot=snapshot),
+        "allocation_valuation_qualification": presented_allocation.get("qualification"),
+        "allocation_source_evidence": {
+            key: presented_allocation.get(key)
+            for key in ("valuation_coverage", "view_totals", "look_through", "calculation_lineage")
+        },
         # Whether this report promised a benchmark comparison. Stated,
         # because an all-unavailable comparison and an unbenchmarked
         # mandate produce identical rows - and inferring from the rows
@@ -836,7 +866,9 @@ def _governance_summary_section(
         "readiness_status": _optional_str(_as_dict(snapshot.get("readiness")).get("status"))
         or "unknown",
     }
-    return qualify_governance_summary(summary, snapshot_history_qualification(snapshot))
+    summary = qualify_governance_summary(summary, snapshot_history_qualification(snapshot))
+    qualification = _as_dict(_as_dict(snapshot.get("allocation")).get("qualification"))
+    return qualify_governance_summary(summary, qualification or None)
 
 
 def template_contract_mismatch(
@@ -1569,6 +1601,9 @@ def _summary_paragraph(snapshot: dict[str, Any]) -> str:
     qualification = snapshot_history_qualification(snapshot)
     if qualification is not None and not qualification["client_publication_allowed"]:
         status = "partial" if status == "ready" else status
+    allocation_qualification = _as_dict(_as_dict(snapshot.get("allocation")).get("qualification"))
+    if allocation_qualification and not allocation_qualification.get("client_publication_allowed"):
+        status = "partial" if status == "ready" else status
     return (
         "Portfolio review data capture completed in lotus-report with readiness "
         f"{status} for the requested as-of date."
@@ -1602,6 +1637,9 @@ def _review_observations(
     qualification = snapshot_history_qualification(snapshot)
     if qualification is not None:
         observations.append(performance_history_statement(qualification))
+    allocation_qualification = _as_dict(_as_dict(snapshot.get("allocation")).get("qualification"))
+    if allocation_qualification:
+        observations.append(allocation_statement(allocation_qualification))
     return observations
 
 
@@ -2164,8 +2202,26 @@ def _allocation_presentation(
     """
 
     recorded = snapshot.get("allocation_presentation")
-    if isinstance(recorded, dict) and isinstance(recorded.get("dimensions"), list):
-        return recorded
+    if recorded is not None:
+        if not isinstance(recorded, dict) or not isinstance(recorded.get("dimensions"), list):
+            raise ReportingValidationError("allocation_presentation_invalid")
+        allocation = _as_dict(snapshot.get("allocation"))
+        source_keys = dict(ALLOCATION_DIMENSIONS)
+        if not recorded["dimensions"] or any(
+            not isinstance(row, dict)
+            or not isinstance(row.get("dimension"), str)
+            or row["dimension"] not in source_keys
+            or row.get("package_key") != f"by_{row['dimension']}"
+            for row in recorded["dimensions"]
+        ):
+            raise ReportingValidationError("allocation_presentation_invalid")
+        return {
+            **recorded,
+            "dimensions": [
+                {**row, "posture": allocation_posture(allocation, source_keys[row["dimension"]])}
+                for row in recorded["dimensions"]
+            ],
+        }
     return resolve_allocation_presentation(options=job.options, snapshot=snapshot)
 
 
@@ -2187,23 +2243,27 @@ def _allocation_breakdowns(
 def _allocation_bucket_rows(buckets: object) -> list[dict[str, str | int | None]]:
     if not isinstance(buckets, list):
         return []
-    rows: list[tuple[Decimal, dict[str, str | int | None]]] = []
+    rows: list[tuple[Decimal | None, dict[str, str | int | None]]] = []
     for bucket in buckets:
         if not isinstance(bucket, dict):
             continue
+        weight = _optional_decimal(bucket.get("weight"))
         row = {
             "name": _optional_str(bucket.get("group")) or "Not available",
-            "weight_pct": _percent_text(bucket.get("weight")),
+            "weight_pct": _percent_text(None if weight is None else weight * Decimal("100")),
             "market_value": _decimal_text(bucket.get("market_value")),
             "position_count": _optional_int(bucket.get("position_count")),
         }
         rows.append(
             (
-                _optional_decimal(bucket.get("market_value")) or Decimal("0"),
+                _optional_decimal(bucket.get("market_value")),
                 row,
             )
         )
-    rows.sort(key=lambda item: item[0], reverse=True)
+    rows.sort(
+        key=lambda item: (item[0] is not None, item[0] if item[0] is not None else Decimal("0")),
+        reverse=True,
+    )
     return [row for _, row in rows]
 
 

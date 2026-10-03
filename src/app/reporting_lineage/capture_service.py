@@ -31,6 +31,10 @@ from app.reporting_lineage.advisor_commentary import (
     resolve_advisor_commentary_package,
 )
 from app.reporting_lineage.allocation_presentation import resolve_allocation_presentation
+from app.reporting_lineage.allocation_qualification import (
+    allocation_statement,
+    map_source_allocation,
+)
 from app.reporting_lineage.models import (
     ReportInputSnapshotCreateRequest,
     ReportInputSnapshotRecord,
@@ -288,6 +292,22 @@ class _UpstreamRecorder:
         supportability, completeness, failure_category, failure_message = _classify_call(
             status_code, response_payload
         )
+        if (
+            200 <= status_code < 300
+            and service_name == "lotus-core"
+            and endpoint == "/reporting/asset-allocation/query"
+            and supportability not in {"redacted", "not_supported"}
+        ):
+            qualification = map_source_allocation(response_payload, request_payload)[
+                "qualification"
+            ]
+            if not qualification["client_publication_allowed"]:
+                supportability, completeness, failure_category = (
+                    "partial",
+                    "partial",
+                    "partial_data",
+                )
+                failure_message = allocation_statement(qualification)
         if (
             200 <= status_code < 300
             and service_name == "lotus-performance"

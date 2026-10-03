@@ -1,5 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
+from app.reporting_lineage.allocation_qualification import top_allocation_bucket
+
 ADVISOR_ROUTE_TARGETS = {
     "workbench_review": ("lotus-workbench", "portfolio_review"),
     "performance_review": ("lotus-performance", "performance_review"),
@@ -112,7 +114,7 @@ def _portfolio_construction_prompt(
     total_cash = _optional_number(overview.get("total_cash"))
     if total_cash is not None:
         facts.append("cash " + _format_money(total_cash, _safe_str(overview.get("currency"))))
-    top_allocation = _top_allocation_bucket(allocation)
+    top_allocation = top_allocation_bucket(_as_list(allocation.get("byAssetClass")))
     if top_allocation is not None:
         facts.append(
             f"largest allocation {top_allocation['group']} at "
@@ -303,20 +305,6 @@ def _ready_or_requested_section_ids(client_sections: list[dict[str, object]]) ->
         for section in client_sections
         if section.get("status") != "omitted_by_request"
     ]
-
-
-def _top_allocation_bucket(allocation: dict[str, object]) -> dict[str, object] | None:
-    buckets: list[dict[str, object]] = []
-    asset_class_buckets = _as_list(allocation.get("byAssetClass"))
-    source_buckets = asset_class_buckets if asset_class_buckets else list(allocation.values())
-    for value in source_buckets:
-        if isinstance(value, list):
-            buckets.extend(_as_dict(item) for item in _as_list(value))
-        else:
-            buckets.append(_as_dict(value))
-    if not buckets:
-        return None
-    return max(buckets, key=lambda bucket: _to_decimal(bucket.get("weight")))
 
 
 def _optional_number(value: object) -> Decimal | None:

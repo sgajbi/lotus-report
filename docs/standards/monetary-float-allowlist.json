@@ -4,13 +4,13 @@
   "generated_at": "2026-09-13T07:10:11Z",
   "allowlist": [
     {
-      "finding": "src/app/models/contracts.py:17:value: float",
+      "finding": "src/app/models/contracts.py:18:value: float",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2026-10-20"
     },
     {
-      "finding": "src/app/reporting_render/package_builder.py:1866:if isinstance(value, bool) or not isinstance(value, (int, float)):",
+      "finding": "src/app/reporting_render/package_builder.py:1904:if isinstance(value, bool) or not isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-04"
@@ -34,91 +34,91 @@
       "review_by": "2027-03-07"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1812:reporting_amount: float,",
+      "finding": "src/app/services/reporting_read_service.py:1800:reporting_amount: float,",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1830:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1818:def _activity_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1858:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1846:def _income_net_reporting_amount(self, row: dict[str, object]) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:1897:def _absolute_money(self, value: object) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:1885:def _absolute_money(self, value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2207:def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:",
+      "finding": "src/app/services/reporting_read_service.py:2195:def _return_base(self, summary_payload: dict[str, object], key: str) -> float | None:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2209:if isinstance(return_value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:2197:if isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2210:return float(return_value)",
+      "finding": "src/app/services/reporting_read_service.py:2198:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2213:return float(return_value)",
+      "finding": "src/app/services/reporting_read_service.py:2201:return float(return_value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2280:def _to_float(value: object) -> float:",
+      "finding": "src/app/services/reporting_read_service.py:2268:def _to_float(value: object) -> float:",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2281:if isinstance(value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:2269:if isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2282:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:2270:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2285:return float(value)",
+      "finding": "src/app/services/reporting_read_service.py:2273:return float(value)",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:2294:if isinstance(value, float):",
+      "finding": "src/app/services/reporting_read_service.py:2282:if isinstance(value, float):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:990:if not isinstance(return_value, (int, float)):",
+      "finding": "src/app/services/reporting_read_service.py:1008:if not isinstance(return_value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
     },
     {
-      "finding": "src/app/services/reporting_read_service.py:998:returns.append({\"date\": return_date, \"value\": float(return_value)})",
+      "finding": "src/app/services/reporting_read_service.py:1016:returns.append({\"date\": return_date, \"value\": float(return_value)})",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-12"
@@ -170,6 +170,12 @@
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-04"
+    },
+    {
+      "finding": "src/app/reporting_lineage/allocation_qualification.py:37:def allocation_number(value: object) -> float | None:",
+      "justification": "Finite serialization boundary for the existing numeric allocation JSON contract. Decimal validates source values before conversion; null, bool, malformed and nonfinite inputs remain unavailable. Follow-up: migrate public allocation numbers and retained snapshots together to a Decimal-safe wire contract.",
+      "owner": "lotus-report",
+      "review_by": "2026-10-20"
     }
   ]
 }

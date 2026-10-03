@@ -109,4 +109,10 @@ def allocation_posture(allocation: dict[str, Any], source_key: str) -> str:
     buckets = allocation.get(source_key)
     if not isinstance(buckets, list):
         return POSTURE_UNAVAILABLE
+    qualification = allocation.get("qualification")
+    if not buckets and isinstance(qualification, dict):
+        coverage = qualification.get("coverage")
+        state = coverage.get("coverage_state") if isinstance(coverage, dict) else None
+        if state == "UNAVAILABLE" or qualification.get("status") in {"missing", "invalid"}:
+            return POSTURE_UNAVAILABLE
     return POSTURE_READY if buckets else POSTURE_EMPTY

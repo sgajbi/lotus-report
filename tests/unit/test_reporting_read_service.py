@@ -1341,7 +1341,8 @@ async def test_review_composes_core_query_performance_and_risk():
     }
     assert section_statuses["client_profile"] == "ready"
     assert section_statuses["executive_summary"] == "ready"
-    assert section_statuses["asset_allocation"] == "ready"
+    assert section_statuses["asset_allocation"] == "partial"
+    assert response["allocation"]["qualification"]["status"] == "missing"
     assert section_statuses["performance_review"] == "partial"
     assert section_statuses["risk_review"] == "ready"
     advisor_items = _advisor_prompt_items(response)

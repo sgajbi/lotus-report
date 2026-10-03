@@ -1,5 +1,6 @@
 """Client-facing methodology and qualification statements for portfolio reviews."""
 
+from app.reporting_lineage.allocation_qualification import allocation_statement
 from app.services.performance_history import performance_history_statement
 
 
@@ -31,6 +32,17 @@ def review_disclosures(response: dict[str, object]) -> list[dict[str, object]]:
             ),
         },
     ]
+    allocation = response.get("allocation")
+    if isinstance(allocation, dict) and isinstance(allocation.get("qualification"), dict):
+        disclosures.append(
+            {
+                "disclosure_id": "allocation_valuation_qualification",
+                "severity": "standard"
+                if allocation["qualification"].get("client_publication_allowed")
+                else "supportability",
+                "text": allocation_statement(allocation["qualification"]),
+            }
+        )
     performance = response.get("performance")
     if isinstance(performance, dict):
         qualification = performance.get("history_qualification")
