@@ -38,6 +38,10 @@ boundaries, and copy-paste request examples for direct service and support workf
 ## Reports
 
 - `POST /reports/portfolios/{portfolio_id}/summary`
+  requires a nonblank `X-Tenant-Id`, normalizes it and forwards it to every selected Core read.
+  Missing or blank tenant context returns local `400 missing_caller_context` before source I/O.
+  The body cannot choose ownership; Core retains portfolio admission and financial authority.
+  A Core not-found/refusal remains `404`; a required source availability/payload failure is `502`.
   lotus-report-owned portfolio summary payload
 - `POST /reports/portfolios/{portfolio_id}/review`
   machine-readable portfolio review report payload for client/advisor meetings
