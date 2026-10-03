@@ -21,6 +21,16 @@ durable documents. Those boundaries are enumerated in
 [What Report Must Never Own](#what-report-must-never-own) and are load-bearing rather than
 aspirational.
 
+Contribution evidence uses the shared `contribution_numbers` finite Decimal admission policy
+before mapping and retained presentation. Invalid required row contributions remain unknown
+and are counted as unusable; invalid optional fields and source totals are null. Finite source
+representations remain intact, and source totals are never reconstructed from ranked rows.
+Mixed usable/unusable rankings retain explicit counts; all-unusable evidence is unavailable,
+while a genuinely empty sourced period is empty. Zero remains usable; sign-labelled extrema
+require strictly positive or strictly negative evidence. Retained holding contribution, weight
+and return text follow the same finite policy. This admission does not
+certify upstream financial calculation or broaden successful-response shape admission.
+
 ## Current-State Summary
 
 The reporting lifecycle is production-shaped in source and proof: durable job lifecycle, immutable
