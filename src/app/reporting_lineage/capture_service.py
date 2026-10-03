@@ -18,6 +18,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.observability import bind_propagation_context
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.capture_binding import revision_for_capture
 from app.reporting_identity.snapshot_lifecycle import snapshot_lifecycle_claim
@@ -771,6 +772,12 @@ class ReportingReadPortfolioReviewInputProvider:
         self,
         job: ReportJobLedgerRecord,
     ) -> PortfolioReviewInputCapture:
+        # API regeneration/recollection can enter without the worker executor.
+        # Keep every source call, including AI enrichment, inside the same scope.
+        with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
+            return await self._collect_for_job(job)
+
+    async def _collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
         recorder = _UpstreamRecorder(
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,

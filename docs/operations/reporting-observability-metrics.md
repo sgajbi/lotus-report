@@ -9,6 +9,10 @@ The current implementation emits metrics for report operations that already exis
 implementation-backed. Dedicated broad replay dashboards remain reserved until those command paths
 are implemented and proven.
 
+Job propagation preserves accepted correlation/trace while keeping worker-pass request identity
+separate. See [Report Job Propagation Context](report-job-propagation-context.md) for the execution
+boundary, restoration controls and the distinction between propagation and exported traces.
+
 ## Implemented Metrics
 
 | Metric | Type | Labels | Source |

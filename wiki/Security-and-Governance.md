@@ -135,6 +135,18 @@ rather than scoping the query.
 
 ## Operational discipline
 
+Native job execution and direct source collection share a scoped correlation/trace binding to
+persisted acceptance facts. It covers Core, Performance, Risk and optional AI collection, including
+API regeneration/recollection entrypoints. ContextVar tokens restore the enclosing scope in
+`finally`, including exceptions, cancellation, adjacent jobs and nested calls. Blank/absent job
+identity is refused before source calls. Worker-pass request identity and durable work-item/attempt
+facts stay separate; tenant/caller authority is unchanged. Render/Archive retain their existing
+explicit identity contract, and retained-snapshot replay/rerender keep their command semantics.
+
+See [Report Job Propagation Context](../docs/operations/report-job-propagation-context.md) for
+implementation boundaries, in-process restoration controls and required native wire/lineage proof.
+Propagation does not establish authenticated IAM, exported spans, collector delivery or custody.
+
 - keep reporting contract ownership separate from upstream domain truth
 - use canonical service identity for cross-app validation
 - keep request-convention documentation explicit while the surface is mixed

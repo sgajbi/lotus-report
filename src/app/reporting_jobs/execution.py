@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.observability import bind_propagation_context
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_render.waiting import RenderWaiting
 
@@ -45,6 +46,10 @@ class ReportJobExecutionService:
 
     async def execute_job(self, *, job_id: str) -> ReportJobExecutionResult:
         job = self._report_job_ledger.get_job(job_id)
+        with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
+            return await self._execute_admitted_job(job)
+
+    async def _execute_admitted_job(self, job: ReportJobLedgerRecord) -> ReportJobExecutionResult:
         if job.status in {"accepted", "collecting_data"}:
             job = await self._capture_service.capture_for_job(job)
         if job.status in {"data_ready", "rendering", "completed", "archiving"} and (
