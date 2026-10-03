@@ -49,6 +49,8 @@ def _pages(case):
         pages[0].pop("snapshot_id")
     elif case == "revision-drift":
         pages[1]["snapshot_id"] = "different-scope"
+    elif case == "null-portfolio":
+        pages[0]["portfolio_id"] = None
     pages[0]["content_hash"] = "sha256:page-one"
     pages[1]["content_hash"] = "sha256:page-two"
     return pages
@@ -56,12 +58,23 @@ def _pages(case):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "case", ["degraded-first", "degraded-last", "missing-first", "revision-drift", "healthy"]
+    "case",
+    [
+        "degraded-first",
+        "degraded-last",
+        "missing-first",
+        "revision-drift",
+        "null-portfolio",
+        "absent-portfolio",
+        "healthy",
+    ],
 )
 async def test_native_capture_reopen_and_retained_replay_preserve_page_qualification(
     tmp_path, monkeypatch, case
 ):
-    core = _TransactionPages(_pages(case))
+    core = _TransactionPages(
+        _pages(case), missing_portfolio_page=0 if case == "absent-portfolio" else None
+    )
     requests = []
 
     async def handle(request):

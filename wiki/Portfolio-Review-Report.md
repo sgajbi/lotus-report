@@ -491,6 +491,9 @@ different per-page content hashes alone are legitimate. Source reasons are sorte
 deduplicated, with explicit limitation notes if malformed or excessive reason evidence
 is discarded. Existing row/page budgets still surface truncation.
 
+Each page must also supply Core's required nonblank portfolio identity. Optional raw-ledger
+currency may be absent or null; mixed raw and currency-restated scopes remain incoherent.
+
 The immutable input snapshot retains page ordinals and qualification evidence. Retained
 replay and rerender reuse it without fresh Core reads. When income/activity was requested,
 the Render earnings-statement notes retain the qualification code, severity and message.

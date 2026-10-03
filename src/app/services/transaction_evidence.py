@@ -33,6 +33,8 @@ TRUST_METADATA_FIELDS = (
     "policy_version",
     "correlation_id",
 )
+# Required by Core's PaginatedTransactionResponse in addition to trust metadata.
+REQUIRED_PAGE_SCOPE_FIELDS = ("portfolio_id",)
 # Core's reconstruction scope is the full, unpaginated window. Generation time,
 # operational correlation and page content hashes do not identify that scope.
 WINDOW_IDENTITY_FIELDS = (
@@ -72,7 +74,7 @@ def _missing_trust_fields(payload: dict[str, object]) -> list[str]:
     temporal = {"generated_at", "as_of_date", "latest_evidence_timestamp"}
     return [
         field
-        for field in TRUST_METADATA_FIELDS
+        for field in (*TRUST_METADATA_FIELDS, *REQUIRED_PAGE_SCOPE_FIELDS)
         if not (
             (isinstance(payload.get(field), str) and bool(str(payload[field]).strip()))
             or (field in temporal and isinstance(payload.get(field), (date, datetime)))
@@ -169,9 +171,10 @@ def merge_transaction_source_product(
     conflicts = sorted(
         field
         for field in WINDOW_IDENTITY_FIELDS
-        if current.get(field) is not None
-        and payload.get(field) is not None
-        and current[field] != payload[field]
+        if field in current
+        and field not in missing_fields
+        and (payload.get(field) is not None or field == "reporting_currency")
+        and current[field] != payload.get(field)
     )
     page_reasons, reasons_bounded = _page_reason_codes(payload)
     pages.append(
@@ -203,9 +206,11 @@ def merge_transaction_source_product(
         ("missing_instrument_reference_count", "missing_instrument_reference_count"),
     ):
         if payload.get(source_key) is not None and source_key not in missing_fields:
-            if source_key in WINDOW_IDENTITY_FIELDS and source_product.get(target_key) is not None:
+            if source_key in WINDOW_IDENTITY_FIELDS and target_key in source_product:
                 continue
             source_product[target_key] = payload.get(source_key)
+    if "reporting_currency" not in missing_fields:
+        source_product.setdefault("reporting_currency", payload.get("reporting_currency"))
     source_product.setdefault("product_name", "TransactionLedgerWindow")
     source_product.setdefault("product_version", "v1")
     source_product["source_service"] = "lotus-core"
