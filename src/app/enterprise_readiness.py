@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
@@ -9,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.audit_logging import redact_sensitive as redact_sensitive
 from app.audit_logging import validated_audit_envelope
+from app.request_header_admission import AmbiguousRequestHeadersError, admitted_request_headers
 
 logger = logging.getLogger("enterprise_readiness")
 MiddlewareNext = Callable[[Request], Awaitable[Response]]
@@ -276,8 +278,39 @@ def _replay_body_for_downstream(request: Request, body: bytes) -> None:
     setattr(request, "_receive", receive)
 
 
+def _emit_request_audit(
+    *, action: str, metadata: dict[str, Any], headers: Mapping[str, str]
+) -> None:
+    emit_audit_event(
+        action=action,
+        actor_id=headers.get("x-actor-id") or None,
+        tenant_id=headers.get("x-tenant-id") or None,
+        role=headers.get("x-role") or None,
+        correlation_id=headers.get("x-correlation-id") or None,
+        metadata=metadata,
+    )
+
+
+def _ambiguous_headers_response(
+    request: Request, exc: AmbiguousRequestHeadersError
+) -> JSONResponse:
+    _emit_request_audit(
+        action=f"DENY {request.method} {request.url.path}",
+        headers=exc.unambiguous_headers,
+        metadata={"status_code": 400, "reason": "ambiguous_request_headers", "headers": exc.names},
+    )
+    return JSONResponse(
+        status_code=400,
+        content={"detail": {"code": "ambiguous_request_headers", "headers": exc.names}},
+    )
+
+
 def build_enterprise_audit_middleware() -> MiddlewareCallable:
     async def middleware(request: Request, call_next: MiddlewareNext) -> Response:
+        try:
+            headers = admitted_request_headers(request.scope["headers"])
+        except AmbiguousRequestHeadersError as exc:
+            return _ambiguous_headers_response(request, exc)
         max_write_payload_bytes = _env_int("ENTERPRISE_MAX_WRITE_PAYLOAD_BYTES", 1_048_576)
         method_is_write = request.method in _WRITE_METHODS
         if method_is_write:
@@ -287,16 +320,11 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
             if declared_length is not None and declared_length > max_write_payload_bytes:
                 return _api_error_response(413, "payload_too_large")
 
-        authorized, reason = authorize_request(
-            request.method, request.url.path, dict(request.headers)
-        )
+        authorized, reason = authorize_request(request.method, request.url.path, headers)
         if not authorized:
-            emit_audit_event(
+            _emit_request_audit(
                 action=f"DENY {request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id") or None,
-                tenant_id=request.headers.get("X-Tenant-Id") or None,
-                role=request.headers.get("X-Role") or None,
-                correlation_id=request.headers.get("X-Correlation-Id"),
+                headers=headers,
                 metadata={"status_code": 403, "reason": reason},
             )
             return JSONResponse(
@@ -312,23 +340,17 @@ def build_enterprise_audit_middleware() -> MiddlewareCallable:
         response = await call_next(request)
         response.headers["X-Enterprise-Policy-Version"] = enterprise_policy_version()
         if method_is_write:
-            emit_audit_event(
+            _emit_request_audit(
                 action=f"{request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id") or None,
-                tenant_id=request.headers.get("X-Tenant-Id") or None,
-                role=request.headers.get("X-Role") or None,
-                correlation_id=request.headers.get("X-Correlation-Id"),
+                headers=headers,
                 metadata={"status_code": response.status_code},
             )
         elif request.method in _READ_AUDIT_METHODS and _env_enabled(
             "ENTERPRISE_AUDIT_READS", "false"
         ):
-            emit_audit_event(
+            _emit_request_audit(
                 action=f"{request.method} {request.url.path}",
-                actor_id=request.headers.get("X-Actor-Id") or None,
-                tenant_id=request.headers.get("X-Tenant-Id") or None,
-                role=request.headers.get("X-Role") or None,
-                correlation_id=request.headers.get("X-Correlation-Id"),
+                headers=headers,
                 metadata={"status_code": response.status_code, "access_type": "read"},
             )
         return response

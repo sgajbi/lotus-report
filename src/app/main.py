@@ -39,7 +39,8 @@ app = FastAPI(
     description=(
         "Generates reporting-ready aggregated views from "
         "lotus-core core data and lotus-performance analytics "
-        "outputs."
+        "outputs. Repeated scalar caller or replay headers are rejected with 400 "
+        "(ambiguous_request_headers); capability header lines use combined list semantics."
     ),
     openapi_tags=[
         {"name": "Health", "description": "Service health and readiness endpoints."},

@@ -230,6 +230,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    raw output. Generic log extras cannot overwrite protected context or audit fields. See
    [Enterprise Audit Serialization](docs/operations/enterprise-audit-serialization.md) for the
    schema, actual HTTP/SQLite proof and delivery/retention boundary.
+   Raw scalar authority/replay headers are admitted by one case-insensitive cardinality policy
+   before dictionary projection, body handling and route dependencies: all repeats, including
+   identical values, return400 `ambiguous_request_headers`. Capability lines retain explicit list
+   semantics. Refusal audit never selects a duplicated identity. See
+   [Direct-Service Request Header Admission](docs/operations/request-header-admission.md) for the
+   13-field inventory, actual HTTP/PostgreSQL no-effect proof and Gateway/IAM boundary.
 8. **One fact, one name.** When two surfaces answer the same question — the pre-order availability
    check and the capture both explain why a section is absent — they resolve through one shared
    vocabulary rather than each holding a copy. Two copies are two chances to disagree, and the
