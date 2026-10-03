@@ -26,8 +26,10 @@ coverage. This change does not add audit events to those paths.
 
 Identity reflects received caller headers. It does not invent a tenant or actor for absent headers,
 nor replace a missing caller correlation with an internally generated access-log identifier.
-Caller declaration is not independently authenticated identity. Job-worker attribution and ambiguous
-header admission remain separate controls. Outer correlation/request/trace fields retain the
+Caller declaration is not independently authenticated identity. Ambiguous scalar headers now emit
+status400 `ambiguous_request_headers` with refused names only; duplicated audit identity is null.
+See [Request Header Admission](request-header-admission.md). Job-worker attribution remains a
+separate control. Outer correlation/request/trace fields retain the
 observability context; audit correlation retains the emitter's caller fact. Neither establishes
 exported traces.
 

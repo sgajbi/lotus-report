@@ -7,6 +7,15 @@ It separates shipped behavior from planned RFC work. Do not describe a feature a
 implementation-backed unless code, tests, API contract, documentation, and operational evidence
 exist.
 
+## Request Header Admission
+
+Direct-service request admission rejects repeated scalar authority/replay headers before route
+dependencies and durable mutations, including equal values and reversed mixed casing. Capability
+lines retain deliberate combined-list semantics. Actual raw HTTP/default PostgreSQL proof checks
+no effects on request/job/event/work state, singleton replay/conflict and tenant/region fences.
+See [Request Header Admission](operations/request-header-admission.md) for the field inventory and
+Gateway/proxy/IAM boundary.
+
 ## Support States
 
 | State | Meaning |

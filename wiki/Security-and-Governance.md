@@ -64,6 +64,22 @@ admission and reopened adapters; emitter/formatter unit controls cover redaction
 This proves consumer serialization, without establishing immutable storage, delivery monitoring,
 retention, authenticated bank IAM, exported traces or PostgreSQL recovery.
 
+## Raw header admission
+
+One raw, case-insensitive policy admits 13 scalar authority/replay names before dictionary
+projection, authorization, body consumption and route dependencies. Every repeated scalar,
+including identical values and reversed mixed casing, returns400 `ambiguous_request_headers`
+with sorted names only. `X-Capabilities` deliberately combines all lines using existing exact
+comma-list membership. Refusal audit retains status400 and names; duplicated identity is null.
+Missing inputs, singleton replay/conflict and persisted tenant/region fences remain independent.
+
+The [source runbook](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/request-header-admission.md)
+defines the fields and direct-service contract. Registered raw HTTP with default PostgreSQL
+providers checks unchanged request/job/event/work counts after refusals, including the exact
+two-key reversal and job read/control routes; valid admission/replay retains one pending unleased
+job. Credential values are redacted in retained wire evidence. This does not independently
+qualify Gateway/proxy rewriting, production IAM, source calculations or document custody.
+
 ## Tenant admission on report batches
 
 The principal access control in this service, and the one a reader most needs to understand before
