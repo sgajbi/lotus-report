@@ -256,6 +256,7 @@ class _CustodyArchiveClient:
             "lifecycle_relationship_id": f"life_{uuid4().hex[:8]}",
             "source_document_id": kwargs["source_document_id"],
             "target_document_id": kwargs["target_document_id"],
+            "transition_type": kwargs["transition_type"],
         }
 
 

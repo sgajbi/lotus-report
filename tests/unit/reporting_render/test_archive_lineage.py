@@ -11,8 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 import pytest
 
+from app.clients.archive_client import ArchiveClient
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_render.archive_lineage import (
     LINEAGE_PENDING_EVENT,
@@ -45,7 +47,17 @@ class _LifecycleClient:
         self.calls.append(kwargs)
         if self.raise_error:
             raise RuntimeError("archive connection reset")
-        return self.status_code, {"lifecycle_relationship_id": "life_test"}
+        return self.status_code, {
+            "lifecycle_relationship_id": "life_test",
+            "source_document_id": kwargs["source_document_id"],
+            "target_document_id": kwargs["target_document_id"],
+            "transition_type": kwargs["transition_type"],
+            "transition_reason": "Original accepted reason",
+            "transition_reason_code": "report_correction",
+            "requested_by": "original-actor",
+            "requested_at": "2026-01-09T00:00:00Z",
+            "current_document_id": "doc_later_in_chain",
+        }
 
 
 @dataclass
@@ -391,3 +403,187 @@ async def test_reconcile_tolerates_rows_without_timestamps() -> None:
 
     assert result["outstanding_jobs"] == 1
     assert result["oldest_age_seconds"] is None
+
+
+def _acknowledgement(transition):
+    return {
+        "lifecycle_relationship_id": "relationship-original",
+        "source_document_id": "doc_old",
+        "target_document_id": "doc_new",
+        "transition_type": transition,
+        "transition_reason": "Original reason before this retry",
+        "transition_reason_code": "report_correction",
+        "requested_by": "original-actor",
+        "requested_at": "2026-01-09T00:00:00Z",
+        "current_document_id": "doc_later_in_chain",
+    }
+
+
+def _transport_client(monkeypatch, *, status, payload, calls):
+    original_client = httpx.AsyncClient
+
+    def handler(request):
+        import json
+
+        calls.append(request)
+        assert request.url.path in {"/documents/doc_old/correct", "/documents/doc_old/supersede"}
+        assert json.loads(request.content) == {
+            "target_document_id": "doc_new",
+            "transition_reason": "Retry reason",
+        }
+        assert request.headers["X-Tenant-Id"] == "tenant-sg"
+        assert request.headers["X-Region"] == "APAC"
+        assert request.headers["X-Actor-Id"] == "advisor-123"
+        assert request.headers["X-Correlation-ID"] == "corr-lineage"
+        assert request.headers["X-Trace-ID"] == "trace-lineage"
+        if payload == "html":
+            return httpx.Response(status, text="<html>untrusted-source-detail</html>")
+        return httpx.Response(status, json=payload)
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(handler)),
+    )
+    return ArchiveClient(
+        base_url="https://archive.invalid",
+        timeout_seconds=3,
+        max_retries=0,
+        retry_backoff_seconds=0,
+    )
+
+
+async def _record_wire(client, ledger, transition, job_id="rjob_1"):
+    return await record_archive_lineage(
+        archive_client=client,
+        ledger=ledger,
+        event_job_id=job_id,
+        source_document_id="doc_old",
+        target_document_id="doc_new",
+        transition_type=transition,
+        transition_reason="Retry reason",
+        caller_context=_caller(),
+    )
+
+
+@pytest.mark.parametrize("transition", ["correct", "supersede"])
+@pytest.mark.parametrize("status", [200, 201])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "empty",
+        "missing-id",
+        "null-id",
+        "blank-id",
+        "bool-id",
+        "list-id",
+        "oversize-id",
+        "foreign-source",
+        "foreign-target",
+        "foreign-transition",
+        "html",
+        "list",
+        "null",
+    ],
+)
+async def test_successful_transport_requires_matching_archive_acknowledgement(
+    monkeypatch, transition, status, fault
+):
+    payload = _acknowledgement(transition)
+    if fault == "empty":
+        payload = {}
+    elif fault == "missing-id":
+        payload.pop("lifecycle_relationship_id")
+    elif fault in {"null-id", "blank-id", "bool-id", "list-id"}:
+        payload["lifecycle_relationship_id"] = {
+            "null-id": None,
+            "blank-id": " \t\r\n",
+            "bool-id": True,
+            "list-id": ["id"],
+        }[fault]
+    elif fault.startswith("foreign-"):
+        key = {
+            "foreign-source": "source_document_id",
+            "foreign-target": "target_document_id",
+            "foreign-transition": "transition_type",
+        }[fault]
+        payload[key] = "unrelated"
+    elif fault == "oversize-id":
+        payload["lifecycle_relationship_id"] = "a" * 257
+    elif fault == "html":
+        payload = "html"
+    elif fault == "list":
+        payload = [_acknowledgement(transition)]
+    else:
+        payload = None
+    calls = []
+    client = _transport_client(monkeypatch, status=status, payload=payload, calls=calls)
+    ledger = _EventLedger()
+    assert await _record_wire(client, ledger, transition) is False
+    assert len(calls) == 1
+    assert [event.event_type for event in ledger.events] == [LINEAGE_PENDING_EVENT]
+    assert (
+        ledger.events[0].event_payload["reason_code"] == "archive_lineage_acknowledgement_invalid"
+    )
+    assert ledger.events[0].event_payload["status_code"] == status
+    assert "untrusted-source-detail" not in str(ledger.events[0].event_payload)
+
+
+@pytest.mark.parametrize("transition", ["correct", "supersede"])
+@pytest.mark.parametrize("status", [200, 201])
+async def test_matching_original_acknowledgement_accepts_replay_after_chain_advances(
+    monkeypatch, transition, status
+):
+    calls = []
+    client = _transport_client(
+        monkeypatch, status=status, payload=_acknowledgement(transition), calls=calls
+    )
+    ledger = _EventLedger()
+    assert await _record_wire(client, ledger, transition) is True
+    assert len(calls) == 1
+    assert [event.event_type for event in ledger.events] == [LINEAGE_RECORDED_EVENT]
+
+
+async def test_confirmed_event_retains_only_validated_acknowledgement_identity(monkeypatch):
+    calls = []
+    payload = _acknowledgement("correct") | {"raw_payload": "untrusted-source-detail"}
+    client = _transport_client(monkeypatch, status=201, payload=payload, calls=calls)
+    ledger = _EventLedger()
+    assert await _record_wire(client, ledger, "correct") is True
+    assert ledger.events[0].event_payload == {
+        "source_document_id": "doc_old",
+        "target_document_id": "doc_new",
+        "transition_type": "correct",
+        "lifecycle_relationship_id": "relationship-original",
+    }
+
+
+@pytest.mark.parametrize(
+    "status,event_type",
+    [
+        (400, LINEAGE_REFUSED_EVENT),
+        (403, LINEAGE_REFUSED_EVENT),
+        (503, LINEAGE_PENDING_EVENT),
+    ],
+)
+async def test_archive_wire_refusal_and_transient_outcomes_remain_distinct(
+    monkeypatch, status, event_type
+):
+    calls = []
+    client = _transport_client(
+        monkeypatch, status=status, payload={"detail": "untrusted-source-detail"}, calls=calls
+    )
+    ledger = _EventLedger()
+    assert await _record_wire(client, ledger, "correct") is False
+    assert len(calls) == 1
+    assert [event.event_type for event in ledger.events] == [event_type]
+    assert "untrusted-source-detail" not in str(ledger.events[0].event_payload)
+
+
+async def test_relationship_identifier_budget_keeps_valid_boundary(monkeypatch):
+    calls = []
+    payload = _acknowledgement("correct") | {"lifecycle_relationship_id": "a" * 256}
+    client = _transport_client(monkeypatch, status=201, payload=payload, calls=calls)
+    ledger = _EventLedger()
+    assert await _record_wire(client, ledger, "correct") is True
+    assert ledger.events[0].event_payload["lifecycle_relationship_id"] == "a" * 256
