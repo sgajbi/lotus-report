@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from app.application_errors import (
     ReportingApplicationError,
@@ -9,6 +9,7 @@ from app.application_errors import (
     ReportingUpstreamError,
 )
 from app.models.contracts import PortfolioAggregationResponse
+from app.routers.caller_context import admitted_tenant_dependency
 from app.services.aggregation_service import AggregationService
 
 router = APIRouter(prefix="/aggregations", tags=["Aggregations"])
@@ -29,36 +30,6 @@ def _aggregation_error_to_http(exc: ReportingApplicationError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=exc.detail)
 
 
-def _admitted_tenant(tenant_id: str | None) -> str:
-    """The admitted tenant, or a refusal. Never a substitute.
-
-    This route previously admitted no tenant at all, so every Core and
-    Performance call it made was recorded against an absent owner -- at
-    lotus-core, which is the service that actually owns portfolio ownership and
-    the one placed to refuse a foreign portfolio.
-
-    Refusing is the only safe answer to a missing header. Defaulting would
-    manufacture an ownership claim indistinguishable from a real one, which is
-    the defect #177 removed from the batch scheduler; and passing the absence
-    through would leave the aggregation attributable to nobody while looking
-    like it succeeded.
-
-    Whitespace is stripped before the emptiness test, so a header of spaces is
-    refused rather than admitted as a tenant no upstream can match.
-    """
-    admitted = (tenant_id or "").strip()
-    if not admitted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "missing_caller_context",
-                "message": "Required caller context headers are missing.",
-                "missing_headers": ["X-Tenant-Id"],
-            },
-        )
-    return admitted
-
-
 @router.get(
     "/portfolios/{portfolio_id}",
     response_model=PortfolioAggregationResponse,
@@ -75,15 +46,8 @@ def _admitted_tenant(tenant_id: str | None) -> str:
 async def get_portfolio_aggregation(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
     as_of_date: Annotated[date, Query(description="Business as-of date (YYYY-MM-DD).")],
-    tenant_id: Annotated[
-        str | None,
-        Header(
-            alias="X-Tenant-Id",
-            description="Tenant identifier for entitlement and audit. Required.",
-        ),
-    ] = None,
+    admitted_tenant_id: Annotated[str, Depends(admitted_tenant_dependency)],
 ) -> PortfolioAggregationResponse:
-    admitted_tenant_id = _admitted_tenant(tenant_id)
     try:
         return await AggregationService().get_portfolio_aggregation_live(
             portfolio_id=portfolio_id,

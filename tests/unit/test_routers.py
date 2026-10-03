@@ -11,12 +11,10 @@ from app.services.reporting_read_service import ReportingReadService
 
 class _LiveAggregationServiceStub:
     async def get_portfolio_aggregation_live(
-        self, portfolio_id: str, as_of_date: date, *, admitted_tenant_id=""
+        self, portfolio_id: str, as_of_date: date, *, admitted_tenant_id: str
     ):
+        assert admitted_tenant_id == "tenant-test"
         return {"mode": "live", "portfolio_id": portfolio_id, "as_of_date": as_of_date}
-
-    def get_portfolio_aggregation(self, portfolio_id: str, as_of_date: date):
-        return {"mode": "static", "portfolio_id": portfolio_id, "as_of_date": as_of_date}
 
 
 @pytest.mark.asyncio
@@ -28,7 +26,7 @@ async def test_aggregation_router_live_branch(monkeypatch):
     response = await get_portfolio_aggregation(
         portfolio_id="P1",
         as_of_date=date(2026, 2, 24),
-        tenant_id="tenant-test",
+        admitted_tenant_id="tenant-test",
     )
     assert response["mode"] == "live"
 
@@ -70,7 +68,7 @@ async def test_an_unclassified_application_error_becomes_a_server_error(monkeypa
         await get_portfolio_aggregation(
             portfolio_id="P1",
             as_of_date=date(2026, 2, 24),
-            tenant_id="tenant-test",
+            admitted_tenant_id="tenant-test",
         )
 
     assert raised.value.status_code == 500

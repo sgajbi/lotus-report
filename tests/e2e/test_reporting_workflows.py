@@ -14,8 +14,9 @@ class _WorkflowReportingReadService:
         request_payload: dict,
         correlation_id: str | None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ) -> dict:
+        assert admitted_tenant_id == "tenant-summary-e2e"
         return {
             "scope": {
                 "portfolio_id": portfolio_id,
@@ -49,7 +50,7 @@ def test_e2e_reporting_summary_flow():
     app.dependency_overrides[get_reporting_read_service] = lambda: _WorkflowReportingReadService()
     response = client.post(
         "/reports/portfolios/DEMO_CA_USD_001/summary",
-        headers={"X-Correlation-ID": "cid-e2e-1"},
+        headers={"X-Correlation-ID": "cid-e2e-1", "X-Tenant-Id": "tenant-summary-e2e"},
         json={"as_of_date": "2026-02-24", "sections": ["WEALTH", "ALLOCATION"]},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)
@@ -113,7 +114,7 @@ def test_e2e_summary_section_limit_rejects_out_of_range():
     app.dependency_overrides[get_reporting_read_service] = lambda: _WorkflowReportingReadService()
     response = client.post(
         "/reports/portfolios/DEMO_CA_USD_001/summary?section_limit=21",
-        headers={"X-Correlation-ID": "cid-e2e-limit"},
+        headers={"X-Correlation-ID": "cid-e2e-limit", "X-Tenant-Id": "tenant-summary-e2e"},
         json={"as_of_date": "2026-02-24", "sections": ["WEALTH"]},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)

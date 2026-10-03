@@ -14,6 +14,7 @@ from app.models.contracts import (
     PortfolioReviewReportRequest,
     PortfolioReviewReportResponse,
 )
+from app.routers.caller_context import admitted_tenant_dependency
 from app.services.reporting_read_service import ReportingReadService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -48,12 +49,33 @@ def _apply_requested_section_limit(payload: dict[str, Any], section_limit: int) 
     description=(
         "Returns the lotus-report-owned summary payload for one portfolio and business date. "
         "Use this endpoint when a consumer needs a consolidated report-oriented summary instead "
-        "of lower-level aggregation rows."
+        "of lower-level aggregation rows. A nonblank X-Tenant-Id is required and forwarded "
+        "to every selected source read; source services retain portfolio ownership authority. "
+        "Missing or blank tenant context is refused locally before source I/O."
     ),
+    responses={
+        400: {
+            "description": "Missing or blank admitted tenant context.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "code": "missing_caller_context",
+                            "message": "Required caller context headers are missing.",
+                            "missing_headers": ["X-Tenant-Id"],
+                        }
+                    }
+                }
+            },
+        },
+        404: {"description": "Portfolio not found or refused by its authoritative source."},
+        502: {"description": "Required source read failed or returned an invalid payload."},
+    },
 )
 async def get_portfolio_summary(
     portfolio_id: Annotated[str, Path(description="Canonical portfolio identifier.")],
     request: dict[str, Any],
+    admitted_tenant_id: Annotated[str, Depends(admitted_tenant_dependency)],
     section_limit: Annotated[
         int,
         Query(
@@ -70,6 +92,7 @@ async def get_portfolio_summary(
             portfolio_id=portfolio_id,
             request_payload=_apply_requested_section_limit(request, section_limit),
             correlation_id=correlation_id,
+            admitted_tenant_id=admitted_tenant_id,
         )
     except ReportingApplicationError as exc:
         raise _reporting_application_error_to_http(exc) from exc

@@ -1,6 +1,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.application_errors import ReportingUpstreamError, ReportingValidationError
@@ -399,8 +400,9 @@ class _StubReportingReadService:
         request_payload: dict,
         correlation_id: str | None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ) -> dict:
+        assert admitted_tenant_id == "tenant-summary"
         scope = {
             "portfolio_id": portfolio_id,
             "as_of_date": request_payload.get("as_of_date"),
@@ -436,7 +438,7 @@ class _StubReportingReadServiceFailure:
         request_payload: dict,
         correlation_id: str | None,
         *,
-        admitted_tenant_id: str = "",
+        admitted_tenant_id: str,
     ) -> dict:
         raise ReportingValidationError("Missing required request field: as_of_date")
 
@@ -455,6 +457,7 @@ def test_ras_portfolio_summary_endpoint():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
         "/reports/portfolios/DEMO_DPM_EUR_001/summary",
+        headers={"X-Tenant-Id": " tenant-summary "},
         json={
             "as_of_date": "2026-02-24",
             "period": {"type": "YTD"},
@@ -476,6 +479,7 @@ def test_ras_portfolio_summary_propagates_validation_error():
     )
     response = client.post(
         "/reports/portfolios/DEMO_DPM_EUR_001/summary",
+        headers={"X-Tenant-Id": "tenant-summary"},
         json={},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)
@@ -611,7 +615,7 @@ def test_ras_portfolio_summary_includes_correlation_headers():
             "as_of_date": "2026-02-24",
             "period": {"type": "YTD"},
         },
-        headers={"X-Correlation-Id": "corr-ras-it-001"},
+        headers={"X-Correlation-Id": "corr-ras-it-001", "X-Tenant-Id": "tenant-summary"},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)
 
@@ -625,11 +629,56 @@ def test_ras_portfolio_summary_rejects_invalid_section_limit():
     app.dependency_overrides[get_reporting_read_service] = lambda: _StubReportingReadService()
     response = client.post(
         "/reports/portfolios/DEMO_DPM_EUR_001/summary?section_limit=0",
+        headers={"X-Tenant-Id": "tenant-summary"},
         json={"as_of_date": "2026-02-24", "sections": ["WEALTH"]},
     )
     app.dependency_overrides.pop(get_reporting_read_service, None)
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("tenant", [None, "", "   "])
+def test_ras_summary_refuses_missing_tenant_before_service_creation(tenant):
+    def unexpected_service():
+        pytest.fail("Missing tenant reached service construction")
+
+    app.dependency_overrides[get_reporting_read_service] = unexpected_service
+    try:
+        response = client.post(
+            "/reports/portfolios/DEMO_DPM_EUR_001/summary",
+            headers={} if tenant is None else {"X-Tenant-Id": tenant},
+            json={"as_of_date": "2026-02-24", "tenant_id": "tenant-summary"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_reporting_read_service, None)
+    assert response.status_code == 400
+    assert response.json()["detail"]["missing_headers"] == ["X-Tenant-Id"]
+
+
+def test_ras_review_forwards_present_tenant_without_body_override():
+    class StrictReviewService(_StubReportingReadService):
+        async def get_portfolio_review(self, *, admitted_tenant_id, **kwargs):
+            assert admitted_tenant_id == "tenant-summary"
+            return await super().get_portfolio_review(
+                admitted_tenant_id=admitted_tenant_id, **kwargs
+            )
+
+    app.dependency_overrides[get_reporting_read_service] = StrictReviewService
+    try:
+        response = client.post(
+            "/reports/portfolios/DEMO_DPM_EUR_001/review",
+            headers={"X-Tenant-Id": " tenant-summary "},
+            json={"as_of_date": "2026-02-24"},
+        )
+        forged_response = client.post(
+            "/reports/portfolios/DEMO_DPM_EUR_001/review",
+            headers={"X-Tenant-Id": "tenant-summary"},
+            json={"as_of_date": "2026-02-24", "tenant_id": "forged-body-tenant"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_reporting_read_service, None)
+    assert response.status_code == 200
+    assert forged_response.status_code == 422
 
 
 def test_aggregation_endpoint_refuses_a_missing_tenant() -> None:

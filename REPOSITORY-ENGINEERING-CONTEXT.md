@@ -119,6 +119,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ### Major contracts
 
+- **Synchronous summary admission:** summary and aggregation routes share the nonblank tenant
+  header dependency. Summary explicitly forwards the normalized caller tenant through all selected
+  Core reads; body fields do not choose ownership. Missing/blank is local `400` before source I/O;
+  source-owned not-found remains `404` and source availability/payload failure is `502`. Review
+  already forwards present tenant context and preserves its documented unattributed-caller posture.
+
 - **Performance history qualification:** named source union-window evidence is preserved in
   public reviews, durable snapshots and Render packages. Admission binds portfolio/date,
   requested/returned periods, TWR bases and source calendar/supportability; compatible available

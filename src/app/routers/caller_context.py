@@ -6,6 +6,29 @@ from app.observability import CORRELATION_ID_HEADER_ALIAS, TRACE_ID_HEADER_ALIAS
 from app.reporting_jobs.models import ReportCallerContext
 
 
+def admitted_tenant_dependency(
+    tenant_id: Annotated[
+        str | None,
+        Header(
+            alias="X-Tenant-Id",
+            description="Tenant identifier. Required; missing or blank is refused with 400.",
+        ),
+    ] = None,
+) -> str:
+    """Admit a nonblank caller tenant; upstream sources own portfolio ownership."""
+    admitted = (tenant_id or "").strip()
+    if not admitted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "missing_caller_context",
+                "message": "Required caller context headers are missing.",
+                "missing_headers": ["X-Tenant-Id"],
+            },
+        )
+    return admitted
+
+
 def caller_context_from_headers(
     *,
     triggered_by: str | None,
