@@ -327,6 +327,15 @@ parameter is gone -- it selected hard-coded placeholder rows, so the probe used 
 with no upstream in existence. A metric whose source did not answer is absent from `rows`
 and named in `unavailable_sources`, never reported as zero:
 
+Asset-class `weight_pct` rows use a **signed net reporting-currency basis**. Equity120 and
+cash-20 against net100 produce120% and-20%, including the overdraft; genuine zero buckets
+remain0%. `allocation_supportability` declares the basis, source/derived/mixed weight provenance,
+currency when stated, and a bounded availability reason. Nonpositive net denominators, null or
+malformed valuation/weight fields, inconsistent weights/totals, and missing/conflicting currencies withhold
+the entire weight breakdown. Source totals and unrelated measured metrics still appear. Report
+derives only absent legacy weights; it does not replace stated nulls or renormalize positive rows.
+This aggregation contract does not certify the separate review/Render allocation path (#399).
+
 ```bash
 curl -H "X-Tenant-Id: tenant-sg" \
   "http://127.0.0.1:8300/aggregations/portfolios/DEMO_DPM_EUR_001?as_of_date=2026-02-24"

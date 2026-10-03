@@ -44,7 +44,12 @@ def _aggregation_error_to_http(exc: ReportingApplicationError) -> HTTPException:
         "A metric whose source did not answer is absent from `rows` and its source "
         "is named in `unavailable_sources`, so an unmeasured value is never "
         "presented as zero. If the portfolio summary itself is unavailable the "
-        "request is refused rather than answered from substituted values."
+        "request is refused rather than answered from substituted values. "
+        "Asset-class weights use signed net reporting-currency value: negative and "
+        "zero buckets are retained, with no renormalization of positive buckets. "
+        "allocation_supportability states the basis, weight source and bounded reason "
+        "when nonpositive denominators, incomplete valuations, inconsistent source "
+        "weights or conflicting currencies prevent the complete breakdown."
     ),
 )
 async def get_portfolio_aggregation(

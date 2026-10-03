@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 from app.application_errors import ReportingUpstreamError
+from app.portfolio_aggregation.allocation import build_allocation_rows
 from app.services.aggregation_service import AggregationService
 
 
@@ -77,12 +78,10 @@ class _PerformanceFailClient:
         return 503, {"detail": "down"}
 
 
-def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
-    service = AggregationService(
-        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
-    )
+def test_build_asset_class_rows_sorts_and_preserves_signed_values():
     payload = {
         "allocation": {
+            "reporting_currency": "USD",
             "views": [
                 {
                     "dimension": "asset_class",
@@ -94,8 +93,8 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
                         },
                         {
                             "dimension_value": "EQUITY",
-                            "weight": 0.75,
-                            "market_value_reporting_currency": 75,
+                            "weight": 0.80,
+                            "market_value_reporting_currency": 80,
                         },
                         {
                             "dimension_value": "CASH",
@@ -104,14 +103,16 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
                         },
                     ],
                 }
-            ]
+            ],
         }
     }
-    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=100.0)
-    assert [row.bucket for row in rows] == ["BOND", "EQUITY"]
+    rows = build_allocation_rows(payload["allocation"], 100, summary_currency="USD")[0]
+    assert [row.bucket for row in rows] == ["BOND", "CASH", "EQUITY"]
     row_map = {row.bucket: row.value for row in rows}
     assert row_map["BOND"] == 25.0
-    assert row_map["EQUITY"] == 75.0
+    assert row_map["EQUITY"] == 80.0
+    assert row_map["CASH"] == -5.0
+    assert sum(row_map.values()) == 100.0
 
 
 @pytest.mark.parametrize(
@@ -125,10 +126,10 @@ def test_build_asset_class_rows_sorts_and_ignores_non_positive_values():
     ],
 )
 def test_build_asset_class_rows_handles_non_conforming_payloads(payload, total_mv):
-    service = AggregationService(
-        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
-    )
-    assert service._build_asset_class_rows(core_query_payload=payload, total_mv=total_mv) == []
+    allocation = payload.get("allocation")
+    if isinstance(allocation, dict):
+        allocation["reporting_currency"] = "USD"
+    assert build_allocation_rows(allocation, total_mv, summary_currency="USD")[0] == []
 
 
 @pytest.mark.asyncio
@@ -175,11 +176,9 @@ async def test_fetch_inputs_records_an_additive_source_that_did_not_answer():
 
 
 def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positive():
-    service = AggregationService(
-        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
-    )
     payload = {
         "allocation": {
+            "reporting_currency": "USD",
             "views": [
                 {
                     "dimension": "asset_class",
@@ -191,18 +190,17 @@ def test_build_asset_class_rows_returns_empty_when_total_market_value_non_positi
                         }
                     ],
                 }
-            ]
+            ],
         }
     }
-    assert service._build_asset_class_rows(core_query_payload=payload, total_mv=-1.0) == []
+    rows, posture = build_allocation_rows(payload["allocation"], -1, summary_currency="USD")
+    assert rows == [] and posture.reason_code == "nonpositive_net_denominator"
 
 
-def test_build_asset_class_rows_ignores_non_dict_positions():
-    service = AggregationService(
-        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
-    )
+def test_build_asset_class_rows_refuses_non_dict_positions_instead_of_partial_breakdown():
     payload = {
         "allocation": {
+            "reporting_currency": "USD",
             "views": [
                 {
                     "dimension": "asset_class",
@@ -211,21 +209,17 @@ def test_build_asset_class_rows_ignores_non_dict_positions():
                         {"dimension_value": "EQUITY", "market_value_reporting_currency": 20},
                     ],
                 }
-            ]
+            ],
         }
     }
-    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=100.0)
-    assert len(rows) == 1
-    assert rows[0].bucket == "EQUITY"
-    assert rows[0].value == 20.0
+    rows = build_allocation_rows(payload["allocation"], 100, summary_currency="USD")[0]
+    assert rows == []
 
 
-def test_build_asset_class_rows_handles_invalid_bucket_fields_and_weight_fallback():
-    service = AggregationService(
-        core_query_client=_CoreQueryOkClient(), performance_client=_PerformanceOkClient()
-    )
+def test_build_asset_class_rows_refuses_invalid_bucket_fields_without_weight_fallback():
     payload = {
         "allocation": {
+            "reporting_currency": "USD",
             "views": [
                 "bad-view",
                 {
@@ -243,15 +237,13 @@ def test_build_asset_class_rows_handles_invalid_bucket_fields_and_weight_fallbac
                         },
                     ],
                 },
-            ]
+            ],
         }
     }
 
-    rows = service._build_asset_class_rows(core_query_payload=payload, total_mv=200.0)
+    rows = build_allocation_rows(payload["allocation"], 200, summary_currency="USD")[0]
 
-    assert len(rows) == 1
-    assert rows[0].bucket == "EQUITY"
-    assert rows[0].value == 20.0
+    assert rows == []
 
 
 class _CoreQueryMalformedAllocation:

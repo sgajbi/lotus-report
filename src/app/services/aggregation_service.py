@@ -12,7 +12,8 @@ from app.models.contracts import (
     PortfolioAggregationResponse,
     UnavailableSource,
 )
-from app.precision_policy import quantize_money, quantize_performance, quantize_quantity, to_decimal
+from app.portfolio_aggregation.allocation import build_allocation_rows
+from app.precision_policy import quantize_money, quantize_performance, quantize_quantity
 
 
 @dataclass(frozen=True)
@@ -135,70 +136,6 @@ class AggregationService:
             unavailable=unavailable,
         )
 
-    def _build_asset_class_rows(
-        self, core_query_payload: dict[str, Any], total_mv: float
-    ) -> list[AggregationRow]:
-        allocation = core_query_payload.get("allocation", {})
-        if not isinstance(allocation, dict):
-            return []
-        views = allocation.get("views", [])
-        if not isinstance(views, list):
-            return []
-        asset_class_view = None
-        for view in views:
-            if not isinstance(view, dict):
-                continue
-            if str(view.get("dimension", "")).lower() == "asset_class":
-                asset_class_view = view
-                break
-        if not isinstance(asset_class_view, dict):
-            return []
-        buckets = asset_class_view.get("buckets", [])
-        if not isinstance(buckets, list):
-            return []
-
-        rows: list[AggregationRow] = []
-        for bucket in buckets:
-            if not isinstance(bucket, dict):
-                continue
-            asset_class = bucket.get("dimension_value")
-            if not isinstance(asset_class, str) or not asset_class.strip():
-                continue
-            try:
-                asset_market_value = float(
-                    quantize_money(bucket.get("market_value_reporting_currency"))
-                )
-            except (TypeError, ValueError):
-                continue
-            if asset_market_value <= 0 or total_mv <= 0:
-                continue
-            weight = bucket.get("weight")
-            if weight is None:
-                weight_pct = float(
-                    quantize_performance(
-                        (to_decimal(asset_market_value) / to_decimal(total_mv)) * 100
-                    )
-                )
-            else:
-                try:
-                    weight_pct = float(quantize_performance(to_decimal(weight) * 100))
-                except (TypeError, ValueError):
-                    weight_pct = float(
-                        quantize_performance(
-                            (to_decimal(asset_market_value) / to_decimal(total_mv)) * 100
-                        )
-                    )
-            rows.append(
-                AggregationRow(
-                    bucket=str(asset_class).upper(),
-                    metric="weight_pct",
-                    value=weight_pct,
-                )
-            )
-
-        rows.sort(key=lambda row: row.bucket)
-        return rows
-
     async def get_portfolio_aggregation_live(
         self,
         portfolio_id: str,
@@ -249,7 +186,10 @@ class AggregationService:
             )
 
         try:
-            market_value = float(quantize_money(total_mv))
+            normalized_total = quantize_money(total_mv)
+            if not normalized_total.is_finite():
+                raise ValueError("Non-finite source total")
+            market_value = float(normalized_total)
         except (TypeError, ValueError, ArithmeticError) as exc:
             # A 200 carrying `"n/a"` is an invalid upstream contract, not a
             # server fault of ours. Letting the conversion raise produced an
@@ -303,16 +243,21 @@ class AggregationService:
                 )
             )
 
-        rows.extend(
-            self._build_asset_class_rows(
-                core_query_payload={"allocation": inputs.allocation},
-                total_mv=market_value,
-            )
+        allocation_rows, allocation_supportability = build_allocation_rows(
+            inputs.allocation,
+            total_mv,
+            summary_currency=inputs.summary.get("reporting_currency"),
         )
+        if any(
+            source.endpoint == "/reporting/asset-allocation/query" for source in inputs.unavailable
+        ):
+            allocation_supportability.reason_code = "source_unavailable"
+        rows.extend(allocation_rows)
         return PortfolioAggregationResponse(
             scope=scope,
             generated_at=datetime.now(UTC),
             rows=rows,
+            allocation_supportability=allocation_supportability,
             unavailable_sources=inputs.unavailable,
         )
 

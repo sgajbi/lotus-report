@@ -119,6 +119,14 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ### Major contracts
 
+- **Aggregation allocation basis:** asset-class weights are a complete signed net view in
+  reporting currency. Negative and zero buckets remain visible. Nonpositive net denominators,
+  incomplete valuation or bucket data, incoherent source weights and currency conflicts withhold
+  all allocation weights with explicit `allocation_supportability`; totals and unrelated measured
+  metrics remain visible. Only an absent legacy weight can be derived; a stated null is unavailable.
+  See [allocation policy](docs/aggregation-allocation-policy.md). Review/Render qualification #399
+  and aggregation Performance supportability #391 remain separate work.
+
 - **Synchronous summary admission:** summary and aggregation routes share the nonblank tenant
   header dependency. Summary explicitly forwards the normalized caller tenant through all selected
   Core reads; body fields do not choose ownership. Missing/blank is local `400` before source I/O;
