@@ -7,6 +7,7 @@ from numbers import Real
 from typing import Any, Sequence
 
 from app.application_errors import ReportingValidationError
+from app.contribution_numbers import contribution_decimal
 from app.report_ordering_catalogue.template_resolution import (
     GOVERNED_BRAND_VARIANT,
     GOVERNED_LOCALE,
@@ -291,15 +292,15 @@ def _allocation_summary_section(allocation: dict[str, Any]) -> dict[str, Any]:
 
 
 def _performance_highlight_section(performance: dict[str, Any]) -> dict[str, Any]:
+    contributor = _as_dict(performance.get("largest_positive_contributor"))
+    contribution = _contributor_value(contributor)
     return {
-        "largest_positive_contributor_name": _holding_name(
-            _as_dict(performance.get("largest_positive_contributor"))
-        )
-        or "Not available",
-        "largest_positive_contribution_pct": _percent_text(
-            _as_dict(performance.get("largest_positive_contributor")).get("total_contribution_pct")
-            or _as_dict(performance.get("largest_positive_contributor")).get("ytd_contribution_pct")
+        "largest_positive_contributor_name": (
+            _holding_name(contributor) or "Not available"
+            if contribution is not None and contribution > 0
+            else "Not available"
         ),
+        "largest_positive_contribution_pct": _contribution_percent_text(contribution),
         "benchmark_comparison_status": _optional_str(performance.get("benchmark_comparison_status"))
         or "not_available",
     }
@@ -1643,16 +1644,31 @@ def _review_observations(
     return observations
 
 
+def _contributor_value(contributor: dict[str, Any]) -> Decimal | None:
+    # Retained legacy highlights may carry only the YTD field. Explicit unknown
+    # current evidence must not fall through to another field, and zero is usable.
+    field = (
+        "total_contribution_pct"
+        if "total_contribution_pct" in contributor
+        else "ytd_contribution_pct"
+    )
+    value = contribution_decimal(contributor.get(field))
+    return value if value is not None and value >= 0 else None
+
+
+def _contribution_percent_text(value: Decimal | None) -> str:
+    return "Not available" if value is None else f"{value:.2f}%"
+
+
 def _performance_observation(performance: dict[str, Any]) -> str | None:
     contributor = _as_dict(performance.get("largest_positive_contributor"))
     name = _optional_str(contributor.get("security_name")) or _optional_str(
         contributor.get("security_id")
     )
-    contribution = _optional_decimal(contributor.get("ytd_contribution_pct"))
-    if name and contribution is not None:
+    contribution = _contributor_value(contributor)
+    if name and contribution is not None and contribution > 0:
         return (
-            f"{name} was the largest positive contributor at "
-            f"{contribution.quantize(Decimal('0.01'))}% YTD contribution."
+            f"{name} was the largest positive contributor at {contribution:.2f}% YTD contribution."
         )
     benchmark_status = _optional_str(performance.get("benchmark_comparison_status"))
     if benchmark_status:
@@ -2047,9 +2063,15 @@ def _ranked_holdings(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                     "unrealized_pnl": _decimal_text(item.get("unrealized_pnl_reporting_currency")),
                     "unrealized_pnl_local": _decimal_text(item.get("unrealized_pnl_local")),
                     "unrealized_pnl_pct": _percent_text(item.get("unrealized_pnl_pct")),
-                    "ytd_contribution_pct": _percent_text(item.get("ytd_contribution_pct")),
-                    "ytd_average_weight_pct": _percent_text(item.get("ytd_average_weight_pct")),
-                    "ytd_total_return_pct": _percent_text(item.get("ytd_total_return_pct")),
+                    "ytd_contribution_pct": _contribution_percent_text(
+                        contribution_decimal(item.get("ytd_contribution_pct"))
+                    ),
+                    "ytd_average_weight_pct": _contribution_percent_text(
+                        contribution_decimal(item.get("ytd_average_weight_pct"))
+                    ),
+                    "ytd_total_return_pct": _contribution_percent_text(
+                        contribution_decimal(item.get("ytd_total_return_pct"))
+                    ),
                     "_sort_value": _optional_decimal(item.get("market_value_reporting_currency"))
                     or Decimal("0"),
                     # Raw, for the reconciliation. `weight_pct` above is

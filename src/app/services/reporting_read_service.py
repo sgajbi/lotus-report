@@ -10,6 +10,7 @@ from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
 from app.config import settings
+from app.contribution_numbers import admit_contribution_value
 from app.report_ordering_catalogue.definitions import PORTFOLIO_REVIEW_SECTION_DEFINITIONS
 from app.reporting_lineage.allocation_qualification import (
     allocation_items,
@@ -23,6 +24,7 @@ from app.services.performance_contribution import (
     map_contribution_levels,
     map_position_contributions,
     security_id_from_position_id,
+    select_contribution_extreme,
 )
 from app.services.performance_history import qualify_performance_history
 from app.services.portfolio_review_advisor import build_advisor_sections
@@ -2088,8 +2090,10 @@ class ReportingReadService:
         return {
             "status": "present",
             "period": "YTD",
-            "total_portfolio_return_pct": ytd.get("total_portfolio_return"),
-            "total_contribution_pct": ytd.get("total_contribution"),
+            "total_portfolio_return_pct": admit_contribution_value(
+                ytd.get("total_portfolio_return")
+            ),
+            "total_contribution_pct": admit_contribution_value(ytd.get("total_contribution")),
             "summary": self._as_dict(ytd.get("summary")),
             "top_position_contributors": self._map_position_contributions(
                 self._as_list(ytd.get("position_contributions"))
@@ -2421,10 +2425,10 @@ class ReportingReadService:
             "contribution_status": contribution.get("status", "not_requested"),
             "ytd_total_contribution_pct": contribution.get("total_contribution_pct"),
             "largest_positive_contributor": self._contribution_extreme(
-                top_contributors, largest=True
+                top_contributors, largest=True, positive=True
             ),
             "largest_negative_contributor": self._contribution_extreme(
-                top_contributors, largest=False
+                top_contributors, largest=False, positive=False
             ),
         }
 
@@ -3478,34 +3482,9 @@ class ReportingReadService:
         }
 
     def _contribution_extreme(
-        self, rows: list[object], *, largest: bool
+        self, rows: list[object], *, largest: bool, positive: bool | None = None
     ) -> dict[str, object] | None:
-        mapped_rows = [self._as_dict(row) for row in rows]
-        mapped_rows = [
-            row
-            for row in mapped_rows
-            if self._optional_number_raw(row.get("total_contribution_pct")) is not None
-        ]
-        if not mapped_rows:
-            return None
-        selected = (
-            max(
-                mapped_rows,
-                key=lambda row: self._to_float(row.get("total_contribution_pct")),
-            )
-            if largest
-            else min(
-                mapped_rows,
-                key=lambda row: self._to_float(row.get("total_contribution_pct")),
-            )
-        )
-        return {
-            "security_id": selected.get("security_id"),
-            "position_id": selected.get("position_id"),
-            "total_contribution_pct": selected.get("total_contribution_pct"),
-            "average_weight_pct": selected.get("average_weight_pct"),
-            "total_return_pct": selected.get("total_return_pct"),
-        }
+        return select_contribution_extreme(rows, largest=largest, positive=positive)
 
     def _safe_pct(self, numerator: float, denominator: float) -> float | None:
         if denominator == 0:

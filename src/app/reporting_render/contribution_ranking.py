@@ -27,8 +27,10 @@ Two honesty mechanisms are structural rather than optional:
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
+
+from app.contribution_numbers import contribution_decimal
 
 POSTURE_READY = "ready"
 POSTURE_EMPTY = "empty"
@@ -77,8 +79,8 @@ def build_contribution_ranking(snapshot: dict[str, Any]) -> dict[str, Any]:
         return {"posture": POSTURE_EMPTY, "period": period, "methodology": methodology}
 
     presented = _presented_with_both_signs(rows)
-    total_return = _decimal(contribution.get("total_portfolio_return_pct"))
-    explained = _decimal(contribution.get("total_contribution_pct"))
+    total_return = contribution_decimal(contribution.get("total_portfolio_return_pct"))
+    explained = contribution_decimal(contribution.get("total_contribution_pct"))
     presented_total = sum(
         (row["_value"] for row in presented),
         start=Decimal("0"),
@@ -155,7 +157,7 @@ def _ranked_contributors(
     for entry in contribution.get("top_position_contributors") or []:
         if not isinstance(entry, dict):
             continue
-        value = _decimal(entry.get("total_contribution_pct"))
+        value = contribution_decimal(entry.get("total_contribution_pct"))
         if value is None:
             # A contributor with no computed contribution cannot be ranked and
             # must not be drawn as a zero - "no data" and "no movement" are
@@ -167,11 +169,13 @@ def _ranked_contributors(
                 "_value": value,
                 "name": names.get(security_id) or security_id or "Not available",
                 "contribution_pct": _text_decimal(value),
-                "average_weight_pct": _text_decimal(_decimal(entry.get("average_weight_pct"))),
-                "return_pct": _text_decimal(_decimal(entry.get("total_return_pct"))),
+                "average_weight_pct": _text_decimal(
+                    contribution_decimal(entry.get("average_weight_pct"))
+                ),
+                "return_pct": _text_decimal(contribution_decimal(entry.get("total_return_pct"))),
             }
         )
-    rows.sort(key=lambda row: (-abs(row["_value"]), row["name"]))
+    rows.sort(key=lambda row: (row["_value"].copy_abs().copy_negate(), row["name"]))
     return rows
 
 
@@ -219,15 +223,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else ""
-
-
-def _decimal(value: Any) -> Decimal | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
 
 
 def _text_decimal(value: Decimal | None) -> str | None:

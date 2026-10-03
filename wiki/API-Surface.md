@@ -561,6 +561,20 @@ treating report gaps as advice or silently losing upstream dependency gaps.
 Portfolio review capability keys are published through `GET /integration/capabilities`.
 Report job capability keys and PDF render-submission posture are also published there once implementation-backed.
 
+Contribution numeric evidence must be finite before source mapping, ranking, extreme selection
+or retained package presentation. NaN, signaling NaN, infinities, booleans and malformed values
+are unavailable rather than zero. Invalid required contributions retain mapped identities and
+increment unusable counts; invalid optional weight/return and source totals remain null.
+Mixed usable/unusable rows remain ready with counts; all-unusable evidence is unavailable,
+and genuinely empty sourced rows remain empty. Finite signed/zero figures and valid source
+representations stay intact. Sign-labelled extrema require strictly positive or strictly negative
+rows; zero remains usable ranking evidence. Retained holding contribution, weight and return
+text also follow finite admission. Report derives only presentation sums/residuals from admitted
+figures; it does not reconstruct authoritative missing totals. Retained presentation leaves
+snapshot bytes unchanged. Retained negative values cannot be positive highlights; zero remains
+numerically available without a positive name or narrative. See
+`docs/contribution-numeric-admission.md` for scope and evidence.
+
 Detailed response-family guidance lives in [Portfolio Review Report](Portfolio-Review-Report).
 
 Use these examples as the canonical public API shape. Swagger must not publish stale placeholder
