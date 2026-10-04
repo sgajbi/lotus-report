@@ -502,6 +502,28 @@ page draws the residual as its own labelled bridge segment.
   / `unavailable`, failure category = the section's own reason code), so a dashboard tells
   "still computing" from "refused" without reading job records.
 
+## Risk source qualification
+
+Calculate and rolling responses are admitted from typed nested Risk supportability and consumed
+Performance source evidence. HTTP success, usable figures and unrelated payload words cannot
+establish readiness. Ready remains a positive control; stale/degraded maps to partial,
+empty/error/permission-blocked/unsupported remains unavailable for presentation, and missing,
+malformed or mismatched required qualification stays explicitly unknown. Source states and safe
+reasons remain retained even when Report projects them into its existing postures.
+
+The exact source UUID, contract, hashes, freshness and reconciled counts/coverage are preserved.
+The legitimate 269/270 wire ratio `0.9962963` is admitted without rewriting evidence or promoting
+it to complete. Echoed as-of/currency/basis binds to the stateful request; the current Risk wire
+does not echo portfolio identity, and opaque hashes do not supply that missing authority.
+Per-period fallback and rolling-only limitations cannot be erased by a ready response elsewhere.
+Usable figures retain source precision; retained replay/rerender makes no fresh Risk calls, and
+the existing Render `risk_posture` notes carry the limitations.
+
+See the authored [qualification boundary](https://github.com/sgajbi/lotus-report/blob/main/docs/risk-source-qualification.md)
+for mapping and proof. Controlled native-client/SQLite and CI PostgreSQL/separate-process-read
+controls do not replace actual joined producer/consumer acceptance. #398, Risk #377, source
+completeness, production IAM, report-wide reconciliation and certification remain distinct.
+
 ## Transaction window qualification
 
 Each consumed Core ledger page contributes trust metadata, quality, reconciliation and

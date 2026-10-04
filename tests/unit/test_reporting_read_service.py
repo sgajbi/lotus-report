@@ -6,6 +6,36 @@ from app.services.reporting_read_service import ReportingReadService
 FORBIDDEN_ADVISOR_PROMPT_WORDS = {"create", "creates", "approve", "approves", "mutate", "mutates"}
 
 
+def _risk_source_contract(payload):
+    """Current source wire, with request scope and distinct consumed source identity."""
+    scope = payload["stateful_input"]
+    return {
+        "scope": {
+            key: scope.get(key) for key in ("as_of_date", "reporting_currency", "net_or_gross")
+        },
+        "metadata": {
+            "contract_version": "v1",
+            "calculation_supportability": {
+                "state": "ready",
+                "reason": "calculation_complete",
+                "freshness_bucket": "current",
+            },
+            "source_returns_evidence": {
+                "source_service": "lotus-performance",
+                "calculation_id": "00000000-0000-4000-8000-000000000001",
+                "contract_version": "v1",
+                "input_fingerprint": "sha256:" + "1" * 64,
+                "calculation_hash": "sha256:" + "2" * 64,
+                "freshness": "current",
+                "requested_points": 270,
+                "returned_points": 270,
+                "missing_points": 0,
+                "coverage_ratio": 1.0,
+            },
+        },
+    }
+
+
 def _advisor_prompt_items(response: dict[str, object]) -> list[dict[str, object]]:
     advisor_sections = response["advisor_sections"]
     assert isinstance(advisor_sections, list)
@@ -602,6 +632,7 @@ class _RollingRiskClientMixin:
         return 200, {
             "source_service": "lotus-risk",
             "input_mode": "stateful",
+            "scope": _risk_source_contract(payload)["scope"],
             "results": {
                 "YTD": {
                     "start_date": "2026-01-01",
@@ -642,7 +673,7 @@ class _RollingRiskClientMixin:
                     ],
                 }
             },
-            "metadata": {"annualization_basis": 252},
+            "metadata": {"annualization_basis": 252, **_risk_source_contract(payload)["metadata"]},
         }
 
 
@@ -769,6 +800,7 @@ class _RiskClientSuccess(
     async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.seen_payloads.append(payload)
         return 200, {
+            "scope": _risk_source_contract(payload)["scope"],
             "results": {
                 "YTD": {
                     "start_date": "2025-01-01",
@@ -785,6 +817,7 @@ class _RiskClientSuccess(
                 }
             },
             "metadata": {
+                **_risk_source_contract(payload)["metadata"],
                 "risk_free_context": {
                     "requested": True,
                     "applied": True,
@@ -799,9 +832,10 @@ class _RiskClientSuccess(
         }
 
 
-class _RiskClientPeriodFallback:
+class _RiskClientPeriodFallback(_RollingRiskClientMixin):
     def __init__(self):
         self.seen_payloads: list[dict[str, object]] = []
+        self.rolling_payloads: list[dict[str, object]] = []
 
     async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         self.seen_payloads.append(payload)
@@ -831,6 +865,7 @@ class _RiskClientPeriodFallback:
             }
         period_name = str(period.get("name") or period.get("type") or "YTD")
         return 200, {
+            "scope": _risk_source_contract(payload)["scope"],
             "results": {
                 period_name: {
                     "start_date": "2026-01-01",
@@ -844,10 +879,11 @@ class _RiskClientPeriodFallback:
                 }
             },
             "metadata": {
+                **_risk_source_contract(payload)["metadata"],
                 "benchmark_context": {
                     "requested": True,
                     "requested_metrics": ["BETA", "TRACKING_ERROR", "INFORMATION_RATIO"],
-                }
+                },
             },
         }
 
@@ -1428,7 +1464,9 @@ async def test_review_composes_core_query_performance_and_risk():
     assert period["episodes"][1]["recovery_date"] is None
     assert drawdown["metadata"]["duration_unit"] == "BUSINESS_DAYS"
     assert drawdown["metadata"]["methodology_version"] == "drawdown.v1"
-    assert response["riskAnalytics"]["supportability"] == {"status": "ready", "notes": []}
+    assert response["riskAnalytics"]["supportability"]["status"] == "ready"
+    assert response["riskAnalytics"]["supportability"]["notes"] == []
+    assert response["riskAnalytics"]["supportability"]["source_qualification"]["state"] == "ready"
     assert response["riskAnalytics"]["summary"]["YTD"] == {
         "volatility": 0.12,
         "risk_adjusted_return": 1.05,

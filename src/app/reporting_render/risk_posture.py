@@ -90,9 +90,15 @@ def build_risk_posture(snapshot: dict[str, Any]) -> dict[str, Any]:
             ],
         }
 
+    trend_support = _as_dict(_as_dict(snapshot.get("riskTrend")).get("supportability"))
+    trend_notes = _notes(trend_support)
+    notes = _notes(supportability)
+    notes.extend(note for note in trend_notes if note not in notes)
+    if status == POSTURE_READY and trend_notes:
+        status = POSTURE_PARTIAL
     return {
         "posture": status,
-        "notes": [_published_note(note) for note in _notes(supportability)],
+        "notes": [_published_note(note) for note in notes],
     }
 
 
