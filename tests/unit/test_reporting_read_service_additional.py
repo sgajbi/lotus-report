@@ -11,6 +11,7 @@ from app.services.reporting_read_service import ReportingReadService
 from app.services.risk_supportability import (
     risk_supportability as build_risk_supportability,
 )
+from tests.unit.test_reporting_read_service import _risk_source_contract
 
 
 def _transaction_ledger_metadata(
@@ -365,6 +366,7 @@ class _PerformanceSuccessEmpty:
 class _RiskSuccess:
     async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 200, {
+            "scope": _risk_source_contract(payload)["scope"],
             "results": {
                 "YTD": {
                     "metrics": {
@@ -376,12 +378,13 @@ class _RiskSuccess:
                 }
             },
             "metadata": {
+                **_risk_source_contract(payload)["metadata"],
                 "risk_free_context": {
                     "requested": True,
                     "applied": True,
                     "reason": "ANNUAL_RATE_APPLIED",
                     "periodic_rate": 0.0001,
-                }
+                },
             },
         }
 
@@ -389,6 +392,7 @@ class _RiskSuccess:
 class _RiskZeroRate:
     async def calculate_risk(self, payload: dict[str, object], *, admitted_tenant_id: str):
         return 200, {
+            "scope": _risk_source_contract(payload)["scope"],
             "results": {
                 "YTD": {
                     "metrics": {
@@ -400,12 +404,13 @@ class _RiskZeroRate:
                 }
             },
             "metadata": {
+                **_risk_source_contract(payload)["metadata"],
                 "risk_free_context": {
                     "requested": True,
                     "applied": True,
                     "reason": "ZERO_RATE",
                     "periodic_rate": 0.0,
-                }
+                },
             },
         }
 
@@ -958,6 +963,7 @@ def test_review_supportability_and_audit_edge_paths_remain_explicit():
         "missing_risk_free_rate",
         "risk_period_upstream_failure",
         "missing_benchmark",
+        "risk_source_qualification_missing",
     }
 
     response = {
@@ -1440,7 +1446,9 @@ def test_review_helper_edges_remain_meeting_safe():
         metadata={"benchmark_context": {"requested": True}},
         benchmark_code="BMK",
     )
-    assert ready == {"status": "ready", "notes": []}
+    assert ready["status"] == "partial"
+    assert ready["source_qualification"]["state"] == "unknown"
+    assert ready["notes"][0]["code"] == "risk_source_qualification_missing"
 
     supportability = {
         "notes": [

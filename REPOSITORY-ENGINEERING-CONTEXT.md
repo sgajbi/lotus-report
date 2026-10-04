@@ -84,6 +84,7 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 |---|---|
 | `src/app/routers/`, `src/app/report_ordering_catalogue/` | API surface and the ordering catalogue |
 | `src/app/services/reporting_read_service.py` | upstream reads composed into the snapshot payload |
+| `src/app/services/risk_supportability.py` | typed calculate/rolling source qualification and conservative reader/capture projection |
 | `src/app/reporting_lineage/` | immutable snapshot capture, upstream-call lineage, admissibility |
 | `src/app/reporting_jobs/` | durable job ledger, work queue, leasing, lifecycle transitions |
 | `src/app/reporting_render/` | render-package assembly and the semantic model sent to Render |
@@ -92,6 +93,16 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 | `scripts/`, `contracts/`, `wiki/` | governance gates, domain-product declarations, operator docs |
 
 ## Runtime And Integration Boundaries
+
+Risk calculate/rolling admission reads typed nested producer supportability and consumed
+Performance identity/coverage. HTTP success and numeric availability never establish readiness.
+Missing or malformed required qualification stays explicitly unknown; source limitations survive
+capture, retained reuse and existing Render posture notes. The ordered Risk section also includes
+rolling source limitations. Risk currently echoes as-of/currency/basis but no portfolio identity;
+opaque hashes are retained, not promoted into independent portfolio or common-cut proof. See
+[Risk source qualification](docs/risk-source-qualification.md) for the state mapping, discrete wire
+ratio compatibility, tests and controlled versus joined-runtime proof boundary. Report-wide
+reconciliation and certification remain separate.
 
 Not every arrow below is a service boundary. `order accepted -> capture` and `capture -> compose`
 are internal workflow steps - service-local, but NOT atomic: capture commits the snapshot and its

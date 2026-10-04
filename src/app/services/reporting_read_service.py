@@ -32,7 +32,11 @@ from app.services.review_disclosures import review_disclosures
 from app.services.review_evidence import build_review_evidence
 from app.services.risk_supportability import (
     BENCHMARK_RISK_METRICS,
+    combine_risk_qualifications,
+    combine_risk_section_supportability,
+    qualify_risk_response,
     risk_supportability,
+    risk_trend_response,
 )
 from app.services.transaction_evidence import (
     merge_transaction_source_product,
@@ -440,6 +444,11 @@ class ReportingReadService:
                 request_payload=request_payload,
                 admitted_tenant_id=admitted_tenant,
             )
+            risk = self._as_dict(response["riskAnalytics"])
+            risk["supportability"] = combine_risk_section_supportability(
+                self._as_dict(risk["supportability"]),
+                self._as_dict(self._as_dict(response["riskTrend"])["supportability"]),
+            )
         if "RISK_ATTRIBUTION" in requested_sections:
             # Ordered explicitly, never by default (#254's evidence gate):
             # the risk page's "what risk did we take for the result".
@@ -802,11 +811,18 @@ class ReportingReadService:
             risk_payload, admitted_tenant_id=admitted_tenant_id
         )
         period_failures: list[dict[str, object]] = []
-        if risk_status >= HTTP_BAD_REQUEST:
+        qualification = qualify_risk_response(risk_response, risk_payload)
+        if not 200 <= risk_status < 300:
             risk_response, period_failures = await self._calculate_risk_by_period(
                 risk_payload,
                 fallback_reason_code="risk_period_upstream_failure",
                 admitted_tenant_id=admitted_tenant_id,
+            )
+            qualification = combine_risk_qualifications(
+                [
+                    self._as_dict(period)
+                    for period in self._as_list(risk_response.get("source_qualifications"))
+                ]
             )
             if not self._as_dict(risk_response.get("results")):
                 return self._risk_unavailable(
@@ -824,6 +840,7 @@ class ReportingReadService:
             metadata=metadata,
             benchmark_code=self._optional_string(request_payload, *BENCHMARK_CODE_KEYS),
             period_failures=period_failures,
+            source_qualification=qualification,
         )
         return {
             "source": {
@@ -859,6 +876,7 @@ class ReportingReadService:
         merged_results: dict[str, object] = {}
         merged_metadata: dict[str, object] = {}
         period_failures: list[dict[str, object]] = []
+        qualifications: list[dict[str, object]] = []
         for period in periods:
             period_payload = self._as_dict(period)
             period_risk_payload = {
@@ -874,7 +892,7 @@ class ReportingReadService:
             period_name = self._safe_str(period_payload.get("name")) or self._safe_str(
                 period_payload.get("type")
             )
-            if period_status >= HTTP_BAD_REQUEST:
+            if not 200 <= period_status < 300:
                 period_failures.append(
                     {
                         "period": period_name,
@@ -884,13 +902,23 @@ class ReportingReadService:
                     }
                 )
                 continue
+            qualifications.append(
+                {
+                    "period": period_name,
+                    "qualification": qualify_risk_response(period_response, period_risk_payload),
+                }
+            )
             merged_results.update(self._as_dict(period_response.get("results")))
             if not merged_metadata:
                 merged_metadata = self._as_dict(period_response.get("metadata"))
 
         if period_failures:
             merged_metadata["period_failures"] = period_failures
-        return {"results": merged_results, "metadata": merged_metadata}, period_failures
+        return {
+            "results": merged_results,
+            "metadata": merged_metadata,
+            "source_qualifications": qualifications,
+        }, period_failures
 
     def _upstream_error_message(self, payload: dict[str, object]) -> str:
         error = self._as_dict(payload.get("error"))
@@ -3726,47 +3754,7 @@ class ReportingReadService:
             )
         except Exception:
             status_code, response_payload = 0, {}
-        if status_code >= HTTP_BAD_REQUEST or status_code == 0:
-            return {
-                "source": {
-                    "service": "lotus-risk",
-                    "endpoint": "/analytics/risk/rolling-metrics",
-                },
-                "request": {
-                    "window_observations": ROLLING_TREND_WINDOW_OBSERVATIONS,
-                    "metrics": metrics,
-                    "frequency": "daily",
-                },
-                "supportability": {
-                    "status": "unavailable",
-                    "notes": [
-                        {
-                            "code": "risk_trend_upstream_failure",
-                            "severity": "blocking",
-                            "message": (
-                                "Risk trend is unavailable because lotus-risk could not "
-                                "calculate rolling metrics."
-                            ),
-                        }
-                    ],
-                },
-                "results": {},
-                "metadata": {},
-            }
-        return {
-            "source": {
-                "service": "lotus-risk",
-                "endpoint": "/analytics/risk/rolling-metrics",
-            },
-            "request": {
-                "window_observations": ROLLING_TREND_WINDOW_OBSERVATIONS,
-                "metrics": metrics,
-                "frequency": "daily",
-            },
-            "supportability": {"status": "ready", "notes": []},
-            "results": self._as_dict(response_payload.get("results")),
-            "metadata": self._as_dict(response_payload.get("metadata")),
-        }
+        return risk_trend_response(response_payload, rolling_payload, status_code)
 
     def _build_risk_stateful_input(
         self,

@@ -59,6 +59,7 @@ from app.services.performance_history import (
     qualify_performance_history,
 )
 from app.services.reporting_read_service import ReportingReadService
+from app.services.risk_supportability import qualify_risk_response, risk_call_posture
 
 
 class ReportJobCaptureLedger(Protocol):
@@ -290,9 +291,26 @@ class _UpstreamRecorder:
         response_payload: dict[str, Any],
         started_at: float,
     ) -> None:
-        supportability, completeness, failure_category, failure_message = _classify_call(
-            status_code, response_payload
-        )
+        if service_name == "lotus-risk" and endpoint in {
+            "/analytics/risk/calculate",
+            "/analytics/risk/rolling-metrics",
+        }:
+            supportability, completeness, failure_category, failure_message = (
+                risk_call_posture(qualify_risk_response(response_payload, request_payload))
+                if 200 <= status_code < 300
+                else _classify_call(status_code, None)
+            )
+            if status_code < 400 and not 200 <= status_code < 300:
+                supportability, completeness, failure_category, failure_message = (
+                    "error",
+                    "error",
+                    "upstream_error",
+                    "Risk service returned an unexpected transport status during capture.",
+                )
+        else:
+            supportability, completeness, failure_category, failure_message = _classify_call(
+                status_code, response_payload
+            )
         if (
             200 <= status_code < 300
             and service_name == "lotus-core"
