@@ -50,7 +50,7 @@ Run focused controls from the `lotus-report` repository root on PowerShell or Ba
 python -m pytest tests/unit/services/test_risk_source_qualification.py tests/unit/services/test_risk_qualification_retention.py
 ```
 
-`tests/integration/test_risk_qualification_retention.py` uses the owning CI PostgreSQL database,
+`tests/integration/test_risk_qualification_postgres_retention.py` uses the owning CI PostgreSQL database,
 closes capture adapters and reads the retained snapshot in a separate Python process before
 recreated recovery adapters replay and rerender it. Its Risk HTTP transport and Render/Archive
 suppliers remain controlled. This is not a live Performance-to-Risk-to-Report-to-Render run,
