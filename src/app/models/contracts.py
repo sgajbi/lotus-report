@@ -735,7 +735,18 @@ class PortfolioReviewReportResponse(BaseModel):
     )
     evidence: dict[str, Any] = Field(
         default_factory=dict,
-        description="Source refs, lineage bundle, trust metadata, and domain-product evidence.",
+        description=(
+            "Source refs, lineage bundle, trust metadata, and domain-product evidence. "
+            "Report-wide reconciliation has a designed steady state of unknown with reason "
+            "no_reconciliation_policy_established: Report composes evidence, owns no book of "
+            "record, and has no authoritative report-wide comparand, common cut, tolerance or "
+            "retained assembled-report check from which to form a verdict. Ready sections, "
+            "independently reconciled sources, canonical revision identity and faithful replay "
+            "or rerender do not establish report-wide reconciliation. Capture and retained reuse "
+            "preserve this status and reason. Certification remains separate; the product is a "
+            "certification_candidate and this posture does not approve promotion. See "
+            "contracts/domain-data-products/lotus-report-reconciliation-posture.v1.json."
+        ),
     )
     key_figures: dict[str, Any] = Field(
         default_factory=dict,

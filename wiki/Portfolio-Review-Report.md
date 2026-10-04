@@ -13,6 +13,26 @@ handoff, and archive handoff boundaries described here.
 | Operations and support | Runtime And Evidence | How to prove source-backed output and diagnose partial supportability |
 | Engineering and agents | Contract Shape | Which fields, sections, ownership boundaries, and tests protect the route |
 
+## Report-wide reconciliation posture
+
+The review API's `evidence` description and repository-owned
+[versioned posture contract](https://github.com/sgajbi/lotus-report/blob/main/contracts/domain-data-products/lotus-report-reconciliation-posture.v1.json)
+hold outcome B deliberately: `unknown` / `no_reconciliation_policy_established` is the designed
+steady state. Report composes domain evidence and owns no book of record, authoritative
+report-wide comparand, common comparison cut, tolerance or retained assembled-report check.
+It therefore forms no assembled-report reconciliation verdict.
+
+Ready sections and independently reconciled sources do not establish report-wide
+reconciliation. Capture retains the status and reason; retained read, replay and rerender
+preserve them. Canonical revision identity and faithful reuse prove retained identity, not a
+common source cut or reconciliation verdict.
+
+Certification remains separate. The product remains `certification_candidate` under the
+already decided [Platform #780](https://github.com/sgajbi/lotus-platform/issues/780). Promotion
+requires a defined and proven authoritative reconciliation policy and a blocking platform
+gate from exact producer main, alongside unchanged SLO, access, source-approval and evidence
+requirements. Contract clarification supplies no certification approval.
+
 ## Purpose
 
 `POST /reports/portfolios/{portfolio_id}/review` is the portfolio review contract for
@@ -164,7 +184,7 @@ Top-level response families:
 | `report_structure` | recommended meeting-pack order for UI, document, or presentation consumers |
 | `advisor_briefing` | deterministic advisor talking points and required checks |
 | `ai_readiness` | guarded AI feature metadata and blocked AI use cases |
-| `evidence` | source refs, lineage bundle, trust metadata, and domain-product context. Trust claims state only what is proven: `evidence_posture` separates the synchronous `ephemeral_composition` from durable `durable_snapshot` capture; `tenant_id` appears only when `tenant_admission` establishes it (never a fabricated default); `reconciliation_status` stays `unknown` with a bounded reason until an explicit policy proves reconciliation |
+| `evidence` | source refs, lineage bundle, trust metadata, and domain-product context. Trust claims state only what is proven: `evidence_posture` separates the synchronous `ephemeral_composition` from durable `durable_snapshot` capture; `tenant_id` appears only when `tenant_admission` establishes it (never a fabricated default); report-wide `reconciliation_status` deliberately remains `unknown` / `no_reconciliation_policy_established` under the versioned posture contract above |
 
 ## Gold-Standard Figure Coverage
 
@@ -498,4 +518,4 @@ The immutable input snapshot retains page ordinals and qualification evidence. R
 replay and rerender reuse it without fresh Core reads. When income/activity was requested,
 the Render earnings-statement notes retain the qualification code, severity and message.
 These are source-window qualifications; Report-wide reconciliation remains governed by
-its separate contract and policy.
+the versioned report-wide posture contract above.

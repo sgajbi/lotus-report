@@ -24,6 +24,21 @@ Current declarations:
    It proves report-owned proof-pack job materialization through the existing snapshot, render, and
    archive lifecycle while keeping client publication and supported-feature promotion blocked.
 
+The repository-owned
+[`lotus-report-reconciliation-posture.v1.json`](lotus-report-reconciliation-posture.v1.json)
+is the normative report-wide reconciliation sidecar for the review API's `evidence` contract.
+Outcome B deliberately retains `unknown` / `no_reconciliation_policy_established`: Report
+composes evidence but owns no book of record, authoritative report-wide comparand, common
+comparison cut, tolerance or retained assembled-report check. Ready sections, independently
+reconciled sources, revision identity and faithful replay or rerender cannot supply that verdict.
+Capture and retained reuse preserve the same status and reason.
+
+Certification remains separate. The product remains `certification_candidate` under
+[Platform #780](https://github.com/sgajbi/lotus-platform/issues/780); promotion requires a defined
+and proven authoritative reconciliation policy and a blocking platform gate from exact producer
+main, alongside existing mesh requirements. This sidecar does not extend the shared producer
+schema or change SLO, source-approval, access or evidence gates.
+
 Local validation:
 
 ```powershell

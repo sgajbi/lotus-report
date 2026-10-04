@@ -90,12 +90,13 @@ def test_report_declaration_keeps_unapproved_analytics_dependencies_on_the_watch
     assert "partially certified" in readme
 
 
-def test_report_declaration_directory_contains_consumer_and_owned_product_contracts() -> None:
+def test_report_declaration_directory_contains_declarations_and_posture_sidecar() -> None:
     declaration_paths = sorted(path.name for path in LOCAL_DECLARATION_DIR.glob("*.json"))
 
     assert declaration_paths == [
         "lotus-report-consumers.v1.json",
         "lotus-report-products.v1.json",
+        "lotus-report-reconciliation-posture.v1.json",
     ]
 
 
