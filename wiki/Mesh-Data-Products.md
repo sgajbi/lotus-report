@@ -2,7 +2,8 @@
 
 ## Mesh role
 
-`lotus-report` is a maturity-wave producer in the Lotus enterprise data mesh.
+`lotus-report` is a maturity-wave producer with `certification_candidate` posture in the Lotus
+enterprise data mesh.
 
 ## Governed product
 
@@ -10,10 +11,24 @@
 - Product role: client-report evidence pack for customer/operator evidence workflows and Workbench discovery
 - Source declaration: `contracts/domain-data-products/lotus-report-products.v1.json`
 - Trust telemetry: `contracts/trust-telemetry/client-report-evidence-pack.telemetry.v1.json`
+- Report-wide reconciliation:
+  [versioned posture contract](https://github.com/sgajbi/lotus-report/blob/main/contracts/domain-data-products/lotus-report-reconciliation-posture.v1.json)
 - Certification boundary: core `lotus-core` evidence is governed through current repo-native
   consumer declarations; analytics-enriched performance/risk evidence is partial and blocked for
   mesh certification until `lotus-performance` and `lotus-risk` producer declarations approve
   `lotus-report` as a governed consumer.
+
+Report-wide `unknown` / `no_reconciliation_policy_established` is deliberate outcome B.
+Report composes evidence but owns no book of record, authoritative report-wide comparand,
+common comparison cut, tolerance or retained assembled-report check. Ready sections,
+independently reconciled sources, canonical revision identity and faithful replay or rerender
+cannot establish a report-wide verdict. Retained reuse preserves the unknown status and reason.
+
+Certification remains separate under the already decided
+[Platform #780](https://github.com/sgajbi/lotus-platform/issues/780). Promotion still requires a
+defined and proven authoritative reconciliation policy and a blocking platform gate from exact
+producer main, alongside unchanged mesh SLO, access, source-approval and evidence requirements.
+The posture contract does not extend the shared producer schema or approve certification.
 
 ## Idea evidence intake route foundation
 

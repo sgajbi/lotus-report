@@ -137,6 +137,12 @@ async def test_native_capture_reopen_and_retained_replay_preserve_page_qualifica
     assert len(transaction["sourceProduct"]["page_evidence"]) == 2
     assert len(core.reads) == 2
     assert snapshot.lineage_summary["call_count"] == len(requests)
+    trust = snapshot.snapshot_payload["evidence"]["trust_metadata"]
+    assert trust["reconciliation_status"] == "unknown"
+    assert trust["reconciliation_reason_code"] == "no_reconciliation_policy_established"
+    if case == "healthy":
+        assert snapshot.snapshot_payload["readiness"]["status"] == "ready"
+        assert transaction["sourceProduct"]["reconciliation_status"] == "RECONCILED"
 
     ledger.mark_failed(
         job_id=job.job_id,
@@ -163,6 +169,9 @@ async def test_native_capture_reopen_and_retained_replay_preserve_page_qualifica
     assert result.replayed_job.status == "archived"
     cloned = store.get_snapshot_by_job(result.replayed_job.job_id)
     assert cloned.snapshot_payload == reopened.snapshot_payload
+    assert cloned.snapshot_payload["evidence"]["trust_metadata"] == trust
+    assert cloned.report_revision_id == reopened.report_revision_id
+    assert cloned.report_revision_id is not None
     assert store.get_snapshot_by_job(job.job_id).snapshot_hash == snapshot.snapshot_hash
     assert len(core.reads) == 2
     assert len(render.packages) == 1

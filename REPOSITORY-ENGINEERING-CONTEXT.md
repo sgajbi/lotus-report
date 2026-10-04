@@ -402,9 +402,16 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
    evidence only: v1 hashes were computed at read time and never
    persisted, so they are NOT reconstructible and nothing claims
    otherwise - consumers re-key once by the stable `event_id`.
-   Remaining #283 dependency: the reconciliation policy, now owned by
-   #321 (Platform #780's promotion condition). Unknown reconciliation
-   stays unknown until an explicit policy proves otherwise.
+   Report #321's deliberate outcome B is specified in
+   [`lotus-report-reconciliation-posture.v1.json`](contracts/domain-data-products/lotus-report-reconciliation-posture.v1.json)
+   and the actual review API's `evidence` description. Report composes evidence but has no
+   book of record, authoritative report-wide comparand, common comparison cut, tolerance or
+   retained assembled-report check. `unknown` / `no_reconciliation_policy_established` is
+   therefore the designed steady state, including for ready, independently reconciled sources.
+   Capture, retained read, replay and rerender preserve that meaning; revision identity is
+   not a reconciliation verdict. Certification remains separate: Platform #780's existing
+   `certification_candidate` posture and promotion requirements remain unchanged, including
+   a defined and proven authoritative policy and blocking gate from exact producer main.
    Design decisions (hash boundary, no circular identity, historical
    mapping) are recorded in the 2026-09-05 audit, on #283, and in
    `src/app/reporting_identity/identity.py`'s module docstring.

@@ -1,0 +1,40 @@
+{
+  "contract_version": "1.0.0",
+  "product_id": "lotus-report:ClientReportEvidencePack:v1",
+  "contract_scope": "PortfolioReviewReportResponse.evidence.trust_metadata and its retained snapshot",
+  "posture": {
+    "outcome": "B",
+    "reconciliation_status": "unknown",
+    "reconciliation_reason_code": "no_reconciliation_policy_established",
+    "report_level_verdict_formed": false,
+    "designed_steady_state": true
+  },
+  "reason": "Report composes evidence from domain-authoritative services. It owns no book of record and has no authoritative report-wide comparand owner, common comparison cut, tolerance or retained assembled-report check from which to form a reconciliation verdict. Unknown is therefore the deliberate contract posture, including for a ready report whose individual sources are reconciled.",
+  "absent_report_level_authorities": [
+    "book_of_record",
+    "comparand_owner",
+    "common_comparison_cut",
+    "tolerance",
+    "retained_assembled_report_check"
+  ],
+  "prohibited_inferences": [
+    "section_readiness",
+    "independently_reconciled_sources",
+    "canonical_revision_identity",
+    "faithful_replay_or_rerender"
+  ],
+  "retention_meaning": "Capture retains the report-wide unknown status and reason. Retained read, replay and rerender preserve that evidence; canonical revision identity proves retained identity, not a common source cut or reconciliation verdict.",
+  "certification": {
+    "posture": "certification_candidate",
+    "unknown_is_certification_approval": false,
+    "promotion_requires": [
+      "defined_and_proven_authoritative_reconciliation_policy",
+      "blocking_platform_gate_from_exact_producer_main"
+    ],
+    "existing_requirements_unchanged": "Mesh SLO, access, source approval and evidence requirements remain separate and unchanged. This contract does not supply the reconciliation proof required for promotion."
+  },
+  "decision_refs": [
+    "https://github.com/sgajbi/lotus-report/issues/321#issuecomment-5591465250",
+    "https://github.com/sgajbi/lotus-platform/issues/780"
+  ]
+}
