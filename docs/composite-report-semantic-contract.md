@@ -45,6 +45,17 @@ external source identity, and refuse changed fee identity or corrupted values.
 This establishes wire compatibility; the producer's economic/provider/authority
 inputs remain controlled and no live network or institutional authority is claimed.
 
+The same fixture directory retains a separately produced matched original and
+financially corrected pair from that committed Performance revision: cumulative
+returns `0.030200000000` and `0.055700000000`. Registered consumer tests order each
+exact selection independently for JSON and XLSX, preserve both captures after
+correction and store reopen, and reuse each order's own idempotency key. February's
+monthly evidence and pin remain unchanged; its cumulative return includes the
+corrected January. Each accepted request retains its existing semantic identity,
+source revision and report revision. XLSX unit tests explicitly decline rendering
+at a controlled boundary and establish no workbook or Archive completion.
+This test-evidence addition does not change the published wiki workflow.
+
 The current `qualification` is `EXPLICIT_RETAINED_CALCULATED_REPLAY`, and
 `publication_state` is `NOT_ATTESTED`. The typed authority slot under
 `report_facts.authority` has null `receipt` and `control_revision`,
