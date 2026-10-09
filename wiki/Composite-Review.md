@@ -106,6 +106,11 @@ Methods rows use sorted method-binding keys so JSON object key order, including
 PostgreSQL JSONB normalization, does not change row identity or source pointers.
 The retained source values remain exact. Previously captured snapshots keep their
 stored tables, and technical rerender continues to consume those immutable tables.
+V1/v2 whole-projection admission also refuses missing member/period rows, coherent
+column omissions, extra copied members and altered labels, precision, null reasons
+or disclosures. Complete historical Methods ordering remains accepted without
+rewriting retention. This validates captured financial members, not the separately
+uncaptured eligibility universe.
 
 ## Linked contribution primary (v3)
 

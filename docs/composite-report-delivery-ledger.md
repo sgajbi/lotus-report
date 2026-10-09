@@ -6,6 +6,41 @@ Feature: retained `composite_review.v1`, captured-return `composite_review.v2` a
 exclusive linked-analysis `composite_review.v3`.
 Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
+## Complete captured projection increment (not full acceptance)
+
+Existing v1/v2 cell-level lineage checks accepted ten coherent corrupt projections
+on qualified main `ee502f8b9151a5e82ed9c101463c2266c61976ee` (`340236`, exit 0):
+missing member rows, missing financial columns, precision 2→0, misleading
+contribution labels and false null reasons, each in both contracts.
+The same 30-test pack against an archive of that exact committed source demonstrates
+26 expected refusal failures (`0056c6`, exit 1, all `DID NOT RAISE`) and four valid
+compatibility passes. That baseline failure is diagnostic evidence, not acceptance.
+
+Whole-projection admission now reuses the existing canonical v1/v2 builders and
+shared primary source/authority checks. It compares complete captured financial
+member/period populations, column/value/pointer/display policies and Report facts.
+V2 no longer validates its primary using a fabricated empty-table v1 dataset.
+No source values, economics, schemas, fixture goldens, renderer contract or runtime
+are changed. Complete historical Methods ordering remains accepted only with the
+same exact source paths and retained ordinal bindings; validation never rewrites
+the stored dataset. The expected eligibility universe remains separately uncaptured.
+
+All 30 new controls pass (`2391b1`, exit 0), including 26 corrupt-projection refusals
+and four valid dataset/historical-order cases. The complete composite unit subset
+passes 251 tests (`7972fa`, exit 0), including registered lifecycle, accepted source
+fixtures and v1/v2/v3 compatibility. Native lint/typecheck/code-health/OpenAPI pass
+(`192c4c`, exit 0): 155 sources, eight high-complexity functions/max 28 and unchanged
+29 monetary allowances. Linux dependency closure remains enforced by remote CI.
+Offline current-validator compatibility passes all nine actual retained packages
+from historical v1 R4, v2 R5 and v3 R6, with all packet hashes/sizes unchanged
+(`28da13`, exit 0). The first helper assumed a newer manifest shape and failed
+(`8ad262`, exit 1); R4 stores hash plus size, and its actual file matched throughout.
+Both recorded manifest formats are verified explicitly; no packet is rewritten.
+No new financial capture, retired R6 resource recreation or foreign mutation occurs.
+This is bounded #417 correctness work; all original RPT-01–12 remain open.
+Authored wiki and repository practice are updated; existing skills/routing cover
+the slice without central promotion.
+
 ## Linked-analysis implementation increment (not full acceptance)
 
 The reviewed v3 proposal manifest is

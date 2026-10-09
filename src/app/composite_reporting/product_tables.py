@@ -18,6 +18,15 @@ from app.composite_reporting.product_contract import (
 def build_product_tables(
     primary: dict[str, Any], products: list[CapturedReturnProduct]
 ) -> dict[str, Any]:
+    dataset = project_product_tables(primary, products)
+    validate_composite_dataset(dataset)
+    return dataset
+
+
+def project_product_tables(
+    primary: dict[str, Any], products: list[CapturedReturnProduct]
+) -> dict[str, Any]:
+    """Pure existing v2 projection, also used for complete admission checks."""
     dataset = deepcopy(primary)
     dataset["contract_version"] = "composite_review.v2"
     dataset["source_products"] = [product.model_dump(mode="json") for product in products]
@@ -43,7 +52,6 @@ def build_product_tables(
                 rows=rows,
             ).model_dump(mode="json")
         )
-    validate_composite_dataset(dataset)
     return dataset
 
 
