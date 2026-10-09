@@ -1,7 +1,7 @@
 # Composite Review Semantic Contract
 
 Monthly source amendments use additive `composite_review.v6`, documented in
-[Monthly source-amendment JSON capture](composite-monthly-source-amendment.md).
+[Monthly source-amendment capture and XLSX packaging](composite-monthly-source-amendment.md).
 Source-v2 and definition-v1/v2 are independent axes. V1–v5 meanings remain frozen;
 amended eligibility is never joined to previously captured Performance aggregates.
 

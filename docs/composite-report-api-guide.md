@@ -245,12 +245,18 @@ transport. PostgreSQL integration adds isolated database and fresh-process reten
 proof when `REPORT_JOB_LEDGER_DATABASE_URL` is supplied. Neither establishes a live
 financial supplier or official publication authority. Full #417 remains open.
 
-## Exact pooled money-weighted primary
+## Monthly source amendments
 
-Ordinary-month source correction uses a separate JSON-only
+Ordinary-month source correction uses the
 [v6 eligibility variant](composite-monthly-source-amendment.md), under the existing
 `eligibility_selection` with explicit `selection_version: "v2"`. Definition version
 is independent. Historical untagged eligibility requests retain v4.
+Matching JSON and `.xlsx.request.json` examples share the same dataset. XLSX needs
+exact current v6 supportability, full-package preflight and persisted custody;
+unavailable support returns `503` before source capture. Package emission is component
+proof and does not establish joined Render/Archive or full #417 acceptance.
+
+## Exact pooled money-weighted primary
 
 Use the same `POST /reports/composite-reviews` with the exclusive typed
 [`pooled_selection`](../contracts/examples/composite-review.v5.original.request.json).

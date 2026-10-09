@@ -1,0 +1,42 @@
+{
+  "eligibility_selection": {
+    "selection_version": "v2",
+    "tenant_id": "synthetic-tenant",
+    "composite_id": "synthetic-composite",
+    "definition_version": "synthetic-definition",
+    "reporting_currency": "USD",
+    "period_start": "2026-09-01",
+    "period_end": "2026-09-30",
+    "months": [
+      {
+        "evidence_kind": "EVALUATED_ONLY",
+        "month": "2026-09",
+        "evaluation_revision": "synthetic.corrected.evaluation.r3",
+        "proposal_content_hash": "sha256:0d519a45b8b23a7118652d18f559668fe9a305fdbee9f242a9c37d6f142ee59c",
+        "proposal_response_digest": "sha256:2ae6c29d24d6d62f1133fe3d8e0c1cdf453c81be4c463e9787db8261d5c49b14",
+        "parent_membership_revision": "synthetic.corrected.membership.r2",
+        "parent_membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+        "source_cut_id": "synthetic-monthly-cut",
+        "lineage_receipts": [
+          {
+            "product_version": "v2",
+            "evaluation_revision": "synthetic.corrected.evaluation.r2",
+            "approval_content_hash": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a",
+            "receipt_content_hash": "sha256:675d7deb4f18a2b97f9cbd6cadd33f421af12317aded8792bbaf72ed0677c6d4",
+            "receipt_response_digest": "sha256:9177f0a2d78d5919f8961449c0a9ce0e490d92ef5fdfcefd511872a05515c455"
+          },
+          {
+            "product_version": "v1",
+            "evaluation_revision": "synthetic.original.evaluation.r1",
+            "approval_content_hash": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a",
+            "receipt_content_hash": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f",
+            "receipt_response_digest": "sha256:5a472c8b6e5d7a19dff0f8f0f4031dbe1a3ffc5289afa93041c264fdb013a573"
+          }
+        ]
+      }
+    ]
+  },
+  "requested_output_formats": [
+    "xlsx"
+  ]
+}

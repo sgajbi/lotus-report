@@ -1,8 +1,8 @@
-# Monthly source-amendment JSON capture
+# Monthly source-amendment capture and XLSX packaging
 
 Report consumes Manage's ordinary-month `SOURCE_CORRECTION` through the existing
 `POST /reports/composite-reviews`, durable worker and immutable snapshot. This
-increment is JSON-only and `NOT_ATTESTED`; full #417 remains open. No financial
+dataset is shared by JSON and XLSX and remains `NOT_ATTESTED`; full #417 stays open. No financial
 supplier qualification, bank IAM, publication authority or new runtime is implied.
 V6 contains source-correction eligibility evidence and supplies no TWR, MWR,
 dispersion, contribution or model-fee calculation. `report_facts.unavailable`
@@ -21,6 +21,11 @@ Historical requests omit `selection_version` and still select v4. Their serializ
 request, fingerprint, schema/examples, retrieval and technical rerender remain
 unchanged. A v2 request cannot omit its tag and silently become historical. No
 endpoint, parallel primary selector, database migration or template fallback is added.
+XLSX uses `render_package.v1`, `composite-review/v6` and `composite_review.v6`.
+The receiver implementations are qualified at Render `28ff812e` (including the
+global row-ordinal correction) and Archive `3ec80ca9`. Archive requires migration 019;
+deployments still need exact current v6 template/format supportability. A qualified
+implementation is eligible for integration; it does not establish joined delivery.
 
 ## Executable examples
 
@@ -30,6 +35,8 @@ endpoint, parallel primary selector, database migration or template fallback is 
 proposals, with approval/publication unavailable. `.source.json` bundles are
 controlled in-memory domain examples from qualified Manage main
 `545269b3d356630680da7c692d90613a5c28f99c`, not native HTTP source proof.
+Each definition/evidence variant also has a `.xlsx.request.json` client example.
+The frozen JSON examples and dataset schema are unchanged.
 
 From the Report checkout, PowerShell:
 
@@ -54,6 +61,10 @@ source evidence; they do not seed a producer. Explicit Manage reader enrollment 
 required. Order returns `202`; the ordinary worker captures the selected source.
 Retrieve `GET /reports/jobs/{report_job_id}/snapshot`. Identical retries reuse the
 job without recollection; changed content conflicts, foreign retrieval returns `404`.
+For XLSX, submit the matching `.xlsx.request.json` using the same headers and
+endpoint. The worker validates and retains the same dataset, then builds the
+existing package with exact source revision, selection, tenant/composite, period,
+currency and retention custody. Rendering and archiving use the existing lifecycle.
 
 ## Lineage dictionary
 
@@ -84,6 +95,9 @@ Report's smaller lineage bound refuses excess history instead of truncating it.
 Amendment rows use the declared claim/binding field order, preserving the published
 wire when JSON transports or PostgreSQL JSONB reorder object keys. Source arrays
 retain their original order; object ordering has no authority or hash meaning.
+Amendment row IDs are `m{month_index}:a{global_table_row_ordinal}`: the ordinal
+continues across months. A two-month example with 34 rows per month starts at
+`m0:a0` and `m1:a34`; receivers must not reset the ordinal for each month.
 
 ## Projection and availability
 
@@ -108,18 +122,27 @@ Worker failure retains evidence and does not create a valid data-ready dataset.
 
 ## Operation and proof boundaries
 
-Malformed selectors fail before durable intake. V6 XLSX orders return `503` with
-`composite_amendment_render_unavailable`; retained package construction also refuses.
-Render #352 and Archive #188 require explicit v6 contracts, identity and custody
-before XLSX support can be promoted. JSON does not prove downstream delivery.
-Any future v6 XLSX disclosure must retain this eligibility-only scope. Financial
+Malformed selectors fail before durable intake. V6 XLSX orders require exact current
+ready v6 support; otherwise admission returns `503` with
+`composite_product_render_unavailable` before Manage reads or durable intake.
+Persisted snapshot, accepted contract and independently derived revision/custody
+must agree before package construction. The whole package preflight includes all
+nine visible tables plus hidden CellEvidence, ColumnPolicy, ArtifactIdentity and
+PinnedData chunks; capacity/literal failures refuse before Render/Archive I/O.
+Retained package reconstruction uses the original dataset and source vector without
+Manage or Performance calls. Generic source-regeneration remains portfolio-only.
+The frozen dataset's conditional disclosure about requiring explicit receiver
+support remains intact. JSON or an emitted package does not prove downstream delivery.
+V6 XLSX retains the eligibility-only scope. Financial
 metrics and their availability belong to the separately governed financial family.
 
 From the Report checkout, in PowerShell or Bash:
 
 ```text
 python -m pytest tests/unit/composite_reporting/test_monthly_amendment.py -q
+python -m pytest tests/unit/composite_reporting/test_amendment_delivery.py -q
 python -m pytest tests/integration/test_composite_amendment_postgres_retention.py -q
+python -m pytest tests/integration/test_composite_amendment_package_retention.py -q
 ```
 
 Integration uses the repository's caller-owned/session-isolated PostgreSQL flow
@@ -127,3 +150,7 @@ when `REPORT_JOB_LEDGER_DATABASE_URL` is provided. Intake is registered in-proce
 ASGI; Manage transport is controlled fixture data. Actual PostgreSQL worker and
 separate-process reopening qualify Report persistence only. Existing immutable
 JSON snapshots carry v6 without a database migration.
+Package tests use an explicitly declining Render boundary: emitted producer bytes
+and native PostgreSQL fresh-process reconstruction are component proof only. Actual
+producer TCP, Render/Archive custody/current/retention and institutional acceptance
+require the separately reviewed bounded campaign. No runtime lease is implied.

@@ -1,6 +1,6 @@
 # Composite Review
 
-## JSON monthly source amendments (v6)
+## Monthly source amendments (v6)
 
 The existing `eligibility_selection` accepts explicit `selection_version: "v2"`
 for ordinary same-policy/population source correction. It retains complete
@@ -15,10 +15,16 @@ Amendment projections preserve their declared field and array order across JSONB
 object-key reordering, so retained snapshots revalidate without changing the wire.
 
 JSON uses registered intake/worker/snapshot retrieval; repeated requests retain the
-same job. V6 XLSX returns `503`; Render #352 and Archive #188 must explicitly support
-v6 before document delivery. Controlled Manage transport plus actual Report PostgreSQL
+same job. V6 XLSX requires exact current v6 readiness or returns `503` before source
+reads/intake. The existing worker packages the same dataset, full bounded lineage,
+persisted revision/custody and all visible/hidden workbook overhead. Retained package
+replay performs no source calls. Amendment ordinals remain global across months;
+34 first-month rows make the next start `m1:a34`. Render `28ff812e` and Archive
+`3ec80ca9` provide the receiver components; Archive migration 019 is required.
+Controlled Manage transport plus actual Report PostgreSQL
 and fresh-process reopening prove Report persistence, not producer TCP, institutional
-authority or full #417. See [the complete dictionary, examples and operator guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-monthly-source-amendment.md).
+authority or full #417. Emitted packages are not joined delivery or acceptance.
+See [the complete dictionary, JSON/XLSX examples and operator guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-monthly-source-amendment.md).
 
 ## Controlled monthly eligibility profile (v4)
 
