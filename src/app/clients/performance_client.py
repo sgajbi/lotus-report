@@ -51,6 +51,23 @@ class PerformanceClient:
         self._clock = clock or time.monotonic
         self._sleeper = sleeper
 
+    async def get_composite_twr(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
+        """Read an explicitly selected retained composite vector; no latest fallback.
+
+        Selection and response admission belong to composite_reporting. This
+        adapter only transmits the exact request to the registered owner API.
+        """
+        return await post_with_retry(
+            url=f"{self._base_url}/composites/twr",
+            timeout_seconds=self._timeout_seconds,
+            json_body=payload,
+            headers=_tenant_headers(admitted_tenant_id),
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
+
     async def get_workspace_summary(
         self, payload: dict[str, Any], *, admitted_tenant_id: str
     ) -> tuple[int, dict[str, Any]]:

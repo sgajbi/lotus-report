@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from app.clients.render_client import RenderClient
 from app.config import settings
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
@@ -149,7 +150,8 @@ class PortfolioReviewRenderOrchestrationService:
         self, job: ReportJobLedgerRecord
     ) -> ReportJobLedgerRecord | RenderWaiting:
         started_at = perf_counter()
-        if "pdf" not in job.requested_output_formats:
+        output_format = document_output_format(job.requested_output_formats)
+        if output_format is None:
             return job
         # One guard: terminal statuses (archived, completed_with_warnings,
         # failed, cancelled) and anything else non-actionable fall through
@@ -158,7 +160,7 @@ class PortfolioReviewRenderOrchestrationService:
             return job
 
         snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
-        render_job_id = job.render_job_id or f"rdr_{job.job_id}_pdf"
+        render_job_id = job.render_job_id or f"rdr_{job.job_id}_{output_format}"
         if job.status in {"rendering", "completed", "archiving"}:
             # Resolution BEFORE any package recomposition: recovering an
             # existing render must never depend on this deployment still
@@ -188,7 +190,7 @@ class PortfolioReviewRenderOrchestrationService:
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,
                 render_job_id=render_job_id,
-                output_format="pdf",
+                output_format=output_format,
                 template_id=str(built["template_id"]),
                 template_version=str(built["template_version"]),
             )
@@ -243,7 +245,7 @@ class PortfolioReviewRenderOrchestrationService:
                     correlation_id=job.correlation_id,
                     trace_id=job.trace_id,
                     render_job_id=str(response_payload.get("render_job_id") or render_job_id),
-                    output_format="pdf",
+                    output_format=output_format,
                     template_id=template_id,
                     template_version=template_version,
                     template_publication=_optional_str(
@@ -370,6 +372,7 @@ class PortfolioReviewRenderOrchestrationService:
                 # it, and governed rendering fails closed without it.
                 snapshot_id=snapshot.snapshot_id,
                 report_revision_id=snapshot.report_revision_id,
+                snapshot_record=snapshot,
             )
         except ValueError as exc:
             failed_job = self._job_ledger.mark_failed(

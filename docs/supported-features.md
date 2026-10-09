@@ -100,6 +100,24 @@ automatic history rewrite. See `docs/operations/archive-lineage-acknowledgement.
 client/parser and registered socket tests with durable SQLite establish consumer admission and
 recovery, while live Archive storage and historical repair completion remain separate evidence.
 
+## Composite Reporting Foundation (#417)
+
+The internal `POST /reports/composite-reviews` and catalogue family capture an
+exact retained composite calculation as JSON through the shared job, snapshot and
+revision machinery. `src/app/composite_reporting/`, its owning unit tests and
+`tests/integration/test_composite_postgres_retention.py` provide admission,
+controlled-source API/worker/PostgreSQL and separate-process retention proof.
+The schema/example and source-backed canonical cell semantics are documented in
+`docs/composite-report-semantic-contract.md` and `wiki/Composite-Review.md`.
+
+This is an internal foundation, not a certified composite reporting product.
+The prepared candidate workbook composer uses persisted revision identity and
+exclusive composite Archive custody; production catalogue acceptance remains
+JSON only. Real Performance/Render/Archive acceptance, workbook reconciliation,
+original/corrected/rerender custody, complete membership/risk/restatement products,
+official authority, GIPS and enterprise capacity remain open under #417 and the
+supplier issues. No RPT-01–12 completion is claimed.
+
 ## Planned RFC-0104 Feature Candidates
 
 These rows are planning markers for future surfaces, not shipped product capability. RFC-0104

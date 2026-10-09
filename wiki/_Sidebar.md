@@ -14,6 +14,8 @@
 
 [Report Ordering](Report-Ordering)
 
+[Composite Review](Composite-Review)
+
 [Proof-Pack Report](Proof-Pack-Report)
 
 [Rebalance Wave Report](Rebalance-Wave-Report)

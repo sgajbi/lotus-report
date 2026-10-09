@@ -31,6 +31,7 @@ document itself.
 | Outcome review | A review-window document for a completed portfolio outcome, composed from the manage-owned bounded report input | Implemented on the shared job pipeline; consumes DPM evidence, never recomputes it |
 | Proof pack | A rebalance proof document from the manage- or idea-owned proof-pack report input | Implemented on the shared job pipeline |
 | Rebalance wave | A wave execution document from the manage-owned wave report input | Implemented on the shared job pipeline |
+| Composite review dataset | Exact retained Performance selection, source values and semantic tables with unavailable products declared | Internal JSON foundation; Excel and official publication remain unavailable pending supplier and lifecycle acceptance under #417 |
 | Idea evidence pack | Intake, materialization and versioned recovery of reviewed opportunity evidence | Implemented internal foundation, **not certified**; publication and external support remain blocked |
 
 Implemented is not certified: the

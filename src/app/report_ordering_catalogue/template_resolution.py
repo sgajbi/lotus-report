@@ -6,7 +6,7 @@ path from a report type to that governed pair - the render envelope never
 invents a template version, and no second template registry exists.
 
 The resolved pair is persisted on the report job at ACCEPTANCE for
-PDF-capable jobs: template selection is an immutable job fact. A deployment
+document jobs: template selection is an immutable job fact. A deployment
 that changes a family's default template version changes only jobs accepted
 after it; every existing job renders, recovers, and rerenders on the exact
 presentation contract it was accepted under.
@@ -20,6 +20,7 @@ from app.report_ordering_catalogue.definitions import (
     REPORT_FAMILY_DEFINITIONS,
     ReportFamilyDefinition,
 )
+from app.reporting_document_format import document_output_format
 
 
 def resolve_report_family(report_type: str) -> ReportFamilyDefinition:
@@ -52,11 +53,11 @@ def accepted_template_identity(
 ) -> tuple[str | None, str | None]:
     """The template pair to persist at job acceptance.
 
-    Only a PDF-capable job binds a presentation contract; a JSON-only job
+    Only a document job binds a presentation contract; a JSON-only job
     carries none.
     """
 
-    if "pdf" not in (output_formats or ()):
+    if document_output_format(output_formats) is None:
         return None, None
     return resolve_report_template(report_type)
 

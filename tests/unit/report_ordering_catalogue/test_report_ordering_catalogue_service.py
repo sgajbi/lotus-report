@@ -99,6 +99,7 @@ async def test_catalogue_maps_business_configuration_from_ready_sources() -> Non
         "proof_pack",
         "rebalance_wave",
         "outcome_review",
+        "composite_review",
     ]
     portfolio_review = response.report_families[0]
     assert portfolio_review.business_label == "Portfolio review report"
@@ -139,6 +140,11 @@ async def test_catalogue_keeps_structured_data_ready_when_render_is_unavailable(
     for family in response.report_families:
         outputs = {output.format_id: output for output in family.output_formats}
         assert outputs["json"].state == "ready"
+        if family.report_family_id == "composite_review":
+            assert set(outputs) == {"json"}
+            assert family.client_release_posture == "internal_control_only"
+            assert family.supportability.state == "ready"
+            continue
         assert outputs["pdf"].state == "unavailable"
         assert outputs["pdf"].reason_code == "render_metadata_unavailable"
         assert family.supportability.state == "partial"
@@ -269,6 +275,9 @@ async def test_unreadable_template_evidence_fails_every_pdf_family_visible():
     catalogue = await service.get_catalogue()
 
     for item in catalogue.report_families:
+        if item.report_family_id == "composite_review":
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            continue
         pdf = _pdf_format(item)
         assert pdf.state == "unavailable"
         assert pdf.reason_code == "render_templates_unavailable"
@@ -305,6 +314,9 @@ async def test_a_malformed_template_projection_fails_visible_like_an_unreachable
     catalogue = await service.get_catalogue()
 
     for item in catalogue.report_families:
+        if item.report_family_id == "composite_review":
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            continue
         assert _pdf_format(item).reason_code == "render_templates_unavailable"
 
 
@@ -345,5 +357,8 @@ async def test_a_degraded_runtime_is_stated_before_template_verification():
     # Runtime posture short-circuits: the families state the runtime fact and
     # never pretend template evidence was consulted.
     for item in catalogue.report_families:
+        if item.report_family_id == "composite_review":
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            continue
         assert _pdf_format(item).state == "partial"
         assert _pdf_format(item).reason_code == "render_supportability_draining"

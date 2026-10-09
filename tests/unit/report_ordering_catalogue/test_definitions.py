@@ -17,6 +17,7 @@ def test_report_family_definitions_are_unique_and_implementation_backed() -> Non
         "proof_pack",
         "rebalance_wave",
         "outcome_review",
+        "composite_review",
     ]
     assert len(family_ids) == len(set(family_ids))
     assert len(report_types) == len(set(report_types))
