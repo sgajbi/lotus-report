@@ -133,8 +133,30 @@ packet is independently accepted for complete schema, projection and real Report
 PostgreSQL identity, including original/corrected retained source hashes and
 read-only process reopening. Financial transport, v3 capability and the declining
 Render503 boundary remain controlled. This establishes no actual Render/Archive
-completion or archived rerender. Task-owned PostgreSQL was backed up and retired
+completion or archived rerender in that consumer-only phase. Task-owned PostgreSQL was backed up and retired
 after independent reads; the immutable packet and captured identities remain.
 See the delivery ledger for exact commits, receipt hashes, native checks and the
 eight non-runtime mixed-EOL correspondence limits. Downstream v3 consumers remain
 separate owner deliveries under Render #347 and Archive #185.
+
+The separately admitted R6 joined phase now qualifies actual v3 Render/Archive HTTP
+custody for original, corrected and retained-original technical rerender workbooks.
+Each downloaded workbook independently reconciles all 115 canonical/display cells,
+40 policies and complete seven-table source projection across 11 physical sheets.
+All 60 corruption controls refuse invalid evidence. Technical rerender preserves
+the original snapshot and makes no source request; the complete phase uses two
+recorded Performance source calls and three actual Render submissions.
+
+Root independently accepts live custody, tenant/current-chain checks and complete
+Report PostgreSQL state. Actual isolated backup/restore in the same owned Report
+container proves equality of all 14 public tables, with independent Root reopening
+and unchanged live state. After explicit authorization and ownership/quiescence
+rechecks, Report's exact container/volume are retired and port closure verified;
+both backups and all sealed artifacts remain retained. No restored HTTP or
+recovery-time qualification is asserted. The failed initial collector and accepted
+resume remain disclosed in the
+[R6 delivery ledger](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-delivery-ledger.md#current-linked-evidence-r6-actual-http-custody-and-isolated-restore).
+
+This remains controlled synthetic/recorded Performance transport, local
+trusted-header scope and calculated `NOT_ATTESTED` evidence. Institutional authority,
+enterprise capacity/recovery, uncaptured products and full #417/RPT-01–12 remain open.

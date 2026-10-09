@@ -123,9 +123,86 @@ The natural main releasability run `37916873303` passes all nine jobs at exact
 build. This qualifies the bounded Report implementation; it does not qualify the
 controlled downstream boundaries as a completed document flow.
 
-Actual v3 Render/Archive HTTP completion, Excel acceptance, institutional authority
-and full RPT-01–12 acceptance remain unqualified here. Render #347 and Archive #185
-own their consumer delivery; a new joined runtime phase needs its own admission.
+That consumer-only packet does not qualify actual downstream completion. The
+separately admitted joined phase below establishes bounded v3 HTTP custody;
+institutional authority and full RPT-01–12 acceptance remain open.
+
+### Current linked evidence: R6 actual HTTP custody and isolated restore
+
+Phase `composite-linked-http-20261009-r6` binds Report main
+`7fc0dbc6ce3a81fedb9bcf3d9b6e5ec22cd03648`, Render main
+`535d0d5f87fd2f8bd701ba8707b343022060d030` and Archive main
+`f75adf60873b06ae4cea90fff8ebf4ac21cb5faa`. Replacement Root admission is
+`9575d76de4514f8193dbe60e3be460b6b5a095cb6d32a1cc52621383610ec417`.
+It follows Render's protected fix for required column scale/rounding fields;
+historical startup bindings remain preserved rather than rewritten.
+
+Registered Report admission and the actual worker retain two linked snapshots in
+owned PostgreSQL, replaying exactly the accepted controlled synthetic Performance
+pair. No new financial supplier capture occurs. Actual Render/Archive HTTP produces
+and downloads original, corrected and retained-original technical rerender XLSX.
+Rerender consumes the original snapshot without a source call. Across all attempts
+there are exactly two source calls and three Render submissions. Existing automatic
+O→T correction is preserved; controlled QA T→C establishes the financial chain.
+Tenant/caller refusal, idempotent replay and correction fork/cycle refusal are recorded.
+
+The first collector failed after original completion because snapshot factual
+digest uses a known `sha256:` prefix while custody carries bare hex. That diagnostic
+packet remains immutable. Root admitted strict boundary normalization and reuse of
+the existing original, with no repeated original worker or financial request.
+The successful resumed 52-file packet has manifest SHA-256
+`25a991954fcaed28a76f82daace59471cc362855a84e4a9b4b4b26662009d2bb`
+(`fddb5e`, exit 0). Original/corrected/rerender workbook hashes are respectively
+`4becf3da6d37f11aac6c103c7589f374be04eec153ea1d5a0b203e3d2082ee25`,
+`4f35b62ca59228fef7a7bf8c803059fcdf2efaaa34c1c517bfa991ed033fbd69` and
+`b5670f0dbb29eb527c17990a3b69a8783fadc94c07e571e2218dff3afe3ac31e`.
+
+Independent frozen v4 raw OOXML reader manifest is
+`cb9cce9b15fd5fd5e4a47c8d984aa698a6042d84adbd6cde540bf0885243f6ef`.
+Each actual workbook reconciles 115 canonical and 115 display cells, 40 column
+policies, all seven tables across 11 physical sheets, complete pinned data/source
+authority, source pointers and artifact identity. All 60 negative controls refuse
+corrupt projections or workbook content. The reader neither writes workbooks nor
+recalculates financial figures and imports no Report/Render implementation.
+Strict digest controls accept only bare lowercase 64-character hex or its exact
+`sha256:` encoding, refusing malformed/arbitrary prefixes and changed content.
+
+Root independently accepts all three workbooks, actual Archive reads and fresh
+read-only Report PostgreSQL state (`4dd41e`, exit 0), receipt SHA-256
+`fa1e344096e6fdc0aac094b0caa724bfac7a7e77323608016cfce8b32c322822`.
+All 14 public tables, two upstream calls and actual retained snapshots match.
+Archive read access legitimately appends audit rows; financial and relationship
+rows remain unchanged.
+
+Actual custom PostgreSQL dump and isolated `pg_restore` into a new database in the
+same owned Report container pass (`ffc060`, exit 0). Separate restored/live readers
+prove complete equality of all 14 public tables against the frozen live baseline
+and unchanged live state. Restore manifest SHA-256 is
+`7032610062c98f05b5457802749201b83287e492c8fdae587060f339f884ad7f`;
+the 72,068-byte successfully restored dump has SHA-256
+`4e1ee5d270e17b25e65ea609a824ee5e642af104d1e84d4e7c216ad405bcf4df`.
+Root independently reopens both databases and accepts complete equality
+(`f6f8eb`, exit 0), receipt
+`373a5aa3f8acc99ff5751a5b50fea7232dade84cfb63c18e53d0f16bab65dffc`.
+No Report PostgreSQL restart, restored HTTP delivery or recovery-time claim is made.
+
+After that explicit Root authorization, immediate source/ownership/quiescence and
+sealed-packet rechecks precede exact owned retirement (`cfd72d`, exit 0).
+The isolated restore database is dropped; Report container/volume absence and port
+54900 closure are verified. The final consistent 72,068-byte backup is retained,
+SHA-256 `efd302a4dc82d9c9cf3c1e65da88bd45a3cc60f22a18162ad7bd09af24818678`.
+Retirement manifest is
+`cb2ca003bdf5368edb44fe88c9d9446ea44a5d39e52f3392c46635e97a0fb1d6`.
+No foreign resource is modified. Historical r4/R5 packets/readers and the failed
+first R6 collector remain immutable.
+
+This advances bounded RPT-01/RPT-06 consumer evidence. Controlled synthetic/recorded
+financial transport, local trusted-header scope and calculated `NOT_ATTESTED`
+qualification remain explicit. Institutional authority, enterprise recovery and
+capacity, uncaptured products, all twelve RPT families and full #417 remain open.
+Wiki source is updated in this slice; repository context records the current
+boundary. Existing skills and routing already cover this flow; no central promotion
+or routing change is needed.
 
 ## Current Evidence: Six-Year Registered Delivery
 
