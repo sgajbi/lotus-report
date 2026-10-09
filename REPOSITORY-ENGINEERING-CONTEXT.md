@@ -602,6 +602,20 @@ its rollout acceptance land.
 The commands above are the entry points; these are the expectations they exist to satisfy.
 Every governed lane must be able to fail for a real reason, and be proven to.
 
+Python base/audit/constraint-refresh images and PostgreSQL service images use immutable
+Docker Official Images aliases under `public.ecr.aws/docker/library/`, selected by the
+platform-owned acquisition mapping for lotus-platform#945. There is no mutable-tag or
+Docker Hub fallback. `tests/unit/test_container_image_acquisition.py` checks every actual
+Dockerfile, Make, hosted-service and Compose acquisition, including representative refusals.
+Hosted lanes confirm actual acquired repository digests/platform and bind PostgreSQL's service
+container image ID through `scripts/verify_ci_image_acquisition.py`; it never pulls or falls back.
+The reusable `image-acquisition.yml` calls the existing Platform validator at an immutable
+qualified revision before any required PostgreSQL service starts. Each Python/PostgreSQL tuple
+has its own output; `needs` binds service images and Python audit/build inputs to successful
+admission. Dockerfile labels retain original publisher identity separately from distribution.
+Source/mirror manifest equivalence is distinct from hosted acquisition and exact-main
+qualification; changing the registry does not qualify an earlier failed revision.
+
 Gate reachability is itself enforced: `tests/unit/test_gate_reachability.py` requires every
 gate-shaped target to be reachable from `check`/`ci` **and** executed by both `pr-merge-gate.yml`
 and `main-releasability.yml` independently — a lane missing from either allows an unvalidated

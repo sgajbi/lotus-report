@@ -19,6 +19,12 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
+  python-image:
+    uses: ./.github/workflows/image-acquisition.yml
+    with:
+      source-image: docker.io/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+      distribution-image: public.ecr.aws/docker/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
   workflow-lint:
     name: Feature Lane / Workflow Lint
     runs-on: ubuntu-latest
@@ -28,7 +34,10 @@ jobs:
 
   lint-typecheck-security:
     name: Feature Lane / Lint Typecheck Security
+    needs: [python-image]
     runs-on: ubuntu-latest
+    env:
+      PYTHON_IMAGE: ${{ needs.python-image.outputs.image }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -47,6 +56,8 @@ jobs:
         run: make openapi-gate
       - name: Security Audit
         run: make security-audit
+      - name: Verify Acquired Audit Image
+        run: python scripts/verify_ci_image_acquisition.py --reference "$PYTHON_IMAGE"
 
   unit-tests:
     name: Feature Lane / Tests (unit)

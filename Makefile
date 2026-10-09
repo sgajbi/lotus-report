@@ -4,6 +4,7 @@ TEST_SUITE ?= unit
 TEST_PATH ?= tests/$(TEST_SUITE)
 COVERAGE_INPUTS ?= .coverage.unit .coverage.integration .coverage.e2e
 COVERAGE_FAIL_UNDER ?= 97
+PYTHON_IMAGE ?= public.ecr.aws/docker/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 install:
 	python -m pip install --upgrade pip
@@ -82,7 +83,7 @@ security-audit:
 	# extra before scanning makes the audit refuse a direct or extra-derived
 	# package that is missing from the recorded closure; pip-audit never receives
 	# an incomplete pin set.
-	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/src:ro" python:3.12-slim bash -c "mkdir -p /tmp/report-audit/docs/standards && cp /src/pyproject.toml /src/constraints.txt /tmp/report-audit && cp -r /src/src /src/scripts /tmp/report-audit && cp /src/docs/standards/dependency-vulnerability-exceptions.json /tmp/report-audit/docs/standards && cd /tmp/report-audit && python -m pip install --quiet setuptools -c constraints.txt && python -m pip install --quiet --no-build-isolation '.[dev]' -c constraints.txt && python scripts/run_security_audit.py --repo-root /tmp/report-audit"
+	MSYS_NO_PATHCONV=1 docker run --rm --platform linux/amd64 -v "$(CURDIR):/src:ro" "$(PYTHON_IMAGE)" bash -c "mkdir -p /tmp/report-audit/docs/standards && cp /src/pyproject.toml /src/constraints.txt /tmp/report-audit && cp -r /src/src /src/scripts /tmp/report-audit && cp /src/docs/standards/dependency-vulnerability-exceptions.json /tmp/report-audit/docs/standards && cd /tmp/report-audit && python -m pip install --quiet setuptools -c constraints.txt && python -m pip install --quiet --no-build-isolation '.[dev]' -c constraints.txt && python scripts/run_security_audit.py --repo-root /tmp/report-audit"
 
 # Equality-banked code-health thresholds: each equals today's measurement exactly, so
 # any regression fails and any improvement is banked by lowering the bound in the
@@ -115,7 +116,7 @@ dependency-constraints-gate:
 # Refresh runs in the lane image so the recorded closure stays Linux-resolved;
 # rerun `make security-audit` against the refreshed closure in the SAME slice.
 constraints-refresh:
-	docker run --rm -v "$(CURDIR):/src:ro" -w /tmp python:3.12-slim bash -c "mkdir /tmp/build-src && cp /src/pyproject.toml /tmp/build-src && cp -r /src/src /tmp/build-src && cd /tmp/build-src && pip install --quiet --upgrade pip setuptools && pip install --quiet --no-build-isolation -e '.[dev]' && pip install --quiet pre-commit && { pip freeze --exclude-editable; python -c 'from importlib.metadata import version; print(\"setuptools==\" + version(\"setuptools\"))'; } | sort -fu" > constraints.txt
+	docker run --rm --platform linux/amd64 -v "$(CURDIR):/src:ro" -w /tmp "$(PYTHON_IMAGE)" bash -c "mkdir /tmp/build-src && cp /src/pyproject.toml /tmp/build-src && cp -r /src/src /tmp/build-src && cd /tmp/build-src && pip install --quiet --upgrade pip setuptools && pip install --quiet --no-build-isolation -e '.[dev]' && pip install --quiet pre-commit && { pip freeze --exclude-editable; python -c 'from importlib.metadata import version; print(\"setuptools==\" + version(\"setuptools\"))'; } | sort -fu" > constraints.txt
 	@echo "Closure refreshed from the lane image; now run 'make security-audit' in the same slice."
 
 code-health-gates: complexity-gate source-size-gate dead-code-gate dependency-hygiene-gate dependency-constraints-gate
@@ -140,7 +141,7 @@ ci-local:
 	python scripts/run_isolated_ci.py
 
 docker-build:
-	docker build -t lotus-report:ci-test .
+	docker build --platform linux/amd64 --build-arg PYTHON_IMAGE="$(PYTHON_IMAGE)" -f Dockerfile -t lotus-report:ci-test .
 
 clean:
 	python -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in ['.pytest_cache', '.ruff_cache', '.mypy_cache']]; [pathlib.Path(p).unlink(missing_ok=True) for p in ['.coverage', '.coverage.unit', '.coverage.integration', '.coverage.e2e']]"

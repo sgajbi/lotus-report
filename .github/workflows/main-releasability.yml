@@ -33,6 +33,20 @@ env:
   PYTHON_VERSION: "3.12"
 
 jobs:
+  python-image:
+    needs: [exact-revision-assertion]
+    uses: ./.github/workflows/image-acquisition.yml
+    with:
+      source-image: docker.io/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+      distribution-image: public.ecr.aws/docker/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
+  postgres-image:
+    needs: [exact-revision-assertion]
+    uses: ./.github/workflows/image-acquisition.yml
+    with:
+      source-image: docker.io/library/postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+      distribution-image: public.ecr.aws/docker/library/postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+
   exact-revision-assertion:
     name: Main Releasability / Exact Revision Assertion
     runs-on: ubuntu-latest
@@ -66,11 +80,14 @@ jobs:
 
   lint-typecheck-security:
     name: Main Releasability / Lint Typecheck Security
-    needs: [exact-revision-assertion]
+    needs: [exact-revision-assertion, python-image, postgres-image]
     runs-on: ubuntu-latest
+    env:
+      PYTHON_IMAGE: ${{ needs.python-image.outputs.image }}
+      POSTGRES_IMAGE: ${{ needs.postgres-image.outputs.image }}
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ${{ needs.postgres-image.outputs.image }}
         env:
           POSTGRES_DB: lotus_report
           POSTGRES_USER: lotus_report
@@ -78,6 +95,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --platform linux/amd64
           --health-cmd "pg_isready -U lotus_report -d lotus_report"
           --health-interval 5s
           --health-timeout 5s
@@ -103,8 +121,12 @@ jobs:
           REPORT_JOB_LEDGER_DATABASE_URL: postgresql://lotus_report:lotus_report@localhost:5432/lotus_report
           REPORT_JOB_LEDGER_DATABASE_IS_ISOLATED: "true"
         run: make migration-smoke
+      - name: Verify Acquired PostgreSQL Service
+        run: python scripts/verify_ci_image_acquisition.py --reference "$POSTGRES_IMAGE" --container-id '${{ job.services.postgres.id }}'
       - name: Security Audit
         run: make security-audit
+      - name: Verify Acquired Audit Image
+        run: python scripts/verify_ci_image_acquisition.py --reference "$PYTHON_IMAGE"
       - name: Code Health Gates
         run: make code-health-gates
       - name: Check Out Platform Domain Contracts
@@ -120,11 +142,13 @@ jobs:
 
   test-suites:
     name: Main Releasability / Tests (${{ matrix.suite }})
-    needs: [lint-typecheck-security]
+    needs: [lint-typecheck-security, postgres-image]
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_IMAGE: ${{ needs.postgres-image.outputs.image }}
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ${{ needs.postgres-image.outputs.image }}
         env:
           POSTGRES_DB: lotus_report
           POSTGRES_USER: lotus_report
@@ -132,6 +156,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
+          --platform linux/amd64
           --health-cmd "pg_isready -U lotus_report -d lotus_report"
           --health-interval 5s
           --health-timeout 5s
@@ -156,6 +181,8 @@ jobs:
         run: make install
       - name: Verify Dependencies
         run: python -m pip check
+      - name: Verify Acquired PostgreSQL Service
+        run: python scripts/verify_ci_image_acquisition.py --reference "$POSTGRES_IMAGE" --container-id '${{ job.services.postgres.id }}'
       - name: Run tests with coverage data
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
@@ -202,8 +229,10 @@ jobs:
 
   docker-build:
     name: Main Releasability / Validate Docker Build
-    needs: [coverage-gate]
+    needs: [coverage-gate, python-image]
     runs-on: ubuntu-latest
+    env:
+      PYTHON_IMAGE: ${{ needs.python-image.outputs.image }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

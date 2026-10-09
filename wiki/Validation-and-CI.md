@@ -13,6 +13,48 @@ Releasability run, and neither establishes deployment or production operation.
 | Audit dependencies | `make security-audit` | Linux constrained-closure scan used by Feature, PR and Main lanes. |
 | Audit a merged revision | `gh run list --commit <full-sha>` | Exact-main CI evidence, not deployment proof. |
 
+## Container image acquisition
+
+Python base, Linux audit and constraint-refresh images, plus hosted and Compose PostgreSQL
+services, use reviewed immutable Docker Official Images aliases in Public ECR. The platform
+mapping is governed by [lotus-platform#945](https://github.com/sgajbi/lotus-platform/issues/945).
+The digest pins select the same manifest bytes verified at the source registry and mirror;
+there is no tag fallback. Dependency constraints, security scanning, migration checks, test
+suites, coverage and Docker-build gates still run in their existing lanes.
+
+`.github/workflows/image-acquisition.yml` runs the existing Platform technology-governance
+validator from an immutable qualified Platform revision in a separate job with no service
+containers. Python and PostgreSQL each submit their own original-source/distribution/digest
+tuple and verify the current manifest plus Linux/amd64 child before emitting an image output.
+Service jobs consume that successful output before GitHub initializes PostgreSQL. Audit and
+build jobs pass the admitted Python output through `PYTHON_IMAGE`; Docker builds use the fixed
+repository `Dockerfile`. An empty or failed admission cannot fall back to a source tag.
+
+The built image preserves the original Docker Official Images identity in
+`org.opencontainers.image.base.name` and `.base.digest`, separately from the actual acquisition
+alias in `io.lotus.image.distribution`. Local Make and Compose defaults remain the same immutable
+pins; those defaults alone establish neither a current registry check nor a hosted qualification.
+
+Hosted lanes also run `scripts/verify_ci_image_acquisition.py`: PostgreSQL checks bind the
+actual service container to the acquired image ID, and post-audit checks require the requested
+repository digest and Linux/amd64 platform. Only image metadata and the container image ID are
+read; container environment and credentials are excluded. Missing or mismatched metadata fails
+the lane. Docker/GitHub still fail required acquisition before checkout when a registry is
+unavailable, unauthorized or rate limited; this verifier performs no pull, retry or fallback.
+
+The repository's image-acquisition unit checks inspect every actual image location and reject
+missing inputs, mutable references, unknown registries, changed digests and added fallbacks.
+Run them from the `lotus-report` repository root on PowerShell or Bash:
+
+```text
+python -m pytest tests/unit/test_container_image_acquisition.py tests/unit/test_ci_image_acquisition.py -q
+```
+
+Manifest equivalence proves content identity. The hosted jobs must still acquire the images,
+complete the audit and build, and qualify the exact merged revision. Report's original
+`90aad14ebf7ae17fa2b4d5a7c989d7efd37f9eb8` main cohort remains failed from unauthenticated
+Docker Hub pulls; a qualified descendant is separate evidence.
+
 ## Lane model
 
 `lotus-report` uses:
