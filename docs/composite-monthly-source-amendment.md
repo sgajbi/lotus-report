@@ -81,6 +81,9 @@ and existing canonical GETs. Evaluated-only also reads the exact proposal. Full 
 wires and source content/response digests survive; revision identity includes the
 selected and predecessor receipts. Existing 8 MiB whole-capture/dataset bounds apply.
 Report's smaller lineage bound refuses excess history instead of truncating it.
+Amendment rows use the declared claim/binding field order, preserving the published
+wire when JSON transports or PostgreSQL JSONB reorder object keys. Source arrays
+retain their original order; object ordering has no authority or hash meaning.
 
 ## Projection and availability
 

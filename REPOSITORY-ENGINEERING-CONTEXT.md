@@ -734,7 +734,10 @@ definition-v1/v2; exact bounded predecessor/original receipt graphs and canonica
 parent publication are retained. Ordinary same-policy/population corrections only;
 no Performance join, staged roots, cascade or v6 XLSX fallback. New cohesive
 `composite_reporting/amendment_*` modules own this concern; the existing runtime,
-worker and snapshots remain shared. See `docs/composite-monthly-source-amendment.md`
+worker and snapshots remain shared. Canonicalize claim fields before ordered table
+projection: PostgreSQL JSONB does not preserve JSON object insertion order. Preserve
+source arrays and revalidate actual fresh-process PostgreSQL payloads.
+See `docs/composite-monthly-source-amendment.md`
 for executable requests, availability/lineage dictionary and focused test commands.
 
 V4 uses an exclusive `eligibility_selection` in the

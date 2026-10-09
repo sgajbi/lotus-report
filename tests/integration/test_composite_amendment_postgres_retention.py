@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from app.composite_reporting.amendment_contract import CompositeAmendmentReportData
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from tests.integration.postgres_adapter_ownership import own_postgres_adapter
@@ -44,6 +45,12 @@ async def test_amendment_registered_postgres_capture_and_fresh_process_retention
         reopened = json.loads(process.stdout)
         assert reopened["pid"] != os.getpid()
         assert reopened["snapshot"] == expected
+        # JSONB reorders object keys; retained custody must still revalidate without
+        # changing the exact captured tables or ordered source arrays.
+        payload = reopened["snapshot"]["snapshot_payload"]
+        assert (
+            CompositeAmendmentReportData.model_validate(payload).model_dump(mode="json") == payload
+        )
 
 
 @pytest.mark.asyncio

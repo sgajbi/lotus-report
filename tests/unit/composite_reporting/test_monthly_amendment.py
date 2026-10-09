@@ -12,7 +12,10 @@ from pydantic import ValidationError
 
 from app.composite_reporting.admission import CompositeEvidenceRefused
 from app.composite_reporting.amendment_admission import require_link, require_projected_decisions
-from app.composite_reporting.amendment_contract import composite_amendment_report_schema
+from app.composite_reporting.amendment_contract import (
+    CompositeAmendmentReportData,
+    composite_amendment_report_schema,
+)
 from app.composite_reporting.amendment_tables import build_amendment_dataset
 from app.composite_reporting.models import CompositeReviewJobRequest
 from app.composite_reporting.render_package import build_composite_render_package
@@ -217,6 +220,19 @@ def test_schema_and_executable_expected_outputs_are_exact():
             Draft202012Validator(schema).validate(expected)
             selection, months = example(version, evaluated=evaluated)
             assert expected == build_amendment_dataset(selection, months)
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("evaluated", [False, True])
+def test_retained_json_object_key_order_does_not_change_projection(version, evaluated):
+    selection, months = example(version, evaluated=evaluated)
+    captured = build_amendment_dataset(selection, months)
+    reordered = json.loads(json.dumps(captured, sort_keys=True))
+    assert (
+        CompositeAmendmentReportData.model_validate(reordered).model_dump(mode="json") == captured
+    )
+    reordered_source = json.loads(json.dumps(months, sort_keys=True))
+    assert build_amendment_dataset(selection, reordered_source) == captured
 
 
 async def exercise_amendment_lifecycle(

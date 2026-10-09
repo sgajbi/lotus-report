@@ -22,6 +22,13 @@ pytest and retired its owned container. The corrected native proof checks Docker
 retires the helper-owned test container. This is test evidence, not R8 recovery;
 the frozen failed R8 artifacts and detached Report4af remain unchanged.
 
+Independent post-merge review of #432 identified object insertion order in
+amendment projection as unsafe across PostgreSQL JSONB. Four key-reordering
+counterexamples failed custody validation despite unchanged semantic source and
+tables. The follow-up canonicalizes typed claim/binding field order and revalidates
+actual fresh-process PostgreSQL payloads. Frozen v6 schema/examples and legacy v4
+remain unchanged; this correction is required before downstream package enablement.
+
 ## Manage read-authority composition increment (#417 / Manage #795)
 
 Root executed actual Report #429 header construction and Manage authorization
