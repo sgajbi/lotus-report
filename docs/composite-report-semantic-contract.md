@@ -120,13 +120,15 @@ content, RPT-01–12 completion, GIPS or official/institutional activation.
 
 Rerender must use the retained immutable source and semantic tables with the
 accepted template/contract. A changed authority or corrected source requires a
-new candidate/version; it cannot rewrite the old snapshot. Protected producer
-main, compatible Render main and real workbook/Archive reconciliation remain
-required before Excel catalogue activation.
+new candidate/version; it cannot rewrite the old snapshot. The catalogue's XLSX
+readiness requires supplier runtime plus the exact template's type, contract and
+output-format evidence. Global PDF readiness does not imply workbook support;
+development template publication does not imply distribution authority.
 
 The current generic regenerate/replay command routes remain portfolio-review
 only. Composite source correction requires a fresh composite order with explicit
 corrected pins and a new retry identity; no command silently substitutes the
-latest source. Workbook rerender preparation retains the existing archived-job
-predicate and original template, but real composite Archive/rerender proof is
-still required before support is advertised.
+latest source. Workbook rerender retains the existing archived-job predicate,
+original snapshot, accepted template and output format. The original job identity
+already binds format; changing it requires a new job. The existing Archive client
+records the old-to-new technical presentation relationship after verified custody.

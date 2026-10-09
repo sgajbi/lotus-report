@@ -1,8 +1,12 @@
 # Composite Review API Guide
 
-The current internal surface delivers a retained JSON dataset. Excel remains
-unavailable in the public catalogue. This guide does not authorize official
-publication, distribution or institutional use.
+The internal calculated-review surface delivers a retained JSON dataset or XLSX
+workbook through the existing worker, Render and Archive. Catalogue availability
+depends on actual runtime and exact template-format evidence. Qualification is
+`EXPLICIT_RETAINED_CALCULATED_REPLAY`, publication state `NOT_ATTESTED` and use
+posture `internal_control_only`. This guide does not authorize official
+publication, distribution or institutional use. Uncaptured annual, membership,
+risk and restatement products stay visible with typed unavailable reasons.
 
 ## Source selection and order
 
@@ -18,7 +22,7 @@ Prepare `request.json` with these fields for `POST /reports/composite-reviews`:
 | Field | Content |
 | --- | --- |
 | `selection` | Complete typed `CompositeReportSelection` object built from the actual retained source |
-| `requested_output_formats` | `["json"]` |
+| `requested_output_formats` | Select `["json"]` or `["xlsx"]`; retained snapshot is available on either path |
 | `options` | Optional governed retention fields; `{}` when none are requested |
 
 The shared
@@ -79,10 +83,27 @@ and +2% retain the Performance-owned cumulative `0.030200000000`. Report echoes
 these values. Null risk/dispersion or uncaptured annual/member/restatement products
 carry availability and reasons, never zero or fabricated populated sheets.
 
+An XLSX job becomes `archived` after Render confirms verified Archive custody.
+Its existing job response exposes `archive_document_id`, `archive_request_id`
+and artifact digest. Read the document through the existing authorized Archive
+metadata/download API; Report does not relay document bytes or bypass Archive
+access policy. Verify the downloaded SHA-256 against the retained render digest.
+A Render or Archive refusal remains a failed/pending job, never a successful
+empty workbook. The original request's format remains fixed for that job.
+
+For presentation-only rerender, call `POST /reports/jobs/{job_id}/rerender` with
+the same caller context, a new `Idempotency-Key`, and body
+`{"reason":"Retained calculated-review presentation rerender"}`. It uses the
+original snapshot/template/format and records the Archive old-to-new lifecycle
+relationship. Equal retries reuse the attempt and do not fetch Performance again.
+This is a technical rerender, not a new financial source version.
+
 For corrected source data, obtain explicit corrected retained pins and submit a
 new order/key. The old snapshot is immutable. The generic regenerate/replay
-commands currently serve portfolio review only. Real composite workbook and
-Archive/rerender acceptance remains required before support is exposed.
+commands currently serve portfolio review only. A corrected composite order
+retains its own snapshot/revision/document and cannot rewrite the old dataset,
+monthly numbers or old cumulative return. Read both snapshots to compare the
+complete accepted source responses; never combine figures across revisions.
 
 ## Executable controlled-source proof
 
@@ -109,6 +130,10 @@ python -m pytest tests/integration/test_composite_postgres_retention.py -q
 
 The integration fixture provisions and drops an isolated session database. Its
 registered route/worker and separate-process read are real Report/PostgreSQL
-behavior with controlled Performance. The candidate package case supplies a
-test-only XLSX family definition to normal validation and stops at a controlled
-Render boundary. It does not certify actual Performance, workbook or Archive.
+behavior with controlled Performance. The XLSX package case uses normal shipped
+admission and stops at a controlled Render 503 boundary; it tests Report's
+package/custody identity and failure behavior, not actual supplier completion.
+The owning unit fixture also replays the actual registered Performance response
+from merged main with explicitly controlled economic/provider/verifier inputs.
+Actual workbook and Archive qualification are separate producer/consumer proofs
+recorded in the delivery ledger. These tests do not establish institutional authority.

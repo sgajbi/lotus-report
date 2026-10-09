@@ -113,8 +113,8 @@ class RenderClient:
         """GET /system/templates - the registry projection for version-aware
         family supportability (render#265): per registered version, its id,
         version, renderable status, publication posture, and supported report
-        types/contract versions. Deliberately narrow by contract - digests,
-        locales, output formats, and runtime posture are other surfaces.
+        types/contract versions and output formats. Digests, locales and runtime
+        posture remain other surfaces.
 
         DELIBERATELY untenanted (#375): the published template catalogue is
         global publication authority, not tenant-owned state. Adding tenant

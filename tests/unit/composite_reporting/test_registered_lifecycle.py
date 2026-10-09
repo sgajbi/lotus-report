@@ -5,14 +5,11 @@ This proof is not PostgreSQL, real Performance, Render, Archive or Excel accepta
 
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import replace
 
 import httpx
 import pytest
 
 from app.main import app
-from app.report_ordering_catalogue.definitions import REPORT_FAMILY_DEFINITIONS
-from app.report_ordering_catalogue.validation import validate_report_ordering_submission
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import ReportJobLedger
 from app.reporting_jobs.service import get_report_job_ledger
@@ -145,9 +142,13 @@ async def test_order_worker_capture_retained_retrieval_and_two_tenant_isolation(
 
 
 @pytest.mark.asyncio
-async def test_missing_month_is_failed_immutable_evidence_not_false_empty(lifecycle):
+@pytest.mark.parametrize("format_id", ["json", "xlsx"])
+async def test_missing_month_is_failed_immutable_evidence_not_false_empty(lifecycle, format_id):
     ledger, store, worker, supplier = lifecycle
-    request = {"selection": selection_for(supplier["response"]).model_dump(mode="json")}
+    request = {
+        "selection": selection_for(supplier["response"]).model_dump(mode="json"),
+        "requested_output_formats": [format_id],
+    }
     supplier["response"]["periods"].pop()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://report"
@@ -169,7 +170,7 @@ async def test_missing_month_is_failed_immutable_evidence_not_false_empty(lifecy
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("format_id", ["xlsx", "pdf", "csv"])
+@pytest.mark.parametrize("format_id", ["pdf", "csv"])
 async def test_unaccepted_output_format_cannot_create_a_document_job(lifecycle, format_id):
     _, _, _, supplier = lifecycle
     request = {
@@ -195,23 +196,9 @@ class ControlledRenderBoundary:
         return 503, {"failure_message": "Controlled candidate boundary; no workbook claim."}
 
 
-async def exercise_candidate_worker_package(tmp_path, monkeypatch, *, adapters=None, options=None):
-    # A bounded candidate definition is supplied ONLY in this fixture. Every
-    # actual submission validator still runs. Production definitions deny xlsx.
-    definitions = tuple(
-        replace(definition, supported_output_formats=("json", "xlsx"))
-        if definition.report_type == "composite_review"
-        else definition
-        for definition in REPORT_FAMILY_DEFINITIONS
-    )
-
-    def candidate_submission(**kwargs):
-        return validate_report_ordering_submission(**kwargs, definitions=definitions)
-
-    monkeypatch.setattr(
-        "app.routers.report_ordering_validation.validate_report_ordering_submission",
-        candidate_submission,
-    )
+async def exercise_registered_worker_package(tmp_path, monkeypatch, *, adapters=None, options=None):
+    # Normal registered admission uses the shipped family; only financial
+    # transport and the declined Render response are explicitly controlled.
     boundary = ControlledRenderBoundary()
     with composite_lifecycle(
         tmp_path, monkeypatch, adapters=adapters, render_client=boundary
@@ -274,10 +261,11 @@ async def exercise_candidate_worker_package(tmp_path, monkeypatch, *, adapters=N
                     snapshot_record=invalid,
                 )
         return {
-            "qualification": "CONTROLLED_PERFORMANCE_CANDIDATE_ADMISSION_REAL_REPORT_PRODUCER",
+            "qualification": (
+                "CONTROLLED_PERFORMANCE_REGISTERED_XLSX_ADMISSION_REAL_REPORT_PRODUCER"
+            ),
             "limits": [
                 "Synthetic Performance source",
-                "Test-only xlsx family admission",
                 "Controlled Render 503 boundary",
                 "No workbook or Archive completion",
             ],
@@ -290,15 +278,15 @@ async def exercise_candidate_worker_package(tmp_path, monkeypatch, *, adapters=N
 
 
 @pytest.mark.asyncio
-async def test_registered_candidate_worker_emits_persisted_composite_package(tmp_path, monkeypatch):
-    await exercise_candidate_worker_package(tmp_path, monkeypatch)
+async def test_registered_xlsx_worker_emits_persisted_composite_package(tmp_path, monkeypatch):
+    await exercise_registered_worker_package(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
 async def test_candidate_preserves_explicit_retention_options_without_inventing_policy(
     tmp_path, monkeypatch
 ):
-    await exercise_candidate_worker_package(
+    await exercise_registered_worker_package(
         tmp_path,
         monkeypatch,
         options={

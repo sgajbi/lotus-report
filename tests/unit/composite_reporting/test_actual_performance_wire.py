@@ -19,7 +19,11 @@ from app.composite_reporting.admission import (
 from app.composite_reporting.models import CompositeReportSelection
 from app.main import app
 from app.reporting_lineage.store import ReportInputSnapshotStore
-from tests.unit.composite_reporting.test_registered_lifecycle import HEADERS, composite_lifecycle
+from tests.unit.composite_reporting.test_registered_lifecycle import (
+    HEADERS,
+    ControlledRenderBoundary,
+    composite_lifecycle,
+)
 
 FIXTURES = Path(__file__).with_name("wire_fixtures")
 
@@ -54,11 +58,13 @@ def actual_performance_selection():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("format_id", ["json", "xlsx"])
 async def test_registered_actual_wire_retains_zero_precision_and_external_source_identity(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, format_id
 ):
     response, selection = actual_performance_selection()
-    with composite_lifecycle(tmp_path, monkeypatch) as stack:
+    boundary = ControlledRenderBoundary()
+    with composite_lifecycle(tmp_path, monkeypatch, render_client=boundary) as stack:
         ledger, store, worker, supplier = stack
         supplier["response"] = deepcopy(response)
         headers = {**HEADERS, "X-Tenant-Id": selection.tenant_id}
@@ -67,14 +73,26 @@ async def test_registered_actual_wire_retains_zero_precision_and_external_source
         ) as client:
             ordered = await client.post(
                 "/reports/composite-reviews",
-                json={"selection": selection.model_dump(mode="json")},
+                json={
+                    "selection": selection.model_dump(mode="json"),
+                    "requested_output_formats": [format_id],
+                },
                 headers=headers,
             )
             assert ordered.status_code == 202, ordered.text
             job_id = ordered.json()["report_job_id"]
             run = await worker.run_once(worker_id="actual-wire", max_items=1, lease_seconds=30)
-            assert run.completed_count == 1
-            assert ledger.get_job(job_id).status == "data_ready"
+            if format_id == "json":
+                assert run.completed_count == 1
+                assert ledger.get_job(job_id).status == "data_ready"
+                assert boundary.packages == []
+            else:
+                assert run.completed_count == 1
+                assert ledger.get_job(job_id).status == "failed"
+                assert ledger.get_job(job_id).failure_category == "render_execution_failed"
+                assert len(boundary.packages) == 1
+                assert boundary.packages[0]["report_data"]["source_response"] == response
+                assert boundary.packages[0]["output_format"] == "xlsx"
             original = store.get_snapshot_by_job(job_id)
             assert original.snapshot_payload["source_response"] == response
             assert original.snapshot_payload["selection"] == selection.model_dump(mode="json")

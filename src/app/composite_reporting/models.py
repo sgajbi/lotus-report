@@ -172,6 +172,6 @@ class CompositeReviewJobRequest(BaseModel):
         default=["json"],
         min_length=1,
         max_length=1,
-        description="Requested dataset or workbook. The catalogue currently admits JSON only.",
+        description="Select one internal calculated-review output: JSON dataset or XLSX workbook.",
     )
     options: dict[str, Any] = Field(default_factory=dict, description="Governed retention options.")

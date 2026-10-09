@@ -28,7 +28,7 @@ separate, implementation-backed release and distribution controls owned outside 
 | Pre-trade decision evidence | investment-control evidence from an approved portfolio-management decision | source workflow only | internal control only |
 | Rebalance wave evidence | operational and audit evidence for a managed rebalance wave | source workflow only | internal control only |
 | Post-trade outcome review | review of realised outcomes against approved pre-trade evidence | source workflow only | internal control only |
-| Composite review dataset | exact retained composite calculation and provenance | single exact composite selection, JSON only | internal control only; Excel and official publication unavailable |
+| Composite calculated review | exact retained composite calculation and provenance | single exact composite selection, JSON/XLSX | internal control only, `NOT_ATTESTED`; XLSX requires runtime and exact template-format support; official publication unavailable |
 
 The source-workflow reports are visible so consumers can explain product coverage, but they are not
 interactive advisor ordering choices. Their source applications remain responsible for creating

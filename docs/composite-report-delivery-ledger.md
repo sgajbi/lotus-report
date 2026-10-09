@@ -6,6 +6,72 @@ Feature: `feature/composite-performance`. Owner: chat `01a11def-da27-72c3-88e4-9
 
 ## Current Slice And Merged Foundation
 
+PR [#419](https://github.com/sgajbi/lotus-report/pull/419) merged by normal rebase
+to `439c9523c1413434ba6f74fbf48fd041f969f894` after all seven required checks
+passed in `37870254902`. The signed tested head `57eeeaef847cad1cb1563c4e02b4b77e800672ee`
+and merged commit have identical tree `67b28c0cfecc536ff021fbcb73de29a17b2ba919`.
+Wiki publication `fc88ee2` and strict parity passed (`c6c699`, exit 0).
+Exact-main Report run `37870777895` passed all checks, including exact revision,
+combined coverage, Docker and dispatch-tag reclaim (`225787`, exit 0).
+
+The active next branch is `feat/composite-excel-417-catalogue`, from that merged
+commit. Only this owned worktree is writable. Catalogue runtime/template evidence
+is now evaluated per requested document format; missing/incompatible XLSX format
+declarations refuse and global PDF readiness cannot authorize XLSX. Sixty-two
+catalogue tests passed (`aef9cb`, exit 0). The branch now prepares normal shipped
+JSON/XLSX admission and removes the test-only family override; merged main remains
+JSON-only until this candidate qualifies. It preserves internal control use,
+`NOT_ATTESTED`, exact format/template evidence and explicit unavailable products.
+Native lint/typecheck/code-health/OpenAPI passed (`8f99cb`, exit 0); initial
+import-order and mixed-line-ending formatting failures were corrected before
+that successful run. No financial guard, complexity ceiling or coverage threshold
+was relaxed.
+
+Current candidate native proof: 194 focused composite/catalogue/client/rerender
+cases passed (`eed0bf`, exit 0); four isolated PostgreSQL cases passed (`64ad75`,
+exit 0), including missing-month XLSX refusal before rendering and separate-process
+failed-evidence retention. Actual captured Performance wire passes both normal
+JSON/XLSX submission (`93aa8e`, exit 0). Full native unit suite passed 2529 cases,
+one existing skip and three existing deprecations (`caa8ec`, exit 0). Native lint,
+typecheck, code-health and OpenAPI passed (`79af10`, exit 0). Earlier fixture
+expectations for JSON-only catalogue and worker run counters were corrected to
+the actual new behavior; their failed runs are not passing evidence.
+
+Final supplier seam: Render #340 projects the real `supported_output_formats`
+for each template version. Registered corrected financial-source capture must
+be accepted independently from technical rerender. A distinct owned Render/Archive
+HTTP phase will validate normal Report adapters on the frozen candidate; old
+supplier leases have been cleaned up and must not be reused. No dependency or
+protected-main gate is waived. This slice introduces no financial engine,
+deployment split, migration or change to document-reference derivation.
+
+Actual Performance exact-main release `37868693351` and Render exact-main release
+`37869568626` passed at `c100c885752c86b8d950d7970c99a8d223e6376a` and
+`f3670e577137491caafe102a58074055836a80c4`, respectively. Render's unmodified
+HTTP Archive transport created actual original document
+`doc_ae12cc642013499094177eebc253f40c`. Report's PostgreSQL worker adopted its
+genuine captured sender response after controlled lost-response/restart, keeping
+one source call, one submit and one status lookup. The same Report database/job/
+snapshot then produced a fresh registered rerender package. The genuine supplier
+rerender created `doc_47daf239ddc644ab80844db4c319376e` in the same Archive service.
+Report's unmodified ArchiveClient recorded the original-to-new `correct` link
+over actual HTTP with 201, and the ledger confirmed `job_archive_lineage_recorded`.
+Same-key retry reused the archived attempt; foreign-tenant rerender refused 404;
+original archived job and snapshot stayed unchanged. Final native `497cfc` exited
+0 and helper-owned Report database cleanup completed. Report-to-Render and
+Performance transport are named captured replays; Render-to-Archive and Report
+lifecycle-to-Archive are actual HTTP. No full live domain/IAM claim is made.
+
+The rerender workbook independently reconciled the same 162 canonical/display
+cells, 31 financial cells, 62 policies and nine unavailable cells, with exact
+pinned dataset and zero formulas/hyperlinks. Six corruptions refused and the
+valid workbook accepted (`f1d4ae`, exit 0). Raw SHA
+`8a6764ac195c0654bb2387679e3e1b860f3f24ad3d6575e48723914b1eb8af50`
+is 35200 bytes. This technical rerender does not prove a corrected financial
+source; actual corrected-source retention and current supplier partition/history/
+injection controls remain separate qualification work. Institutional authority,
+uncaptured products and full #417/RPT-01–12 acceptance remain open.
+
 PR [#418](https://github.com/sgajbi/lotus-report/pull/418) merged by normal rebase
 to main `02052b4c95b88e6fafa6254aa3bf283cfc007c97`. Its signed tested head and
 merged main have identical tree `137ff2a12d428f846a74cd9ac52f6ab3250131fd`.

@@ -20,9 +20,11 @@ correction and carries its own identity, per the lifecycle's correction rule.
 Per-attempt values - render_job_id, correlation, trace, timestamps - never
 enter, because two attempts at the same document must not mint two names.
 
-Locale, brand variant and output format are static constants today; if any
-ever varies per order, whether it joins the identity is a recorded decision
-for that change, not an accident of this module.
+Locale and brand variant are fixed by the accepted document contract today.
+Output format is persisted with the original order: PDF for portfolio families
+and XLSX for composite review. The report job identity already binds that order,
+and rerender retains its format; changing it requires a new job. Format therefore
+does not add another field to the document reference identity.
 
 Format (recorded on render#120 and report#254): ``rdoc_<uuid5>`` where the
 uuid is derived from the canonical JSON of the identity fields under a fixed

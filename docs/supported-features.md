@@ -103,7 +103,7 @@ recovery, while live Archive storage and historical repair completion remain sep
 ## Composite Reporting Foundation (#417)
 
 The internal `POST /reports/composite-reviews` and catalogue family capture an
-exact retained composite calculation as JSON through the shared job, snapshot and
+exact retained composite calculation as JSON/XLSX through the shared job, snapshot and
 revision machinery. `src/app/composite_reporting/`, its owning unit tests and
 `tests/integration/test_composite_postgres_retention.py` provide admission,
 controlled-source API/worker/PostgreSQL and separate-process retention proof.
@@ -111,13 +111,14 @@ The schema/example and source-backed canonical cell semantics are documented in
 `docs/composite-report-semantic-contract.md` and `wiki/Composite-Review.md`.
 
 This is an internal foundation, not a certified composite reporting product.
-The prepared candidate workbook composer uses persisted revision identity and
-exclusive composite Archive custody; production catalogue acceptance remains
-JSON only. Actual registered Performance wire replay is covered with explicit
+The workbook composer uses persisted revision identity and exclusive composite
+Archive custody. XLSX availability requires runtime and exact template-format
+evidence; publication remains `NOT_ATTESTED` for internal control use.
+Actual registered Performance wire replay is covered with explicit
 controlled-input provenance in the owning fixtures; available zero precision,
 external source identity and changed-fee/content refusals are tested. Supplier
-exact-main release, fresh Performance/Render/Archive workbook reconciliation,
-original/corrected/rerender custody, complete membership/risk/restatement products,
+qualification and actual workbook/lifecycle evidence are recorded in the delivery
+ledger. Complete membership/risk/restatement products,
 official authority, GIPS and enterprise capacity remain open under #417 and the
 supplier issues. No RPT-01–12 completion is claimed.
 
