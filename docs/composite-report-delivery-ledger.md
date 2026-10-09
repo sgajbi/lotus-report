@@ -41,14 +41,72 @@ profiles are frozen under manifest SHA-256
 (`f979e3`, exit 0). These profiles use registered Report SQLite capture, recorded
 accepted Performance responses and a controlled Render503 boundary. HTTPX
 serialization measures 7,565,462 / 7,566,158 bytes; it is not a socket capture.
-Actual uncommitted Render #344 candidates fit unchanged measured limits:
+The then-uncommitted Render #344 candidates fit unchanged measured limits:
 44 sheets, 28,020 data rows, 202,071 physical cells and less than 16 MiB text.
 The unchanged independent raw OOXML reader reconciles every canonical/display
 cell (24,623 each), 8,571 financial cells, 81 policies, full pins/context and all
 partitions for both candidates (`d5e838`, exit 0). This is candidate test evidence,
 not qualified main, live source deployment or actual Render/Archive HTTP custody.
-Those later boundaries require their own exact-source evidence. Full #417 and
-RPT-01–12 remain open.
+The subsequent R5 phase below establishes actual HTTP custody using qualified
+source. Full #417 and RPT-01–12 remain open.
+
+## Current V2 Evidence: R5 Actual HTTP Custody
+
+Phase `composite-source-products-http-20261009-r5` binds qualified Report main
+`89b4fa0dfae10b26ae20f16727dccff36a069a49` (PR #423), Render main
+`383126231bb7744d6b4f3f60436ded86da5f0085` (PR #345) and Archive main
+`280f6d8d8b0ea47be3e35cbcb25b4347280c5920` (PR #183). Report #423 passed
+all seven required PR checks and all nine natural main releasability jobs;
+published wiki parity covered 21 committed blobs. Live source-bound leases,
+readiness and exact v2 XLSX supportability passed intake (`f3951e`, exit 0).
+
+One registered Report ASGI/real PostgreSQL producer archived original, financial
+correction and retained-original rerender through the existing actual
+Render/Archive HTTP clients (`53fe90`, exit 0). Six accepted frozen Performance
+responses were replayed, three per financial version; retained rerender made no
+source call. Both complete snapshots and all three source checkouts remained
+unchanged. The 28-file producer manifest SHA-256 is
+`c604ffe85ce32c529443ac531ea9fa668af1ef3f281fd69c51e955b82e7d0ae5`.
+
+The unchanged independent raw OOXML reader verifies each actual authorized
+download: 24,623 canonical/display cells, 8,571 financial cells, 81 policies,
+full pinned data, identity/context and exact unavailable reasons (`f03899`, exit 0).
+Its separate manifest SHA-256 is
+`d416ca0dc9391d9560c70856230a50b38e4fc94533b512b755737f22e8a341ca`.
+The original/corrected/retained-original artifact SHA-256 values are respectively
+`e6d552ff1c3c61a66db0058f2ec35d188be210dd13d4ba1bbdde1a5e5b9a6a7f`,
+`1efcaf0b5e1faf5b0d4dcce83d7df4bfc9b9407c924335e9e46092983cc2d686` and
+`33f88c9e229351594ff79ecb098813e519c65d3bd6c43c852baaf2241572936c`.
+
+Root independently accepts ten actual HTTP reads, all three full workbooks,
+cells/policies/source products, identity, tenant refusal and current financial
+chain (`3637fe`, exit 0; receipt SHA-256
+`61996f8de6788bedd058a862ba4dbfcee173f9416652ea2d6aa803e54e729797`).
+After Archive's same-PG/new-HTTP-process restart, Root again verifies exact
+metadata, bytes, current chain and foreign-tenant HTTP403 (`f2489d`, exit 0;
+receipt SHA-256 `bb63dc7c82a4b6d3b4ac2cfc080ab392ada0badd2fc75ff812261c99eab1b515`).
+Financial-chain control is separately authorized Archive consumer QA, not an
+automatic Report financial-correction workflow or institutional approval.
+
+Fresh-process Report readback enforces PostgreSQL read-only transactions and
+reuses existing pure read models without adapter constructors or schema changes.
+Both jobs/snapshots, six upstream call IDs/request/response hashes and three pinned
+replay packages match; counts and sealed evidence remain unchanged (`73c1a4`, exit 0).
+The first readback's positional ordering premise failed for equal timestamps and
+random row IDs (`b61fff`, exit 1); exact calculation-ID matching corrected the
+reader without changing data or financial capture. Failed evidence is retained.
+Final consistent Report PG backup and restore-list validation pass before exact
+owned container/volume removal and listener absence (`5a7cfe`, exit 0). Dump
+SHA-256 is `399dab68063b48d8bef07c71da071f8a22c31f2df89de4a378f17fab08e4221d`.
+
+This is controlled calculated `NOT_ATTESTED` evidence with recorded Performance
+transport and explicit isolated Archive adapters. Archive's controlled degraded
+health posture is disclosed. R4 evidence is immutable. No new financial capture,
+institutional IAM/publication authority or enterprise capacity is claimed.
+Annual dispersion's policy-basis refusal, since-inception, complete membership
+history and remaining #417/RPT-01–12 acceptance stay open.
+
+## Historical V1 Evidence: R4 Six-Year Custody
 
 Fresh phase `composite-supported-report-http-72m-20261009-r4` uses Report main
 `1c92b13b21b2e77bc899b5d3ba6c41d33889522e` (PR #421), Render main

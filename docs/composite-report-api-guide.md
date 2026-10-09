@@ -195,3 +195,16 @@ deployment. All expected values are literal source outputs: original full72
 returned HTTP422 `ANNUAL_DISPERSION_POLICY_BASIS_MISMATCH`; it supplies no metric
 value. Calendar return is not annual member dispersion. All evidence remains
 `NOT_ATTESTED`; full #417 and RPT-01–12 acceptance remain open.
+
+The separate R5 integration phase qualifies actual Render/Archive HTTP custody
+for the selected v2 calendar/trailing products on Report PR #423, Render PR #345
+and Archive PR #183. It uses registered Report ASGI routes with real PostgreSQL
+and six recorded accepted Performance responses. Original, financial correction
+and retained-original rerender archive successfully; rerender does not refetch.
+Independent readers verify all cells, pins and identity before and after Archive
+HTTP restart. Fresh-process Report read-only reopening preserves both complete
+snapshots and all six upstream call records. See the
+[delivery ledger](composite-report-delivery-ledger.md#current-v2-evidence-r5-actual-http-custody)
+for exact revisions, manifests, native outcomes and owned backup/cleanup.
+This bounded evidence keeps the controlled transport and `NOT_ATTESTED` authority
+limits above; it does not establish the remaining source products or full #417.
