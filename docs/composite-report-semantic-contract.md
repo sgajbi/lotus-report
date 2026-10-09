@@ -32,10 +32,18 @@ calculation fingerprint and response digest. Each ordered window pins its
 materialization, definition/membership/universe hashes, source cut, method
 binding, receipt fingerprint and fact sequence. There is no latest fallback.
 
-Current source dependency: Performance PR #630 at
-`82fb0ac182eadc18ade2cbeff5c45ae72ca21940`. The producer limit is 120 exact
+Performance PR #630 merged at
+`c100c885752c86b8d950d7970c99a8d223e6376a`. The producer limit is 120 exact
 windows, with larger selections refused rather than truncated. Its explicit
 selection is calculated replay, not official/freeze/control authority.
+
+The actual registered PostgreSQL producer response at that revision is retained
+in `tests/unit/composite_reporting/wire_fixtures/`, with intake hashes and explicit
+controlled-input qualification. Consumer tests replay this captured transport
+through Report's registered workflow, preserve available `0E-12` dispersion and
+external source identity, and refuse changed fee identity or corrupted values.
+This establishes wire compatibility; the producer's economic/provider/authority
+inputs remain controlled and no live network or institutional authority is claimed.
 
 The current `qualification` is `EXPLICIT_RETAINED_CALCULATED_REPLAY`, and
 `publication_state` is `NOT_ATTESTED`. The typed authority slot under

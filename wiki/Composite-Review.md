@@ -44,10 +44,13 @@ binding. Archive metadata has `portfolio_scope=composite`, null `portfolio_id`,
 the real `composite_id` and `composite_report_identity` carrying exact selection
 and three lifecycle digests. It preserves revision and document references.
 
-SQLite and actual isolated PostgreSQL API/worker/process-retention tests use a
-controlled Performance response. The candidate workbook package test supplies a
-test-only XLSX family definition to normal admission and stops at a controlled
-Render 503 boundary. These tests prove Report behavior, not real financial supplier,
-workbook or Archive completion. Protected supplier-main qualification and independent
-workbook, original/corrected/rerender custody proof remain required. Manage #714,
+SQLite and isolated PostgreSQL API/worker/process-retention proofs include an
+actual registered Performance response from merged main
+`c100c885752c86b8d950d7970c99a8d223e6376a`. The captured producer uses controlled
+economic/provider/authority inputs; Report replays the exact captured transport.
+Regression tests preserve available `0E-12` dispersion and external source
+identity, and refuse fee mismatch or changed financial content. A candidate XLSX
+family still requires test-only admission and stops at a controlled Render boundary.
+Supplier exact-main release and fresh workbook, original/corrected/rerender custody
+qualification remain required before public Excel support. Manage #714,
 Performance #540/#610, Gateway #820 and institutional authority remain owner dependencies.

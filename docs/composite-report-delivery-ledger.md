@@ -4,7 +4,64 @@ Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
 Feature: `feature/composite-performance`. Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
-## Active Slice
+## Current Slice And Merged Foundation
+
+PR [#418](https://github.com/sgajbi/lotus-report/pull/418) merged by normal rebase
+to main `02052b4c95b88e6fafa6254aa3bf283cfc007c97`. Its signed tested head and
+merged main have identical tree `137ff2a12d428f846a74cd9ac52f6ab3250131fd`.
+All seven required checks passed in run `37867433011`; exact-main revalidation
+`37867935508` also passed. Wiki publication `3434f1d` and strict parity passed.
+This closes the JSON foundation slice only; #417 and full acceptance remain open.
+
+The next owned branch is `feat/composite-excel-417-actual-source`, based on that
+merged main. Fresh fetch/prune and stranded-truth inspection found no unmerged
+remote branches before starting this slice. The primary checkout remains read-only.
+
+Performance PR #630 merged at `c100c885752c86b8d950d7970c99a8d223e6376a`.
+Its actual registered PostgreSQL OR-02 response is now captured in owning unit
+fixtures with source intake SHA
+`b7b4ec7a84c37c486aa5254671cefddd50a6972a69021377398d6a09e07674c0`.
+Three consumer tests passed (`4eba8e`, exit 0): registered lifecycle retention,
+fee mismatch refusal and corrupted-value refusal. Available dispersion `0E-12`
+and external source identity survive unchanged. This is captured transport replay
+with controlled economic/provider/authority inputs, not live/institutional proof.
+
+The actual-source PostgreSQL proof (`ceb04d`, exit 0) uses the registered JSON
+route, worker, capture and retained reads, then a fresh test-only XLSX candidate
+order. Its fresh render package SHA is
+`ead799a97341533ec9e267424de959424f4260abc0fb83c8e18658bf4ee5b5b0`.
+Production XLSX admission still refuses before recapture. No historical Archive
+identity is transplanted into this new source package. Exact-main supplier release
+and fresh workbook/custody proof remain required before catalogue activation.
+
+An independently parsed historical signed Render workbook reconciled 154 canonical
+and 154 display cells, 31 financial cells, 62 column policies and 11 unavailable
+cells (`299f6d`, exit 0). Six representative corrupted inputs refused and the
+valid packet passed (`9175f5`, exit 0). This bounded 17-sheet sample is evidence
+for its original controlled source only; partition/capacity and fresh actual-source
+workbook qualification are not inferred. Registered retained rerender preparation
+also passed (`219535`, exit 0), with a fresh render identity and unchanged snapshot;
+the controlled 503 boundary supplies no second workbook/custody completion claim.
+
+Current slice gates: lint/typecheck/code-health/OpenAPI passed (`fbae1a`, exit 0),
+114 composite tests passed (`321603`, exit 0), and native full unit suite passed
+2521 cases with one existing skip and three existing deprecation warnings
+(`0f2071`, exit 0). Domain declarations passed (`ee07e1`, exit 0) after resolving
+`LOTUS_PLATFORM_ROOT` explicitly for the owned worktree; the prior invocation
+without that root failed and supplies no gate evidence. Wiki pre-merge check
+passed with one intentional unpublished source change (`ab7385`, exit 0).
+
+Fresh actual-source workbook bytes from merged Render
+`f3670e577137491caafe102a58074055836a80c4` independently reconcile 162 canonical
+and 162 display cells, 31 financial cells, 62 policies and nine unavailable cells
+(`4fc2e7`, exit 0). Raw SHA
+`25dc83decb917cddde772b9848f6690e3ae533d8ed9192e779ad4c3db9f2f860`
+is 35178 bytes across 17 sheets, with zero formulas/hyperlinks. Entire pinned
+dataset equals the retained Report package; +1.00% and +3.02% display once.
+Original receipt adoption and same-snapshot rerender/custody are the next proof;
+this parser result alone does not activate Excel.
+
+## Foundation Slice History
 
 Branch `feat/composite-excel-417` starts from freshly fetched
 `origin/main` `f62053d91a3a44d3c7dcacf14982ffce870febb4`.
