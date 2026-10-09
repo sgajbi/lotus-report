@@ -4,7 +4,7 @@ from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from app.composite_reporting.models import CompositeReviewJobRequest
+from app.composite_reporting.models import AmendmentEligibilitySelection, CompositeReviewJobRequest
 from app.observability import correlation_id_var, trace_id_var
 from app.report_ordering_catalogue.router import get_report_ordering_catalogue_service
 from app.report_ordering_catalogue.service import ReportOrderingCatalogueService
@@ -41,7 +41,9 @@ class CompositeJobLedger(Protocol):
         "Queues one immutable calculated composite selection for the existing report worker. "
         "No latest selection, financial recalculation or official approval is inferred. "
         "The structured dataset retains exact provenance and explicit unavailable products. "
-        "XLSX requests render the retained dataset through Render and Archive. "
+        "Supported XLSX contracts render the retained dataset through Render and Archive. "
+        "Monthly source-correction v6 is JSON-only eligibility evidence: it supplies no "
+        "TWR, MWR, dispersion, contribution or model-fee calculation. "
         "The calculated review is NOT_ATTESTED and restricted to internal control use."
     ),
     responses={
@@ -49,6 +51,7 @@ class CompositeJobLedger(Protocol):
             "description": "Missing caller context or idempotency key; mismatched source tenant."
         },
         409: {"description": "Idempotency key already identifies different report content."},
+        503: {"description": "The selected contract has no supported XLSX delivery path."},
     },
 )
 async def submit_composite_review(
@@ -72,6 +75,18 @@ async def submit_composite_review(
             "trace_id": caller.trace_id or trace_id_var.get(),
         }
     )
+    if isinstance(
+        request.eligibility_selection, AmendmentEligibilitySelection
+    ) and request.requested_output_formats == ["xlsx"]:
+        raise HTTPException(
+            503,
+            detail={
+                "code": "composite_amendment_render_unavailable",
+                "message": (
+                    "Monthly source amendment XLSX requires explicit Render and Archive v6 support."
+                ),
+            },
+        )
     enforce_report_ordering_submission(
         report_family_id="composite_review",
         ordering_mode_id="single_composite",

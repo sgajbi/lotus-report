@@ -1,0 +1,3192 @@
+{
+  "classification": "CONTROLLED_IN_MEMORY_DOMAIN_EXAMPLE_NOT_RUNTIME_PROOF",
+  "source_main": "545269b3d356630680da7c692d90613a5c28f99c",
+  "months": [
+    {
+      "evidence_kind": "PUBLISHED",
+      "receipt": {
+        "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+        "product_version": "v2",
+        "definition": {
+          "product_name": "CompositeDefinition",
+          "product_version": "v1",
+          "tenant_id": "synthetic-tenant",
+          "composite_id": "synthetic-composite",
+          "definition_version": "synthetic-definition",
+          "display_name": "Synthetic Composite",
+          "strategy_code": "synthetic-strategy",
+          "reporting_currency": "USD",
+          "inception_date": "2026-01-01",
+          "termination_date": null,
+          "calculation_method": "ASSET_WEIGHTED",
+          "eligibility_policy_version": "synthetic-policy",
+          "source_authority": {
+            "definition_owner": "lotus-manage",
+            "membership_owner": "lotus-manage",
+            "member_return_owner": "lotus-performance",
+            "asset_owner": "lotus-core",
+            "benchmark_owner": "lotus-core",
+            "policy_version": "synthetic-authority"
+          },
+          "created_at": "2026-10-09T18:48:42.350597Z",
+          "created_by": "synthetic-maker",
+          "correlation_id": "synthetic-definition",
+          "content_hash": "sha256:3e4d6aa9bd5d8b21f74a68102e03d6165c03612869298244ec70a946967d766e"
+        },
+        "approval": {
+          "product_name": "CompositeMonthlyEvaluationApproval",
+          "product_version": "v2",
+          "evidence_kind": "SYNTHETIC_UNSIGNED",
+          "official_activation": "UNAVAILABLE",
+          "proposal": {
+            "product_name": "CompositeMonthlyEvaluationProposal",
+            "product_version": "v2",
+            "evaluation_revision": "synthetic.corrected.evaluation.r2",
+            "target_membership_revision": "synthetic.corrected.membership.r2",
+            "parent_membership_revision": "synthetic.original.membership.r1",
+            "parent_membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+            "policy_approval": {
+              "product_name": "CompositeMonthlyPolicyApproval",
+              "product_version": "v1",
+              "evidence_kind": "SYNTHETIC_UNSIGNED",
+              "official_activation": "UNAVAILABLE",
+              "proposal": {
+                "product_name": "CompositeMonthlyPolicyProposal",
+                "product_version": "v1",
+                "proposal_revision": "synthetic.policy.r1",
+                "eligibility_policy_version": "synthetic-policy",
+                "policy": {
+                  "product_name": "CompositeMonthlyEligibilityPolicy",
+                  "product_version": "v1",
+                  "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                  "official_activation": "UNAVAILABLE",
+                  "month": "2026-09",
+                  "scope": {
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "strategy_code": "synthetic-strategy",
+                    "run_id": null
+                  },
+                  "layers": [
+                    {
+                      "level": "PLATFORM",
+                      "policy_id": "synthetic-policy",
+                      "revision": "r1",
+                      "tenant_id": null,
+                      "strategy_code": null,
+                      "composite_id": null,
+                      "run_id": null,
+                      "effective_from": "2026-09-01",
+                      "effective_to": "2026-12-31",
+                      "flow_threshold": "0.10",
+                      "cash_threshold": "0.05",
+                      "permitted_overrides": []
+                    }
+                  ],
+                  "flow_threshold": "0.10",
+                  "cash_threshold": "0.05",
+                  "membership_frequency": "CALENDAR_MONTH",
+                  "flow_measure": "ABS_NET",
+                  "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                  "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                  "cash_denominator": "MONTH_END_NET_ASSETS",
+                  "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                  "cash_breach_operator": "GREATER_THAN",
+                  "ratio_unit": "DECIMAL_FRACTION",
+                  "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                  "holiday_treatment": "NO_DATE_SHIFT",
+                  "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                  "observation_window": "WHOLE_TARGET_MONTH",
+                  "evaluation_timing": "AFTER_MONTH_END",
+                  "source_cut_timing": "AFTER_MONTH_END",
+                  "missing_data": "REQUIRED_UNKNOWN",
+                  "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                  "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                },
+                "attachments": [
+                  {
+                    "product_name": "SyntheticCandidateRegistry",
+                    "product_version": "v1",
+                    "revision": "synthetic.registry.r1",
+                    "digest": "sha256:c11ab00f970295602eb6d9259678529500088676cc3c77b8ba802b484c14a9b2"
+                  }
+                ],
+                "proposed_by": "synthetic-maker",
+                "proposed_at": "2026-08-20T00:00:00.000000Z",
+                "content_hash": "sha256:03a25f70bedbcf144376db6bec3e637b6bc961608d9a639bb4be8c1d26038e24"
+              },
+              "approved_by": "synthetic-checker",
+              "approved_at": "2026-08-20T00:00:00.000000Z",
+              "content_hash": "sha256:7ad90f636e2c60a35740d59344fc4e55f85435dc21a92327ba0d15f035716ed3"
+            },
+            "universe": {
+              "product_name": "CompositeUniverseAttestation",
+              "product_version": "v1",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "membership_revision": "synthetic.original.membership.r1",
+              "membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+              "attestation_version": "synthetic.corrected.input.r2",
+              "coverage_from": "2026-09-01",
+              "coverage_to": "2026-09-30",
+              "policy_version": "synthetic-policy",
+              "source_cut_id": "synthetic-universe-cut",
+              "source_products": [
+                {
+                  "owner_service": "lotus-manage",
+                  "product_name": "CompositeEligibilityUniverse",
+                  "contract_version": "v1",
+                  "authority_scope": "AUTHORITATIVE_UNIVERSE",
+                  "source_cut_id": "synthetic-universe-cut",
+                  "source_watermark": "synthetic-universe-r1",
+                  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "owner_service": "synthetic-source",
+                  "product_name": "CompositeMonthlyEligibilityObservations",
+                  "contract_version": "v1",
+                  "authority_scope": "POLICY_INPUT",
+                  "source_cut_id": "synthetic-monthly-cut",
+                  "source_watermark": "synthetic.corrected.source.r2",
+                  "content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9"
+                }
+              ],
+              "posture": "COMPLETE",
+              "expected_portfolio_ids": [
+                "synthetic-member"
+              ],
+              "expected_portfolio_count": 1,
+              "observed_portfolio_count": 1,
+              "missing_portfolio_ids": [],
+              "unexpected_portfolio_ids": [],
+              "coverage_gap_portfolio_ids": [],
+              "reason_code": null,
+              "attested_at": "2026-10-01T00:00:00Z",
+              "attested_by": "synthetic-maker",
+              "correlation_id": "synthetic-universe",
+              "content_hash": "sha256:f09932a8446e7cab4d73b66a97a076d15b9ff87180064d835e7be8000584b30f"
+            },
+            "observations": {
+              "product_name": "CompositeMonthlyEligibilityObservations",
+              "product_version": "v1",
+              "evidence_class": "SYNTHETIC_UNQUALIFIED",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "month": "2026-09",
+              "source_cut_id": "synthetic-monthly-cut",
+              "source_revision": "synthetic.corrected.source.r2",
+              "reporting_currency": "USD",
+              "source_generated_at": "2026-10-02T00:00:00.000000Z",
+              "expected_portfolio_ids": [
+                "synthetic-member"
+              ],
+              "portfolios": [
+                {
+                  "portfolio_id": "synthetic-member",
+                  "currency": "USD",
+                  "prior_month_end_assets": "1000",
+                  "prior_assets_as_of": "2026-08-31",
+                  "month_end_assets": "1000",
+                  "settled_unencumbered_cash": "100",
+                  "cash_as_of": "2026-09-30",
+                  "discretionary": true,
+                  "funded": true,
+                  "invested": true,
+                  "readiness_as_of": "2026-09-30",
+                  "flow_coverage_from": "2026-09-01",
+                  "flow_coverage_to": "2026-09-30",
+                  "flows": [
+                    {
+                      "event_id": "synthetic-flow-0",
+                      "business_date": "2026-09-15",
+                      "received_at": "2026-10-01T00:00:00.000000Z",
+                      "currency": "USD",
+                      "amount": "150",
+                      "classification": "EXTERNAL_CASH",
+                      "status": "POSTED",
+                      "reverses_event_id": null
+                    },
+                    {
+                      "event_id": "synthetic-flow-1",
+                      "business_date": "2026-09-15",
+                      "received_at": "2026-10-01T00:00:00.000000Z",
+                      "currency": "USD",
+                      "amount": "-100",
+                      "classification": "EXTERNAL_CASH",
+                      "status": "POSTED",
+                      "reverses_event_id": null
+                    }
+                  ]
+                }
+              ]
+            },
+            "source_assembly_evidence": {
+              "assembly": {
+                "product_name": "CompositeMonthlyEligibilityAssembly",
+                "product_version": "v1",
+                "observations": {
+                  "product_name": "CompositeMonthlyEligibilityObservations",
+                  "product_version": "v1",
+                  "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "month": "2026-09",
+                  "source_cut_id": "synthetic-monthly-cut",
+                  "source_revision": "synthetic.corrected.source.r2",
+                  "reporting_currency": "USD",
+                  "source_generated_at": "2026-10-02T00:00:00.000000Z",
+                  "expected_portfolio_ids": [
+                    "synthetic-member"
+                  ],
+                  "portfolios": [
+                    {
+                      "portfolio_id": "synthetic-member",
+                      "currency": "USD",
+                      "prior_month_end_assets": "1000",
+                      "prior_assets_as_of": "2026-08-31",
+                      "month_end_assets": "1000",
+                      "settled_unencumbered_cash": "100",
+                      "cash_as_of": "2026-09-30",
+                      "discretionary": true,
+                      "funded": true,
+                      "invested": true,
+                      "readiness_as_of": "2026-09-30",
+                      "flow_coverage_from": "2026-09-01",
+                      "flow_coverage_to": "2026-09-30",
+                      "flows": [
+                        {
+                          "event_id": "synthetic-flow-0",
+                          "business_date": "2026-09-15",
+                          "received_at": "2026-10-01T00:00:00.000000Z",
+                          "currency": "USD",
+                          "amount": "150",
+                          "classification": "EXTERNAL_CASH",
+                          "status": "POSTED",
+                          "reverses_event_id": null
+                        },
+                        {
+                          "event_id": "synthetic-flow-1",
+                          "business_date": "2026-09-15",
+                          "received_at": "2026-10-01T00:00:00.000000Z",
+                          "currency": "USD",
+                          "amount": "-100",
+                          "classification": "EXTERNAL_CASH",
+                          "status": "POSTED",
+                          "reverses_event_id": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "inputs": [
+                  {
+                    "kind": "CASH",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-CASH",
+                    "evidence": {
+                      "product_name": "SyntheticCASH",
+                      "product_version": "v1",
+                      "revision": "synthetic.corrected.cash.r2",
+                      "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+                    }
+                  },
+                  {
+                    "kind": "FLOWS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-FLOWS",
+                    "evidence": {
+                      "product_name": "SyntheticFLOWS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "MONTH_END_ASSETS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-MONTH_END_ASSETS",
+                    "evidence": {
+                      "product_name": "SyntheticMONTH_END_ASSETS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "PRIOR_ASSETS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-PRIOR_ASSETS",
+                    "evidence": {
+                      "product_name": "SyntheticPRIOR_ASSETS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "READINESS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-READINESS",
+                    "evidence": {
+                      "product_name": "SyntheticREADINESS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  }
+                ],
+                "compatibility_binding": {
+                  "product_name": "CompositeSourceCutCompatibility",
+                  "product_version": "v1",
+                  "revision": "synthetic.corrected.compatibility.r2",
+                  "digest": "sha256:820bc3172e9cdc039c57b3e43ec4edd2f9bef15029f6b2e99a51dd3dfa6304e3"
+                },
+                "compatibility_posture": "SYNTHETIC_UNQUALIFIED"
+              },
+              "verification": {
+                "product_name": "CompositeEvidenceVerificationReceipt",
+                "product_version": "v1",
+                "posture": "SYNTHETIC_NON_CERTIFYING",
+                "request": {
+                  "purpose": "COMPOSITE_MONTHLY_SOURCE_CUT",
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "subject_content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9",
+                  "claims_digest": "sha256:62d27bbc5a06adc8b304955cd32ee6e907270ef5e377ff3b96f77c5b2931a9a0",
+                  "effective_from": "2026-09-01",
+                  "effective_to": "2026-09-30",
+                  "binding": {
+                    "product_name": "CompositeSourceCutCompatibility",
+                    "product_version": "v1",
+                    "revision": "synthetic.corrected.compatibility.r2",
+                    "digest": "sha256:820bc3172e9cdc039c57b3e43ec4edd2f9bef15029f6b2e99a51dd3dfa6304e3"
+                  },
+                  "source_product": "CompositeMonthlyEligibilityAssembly"
+                },
+                "verifier_id": "synthetic-fixture-verifier",
+                "issuer_id": "synthetic-fixture-issuer",
+                "artifact_revision": "synthetic.r1",
+                "artifact_digest": "sha256:cd59c393f3732a800e71e9baf9e00ecf6a1b5fa8ee2d20dfe3d2bde9dc990e28",
+                "content_hash": "sha256:f388ca22199580f2e12ec8ae237634627d816f1ef8fc0cb00f7b11dadb1a8c41"
+              }
+            },
+            "publication_evidence_version": "v1",
+            "evaluation": {
+              "product_name": "CompositeMonthlyEligibilityEvaluation",
+              "product_version": "v1",
+              "evidence_class": "SYNTHETIC_UNQUALIFIED",
+              "official_activation": "UNAVAILABLE",
+              "population_verification": "UNVERIFIED",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "month": "2026-09",
+              "source_cut_id": "synthetic-monthly-cut",
+              "source_revision": "synthetic.corrected.source.r2",
+              "evaluated_at": "2026-10-02T01:00:00.000000Z",
+              "input_content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9",
+              "universe_content_hash": "sha256:f09932a8446e7cab4d73b66a97a076d15b9ff87180064d835e7be8000584b30f",
+              "resolved_policy": {
+                "product_name": "CompositeMonthlyEligibilityPolicy",
+                "product_version": "v1",
+                "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                "official_activation": "UNAVAILABLE",
+                "month": "2026-09",
+                "scope": {
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "strategy_code": "synthetic-strategy",
+                  "run_id": null
+                },
+                "layers": [
+                  {
+                    "level": "PLATFORM",
+                    "policy_id": "synthetic-policy",
+                    "revision": "r1",
+                    "tenant_id": null,
+                    "strategy_code": null,
+                    "composite_id": null,
+                    "run_id": null,
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-12-31",
+                    "flow_threshold": "0.10",
+                    "cash_threshold": "0.05",
+                    "permitted_overrides": []
+                  }
+                ],
+                "flow_threshold": "0.10",
+                "cash_threshold": "0.05",
+                "membership_frequency": "CALENDAR_MONTH",
+                "flow_measure": "ABS_NET",
+                "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                "cash_denominator": "MONTH_END_NET_ASSETS",
+                "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                "cash_breach_operator": "GREATER_THAN",
+                "ratio_unit": "DECIMAL_FRACTION",
+                "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                "holiday_treatment": "NO_DATE_SHIFT",
+                "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                "observation_window": "WHOLE_TARGET_MONTH",
+                "evaluation_timing": "AFTER_MONTH_END",
+                "source_cut_timing": "AFTER_MONTH_END",
+                "missing_data": "REQUIRED_UNKNOWN",
+                "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+              },
+              "declared_universe_coverage": "COMPLETE",
+              "expected_count": 1,
+              "observed_count": 1,
+              "included_count": 0,
+              "excluded_count": 1,
+              "pending_review_count": 0,
+              "portfolios": [
+                {
+                  "portfolio_id": "synthetic-member",
+                  "observations_present": true,
+                  "status": "EXCLUDED",
+                  "assessments": [
+                    {
+                      "rule": "SIGNIFICANT_FLOW",
+                      "outcome": "PASS",
+                      "failure_reasons": [],
+                      "unknown_reasons": [],
+                      "numerator": "50",
+                      "denominator": "1000",
+                      "ratio": "0.05",
+                      "gross_inflow": "150",
+                      "gross_outflow": "100",
+                      "admitted_flow_count": 2
+                    },
+                    {
+                      "rule": "CASH",
+                      "outcome": "FAIL",
+                      "failure_reasons": [
+                        "CASH_THRESHOLD_BREACH"
+                      ],
+                      "unknown_reasons": [],
+                      "numerator": "100",
+                      "denominator": "1000",
+                      "ratio": "0.1",
+                      "gross_inflow": null,
+                      "gross_outflow": null,
+                      "admitted_flow_count": null
+                    },
+                    {
+                      "rule": "READINESS",
+                      "outcome": "PASS",
+                      "failure_reasons": [],
+                      "unknown_reasons": [],
+                      "numerator": null,
+                      "denominator": null,
+                      "ratio": null,
+                      "gross_inflow": null,
+                      "gross_outflow": null,
+                      "admitted_flow_count": null
+                    }
+                  ]
+                }
+              ],
+              "content_hash": "sha256:8d39a7c02d9ab7317d9ffc57b68eebfc3240ff776d7173481f8d0eeae8fa999a"
+            },
+            "proposed_by": "synthetic-correction-maker",
+            "proposed_at": "2026-10-02T01:00:00.000000Z",
+            "correlation_id": "synthetic-source-correction",
+            "content_hash": "sha256:4dc4eaee67517fea55c6dda3d88df0856cd628fbb099eaa026a6e38ce3603bc8",
+            "amendment": {
+              "correction_kind": "SOURCE_CORRECTION",
+              "predecessor_approval_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v1",
+                "revision": "synthetic.original.evaluation.r1",
+                "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+              },
+              "predecessor_receipt_binding": {
+                "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+                "product_version": "v1",
+                "revision": "synthetic.original.evaluation.r1",
+                "digest": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+              },
+              "original_approval_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v1",
+                "revision": "synthetic.original.evaluation.r1",
+                "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+              },
+              "expected_authority_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v1",
+                "revision": "synthetic.original.evaluation.r1",
+                "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+              },
+              "projection_parent_membership_binding": {
+                "product_name": "CompositeMembership",
+                "product_version": "v1",
+                "revision": "synthetic.original.membership.r1",
+                "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+              },
+              "expected_current_publication_sequence": 2,
+              "affected_from": "2026-09-01",
+              "affected_to": "2026-09-30",
+              "reason_code": "SOURCE_CASH_CORRECTION",
+              "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+              "evidence_bindings": [
+                {
+                  "product_name": "SyntheticCASH",
+                  "product_version": "v1",
+                  "revision": "synthetic.corrected.cash.r2",
+                  "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+                }
+              ]
+            }
+          },
+          "approved_by": "synthetic-independent-checker",
+          "approved_at": "2026-10-02T01:00:00.000000Z",
+          "claims_digest": "sha256:026fca73f6e00278ed38e30e0b4cab86f0ebf3d12e8807f8dc7f5d8b06163c2c",
+          "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+          "published_universe_content_hash": "sha256:f33172e5066f682054b0584a8b641168de04060adef813748c6cd83466b9d554",
+          "content_hash": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+        },
+        "membership_binding": {
+          "product_name": "CompositeMembership",
+          "product_version": "v1",
+          "revision": "synthetic.corrected.membership.r2",
+          "digest": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+        },
+        "universe_binding": {
+          "product_name": "CompositeUniverseAttestation",
+          "product_version": "v1",
+          "revision": "synthetic.corrected.evaluation.r2",
+          "digest": "sha256:f33172e5066f682054b0584a8b641168de04060adef813748c6cd83466b9d554"
+        },
+        "source_cut_id": "synthetic-universe-cut",
+        "publication_sequence": 3,
+        "completeness": "UNVERIFIED",
+        "content_hash": "sha256:675d7deb4f18a2b97f9cbd6cadd33f421af12317aded8792bbaf72ed0677c6d4",
+        "lineage": {
+          "correction_kind": "SOURCE_CORRECTION",
+          "predecessor_approval_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "predecessor_receipt_binding": {
+            "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+          },
+          "original_approval_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "expected_authority_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "projection_parent_membership_binding": {
+            "product_name": "CompositeMembership",
+            "product_version": "v1",
+            "revision": "synthetic.original.membership.r1",
+            "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+          },
+          "expected_current_publication_sequence": 2,
+          "affected_from": "2026-09-01",
+          "affected_to": "2026-09-30",
+          "reason_code": "SOURCE_CASH_CORRECTION",
+          "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+          "evidence_bindings": [
+            {
+              "product_name": "SyntheticCASH",
+              "product_version": "v1",
+              "revision": "synthetic.corrected.cash.r2",
+              "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+            }
+          ]
+        }
+      },
+      "membership": {
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decisions": [
+          {
+            "portfolio_id": "synthetic-member",
+            "effective_from": "2026-09-01",
+            "effective_to": "2026-09-30",
+            "status": "EXCLUDED",
+            "reason_code": "CASH_THRESHOLD_BREACH",
+            "discretionary": true,
+            "approval_ref": "sha256:026fca73f6e00278ed38e30e0b4cab86f0ebf3d12e8807f8dc7f5d8b06163c2c",
+            "source_snapshot_id": "sha256:8d39a7c02d9ab7317d9ffc57b68eebfc3240ff776d7173481f8d0eeae8fa999a"
+          }
+        ],
+        "decided_at": "2026-10-02T01:00:00Z",
+        "decided_by": "synthetic-independent-checker",
+        "correlation_id": "synthetic-source-correction",
+        "supersedes_membership_revision": "synthetic.original.membership.r1",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+      },
+      "universe": {
+        "product_name": "CompositeUniverseAttestation",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+        "attestation_version": "synthetic.corrected.evaluation.r2",
+        "coverage_from": "2026-09-01",
+        "coverage_to": "2026-09-30",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "source_products": [
+          {
+            "owner_service": "lotus-manage",
+            "product_name": "CompositeEligibilityUniverse",
+            "contract_version": "v1",
+            "authority_scope": "AUTHORITATIVE_UNIVERSE",
+            "source_cut_id": "synthetic-universe-cut",
+            "source_watermark": "synthetic-universe-r1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "owner_service": "lotus-manage",
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "contract_version": "v2",
+            "authority_scope": "POLICY_INPUT",
+            "source_cut_id": "synthetic-universe-cut",
+            "source_watermark": "synthetic.corrected.evaluation.r2",
+            "content_hash": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+          },
+          {
+            "owner_service": "synthetic-source",
+            "product_name": "CompositeMonthlyEligibilityObservations",
+            "contract_version": "v1",
+            "authority_scope": "POLICY_INPUT",
+            "source_cut_id": "synthetic-monthly-cut",
+            "source_watermark": "synthetic.corrected.source.r2",
+            "content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9"
+          }
+        ],
+        "posture": "COMPLETE",
+        "expected_portfolio_ids": [
+          "synthetic-member"
+        ],
+        "expected_portfolio_count": 1,
+        "observed_portfolio_count": 1,
+        "missing_portfolio_ids": [],
+        "unexpected_portfolio_ids": [],
+        "coverage_gap_portfolio_ids": [],
+        "reason_code": null,
+        "attested_at": "2026-10-02T01:00:00Z",
+        "attested_by": "synthetic-independent-checker",
+        "correlation_id": "synthetic-source-correction",
+        "content_hash": "sha256:f33172e5066f682054b0584a8b641168de04060adef813748c6cd83466b9d554"
+      },
+      "parent_membership": {
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.original.membership.r1",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decisions": [
+          {
+            "portfolio_id": "synthetic-member",
+            "effective_from": "2026-09-01",
+            "effective_to": "2026-09-30",
+            "status": "INCLUDED",
+            "reason_code": null,
+            "discretionary": true,
+            "approval_ref": "sha256:cab983b21ab774671bb57fa7ef9296616a6bd6375bdf90f3dc3dd50d9faa3f24",
+            "source_snapshot_id": "sha256:209ba2eb2df4a8703facb460109ff2d6c79016a317b5a003f0c34a0d0df7ec9b"
+          }
+        ],
+        "decided_at": "2026-10-01T01:00:00Z",
+        "decided_by": "synthetic-original-checker",
+        "correlation_id": "synthetic-original-month",
+        "supersedes_membership_revision": "synthetic-membership",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+      },
+      "publication": {
+        "product_name": "CompositeMembershipPublication",
+        "product_version": "v1",
+        "sequence": 3,
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decision_count": 1,
+        "supersedes_membership_revision": "synthetic.original.membership.r1",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "decided_at": "2026-10-02T01:00:00Z",
+        "published_at": "2026-10-09T18:48:42.596685Z",
+        "completeness": "UNVERIFIED"
+      },
+      "parent_publication": {
+        "product_name": "CompositeMembershipPublication",
+        "product_version": "v1",
+        "sequence": 2,
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.original.membership.r1",
+        "membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decision_count": 1,
+        "supersedes_membership_revision": "synthetic-membership",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "decided_at": "2026-10-01T01:00:00Z",
+        "published_at": "2026-10-09T18:48:42.445817Z",
+        "completeness": "UNVERIFIED"
+      },
+      "lineage_receipts": [
+        {
+          "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+          "product_version": "v1",
+          "definition": {
+            "product_name": "CompositeDefinition",
+            "product_version": "v1",
+            "tenant_id": "synthetic-tenant",
+            "composite_id": "synthetic-composite",
+            "definition_version": "synthetic-definition",
+            "display_name": "Synthetic Composite",
+            "strategy_code": "synthetic-strategy",
+            "reporting_currency": "USD",
+            "inception_date": "2026-01-01",
+            "termination_date": null,
+            "calculation_method": "ASSET_WEIGHTED",
+            "eligibility_policy_version": "synthetic-policy",
+            "source_authority": {
+              "definition_owner": "lotus-manage",
+              "membership_owner": "lotus-manage",
+              "member_return_owner": "lotus-performance",
+              "asset_owner": "lotus-core",
+              "benchmark_owner": "lotus-core",
+              "policy_version": "synthetic-authority"
+            },
+            "created_at": "2026-10-09T18:48:42.350597Z",
+            "created_by": "synthetic-maker",
+            "correlation_id": "synthetic-definition",
+            "content_hash": "sha256:3e4d6aa9bd5d8b21f74a68102e03d6165c03612869298244ec70a946967d766e"
+          },
+          "approval": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "evidence_kind": "SYNTHETIC_UNSIGNED",
+            "official_activation": "UNAVAILABLE",
+            "proposal": {
+              "product_name": "CompositeMonthlyEvaluationProposal",
+              "product_version": "v1",
+              "evaluation_revision": "synthetic.original.evaluation.r1",
+              "target_membership_revision": "synthetic.original.membership.r1",
+              "parent_membership_revision": "synthetic-membership",
+              "parent_membership_content_hash": "sha256:3f0e5496051a8eb62f02ce8062f897fed26ed8788eb77fd53fbe864847166699",
+              "policy_approval": {
+                "product_name": "CompositeMonthlyPolicyApproval",
+                "product_version": "v1",
+                "evidence_kind": "SYNTHETIC_UNSIGNED",
+                "official_activation": "UNAVAILABLE",
+                "proposal": {
+                  "product_name": "CompositeMonthlyPolicyProposal",
+                  "product_version": "v1",
+                  "proposal_revision": "synthetic.policy.r1",
+                  "eligibility_policy_version": "synthetic-policy",
+                  "policy": {
+                    "product_name": "CompositeMonthlyEligibilityPolicy",
+                    "product_version": "v1",
+                    "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                    "official_activation": "UNAVAILABLE",
+                    "month": "2026-09",
+                    "scope": {
+                      "tenant_id": "synthetic-tenant",
+                      "composite_id": "synthetic-composite",
+                      "definition_version": "synthetic-definition",
+                      "strategy_code": "synthetic-strategy",
+                      "run_id": null
+                    },
+                    "layers": [
+                      {
+                        "level": "PLATFORM",
+                        "policy_id": "synthetic-policy",
+                        "revision": "r1",
+                        "tenant_id": null,
+                        "strategy_code": null,
+                        "composite_id": null,
+                        "run_id": null,
+                        "effective_from": "2026-09-01",
+                        "effective_to": "2026-12-31",
+                        "flow_threshold": "0.10",
+                        "cash_threshold": "0.05",
+                        "permitted_overrides": []
+                      }
+                    ],
+                    "flow_threshold": "0.10",
+                    "cash_threshold": "0.05",
+                    "membership_frequency": "CALENDAR_MONTH",
+                    "flow_measure": "ABS_NET",
+                    "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                    "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                    "cash_denominator": "MONTH_END_NET_ASSETS",
+                    "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                    "cash_breach_operator": "GREATER_THAN",
+                    "ratio_unit": "DECIMAL_FRACTION",
+                    "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                    "holiday_treatment": "NO_DATE_SHIFT",
+                    "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                    "observation_window": "WHOLE_TARGET_MONTH",
+                    "evaluation_timing": "AFTER_MONTH_END",
+                    "source_cut_timing": "AFTER_MONTH_END",
+                    "missing_data": "REQUIRED_UNKNOWN",
+                    "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                    "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                  },
+                  "attachments": [
+                    {
+                      "product_name": "SyntheticCandidateRegistry",
+                      "product_version": "v1",
+                      "revision": "synthetic.registry.r1",
+                      "digest": "sha256:c11ab00f970295602eb6d9259678529500088676cc3c77b8ba802b484c14a9b2"
+                    }
+                  ],
+                  "proposed_by": "synthetic-maker",
+                  "proposed_at": "2026-08-20T00:00:00.000000Z",
+                  "content_hash": "sha256:03a25f70bedbcf144376db6bec3e637b6bc961608d9a639bb4be8c1d26038e24"
+                },
+                "approved_by": "synthetic-checker",
+                "approved_at": "2026-08-20T00:00:00.000000Z",
+                "content_hash": "sha256:7ad90f636e2c60a35740d59344fc4e55f85435dc21a92327ba0d15f035716ed3"
+              },
+              "universe": {
+                "product_name": "CompositeUniverseAttestation",
+                "product_version": "v1",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "membership_revision": "synthetic-membership",
+                "membership_content_hash": "sha256:3f0e5496051a8eb62f02ce8062f897fed26ed8788eb77fd53fbe864847166699",
+                "attestation_version": "synthetic-universe-r1",
+                "coverage_from": "2026-09-01",
+                "coverage_to": "2026-09-30",
+                "policy_version": "synthetic-policy",
+                "source_cut_id": "synthetic-universe-cut",
+                "source_products": [
+                  {
+                    "owner_service": "lotus-manage",
+                    "product_name": "CompositeEligibilityUniverse",
+                    "contract_version": "v1",
+                    "authority_scope": "AUTHORITATIVE_UNIVERSE",
+                    "source_cut_id": "synthetic-universe-cut",
+                    "source_watermark": "synthetic-universe-r1",
+                    "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  {
+                    "owner_service": "synthetic-source",
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "contract_version": "v1",
+                    "authority_scope": "POLICY_INPUT",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_watermark": "synthetic-source-r1",
+                    "content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7"
+                  }
+                ],
+                "posture": "COMPLETE",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "expected_portfolio_count": 1,
+                "observed_portfolio_count": 1,
+                "missing_portfolio_ids": [],
+                "unexpected_portfolio_ids": [],
+                "coverage_gap_portfolio_ids": [],
+                "reason_code": null,
+                "attested_at": "2026-10-01T00:00:00Z",
+                "attested_by": "synthetic-maker",
+                "correlation_id": "synthetic-universe",
+                "content_hash": "sha256:e4bc1d1ece4da6f4b09086efd4c3c0f9ff7a479bcb86220444d8abef36de1dff"
+              },
+              "observations": {
+                "product_name": "CompositeMonthlyEligibilityObservations",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic-source-r1",
+                "reporting_currency": "USD",
+                "source_generated_at": "2026-10-01T00:00:00.000000Z",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "currency": "USD",
+                    "prior_month_end_assets": "1000",
+                    "prior_assets_as_of": "2026-08-31",
+                    "month_end_assets": "1000",
+                    "settled_unencumbered_cash": "50",
+                    "cash_as_of": "2026-09-30",
+                    "discretionary": true,
+                    "funded": true,
+                    "invested": true,
+                    "readiness_as_of": "2026-09-30",
+                    "flow_coverage_from": "2026-09-01",
+                    "flow_coverage_to": "2026-09-30",
+                    "flows": [
+                      {
+                        "event_id": "synthetic-flow-0",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "150",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      },
+                      {
+                        "event_id": "synthetic-flow-1",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "-100",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              "source_assembly_evidence": {
+                "assembly": {
+                  "product_name": "CompositeMonthlyEligibilityAssembly",
+                  "product_version": "v1",
+                  "observations": {
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "product_version": "v1",
+                    "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "month": "2026-09",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_revision": "synthetic-source-r1",
+                    "reporting_currency": "USD",
+                    "source_generated_at": "2026-10-01T00:00:00.000000Z",
+                    "expected_portfolio_ids": [
+                      "synthetic-member"
+                    ],
+                    "portfolios": [
+                      {
+                        "portfolio_id": "synthetic-member",
+                        "currency": "USD",
+                        "prior_month_end_assets": "1000",
+                        "prior_assets_as_of": "2026-08-31",
+                        "month_end_assets": "1000",
+                        "settled_unencumbered_cash": "50",
+                        "cash_as_of": "2026-09-30",
+                        "discretionary": true,
+                        "funded": true,
+                        "invested": true,
+                        "readiness_as_of": "2026-09-30",
+                        "flow_coverage_from": "2026-09-01",
+                        "flow_coverage_to": "2026-09-30",
+                        "flows": [
+                          {
+                            "event_id": "synthetic-flow-0",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "150",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          },
+                          {
+                            "event_id": "synthetic-flow-1",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "-100",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "inputs": [
+                    {
+                      "kind": "CASH",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-CASH",
+                      "evidence": {
+                        "product_name": "SyntheticCASH",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "FLOWS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-FLOWS",
+                      "evidence": {
+                        "product_name": "SyntheticFLOWS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "MONTH_END_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-MONTH_END_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticMONTH_END_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "PRIOR_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-PRIOR_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticPRIOR_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "READINESS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-READINESS",
+                      "evidence": {
+                        "product_name": "SyntheticREADINESS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    }
+                  ],
+                  "compatibility_binding": {
+                    "product_name": "CompositeSourceCutCompatibility",
+                    "product_version": "v1",
+                    "revision": "r1",
+                    "digest": "sha256:d1249d5ba168bd57e8f8185bab6b88253c41e61defadcdcc639702b4c86a17c1"
+                  },
+                  "compatibility_posture": "SYNTHETIC_UNQUALIFIED"
+                },
+                "verification": {
+                  "product_name": "CompositeEvidenceVerificationReceipt",
+                  "product_version": "v1",
+                  "posture": "SYNTHETIC_NON_CERTIFYING",
+                  "request": {
+                    "purpose": "COMPOSITE_MONTHLY_SOURCE_CUT",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "subject_content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7",
+                    "claims_digest": "sha256:05d53a463c6c01ddd66158aa1e06abd1957d8aed30ab4a116348769a3259f02f",
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-09-30",
+                    "binding": {
+                      "product_name": "CompositeSourceCutCompatibility",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:d1249d5ba168bd57e8f8185bab6b88253c41e61defadcdcc639702b4c86a17c1"
+                    },
+                    "source_product": "CompositeMonthlyEligibilityAssembly"
+                  },
+                  "verifier_id": "synthetic-fixture-verifier",
+                  "issuer_id": "synthetic-fixture-issuer",
+                  "artifact_revision": "synthetic.r1",
+                  "artifact_digest": "sha256:389761c4a4ac8b9517f4429111c9d62fe70d6ec4c5177f8b84483d617ffc6d17",
+                  "content_hash": "sha256:1858b9427c82f5377473ba590c155999eb28ae65e4ac22f000f68d3b5f62b2f6"
+                }
+              },
+              "publication_evidence_version": "v1",
+              "evaluation": {
+                "product_name": "CompositeMonthlyEligibilityEvaluation",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "official_activation": "UNAVAILABLE",
+                "population_verification": "UNVERIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic-source-r1",
+                "evaluated_at": "2026-10-01T01:00:00.000000Z",
+                "input_content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7",
+                "universe_content_hash": "sha256:e4bc1d1ece4da6f4b09086efd4c3c0f9ff7a479bcb86220444d8abef36de1dff",
+                "resolved_policy": {
+                  "product_name": "CompositeMonthlyEligibilityPolicy",
+                  "product_version": "v1",
+                  "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                  "official_activation": "UNAVAILABLE",
+                  "month": "2026-09",
+                  "scope": {
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "strategy_code": "synthetic-strategy",
+                    "run_id": null
+                  },
+                  "layers": [
+                    {
+                      "level": "PLATFORM",
+                      "policy_id": "synthetic-policy",
+                      "revision": "r1",
+                      "tenant_id": null,
+                      "strategy_code": null,
+                      "composite_id": null,
+                      "run_id": null,
+                      "effective_from": "2026-09-01",
+                      "effective_to": "2026-12-31",
+                      "flow_threshold": "0.10",
+                      "cash_threshold": "0.05",
+                      "permitted_overrides": []
+                    }
+                  ],
+                  "flow_threshold": "0.10",
+                  "cash_threshold": "0.05",
+                  "membership_frequency": "CALENDAR_MONTH",
+                  "flow_measure": "ABS_NET",
+                  "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                  "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                  "cash_denominator": "MONTH_END_NET_ASSETS",
+                  "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                  "cash_breach_operator": "GREATER_THAN",
+                  "ratio_unit": "DECIMAL_FRACTION",
+                  "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                  "holiday_treatment": "NO_DATE_SHIFT",
+                  "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                  "observation_window": "WHOLE_TARGET_MONTH",
+                  "evaluation_timing": "AFTER_MONTH_END",
+                  "source_cut_timing": "AFTER_MONTH_END",
+                  "missing_data": "REQUIRED_UNKNOWN",
+                  "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                  "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                },
+                "declared_universe_coverage": "COMPLETE",
+                "expected_count": 1,
+                "observed_count": 1,
+                "included_count": 1,
+                "excluded_count": 0,
+                "pending_review_count": 0,
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "observations_present": true,
+                    "status": "INCLUDED",
+                    "assessments": [
+                      {
+                        "rule": "SIGNIFICANT_FLOW",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": "50",
+                        "denominator": "1000",
+                        "ratio": "0.05",
+                        "gross_inflow": "150",
+                        "gross_outflow": "100",
+                        "admitted_flow_count": 2
+                      },
+                      {
+                        "rule": "CASH",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": "50",
+                        "denominator": "1000",
+                        "ratio": "0.05",
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      },
+                      {
+                        "rule": "READINESS",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": null,
+                        "denominator": null,
+                        "ratio": null,
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      }
+                    ]
+                  }
+                ],
+                "content_hash": "sha256:209ba2eb2df4a8703facb460109ff2d6c79016a317b5a003f0c34a0d0df7ec9b"
+              },
+              "proposed_by": "synthetic-original-maker",
+              "proposed_at": "2026-10-01T01:00:00.000000Z",
+              "correlation_id": "synthetic-original-month",
+              "content_hash": "sha256:0e6a19cfd321835d17c49fa24aecc2ebeeeae47327ad7527960c4fa8dcb6aef4"
+            },
+            "approved_by": "synthetic-original-checker",
+            "approved_at": "2026-10-01T01:00:00.000000Z",
+            "claims_digest": "sha256:cab983b21ab774671bb57fa7ef9296616a6bd6375bdf90f3dc3dd50d9faa3f24",
+            "membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+            "published_universe_content_hash": "sha256:a08f16e1801ba9350be5ea42f39759e2a78f9c03318a6d1e90eef9b6aa9651b1",
+            "content_hash": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "membership_binding": {
+            "product_name": "CompositeMembership",
+            "product_version": "v1",
+            "revision": "synthetic.original.membership.r1",
+            "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+          },
+          "universe_binding": {
+            "product_name": "CompositeUniverseAttestation",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:a08f16e1801ba9350be5ea42f39759e2a78f9c03318a6d1e90eef9b6aa9651b1"
+          },
+          "source_cut_id": "synthetic-universe-cut",
+          "publication_sequence": 2,
+          "completeness": "UNVERIFIED",
+          "content_hash": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+        }
+      ]
+    },
+    {
+      "evidence_kind": "PUBLISHED",
+      "receipt": {
+        "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+        "product_version": "v2",
+        "definition": {
+          "product_name": "CompositeDefinition",
+          "product_version": "v1",
+          "tenant_id": "synthetic-tenant",
+          "composite_id": "synthetic-composite",
+          "definition_version": "synthetic-definition",
+          "display_name": "Synthetic Composite",
+          "strategy_code": "synthetic-strategy",
+          "reporting_currency": "USD",
+          "inception_date": "2026-01-01",
+          "termination_date": null,
+          "calculation_method": "ASSET_WEIGHTED",
+          "eligibility_policy_version": "synthetic-policy",
+          "source_authority": {
+            "definition_owner": "lotus-manage",
+            "membership_owner": "lotus-manage",
+            "member_return_owner": "lotus-performance",
+            "asset_owner": "lotus-core",
+            "benchmark_owner": "lotus-core",
+            "policy_version": "synthetic-authority"
+          },
+          "created_at": "2026-10-09T18:48:42.350597Z",
+          "created_by": "synthetic-maker",
+          "correlation_id": "synthetic-definition",
+          "content_hash": "sha256:3e4d6aa9bd5d8b21f74a68102e03d6165c03612869298244ec70a946967d766e"
+        },
+        "approval": {
+          "product_name": "CompositeMonthlyEvaluationApproval",
+          "product_version": "v2",
+          "evidence_kind": "SYNTHETIC_UNSIGNED",
+          "official_activation": "UNAVAILABLE",
+          "proposal": {
+            "product_name": "CompositeMonthlyEvaluationProposal",
+            "product_version": "v2",
+            "evaluation_revision": "synthetic.corrected.evaluation.r3",
+            "target_membership_revision": "synthetic.corrected.membership.r3",
+            "parent_membership_revision": "synthetic.corrected.membership.r2",
+            "parent_membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+            "policy_approval": {
+              "product_name": "CompositeMonthlyPolicyApproval",
+              "product_version": "v1",
+              "evidence_kind": "SYNTHETIC_UNSIGNED",
+              "official_activation": "UNAVAILABLE",
+              "proposal": {
+                "product_name": "CompositeMonthlyPolicyProposal",
+                "product_version": "v1",
+                "proposal_revision": "synthetic.policy.r1",
+                "eligibility_policy_version": "synthetic-policy",
+                "policy": {
+                  "product_name": "CompositeMonthlyEligibilityPolicy",
+                  "product_version": "v1",
+                  "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                  "official_activation": "UNAVAILABLE",
+                  "month": "2026-09",
+                  "scope": {
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "strategy_code": "synthetic-strategy",
+                    "run_id": null
+                  },
+                  "layers": [
+                    {
+                      "level": "PLATFORM",
+                      "policy_id": "synthetic-policy",
+                      "revision": "r1",
+                      "tenant_id": null,
+                      "strategy_code": null,
+                      "composite_id": null,
+                      "run_id": null,
+                      "effective_from": "2026-09-01",
+                      "effective_to": "2026-12-31",
+                      "flow_threshold": "0.10",
+                      "cash_threshold": "0.05",
+                      "permitted_overrides": []
+                    }
+                  ],
+                  "flow_threshold": "0.10",
+                  "cash_threshold": "0.05",
+                  "membership_frequency": "CALENDAR_MONTH",
+                  "flow_measure": "ABS_NET",
+                  "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                  "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                  "cash_denominator": "MONTH_END_NET_ASSETS",
+                  "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                  "cash_breach_operator": "GREATER_THAN",
+                  "ratio_unit": "DECIMAL_FRACTION",
+                  "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                  "holiday_treatment": "NO_DATE_SHIFT",
+                  "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                  "observation_window": "WHOLE_TARGET_MONTH",
+                  "evaluation_timing": "AFTER_MONTH_END",
+                  "source_cut_timing": "AFTER_MONTH_END",
+                  "missing_data": "REQUIRED_UNKNOWN",
+                  "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                  "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                },
+                "attachments": [
+                  {
+                    "product_name": "SyntheticCandidateRegistry",
+                    "product_version": "v1",
+                    "revision": "synthetic.registry.r1",
+                    "digest": "sha256:c11ab00f970295602eb6d9259678529500088676cc3c77b8ba802b484c14a9b2"
+                  }
+                ],
+                "proposed_by": "synthetic-maker",
+                "proposed_at": "2026-08-20T00:00:00.000000Z",
+                "content_hash": "sha256:03a25f70bedbcf144376db6bec3e637b6bc961608d9a639bb4be8c1d26038e24"
+              },
+              "approved_by": "synthetic-checker",
+              "approved_at": "2026-08-20T00:00:00.000000Z",
+              "content_hash": "sha256:7ad90f636e2c60a35740d59344fc4e55f85435dc21a92327ba0d15f035716ed3"
+            },
+            "universe": {
+              "product_name": "CompositeUniverseAttestation",
+              "product_version": "v1",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "membership_revision": "synthetic.corrected.membership.r2",
+              "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+              "attestation_version": "synthetic.corrected.input.r3",
+              "coverage_from": "2026-09-01",
+              "coverage_to": "2026-09-30",
+              "policy_version": "synthetic-policy",
+              "source_cut_id": "synthetic-universe-cut",
+              "source_products": [
+                {
+                  "owner_service": "lotus-manage",
+                  "product_name": "CompositeEligibilityUniverse",
+                  "contract_version": "v1",
+                  "authority_scope": "AUTHORITATIVE_UNIVERSE",
+                  "source_cut_id": "synthetic-universe-cut",
+                  "source_watermark": "synthetic-universe-r1",
+                  "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "owner_service": "synthetic-source",
+                  "product_name": "CompositeMonthlyEligibilityObservations",
+                  "contract_version": "v1",
+                  "authority_scope": "POLICY_INPUT",
+                  "source_cut_id": "synthetic-monthly-cut",
+                  "source_watermark": "synthetic.corrected.source.r3",
+                  "content_hash": "sha256:ab9c7b4493af1a3557f9e00f790104d876cd373fa61cb58e3113d883d3710623"
+                }
+              ],
+              "posture": "COMPLETE",
+              "expected_portfolio_ids": [
+                "synthetic-member"
+              ],
+              "expected_portfolio_count": 1,
+              "observed_portfolio_count": 1,
+              "missing_portfolio_ids": [],
+              "unexpected_portfolio_ids": [],
+              "coverage_gap_portfolio_ids": [],
+              "reason_code": null,
+              "attested_at": "2026-10-01T00:00:00Z",
+              "attested_by": "synthetic-maker",
+              "correlation_id": "synthetic-universe",
+              "content_hash": "sha256:a3ba40883a4ee9fa7b1d959ed63c3da0c21824bffae8a946926e1729bdfb1b08"
+            },
+            "observations": {
+              "product_name": "CompositeMonthlyEligibilityObservations",
+              "product_version": "v1",
+              "evidence_class": "SYNTHETIC_UNQUALIFIED",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "month": "2026-09",
+              "source_cut_id": "synthetic-monthly-cut",
+              "source_revision": "synthetic.corrected.source.r3",
+              "reporting_currency": "USD",
+              "source_generated_at": "2026-10-02T00:00:00.000000Z",
+              "expected_portfolio_ids": [
+                "synthetic-member"
+              ],
+              "portfolios": [
+                {
+                  "portfolio_id": "synthetic-member",
+                  "currency": "USD",
+                  "prior_month_end_assets": "1000",
+                  "prior_assets_as_of": "2026-08-31",
+                  "month_end_assets": "1000",
+                  "settled_unencumbered_cash": "0",
+                  "cash_as_of": "2026-09-30",
+                  "discretionary": true,
+                  "funded": true,
+                  "invested": true,
+                  "readiness_as_of": "2026-09-30",
+                  "flow_coverage_from": "2026-09-01",
+                  "flow_coverage_to": "2026-09-30",
+                  "flows": [
+                    {
+                      "event_id": "synthetic-flow-0",
+                      "business_date": "2026-09-15",
+                      "received_at": "2026-10-01T00:00:00.000000Z",
+                      "currency": "USD",
+                      "amount": "150",
+                      "classification": "EXTERNAL_CASH",
+                      "status": "POSTED",
+                      "reverses_event_id": null
+                    },
+                    {
+                      "event_id": "synthetic-flow-1",
+                      "business_date": "2026-09-15",
+                      "received_at": "2026-10-01T00:00:00.000000Z",
+                      "currency": "USD",
+                      "amount": "-100",
+                      "classification": "EXTERNAL_CASH",
+                      "status": "POSTED",
+                      "reverses_event_id": null
+                    }
+                  ]
+                }
+              ]
+            },
+            "source_assembly_evidence": {
+              "assembly": {
+                "product_name": "CompositeMonthlyEligibilityAssembly",
+                "product_version": "v1",
+                "observations": {
+                  "product_name": "CompositeMonthlyEligibilityObservations",
+                  "product_version": "v1",
+                  "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "month": "2026-09",
+                  "source_cut_id": "synthetic-monthly-cut",
+                  "source_revision": "synthetic.corrected.source.r3",
+                  "reporting_currency": "USD",
+                  "source_generated_at": "2026-10-02T00:00:00.000000Z",
+                  "expected_portfolio_ids": [
+                    "synthetic-member"
+                  ],
+                  "portfolios": [
+                    {
+                      "portfolio_id": "synthetic-member",
+                      "currency": "USD",
+                      "prior_month_end_assets": "1000",
+                      "prior_assets_as_of": "2026-08-31",
+                      "month_end_assets": "1000",
+                      "settled_unencumbered_cash": "0",
+                      "cash_as_of": "2026-09-30",
+                      "discretionary": true,
+                      "funded": true,
+                      "invested": true,
+                      "readiness_as_of": "2026-09-30",
+                      "flow_coverage_from": "2026-09-01",
+                      "flow_coverage_to": "2026-09-30",
+                      "flows": [
+                        {
+                          "event_id": "synthetic-flow-0",
+                          "business_date": "2026-09-15",
+                          "received_at": "2026-10-01T00:00:00.000000Z",
+                          "currency": "USD",
+                          "amount": "150",
+                          "classification": "EXTERNAL_CASH",
+                          "status": "POSTED",
+                          "reverses_event_id": null
+                        },
+                        {
+                          "event_id": "synthetic-flow-1",
+                          "business_date": "2026-09-15",
+                          "received_at": "2026-10-01T00:00:00.000000Z",
+                          "currency": "USD",
+                          "amount": "-100",
+                          "classification": "EXTERNAL_CASH",
+                          "status": "POSTED",
+                          "reverses_event_id": null
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "inputs": [
+                  {
+                    "kind": "CASH",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-CASH",
+                    "evidence": {
+                      "product_name": "SyntheticCASH",
+                      "product_version": "v1",
+                      "revision": "synthetic.corrected.cash.r3",
+                      "digest": "sha256:5dcce1626140592a78daf9a7a38a8a674ad89d24b57019702ea966be0b375f59"
+                    }
+                  },
+                  {
+                    "kind": "FLOWS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-FLOWS",
+                    "evidence": {
+                      "product_name": "SyntheticFLOWS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "MONTH_END_ASSETS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-MONTH_END_ASSETS",
+                    "evidence": {
+                      "product_name": "SyntheticMONTH_END_ASSETS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "PRIOR_ASSETS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-PRIOR_ASSETS",
+                    "evidence": {
+                      "product_name": "SyntheticPRIOR_ASSETS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  },
+                  {
+                    "kind": "READINESS",
+                    "owner_service": "synthetic-source",
+                    "source_cut_id": "cut-READINESS",
+                    "evidence": {
+                      "product_name": "SyntheticREADINESS",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    }
+                  }
+                ],
+                "compatibility_binding": {
+                  "product_name": "CompositeSourceCutCompatibility",
+                  "product_version": "v1",
+                  "revision": "synthetic.corrected.compatibility.r3",
+                  "digest": "sha256:4ca2571cb97098a2694a1639601ee222d35a51741f723e1b043a144c58f9e4d1"
+                },
+                "compatibility_posture": "SYNTHETIC_UNQUALIFIED"
+              },
+              "verification": {
+                "product_name": "CompositeEvidenceVerificationReceipt",
+                "product_version": "v1",
+                "posture": "SYNTHETIC_NON_CERTIFYING",
+                "request": {
+                  "purpose": "COMPOSITE_MONTHLY_SOURCE_CUT",
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "subject_content_hash": "sha256:ab9c7b4493af1a3557f9e00f790104d876cd373fa61cb58e3113d883d3710623",
+                  "claims_digest": "sha256:5933cdac80daf6a9378708a8ce84b67e221eb36b87c0182482ca184236d11e24",
+                  "effective_from": "2026-09-01",
+                  "effective_to": "2026-09-30",
+                  "binding": {
+                    "product_name": "CompositeSourceCutCompatibility",
+                    "product_version": "v1",
+                    "revision": "synthetic.corrected.compatibility.r3",
+                    "digest": "sha256:4ca2571cb97098a2694a1639601ee222d35a51741f723e1b043a144c58f9e4d1"
+                  },
+                  "source_product": "CompositeMonthlyEligibilityAssembly"
+                },
+                "verifier_id": "synthetic-fixture-verifier",
+                "issuer_id": "synthetic-fixture-issuer",
+                "artifact_revision": "synthetic.r1",
+                "artifact_digest": "sha256:8fb2af3e7ee2d80633cb6de3e78174890c18bf57a206283e6bed2a04fef1277e",
+                "content_hash": "sha256:a3aa3be769fbe2895aa34516896330a2aab37c60f2e0363eb197c3c9ea044e4c"
+              }
+            },
+            "publication_evidence_version": "v1",
+            "evaluation": {
+              "product_name": "CompositeMonthlyEligibilityEvaluation",
+              "product_version": "v1",
+              "evidence_class": "SYNTHETIC_UNQUALIFIED",
+              "official_activation": "UNAVAILABLE",
+              "population_verification": "UNVERIFIED",
+              "tenant_id": "synthetic-tenant",
+              "composite_id": "synthetic-composite",
+              "definition_version": "synthetic-definition",
+              "month": "2026-09",
+              "source_cut_id": "synthetic-monthly-cut",
+              "source_revision": "synthetic.corrected.source.r3",
+              "evaluated_at": "2026-10-02T02:00:00.000000Z",
+              "input_content_hash": "sha256:ab9c7b4493af1a3557f9e00f790104d876cd373fa61cb58e3113d883d3710623",
+              "universe_content_hash": "sha256:a3ba40883a4ee9fa7b1d959ed63c3da0c21824bffae8a946926e1729bdfb1b08",
+              "resolved_policy": {
+                "product_name": "CompositeMonthlyEligibilityPolicy",
+                "product_version": "v1",
+                "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                "official_activation": "UNAVAILABLE",
+                "month": "2026-09",
+                "scope": {
+                  "tenant_id": "synthetic-tenant",
+                  "composite_id": "synthetic-composite",
+                  "definition_version": "synthetic-definition",
+                  "strategy_code": "synthetic-strategy",
+                  "run_id": null
+                },
+                "layers": [
+                  {
+                    "level": "PLATFORM",
+                    "policy_id": "synthetic-policy",
+                    "revision": "r1",
+                    "tenant_id": null,
+                    "strategy_code": null,
+                    "composite_id": null,
+                    "run_id": null,
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-12-31",
+                    "flow_threshold": "0.10",
+                    "cash_threshold": "0.05",
+                    "permitted_overrides": []
+                  }
+                ],
+                "flow_threshold": "0.10",
+                "cash_threshold": "0.05",
+                "membership_frequency": "CALENDAR_MONTH",
+                "flow_measure": "ABS_NET",
+                "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                "cash_denominator": "MONTH_END_NET_ASSETS",
+                "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                "cash_breach_operator": "GREATER_THAN",
+                "ratio_unit": "DECIMAL_FRACTION",
+                "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                "holiday_treatment": "NO_DATE_SHIFT",
+                "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                "observation_window": "WHOLE_TARGET_MONTH",
+                "evaluation_timing": "AFTER_MONTH_END",
+                "source_cut_timing": "AFTER_MONTH_END",
+                "missing_data": "REQUIRED_UNKNOWN",
+                "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+              },
+              "declared_universe_coverage": "COMPLETE",
+              "expected_count": 1,
+              "observed_count": 1,
+              "included_count": 1,
+              "excluded_count": 0,
+              "pending_review_count": 0,
+              "portfolios": [
+                {
+                  "portfolio_id": "synthetic-member",
+                  "observations_present": true,
+                  "status": "INCLUDED",
+                  "assessments": [
+                    {
+                      "rule": "SIGNIFICANT_FLOW",
+                      "outcome": "PASS",
+                      "failure_reasons": [],
+                      "unknown_reasons": [],
+                      "numerator": "50",
+                      "denominator": "1000",
+                      "ratio": "0.05",
+                      "gross_inflow": "150",
+                      "gross_outflow": "100",
+                      "admitted_flow_count": 2
+                    },
+                    {
+                      "rule": "CASH",
+                      "outcome": "PASS",
+                      "failure_reasons": [],
+                      "unknown_reasons": [],
+                      "numerator": "0",
+                      "denominator": "1000",
+                      "ratio": "0",
+                      "gross_inflow": null,
+                      "gross_outflow": null,
+                      "admitted_flow_count": null
+                    },
+                    {
+                      "rule": "READINESS",
+                      "outcome": "PASS",
+                      "failure_reasons": [],
+                      "unknown_reasons": [],
+                      "numerator": null,
+                      "denominator": null,
+                      "ratio": null,
+                      "gross_inflow": null,
+                      "gross_outflow": null,
+                      "admitted_flow_count": null
+                    }
+                  ]
+                }
+              ],
+              "content_hash": "sha256:6cf32c9722ae843b2062ad1207d882523874268a6b94eacd5aa98396f0c400bb"
+            },
+            "proposed_by": "synthetic-correction-maker",
+            "proposed_at": "2026-10-02T02:00:00.000000Z",
+            "correlation_id": "synthetic-source-correction",
+            "content_hash": "sha256:0d519a45b8b23a7118652d18f559668fe9a305fdbee9f242a9c37d6f142ee59c",
+            "amendment": {
+              "correction_kind": "SOURCE_CORRECTION",
+              "predecessor_approval_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v2",
+                "revision": "synthetic.corrected.evaluation.r2",
+                "digest": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+              },
+              "predecessor_receipt_binding": {
+                "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+                "product_version": "v2",
+                "revision": "synthetic.corrected.evaluation.r2",
+                "digest": "sha256:675d7deb4f18a2b97f9cbd6cadd33f421af12317aded8792bbaf72ed0677c6d4"
+              },
+              "original_approval_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v1",
+                "revision": "synthetic.original.evaluation.r1",
+                "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+              },
+              "expected_authority_binding": {
+                "product_name": "CompositeMonthlyEvaluationApproval",
+                "product_version": "v2",
+                "revision": "synthetic.corrected.evaluation.r2",
+                "digest": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+              },
+              "projection_parent_membership_binding": {
+                "product_name": "CompositeMembership",
+                "product_version": "v1",
+                "revision": "synthetic.corrected.membership.r2",
+                "digest": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+              },
+              "expected_current_publication_sequence": 3,
+              "affected_from": "2026-09-01",
+              "affected_to": "2026-09-30",
+              "reason_code": "SOURCE_CASH_CORRECTION",
+              "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+              "evidence_bindings": [
+                {
+                  "product_name": "SyntheticCASH",
+                  "product_version": "v1",
+                  "revision": "synthetic.corrected.cash.r3",
+                  "digest": "sha256:5dcce1626140592a78daf9a7a38a8a674ad89d24b57019702ea966be0b375f59"
+                }
+              ]
+            }
+          },
+          "approved_by": "synthetic-independent-checker",
+          "approved_at": "2026-10-02T02:00:00.000000Z",
+          "claims_digest": "sha256:e06461a1fd98fc054216db67ee27d8e79758f913c64aee1824f2dfa1995419ed",
+          "membership_content_hash": "sha256:1503ea687fcad4ca4bc6ccf5c98f4d7720448c3ab77ae7cd8f593a61f8ef2eee",
+          "published_universe_content_hash": "sha256:7a5e6f1368330d5beb58046fcfbe8401a36be92f56b5069df020268ca0b5669b",
+          "content_hash": "sha256:c3b22f07f87ccc03d016944755519566625eb3a29363647ea609ff15f56d31e4"
+        },
+        "membership_binding": {
+          "product_name": "CompositeMembership",
+          "product_version": "v1",
+          "revision": "synthetic.corrected.membership.r3",
+          "digest": "sha256:1503ea687fcad4ca4bc6ccf5c98f4d7720448c3ab77ae7cd8f593a61f8ef2eee"
+        },
+        "universe_binding": {
+          "product_name": "CompositeUniverseAttestation",
+          "product_version": "v1",
+          "revision": "synthetic.corrected.evaluation.r3",
+          "digest": "sha256:7a5e6f1368330d5beb58046fcfbe8401a36be92f56b5069df020268ca0b5669b"
+        },
+        "source_cut_id": "synthetic-universe-cut",
+        "publication_sequence": 4,
+        "completeness": "UNVERIFIED",
+        "content_hash": "sha256:4b332bea2b07b132c10a46dae0ad7006212f8c0f7a2daabdc076bd4d71938aa7",
+        "lineage": {
+          "correction_kind": "SOURCE_CORRECTION",
+          "predecessor_approval_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v2",
+            "revision": "synthetic.corrected.evaluation.r2",
+            "digest": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+          },
+          "predecessor_receipt_binding": {
+            "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+            "product_version": "v2",
+            "revision": "synthetic.corrected.evaluation.r2",
+            "digest": "sha256:675d7deb4f18a2b97f9cbd6cadd33f421af12317aded8792bbaf72ed0677c6d4"
+          },
+          "original_approval_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "expected_authority_binding": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v2",
+            "revision": "synthetic.corrected.evaluation.r2",
+            "digest": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+          },
+          "projection_parent_membership_binding": {
+            "product_name": "CompositeMembership",
+            "product_version": "v1",
+            "revision": "synthetic.corrected.membership.r2",
+            "digest": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+          },
+          "expected_current_publication_sequence": 3,
+          "affected_from": "2026-09-01",
+          "affected_to": "2026-09-30",
+          "reason_code": "SOURCE_CASH_CORRECTION",
+          "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+          "evidence_bindings": [
+            {
+              "product_name": "SyntheticCASH",
+              "product_version": "v1",
+              "revision": "synthetic.corrected.cash.r3",
+              "digest": "sha256:5dcce1626140592a78daf9a7a38a8a674ad89d24b57019702ea966be0b375f59"
+            }
+          ]
+        }
+      },
+      "membership": {
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r3",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decisions": [
+          {
+            "portfolio_id": "synthetic-member",
+            "effective_from": "2026-09-01",
+            "effective_to": "2026-09-30",
+            "status": "INCLUDED",
+            "reason_code": null,
+            "discretionary": true,
+            "approval_ref": "sha256:e06461a1fd98fc054216db67ee27d8e79758f913c64aee1824f2dfa1995419ed",
+            "source_snapshot_id": "sha256:6cf32c9722ae843b2062ad1207d882523874268a6b94eacd5aa98396f0c400bb"
+          }
+        ],
+        "decided_at": "2026-10-02T02:00:00Z",
+        "decided_by": "synthetic-independent-checker",
+        "correlation_id": "synthetic-source-correction",
+        "supersedes_membership_revision": "synthetic.corrected.membership.r2",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "content_hash": "sha256:1503ea687fcad4ca4bc6ccf5c98f4d7720448c3ab77ae7cd8f593a61f8ef2eee"
+      },
+      "universe": {
+        "product_name": "CompositeUniverseAttestation",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r3",
+        "membership_content_hash": "sha256:1503ea687fcad4ca4bc6ccf5c98f4d7720448c3ab77ae7cd8f593a61f8ef2eee",
+        "attestation_version": "synthetic.corrected.evaluation.r3",
+        "coverage_from": "2026-09-01",
+        "coverage_to": "2026-09-30",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "source_products": [
+          {
+            "owner_service": "lotus-manage",
+            "product_name": "CompositeEligibilityUniverse",
+            "contract_version": "v1",
+            "authority_scope": "AUTHORITATIVE_UNIVERSE",
+            "source_cut_id": "synthetic-universe-cut",
+            "source_watermark": "synthetic-universe-r1",
+            "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "owner_service": "lotus-manage",
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "contract_version": "v2",
+            "authority_scope": "POLICY_INPUT",
+            "source_cut_id": "synthetic-universe-cut",
+            "source_watermark": "synthetic.corrected.evaluation.r3",
+            "content_hash": "sha256:c3b22f07f87ccc03d016944755519566625eb3a29363647ea609ff15f56d31e4"
+          },
+          {
+            "owner_service": "synthetic-source",
+            "product_name": "CompositeMonthlyEligibilityObservations",
+            "contract_version": "v1",
+            "authority_scope": "POLICY_INPUT",
+            "source_cut_id": "synthetic-monthly-cut",
+            "source_watermark": "synthetic.corrected.source.r3",
+            "content_hash": "sha256:ab9c7b4493af1a3557f9e00f790104d876cd373fa61cb58e3113d883d3710623"
+          }
+        ],
+        "posture": "COMPLETE",
+        "expected_portfolio_ids": [
+          "synthetic-member"
+        ],
+        "expected_portfolio_count": 1,
+        "observed_portfolio_count": 1,
+        "missing_portfolio_ids": [],
+        "unexpected_portfolio_ids": [],
+        "coverage_gap_portfolio_ids": [],
+        "reason_code": null,
+        "attested_at": "2026-10-02T02:00:00Z",
+        "attested_by": "synthetic-independent-checker",
+        "correlation_id": "synthetic-source-correction",
+        "content_hash": "sha256:7a5e6f1368330d5beb58046fcfbe8401a36be92f56b5069df020268ca0b5669b"
+      },
+      "parent_membership": {
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decisions": [
+          {
+            "portfolio_id": "synthetic-member",
+            "effective_from": "2026-09-01",
+            "effective_to": "2026-09-30",
+            "status": "EXCLUDED",
+            "reason_code": "CASH_THRESHOLD_BREACH",
+            "discretionary": true,
+            "approval_ref": "sha256:026fca73f6e00278ed38e30e0b4cab86f0ebf3d12e8807f8dc7f5d8b06163c2c",
+            "source_snapshot_id": "sha256:8d39a7c02d9ab7317d9ffc57b68eebfc3240ff776d7173481f8d0eeae8fa999a"
+          }
+        ],
+        "decided_at": "2026-10-02T01:00:00Z",
+        "decided_by": "synthetic-independent-checker",
+        "correlation_id": "synthetic-source-correction",
+        "supersedes_membership_revision": "synthetic.original.membership.r1",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+      },
+      "publication": {
+        "product_name": "CompositeMembershipPublication",
+        "product_version": "v1",
+        "sequence": 4,
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r3",
+        "membership_content_hash": "sha256:1503ea687fcad4ca4bc6ccf5c98f4d7720448c3ab77ae7cd8f593a61f8ef2eee",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decision_count": 1,
+        "supersedes_membership_revision": "synthetic.corrected.membership.r2",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "decided_at": "2026-10-02T02:00:00Z",
+        "published_at": "2026-10-09T18:48:42.778802Z",
+        "completeness": "UNVERIFIED"
+      },
+      "parent_publication": {
+        "product_name": "CompositeMembershipPublication",
+        "product_version": "v1",
+        "sequence": 3,
+        "tenant_id": "synthetic-tenant",
+        "composite_id": "synthetic-composite",
+        "definition_version": "synthetic-definition",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+        "policy_version": "synthetic-policy",
+        "source_cut_id": "synthetic-universe-cut",
+        "decision_count": 1,
+        "supersedes_membership_revision": "synthetic.original.membership.r1",
+        "affected_from": "2026-09-01",
+        "affected_to": "2026-09-30",
+        "decided_at": "2026-10-02T01:00:00Z",
+        "published_at": "2026-10-09T18:48:42.596685Z",
+        "completeness": "UNVERIFIED"
+      },
+      "lineage_receipts": [
+        {
+          "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+          "product_version": "v2",
+          "definition": {
+            "product_name": "CompositeDefinition",
+            "product_version": "v1",
+            "tenant_id": "synthetic-tenant",
+            "composite_id": "synthetic-composite",
+            "definition_version": "synthetic-definition",
+            "display_name": "Synthetic Composite",
+            "strategy_code": "synthetic-strategy",
+            "reporting_currency": "USD",
+            "inception_date": "2026-01-01",
+            "termination_date": null,
+            "calculation_method": "ASSET_WEIGHTED",
+            "eligibility_policy_version": "synthetic-policy",
+            "source_authority": {
+              "definition_owner": "lotus-manage",
+              "membership_owner": "lotus-manage",
+              "member_return_owner": "lotus-performance",
+              "asset_owner": "lotus-core",
+              "benchmark_owner": "lotus-core",
+              "policy_version": "synthetic-authority"
+            },
+            "created_at": "2026-10-09T18:48:42.350597Z",
+            "created_by": "synthetic-maker",
+            "correlation_id": "synthetic-definition",
+            "content_hash": "sha256:3e4d6aa9bd5d8b21f74a68102e03d6165c03612869298244ec70a946967d766e"
+          },
+          "approval": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v2",
+            "evidence_kind": "SYNTHETIC_UNSIGNED",
+            "official_activation": "UNAVAILABLE",
+            "proposal": {
+              "product_name": "CompositeMonthlyEvaluationProposal",
+              "product_version": "v2",
+              "evaluation_revision": "synthetic.corrected.evaluation.r2",
+              "target_membership_revision": "synthetic.corrected.membership.r2",
+              "parent_membership_revision": "synthetic.original.membership.r1",
+              "parent_membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+              "policy_approval": {
+                "product_name": "CompositeMonthlyPolicyApproval",
+                "product_version": "v1",
+                "evidence_kind": "SYNTHETIC_UNSIGNED",
+                "official_activation": "UNAVAILABLE",
+                "proposal": {
+                  "product_name": "CompositeMonthlyPolicyProposal",
+                  "product_version": "v1",
+                  "proposal_revision": "synthetic.policy.r1",
+                  "eligibility_policy_version": "synthetic-policy",
+                  "policy": {
+                    "product_name": "CompositeMonthlyEligibilityPolicy",
+                    "product_version": "v1",
+                    "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                    "official_activation": "UNAVAILABLE",
+                    "month": "2026-09",
+                    "scope": {
+                      "tenant_id": "synthetic-tenant",
+                      "composite_id": "synthetic-composite",
+                      "definition_version": "synthetic-definition",
+                      "strategy_code": "synthetic-strategy",
+                      "run_id": null
+                    },
+                    "layers": [
+                      {
+                        "level": "PLATFORM",
+                        "policy_id": "synthetic-policy",
+                        "revision": "r1",
+                        "tenant_id": null,
+                        "strategy_code": null,
+                        "composite_id": null,
+                        "run_id": null,
+                        "effective_from": "2026-09-01",
+                        "effective_to": "2026-12-31",
+                        "flow_threshold": "0.10",
+                        "cash_threshold": "0.05",
+                        "permitted_overrides": []
+                      }
+                    ],
+                    "flow_threshold": "0.10",
+                    "cash_threshold": "0.05",
+                    "membership_frequency": "CALENDAR_MONTH",
+                    "flow_measure": "ABS_NET",
+                    "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                    "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                    "cash_denominator": "MONTH_END_NET_ASSETS",
+                    "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                    "cash_breach_operator": "GREATER_THAN",
+                    "ratio_unit": "DECIMAL_FRACTION",
+                    "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                    "holiday_treatment": "NO_DATE_SHIFT",
+                    "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                    "observation_window": "WHOLE_TARGET_MONTH",
+                    "evaluation_timing": "AFTER_MONTH_END",
+                    "source_cut_timing": "AFTER_MONTH_END",
+                    "missing_data": "REQUIRED_UNKNOWN",
+                    "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                    "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                  },
+                  "attachments": [
+                    {
+                      "product_name": "SyntheticCandidateRegistry",
+                      "product_version": "v1",
+                      "revision": "synthetic.registry.r1",
+                      "digest": "sha256:c11ab00f970295602eb6d9259678529500088676cc3c77b8ba802b484c14a9b2"
+                    }
+                  ],
+                  "proposed_by": "synthetic-maker",
+                  "proposed_at": "2026-08-20T00:00:00.000000Z",
+                  "content_hash": "sha256:03a25f70bedbcf144376db6bec3e637b6bc961608d9a639bb4be8c1d26038e24"
+                },
+                "approved_by": "synthetic-checker",
+                "approved_at": "2026-08-20T00:00:00.000000Z",
+                "content_hash": "sha256:7ad90f636e2c60a35740d59344fc4e55f85435dc21a92327ba0d15f035716ed3"
+              },
+              "universe": {
+                "product_name": "CompositeUniverseAttestation",
+                "product_version": "v1",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "membership_revision": "synthetic.original.membership.r1",
+                "membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+                "attestation_version": "synthetic.corrected.input.r2",
+                "coverage_from": "2026-09-01",
+                "coverage_to": "2026-09-30",
+                "policy_version": "synthetic-policy",
+                "source_cut_id": "synthetic-universe-cut",
+                "source_products": [
+                  {
+                    "owner_service": "lotus-manage",
+                    "product_name": "CompositeEligibilityUniverse",
+                    "contract_version": "v1",
+                    "authority_scope": "AUTHORITATIVE_UNIVERSE",
+                    "source_cut_id": "synthetic-universe-cut",
+                    "source_watermark": "synthetic-universe-r1",
+                    "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  {
+                    "owner_service": "synthetic-source",
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "contract_version": "v1",
+                    "authority_scope": "POLICY_INPUT",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_watermark": "synthetic.corrected.source.r2",
+                    "content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9"
+                  }
+                ],
+                "posture": "COMPLETE",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "expected_portfolio_count": 1,
+                "observed_portfolio_count": 1,
+                "missing_portfolio_ids": [],
+                "unexpected_portfolio_ids": [],
+                "coverage_gap_portfolio_ids": [],
+                "reason_code": null,
+                "attested_at": "2026-10-01T00:00:00Z",
+                "attested_by": "synthetic-maker",
+                "correlation_id": "synthetic-universe",
+                "content_hash": "sha256:f09932a8446e7cab4d73b66a97a076d15b9ff87180064d835e7be8000584b30f"
+              },
+              "observations": {
+                "product_name": "CompositeMonthlyEligibilityObservations",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic.corrected.source.r2",
+                "reporting_currency": "USD",
+                "source_generated_at": "2026-10-02T00:00:00.000000Z",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "currency": "USD",
+                    "prior_month_end_assets": "1000",
+                    "prior_assets_as_of": "2026-08-31",
+                    "month_end_assets": "1000",
+                    "settled_unencumbered_cash": "100",
+                    "cash_as_of": "2026-09-30",
+                    "discretionary": true,
+                    "funded": true,
+                    "invested": true,
+                    "readiness_as_of": "2026-09-30",
+                    "flow_coverage_from": "2026-09-01",
+                    "flow_coverage_to": "2026-09-30",
+                    "flows": [
+                      {
+                        "event_id": "synthetic-flow-0",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "150",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      },
+                      {
+                        "event_id": "synthetic-flow-1",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "-100",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              "source_assembly_evidence": {
+                "assembly": {
+                  "product_name": "CompositeMonthlyEligibilityAssembly",
+                  "product_version": "v1",
+                  "observations": {
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "product_version": "v1",
+                    "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "month": "2026-09",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_revision": "synthetic.corrected.source.r2",
+                    "reporting_currency": "USD",
+                    "source_generated_at": "2026-10-02T00:00:00.000000Z",
+                    "expected_portfolio_ids": [
+                      "synthetic-member"
+                    ],
+                    "portfolios": [
+                      {
+                        "portfolio_id": "synthetic-member",
+                        "currency": "USD",
+                        "prior_month_end_assets": "1000",
+                        "prior_assets_as_of": "2026-08-31",
+                        "month_end_assets": "1000",
+                        "settled_unencumbered_cash": "100",
+                        "cash_as_of": "2026-09-30",
+                        "discretionary": true,
+                        "funded": true,
+                        "invested": true,
+                        "readiness_as_of": "2026-09-30",
+                        "flow_coverage_from": "2026-09-01",
+                        "flow_coverage_to": "2026-09-30",
+                        "flows": [
+                          {
+                            "event_id": "synthetic-flow-0",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "150",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          },
+                          {
+                            "event_id": "synthetic-flow-1",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "-100",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "inputs": [
+                    {
+                      "kind": "CASH",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-CASH",
+                      "evidence": {
+                        "product_name": "SyntheticCASH",
+                        "product_version": "v1",
+                        "revision": "synthetic.corrected.cash.r2",
+                        "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+                      }
+                    },
+                    {
+                      "kind": "FLOWS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-FLOWS",
+                      "evidence": {
+                        "product_name": "SyntheticFLOWS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "MONTH_END_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-MONTH_END_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticMONTH_END_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "PRIOR_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-PRIOR_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticPRIOR_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "READINESS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-READINESS",
+                      "evidence": {
+                        "product_name": "SyntheticREADINESS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    }
+                  ],
+                  "compatibility_binding": {
+                    "product_name": "CompositeSourceCutCompatibility",
+                    "product_version": "v1",
+                    "revision": "synthetic.corrected.compatibility.r2",
+                    "digest": "sha256:820bc3172e9cdc039c57b3e43ec4edd2f9bef15029f6b2e99a51dd3dfa6304e3"
+                  },
+                  "compatibility_posture": "SYNTHETIC_UNQUALIFIED"
+                },
+                "verification": {
+                  "product_name": "CompositeEvidenceVerificationReceipt",
+                  "product_version": "v1",
+                  "posture": "SYNTHETIC_NON_CERTIFYING",
+                  "request": {
+                    "purpose": "COMPOSITE_MONTHLY_SOURCE_CUT",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "subject_content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9",
+                    "claims_digest": "sha256:62d27bbc5a06adc8b304955cd32ee6e907270ef5e377ff3b96f77c5b2931a9a0",
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-09-30",
+                    "binding": {
+                      "product_name": "CompositeSourceCutCompatibility",
+                      "product_version": "v1",
+                      "revision": "synthetic.corrected.compatibility.r2",
+                      "digest": "sha256:820bc3172e9cdc039c57b3e43ec4edd2f9bef15029f6b2e99a51dd3dfa6304e3"
+                    },
+                    "source_product": "CompositeMonthlyEligibilityAssembly"
+                  },
+                  "verifier_id": "synthetic-fixture-verifier",
+                  "issuer_id": "synthetic-fixture-issuer",
+                  "artifact_revision": "synthetic.r1",
+                  "artifact_digest": "sha256:cd59c393f3732a800e71e9baf9e00ecf6a1b5fa8ee2d20dfe3d2bde9dc990e28",
+                  "content_hash": "sha256:f388ca22199580f2e12ec8ae237634627d816f1ef8fc0cb00f7b11dadb1a8c41"
+                }
+              },
+              "publication_evidence_version": "v1",
+              "evaluation": {
+                "product_name": "CompositeMonthlyEligibilityEvaluation",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "official_activation": "UNAVAILABLE",
+                "population_verification": "UNVERIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic.corrected.source.r2",
+                "evaluated_at": "2026-10-02T01:00:00.000000Z",
+                "input_content_hash": "sha256:6406135e60090ebcb9c5e710a25a272ef02f3baf9f794b33f5673636dd9240a9",
+                "universe_content_hash": "sha256:f09932a8446e7cab4d73b66a97a076d15b9ff87180064d835e7be8000584b30f",
+                "resolved_policy": {
+                  "product_name": "CompositeMonthlyEligibilityPolicy",
+                  "product_version": "v1",
+                  "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                  "official_activation": "UNAVAILABLE",
+                  "month": "2026-09",
+                  "scope": {
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "strategy_code": "synthetic-strategy",
+                    "run_id": null
+                  },
+                  "layers": [
+                    {
+                      "level": "PLATFORM",
+                      "policy_id": "synthetic-policy",
+                      "revision": "r1",
+                      "tenant_id": null,
+                      "strategy_code": null,
+                      "composite_id": null,
+                      "run_id": null,
+                      "effective_from": "2026-09-01",
+                      "effective_to": "2026-12-31",
+                      "flow_threshold": "0.10",
+                      "cash_threshold": "0.05",
+                      "permitted_overrides": []
+                    }
+                  ],
+                  "flow_threshold": "0.10",
+                  "cash_threshold": "0.05",
+                  "membership_frequency": "CALENDAR_MONTH",
+                  "flow_measure": "ABS_NET",
+                  "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                  "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                  "cash_denominator": "MONTH_END_NET_ASSETS",
+                  "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                  "cash_breach_operator": "GREATER_THAN",
+                  "ratio_unit": "DECIMAL_FRACTION",
+                  "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                  "holiday_treatment": "NO_DATE_SHIFT",
+                  "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                  "observation_window": "WHOLE_TARGET_MONTH",
+                  "evaluation_timing": "AFTER_MONTH_END",
+                  "source_cut_timing": "AFTER_MONTH_END",
+                  "missing_data": "REQUIRED_UNKNOWN",
+                  "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                  "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                },
+                "declared_universe_coverage": "COMPLETE",
+                "expected_count": 1,
+                "observed_count": 1,
+                "included_count": 0,
+                "excluded_count": 1,
+                "pending_review_count": 0,
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "observations_present": true,
+                    "status": "EXCLUDED",
+                    "assessments": [
+                      {
+                        "rule": "SIGNIFICANT_FLOW",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": "50",
+                        "denominator": "1000",
+                        "ratio": "0.05",
+                        "gross_inflow": "150",
+                        "gross_outflow": "100",
+                        "admitted_flow_count": 2
+                      },
+                      {
+                        "rule": "CASH",
+                        "outcome": "FAIL",
+                        "failure_reasons": [
+                          "CASH_THRESHOLD_BREACH"
+                        ],
+                        "unknown_reasons": [],
+                        "numerator": "100",
+                        "denominator": "1000",
+                        "ratio": "0.1",
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      },
+                      {
+                        "rule": "READINESS",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": null,
+                        "denominator": null,
+                        "ratio": null,
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      }
+                    ]
+                  }
+                ],
+                "content_hash": "sha256:8d39a7c02d9ab7317d9ffc57b68eebfc3240ff776d7173481f8d0eeae8fa999a"
+              },
+              "proposed_by": "synthetic-correction-maker",
+              "proposed_at": "2026-10-02T01:00:00.000000Z",
+              "correlation_id": "synthetic-source-correction",
+              "content_hash": "sha256:4dc4eaee67517fea55c6dda3d88df0856cd628fbb099eaa026a6e38ce3603bc8",
+              "amendment": {
+                "correction_kind": "SOURCE_CORRECTION",
+                "predecessor_approval_binding": {
+                  "product_name": "CompositeMonthlyEvaluationApproval",
+                  "product_version": "v1",
+                  "revision": "synthetic.original.evaluation.r1",
+                  "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+                },
+                "predecessor_receipt_binding": {
+                  "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+                  "product_version": "v1",
+                  "revision": "synthetic.original.evaluation.r1",
+                  "digest": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+                },
+                "original_approval_binding": {
+                  "product_name": "CompositeMonthlyEvaluationApproval",
+                  "product_version": "v1",
+                  "revision": "synthetic.original.evaluation.r1",
+                  "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+                },
+                "expected_authority_binding": {
+                  "product_name": "CompositeMonthlyEvaluationApproval",
+                  "product_version": "v1",
+                  "revision": "synthetic.original.evaluation.r1",
+                  "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+                },
+                "projection_parent_membership_binding": {
+                  "product_name": "CompositeMembership",
+                  "product_version": "v1",
+                  "revision": "synthetic.original.membership.r1",
+                  "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+                },
+                "expected_current_publication_sequence": 2,
+                "affected_from": "2026-09-01",
+                "affected_to": "2026-09-30",
+                "reason_code": "SOURCE_CASH_CORRECTION",
+                "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+                "evidence_bindings": [
+                  {
+                    "product_name": "SyntheticCASH",
+                    "product_version": "v1",
+                    "revision": "synthetic.corrected.cash.r2",
+                    "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+                  }
+                ]
+              }
+            },
+            "approved_by": "synthetic-independent-checker",
+            "approved_at": "2026-10-02T01:00:00.000000Z",
+            "claims_digest": "sha256:026fca73f6e00278ed38e30e0b4cab86f0ebf3d12e8807f8dc7f5d8b06163c2c",
+            "membership_content_hash": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7",
+            "published_universe_content_hash": "sha256:f33172e5066f682054b0584a8b641168de04060adef813748c6cd83466b9d554",
+            "content_hash": "sha256:d9eee5289cb0ee291a7737c07e5ad0d6f9444ace9de4f7313c3310ce8721272a"
+          },
+          "membership_binding": {
+            "product_name": "CompositeMembership",
+            "product_version": "v1",
+            "revision": "synthetic.corrected.membership.r2",
+            "digest": "sha256:fbd2b245e7d22e61b1390e0f1d23c6bf52a7eb81f667a79d22c2c78ddbd3aea7"
+          },
+          "universe_binding": {
+            "product_name": "CompositeUniverseAttestation",
+            "product_version": "v1",
+            "revision": "synthetic.corrected.evaluation.r2",
+            "digest": "sha256:f33172e5066f682054b0584a8b641168de04060adef813748c6cd83466b9d554"
+          },
+          "source_cut_id": "synthetic-universe-cut",
+          "publication_sequence": 3,
+          "completeness": "UNVERIFIED",
+          "content_hash": "sha256:675d7deb4f18a2b97f9cbd6cadd33f421af12317aded8792bbaf72ed0677c6d4",
+          "lineage": {
+            "correction_kind": "SOURCE_CORRECTION",
+            "predecessor_approval_binding": {
+              "product_name": "CompositeMonthlyEvaluationApproval",
+              "product_version": "v1",
+              "revision": "synthetic.original.evaluation.r1",
+              "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+            },
+            "predecessor_receipt_binding": {
+              "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+              "product_version": "v1",
+              "revision": "synthetic.original.evaluation.r1",
+              "digest": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+            },
+            "original_approval_binding": {
+              "product_name": "CompositeMonthlyEvaluationApproval",
+              "product_version": "v1",
+              "revision": "synthetic.original.evaluation.r1",
+              "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+            },
+            "expected_authority_binding": {
+              "product_name": "CompositeMonthlyEvaluationApproval",
+              "product_version": "v1",
+              "revision": "synthetic.original.evaluation.r1",
+              "digest": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+            },
+            "projection_parent_membership_binding": {
+              "product_name": "CompositeMembership",
+              "product_version": "v1",
+              "revision": "synthetic.original.membership.r1",
+              "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+            },
+            "expected_current_publication_sequence": 2,
+            "affected_from": "2026-09-01",
+            "affected_to": "2026-09-30",
+            "reason_code": "SOURCE_CASH_CORRECTION",
+            "reason": "Synthetic source owner corrected September settled unencumbered cash.",
+            "evidence_bindings": [
+              {
+                "product_name": "SyntheticCASH",
+                "product_version": "v1",
+                "revision": "synthetic.corrected.cash.r2",
+                "digest": "sha256:b7e66a9a937956350ed4712d640e8444f5337fa9f2f19c322b782413c3380f55"
+              }
+            ]
+          }
+        },
+        {
+          "product_name": "CompositeMonthlyEligibilityPublicationReceipt",
+          "product_version": "v1",
+          "definition": {
+            "product_name": "CompositeDefinition",
+            "product_version": "v1",
+            "tenant_id": "synthetic-tenant",
+            "composite_id": "synthetic-composite",
+            "definition_version": "synthetic-definition",
+            "display_name": "Synthetic Composite",
+            "strategy_code": "synthetic-strategy",
+            "reporting_currency": "USD",
+            "inception_date": "2026-01-01",
+            "termination_date": null,
+            "calculation_method": "ASSET_WEIGHTED",
+            "eligibility_policy_version": "synthetic-policy",
+            "source_authority": {
+              "definition_owner": "lotus-manage",
+              "membership_owner": "lotus-manage",
+              "member_return_owner": "lotus-performance",
+              "asset_owner": "lotus-core",
+              "benchmark_owner": "lotus-core",
+              "policy_version": "synthetic-authority"
+            },
+            "created_at": "2026-10-09T18:48:42.350597Z",
+            "created_by": "synthetic-maker",
+            "correlation_id": "synthetic-definition",
+            "content_hash": "sha256:3e4d6aa9bd5d8b21f74a68102e03d6165c03612869298244ec70a946967d766e"
+          },
+          "approval": {
+            "product_name": "CompositeMonthlyEvaluationApproval",
+            "product_version": "v1",
+            "evidence_kind": "SYNTHETIC_UNSIGNED",
+            "official_activation": "UNAVAILABLE",
+            "proposal": {
+              "product_name": "CompositeMonthlyEvaluationProposal",
+              "product_version": "v1",
+              "evaluation_revision": "synthetic.original.evaluation.r1",
+              "target_membership_revision": "synthetic.original.membership.r1",
+              "parent_membership_revision": "synthetic-membership",
+              "parent_membership_content_hash": "sha256:3f0e5496051a8eb62f02ce8062f897fed26ed8788eb77fd53fbe864847166699",
+              "policy_approval": {
+                "product_name": "CompositeMonthlyPolicyApproval",
+                "product_version": "v1",
+                "evidence_kind": "SYNTHETIC_UNSIGNED",
+                "official_activation": "UNAVAILABLE",
+                "proposal": {
+                  "product_name": "CompositeMonthlyPolicyProposal",
+                  "product_version": "v1",
+                  "proposal_revision": "synthetic.policy.r1",
+                  "eligibility_policy_version": "synthetic-policy",
+                  "policy": {
+                    "product_name": "CompositeMonthlyEligibilityPolicy",
+                    "product_version": "v1",
+                    "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                    "official_activation": "UNAVAILABLE",
+                    "month": "2026-09",
+                    "scope": {
+                      "tenant_id": "synthetic-tenant",
+                      "composite_id": "synthetic-composite",
+                      "definition_version": "synthetic-definition",
+                      "strategy_code": "synthetic-strategy",
+                      "run_id": null
+                    },
+                    "layers": [
+                      {
+                        "level": "PLATFORM",
+                        "policy_id": "synthetic-policy",
+                        "revision": "r1",
+                        "tenant_id": null,
+                        "strategy_code": null,
+                        "composite_id": null,
+                        "run_id": null,
+                        "effective_from": "2026-09-01",
+                        "effective_to": "2026-12-31",
+                        "flow_threshold": "0.10",
+                        "cash_threshold": "0.05",
+                        "permitted_overrides": []
+                      }
+                    ],
+                    "flow_threshold": "0.10",
+                    "cash_threshold": "0.05",
+                    "membership_frequency": "CALENDAR_MONTH",
+                    "flow_measure": "ABS_NET",
+                    "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                    "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                    "cash_denominator": "MONTH_END_NET_ASSETS",
+                    "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                    "cash_breach_operator": "GREATER_THAN",
+                    "ratio_unit": "DECIMAL_FRACTION",
+                    "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                    "holiday_treatment": "NO_DATE_SHIFT",
+                    "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                    "observation_window": "WHOLE_TARGET_MONTH",
+                    "evaluation_timing": "AFTER_MONTH_END",
+                    "source_cut_timing": "AFTER_MONTH_END",
+                    "missing_data": "REQUIRED_UNKNOWN",
+                    "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                    "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                  },
+                  "attachments": [
+                    {
+                      "product_name": "SyntheticCandidateRegistry",
+                      "product_version": "v1",
+                      "revision": "synthetic.registry.r1",
+                      "digest": "sha256:c11ab00f970295602eb6d9259678529500088676cc3c77b8ba802b484c14a9b2"
+                    }
+                  ],
+                  "proposed_by": "synthetic-maker",
+                  "proposed_at": "2026-08-20T00:00:00.000000Z",
+                  "content_hash": "sha256:03a25f70bedbcf144376db6bec3e637b6bc961608d9a639bb4be8c1d26038e24"
+                },
+                "approved_by": "synthetic-checker",
+                "approved_at": "2026-08-20T00:00:00.000000Z",
+                "content_hash": "sha256:7ad90f636e2c60a35740d59344fc4e55f85435dc21a92327ba0d15f035716ed3"
+              },
+              "universe": {
+                "product_name": "CompositeUniverseAttestation",
+                "product_version": "v1",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "membership_revision": "synthetic-membership",
+                "membership_content_hash": "sha256:3f0e5496051a8eb62f02ce8062f897fed26ed8788eb77fd53fbe864847166699",
+                "attestation_version": "synthetic-universe-r1",
+                "coverage_from": "2026-09-01",
+                "coverage_to": "2026-09-30",
+                "policy_version": "synthetic-policy",
+                "source_cut_id": "synthetic-universe-cut",
+                "source_products": [
+                  {
+                    "owner_service": "lotus-manage",
+                    "product_name": "CompositeEligibilityUniverse",
+                    "contract_version": "v1",
+                    "authority_scope": "AUTHORITATIVE_UNIVERSE",
+                    "source_cut_id": "synthetic-universe-cut",
+                    "source_watermark": "synthetic-universe-r1",
+                    "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  {
+                    "owner_service": "synthetic-source",
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "contract_version": "v1",
+                    "authority_scope": "POLICY_INPUT",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_watermark": "synthetic-source-r1",
+                    "content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7"
+                  }
+                ],
+                "posture": "COMPLETE",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "expected_portfolio_count": 1,
+                "observed_portfolio_count": 1,
+                "missing_portfolio_ids": [],
+                "unexpected_portfolio_ids": [],
+                "coverage_gap_portfolio_ids": [],
+                "reason_code": null,
+                "attested_at": "2026-10-01T00:00:00Z",
+                "attested_by": "synthetic-maker",
+                "correlation_id": "synthetic-universe",
+                "content_hash": "sha256:e4bc1d1ece4da6f4b09086efd4c3c0f9ff7a479bcb86220444d8abef36de1dff"
+              },
+              "observations": {
+                "product_name": "CompositeMonthlyEligibilityObservations",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic-source-r1",
+                "reporting_currency": "USD",
+                "source_generated_at": "2026-10-01T00:00:00.000000Z",
+                "expected_portfolio_ids": [
+                  "synthetic-member"
+                ],
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "currency": "USD",
+                    "prior_month_end_assets": "1000",
+                    "prior_assets_as_of": "2026-08-31",
+                    "month_end_assets": "1000",
+                    "settled_unencumbered_cash": "50",
+                    "cash_as_of": "2026-09-30",
+                    "discretionary": true,
+                    "funded": true,
+                    "invested": true,
+                    "readiness_as_of": "2026-09-30",
+                    "flow_coverage_from": "2026-09-01",
+                    "flow_coverage_to": "2026-09-30",
+                    "flows": [
+                      {
+                        "event_id": "synthetic-flow-0",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "150",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      },
+                      {
+                        "event_id": "synthetic-flow-1",
+                        "business_date": "2026-09-15",
+                        "received_at": "2026-10-01T00:00:00.000000Z",
+                        "currency": "USD",
+                        "amount": "-100",
+                        "classification": "EXTERNAL_CASH",
+                        "status": "POSTED",
+                        "reverses_event_id": null
+                      }
+                    ]
+                  }
+                ]
+              },
+              "source_assembly_evidence": {
+                "assembly": {
+                  "product_name": "CompositeMonthlyEligibilityAssembly",
+                  "product_version": "v1",
+                  "observations": {
+                    "product_name": "CompositeMonthlyEligibilityObservations",
+                    "product_version": "v1",
+                    "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "month": "2026-09",
+                    "source_cut_id": "synthetic-monthly-cut",
+                    "source_revision": "synthetic-source-r1",
+                    "reporting_currency": "USD",
+                    "source_generated_at": "2026-10-01T00:00:00.000000Z",
+                    "expected_portfolio_ids": [
+                      "synthetic-member"
+                    ],
+                    "portfolios": [
+                      {
+                        "portfolio_id": "synthetic-member",
+                        "currency": "USD",
+                        "prior_month_end_assets": "1000",
+                        "prior_assets_as_of": "2026-08-31",
+                        "month_end_assets": "1000",
+                        "settled_unencumbered_cash": "50",
+                        "cash_as_of": "2026-09-30",
+                        "discretionary": true,
+                        "funded": true,
+                        "invested": true,
+                        "readiness_as_of": "2026-09-30",
+                        "flow_coverage_from": "2026-09-01",
+                        "flow_coverage_to": "2026-09-30",
+                        "flows": [
+                          {
+                            "event_id": "synthetic-flow-0",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "150",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          },
+                          {
+                            "event_id": "synthetic-flow-1",
+                            "business_date": "2026-09-15",
+                            "received_at": "2026-10-01T00:00:00.000000Z",
+                            "currency": "USD",
+                            "amount": "-100",
+                            "classification": "EXTERNAL_CASH",
+                            "status": "POSTED",
+                            "reverses_event_id": null
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "inputs": [
+                    {
+                      "kind": "CASH",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-CASH",
+                      "evidence": {
+                        "product_name": "SyntheticCASH",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "FLOWS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-FLOWS",
+                      "evidence": {
+                        "product_name": "SyntheticFLOWS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "MONTH_END_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-MONTH_END_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticMONTH_END_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "PRIOR_ASSETS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-PRIOR_ASSETS",
+                      "evidence": {
+                        "product_name": "SyntheticPRIOR_ASSETS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    },
+                    {
+                      "kind": "READINESS",
+                      "owner_service": "synthetic-source",
+                      "source_cut_id": "cut-READINESS",
+                      "evidence": {
+                        "product_name": "SyntheticREADINESS",
+                        "product_version": "v1",
+                        "revision": "r1",
+                        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      }
+                    }
+                  ],
+                  "compatibility_binding": {
+                    "product_name": "CompositeSourceCutCompatibility",
+                    "product_version": "v1",
+                    "revision": "r1",
+                    "digest": "sha256:d1249d5ba168bd57e8f8185bab6b88253c41e61defadcdcc639702b4c86a17c1"
+                  },
+                  "compatibility_posture": "SYNTHETIC_UNQUALIFIED"
+                },
+                "verification": {
+                  "product_name": "CompositeEvidenceVerificationReceipt",
+                  "product_version": "v1",
+                  "posture": "SYNTHETIC_NON_CERTIFYING",
+                  "request": {
+                    "purpose": "COMPOSITE_MONTHLY_SOURCE_CUT",
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "subject_content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7",
+                    "claims_digest": "sha256:05d53a463c6c01ddd66158aa1e06abd1957d8aed30ab4a116348769a3259f02f",
+                    "effective_from": "2026-09-01",
+                    "effective_to": "2026-09-30",
+                    "binding": {
+                      "product_name": "CompositeSourceCutCompatibility",
+                      "product_version": "v1",
+                      "revision": "r1",
+                      "digest": "sha256:d1249d5ba168bd57e8f8185bab6b88253c41e61defadcdcc639702b4c86a17c1"
+                    },
+                    "source_product": "CompositeMonthlyEligibilityAssembly"
+                  },
+                  "verifier_id": "synthetic-fixture-verifier",
+                  "issuer_id": "synthetic-fixture-issuer",
+                  "artifact_revision": "synthetic.r1",
+                  "artifact_digest": "sha256:389761c4a4ac8b9517f4429111c9d62fe70d6ec4c5177f8b84483d617ffc6d17",
+                  "content_hash": "sha256:1858b9427c82f5377473ba590c155999eb28ae65e4ac22f000f68d3b5f62b2f6"
+                }
+              },
+              "publication_evidence_version": "v1",
+              "evaluation": {
+                "product_name": "CompositeMonthlyEligibilityEvaluation",
+                "product_version": "v1",
+                "evidence_class": "SYNTHETIC_UNQUALIFIED",
+                "official_activation": "UNAVAILABLE",
+                "population_verification": "UNVERIFIED",
+                "tenant_id": "synthetic-tenant",
+                "composite_id": "synthetic-composite",
+                "definition_version": "synthetic-definition",
+                "month": "2026-09",
+                "source_cut_id": "synthetic-monthly-cut",
+                "source_revision": "synthetic-source-r1",
+                "evaluated_at": "2026-10-01T01:00:00.000000Z",
+                "input_content_hash": "sha256:1b58b821e49031e484341e9353bb5111b9d54a2f4ec9d319a2156a20675fa5b7",
+                "universe_content_hash": "sha256:e4bc1d1ece4da6f4b09086efd4c3c0f9ff7a479bcb86220444d8abef36de1dff",
+                "resolved_policy": {
+                  "product_name": "CompositeMonthlyEligibilityPolicy",
+                  "product_version": "v1",
+                  "profile_kind": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+                  "official_activation": "UNAVAILABLE",
+                  "month": "2026-09",
+                  "scope": {
+                    "tenant_id": "synthetic-tenant",
+                    "composite_id": "synthetic-composite",
+                    "definition_version": "synthetic-definition",
+                    "strategy_code": "synthetic-strategy",
+                    "run_id": null
+                  },
+                  "layers": [
+                    {
+                      "level": "PLATFORM",
+                      "policy_id": "synthetic-policy",
+                      "revision": "r1",
+                      "tenant_id": null,
+                      "strategy_code": null,
+                      "composite_id": null,
+                      "run_id": null,
+                      "effective_from": "2026-09-01",
+                      "effective_to": "2026-12-31",
+                      "flow_threshold": "0.10",
+                      "cash_threshold": "0.05",
+                      "permitted_overrides": []
+                    }
+                  ],
+                  "flow_threshold": "0.10",
+                  "cash_threshold": "0.05",
+                  "membership_frequency": "CALENDAR_MONTH",
+                  "flow_measure": "ABS_NET",
+                  "flow_denominator": "PRIOR_MONTH_END_NET_ASSETS",
+                  "flow_breach_operator": "GREATER_THAN_OR_EQUAL",
+                  "cash_denominator": "MONTH_END_NET_ASSETS",
+                  "cash_numerator": "SETTLED_UNENCUMBERED_CASH_ONLY",
+                  "cash_breach_operator": "GREATER_THAN",
+                  "ratio_unit": "DECIMAL_FRACTION",
+                  "flow_date_basis": "SOURCE_BUSINESS_DATE_UTC",
+                  "holiday_treatment": "NO_DATE_SHIFT",
+                  "currency_treatment": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+                  "observation_window": "WHOLE_TARGET_MONTH",
+                  "evaluation_timing": "AFTER_MONTH_END",
+                  "source_cut_timing": "AFTER_MONTH_END",
+                  "missing_data": "REQUIRED_UNKNOWN",
+                  "reentry": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+                  "content_hash": "sha256:f93b4fea78107f084e713006eb32b19aa56728cf019c7812d6c462a50c471134"
+                },
+                "declared_universe_coverage": "COMPLETE",
+                "expected_count": 1,
+                "observed_count": 1,
+                "included_count": 1,
+                "excluded_count": 0,
+                "pending_review_count": 0,
+                "portfolios": [
+                  {
+                    "portfolio_id": "synthetic-member",
+                    "observations_present": true,
+                    "status": "INCLUDED",
+                    "assessments": [
+                      {
+                        "rule": "SIGNIFICANT_FLOW",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": "50",
+                        "denominator": "1000",
+                        "ratio": "0.05",
+                        "gross_inflow": "150",
+                        "gross_outflow": "100",
+                        "admitted_flow_count": 2
+                      },
+                      {
+                        "rule": "CASH",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": "50",
+                        "denominator": "1000",
+                        "ratio": "0.05",
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      },
+                      {
+                        "rule": "READINESS",
+                        "outcome": "PASS",
+                        "failure_reasons": [],
+                        "unknown_reasons": [],
+                        "numerator": null,
+                        "denominator": null,
+                        "ratio": null,
+                        "gross_inflow": null,
+                        "gross_outflow": null,
+                        "admitted_flow_count": null
+                      }
+                    ]
+                  }
+                ],
+                "content_hash": "sha256:209ba2eb2df4a8703facb460109ff2d6c79016a317b5a003f0c34a0d0df7ec9b"
+              },
+              "proposed_by": "synthetic-original-maker",
+              "proposed_at": "2026-10-01T01:00:00.000000Z",
+              "correlation_id": "synthetic-original-month",
+              "content_hash": "sha256:0e6a19cfd321835d17c49fa24aecc2ebeeeae47327ad7527960c4fa8dcb6aef4"
+            },
+            "approved_by": "synthetic-original-checker",
+            "approved_at": "2026-10-01T01:00:00.000000Z",
+            "claims_digest": "sha256:cab983b21ab774671bb57fa7ef9296616a6bd6375bdf90f3dc3dd50d9faa3f24",
+            "membership_content_hash": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56",
+            "published_universe_content_hash": "sha256:a08f16e1801ba9350be5ea42f39759e2a78f9c03318a6d1e90eef9b6aa9651b1",
+            "content_hash": "sha256:6bc95dbe5d0997b24e08e3f5cbe359e8498a2ed94b00d1f84d4d2330e1ddbd6a"
+          },
+          "membership_binding": {
+            "product_name": "CompositeMembership",
+            "product_version": "v1",
+            "revision": "synthetic.original.membership.r1",
+            "digest": "sha256:daf29693d06457208f4da943048dfac5452a707d0006ac1bb105d11a35f44a56"
+          },
+          "universe_binding": {
+            "product_name": "CompositeUniverseAttestation",
+            "product_version": "v1",
+            "revision": "synthetic.original.evaluation.r1",
+            "digest": "sha256:a08f16e1801ba9350be5ea42f39759e2a78f9c03318a6d1e90eef9b6aa9651b1"
+          },
+          "source_cut_id": "synthetic-universe-cut",
+          "publication_sequence": 2,
+          "completeness": "UNVERIFIED",
+          "content_hash": "sha256:2985245e6767006726fccae22f74c22f658e30c00ae9c97cff0432e45550569f"
+        }
+      ]
+    }
+  ]
+}

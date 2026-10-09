@@ -112,6 +112,34 @@ def _pooled_revisions(payload: dict[str, Any]) -> list[SourceRevision]:
     return revisions
 
 
+def _monthly_revision(product: dict[str, Any], proposal: dict[str, Any]) -> SourceRevision:
+    return SourceRevision(
+        source_service="lotus-manage",
+        source_product=product["product_name"],
+        source_product_version=product["product_version"],
+        content_hash=product["content_hash"],
+        source_snapshot_id=proposal["evaluation_revision"],
+        generated_at=proposal["evaluation"]["evaluated_at"],
+        supportability_status="UNVERIFIED",
+    )
+
+
+def _eligibility_revisions(payload: dict[str, Any]) -> list[SourceRevision]:
+    from app.composite_reporting.eligibility_contract import proposal_for_month
+
+    revisions = []
+    for month in payload["source_months"]:
+        proposal, _ = proposal_for_month(month)
+        product = month["receipt"] if month["evidence_kind"] == "PUBLISHED" else proposal
+        revisions.append(_monthly_revision(product, proposal))
+        if payload["contract_version"] == "composite_review.v6":
+            revisions.extend(
+                _monthly_revision(receipt, receipt["approval"]["proposal"])
+                for receipt in month["lineage_receipts"]
+            )
+    return revisions
+
+
 def source_revision_vector_for_capture(
     *,
     snapshot_payload: dict[str, Any],
@@ -127,23 +155,8 @@ def source_revision_vector_for_capture(
     stated: list[SourceRevision] = []
     if snapshot_payload.get("contract_version") == "composite_review.v5":
         stated.extend(_pooled_revisions(snapshot_payload))
-    if snapshot_payload.get("contract_version") == "composite_review.v4":
-        from app.composite_reporting.eligibility_contract import proposal_for_month
-
-        for month in snapshot_payload["source_months"]:
-            proposal, _ = proposal_for_month(month)
-            product = month["receipt"] if month["evidence_kind"] == "PUBLISHED" else proposal
-            stated.append(
-                SourceRevision(
-                    source_service="lotus-manage",
-                    source_product=product["product_name"],
-                    source_product_version=product["product_version"],
-                    content_hash=product["content_hash"],
-                    source_snapshot_id=proposal["evaluation_revision"],
-                    generated_at=proposal["evaluation"]["evaluated_at"],
-                    supportability_status="UNVERIFIED",
-                )
-            )
+    if snapshot_payload.get("contract_version") in {"composite_review.v4", "composite_review.v6"}:
+        stated.extend(_eligibility_revisions(snapshot_payload))
     composite_revision = _revision_from_composite_response(snapshot_payload)
     if composite_revision is not None:
         stated.append(composite_revision)

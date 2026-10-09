@@ -727,6 +727,16 @@ universe completeness.
 
 ## Monthly eligibility working practice
 
+The explicit `eligibility_selection.selection_version=v2` selects JSON-only
+`composite_review.v6` monthly source amendments. Absence keeps historical v4
+serialization/fingerprints. Transport DTOs preserve source-v2 independently of
+definition-v1/v2; exact bounded predecessor/original receipt graphs and canonical
+parent publication are retained. Ordinary same-policy/population corrections only;
+no Performance join, staged roots, cascade or v6 XLSX fallback. New cohesive
+`composite_reporting/amendment_*` modules own this concern; the existing runtime,
+worker and snapshots remain shared. See `docs/composite-monthly-source-amendment.md`
+for executable requests, availability/lineage dictionary and focused test commands.
+
 V4 uses an exclusive `eligibility_selection` in the
 existing family. Keep PUBLISHED whole receipt/canonical custody and EVALUATED_ONLY
 proposal evidence distinct; missing observations remain visible. Use transport-only

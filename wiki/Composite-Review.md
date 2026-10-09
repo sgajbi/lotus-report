@@ -1,5 +1,23 @@
 # Composite Review
 
+## JSON monthly source amendments (v6)
+
+The existing `eligibility_selection` accepts explicit `selection_version: "v2"`
+for ordinary same-policy/population source correction. It retains complete
+original/predecessor receipts, source-v2 lineage and independent definition-v1/v2,
+canonical membership/universe/parent/publication, source hashes and revision identity.
+Historical untagged v4 requests, fingerprints and retained rerender stay frozen.
+No Performance aggregates are joined. Staged roots, cascade, conflicting authority,
+dates/sequences/digests and missing/cyclic/oversized history refuse.
+V6 supplies no TWR, MWR, dispersion, contribution or model-fee calculation.
+Its unavailable facts describe eligibility evidence and convey no financial authority.
+
+JSON uses registered intake/worker/snapshot retrieval; repeated requests retain the
+same job. V6 XLSX returns `503`; Render #352 and Archive #188 must explicitly support
+v6 before document delivery. Controlled Manage transport plus actual Report PostgreSQL
+and fresh-process reopening prove Report persistence, not producer TCP, institutional
+authority or full #417. See [the complete dictionary, examples and operator guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-monthly-source-amendment.md).
+
 ## Controlled monthly eligibility profile (v4)
 
 The same endpoint supports an exclusive `eligibility_selection`. PUBLISHED retains

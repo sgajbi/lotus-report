@@ -27,6 +27,14 @@ Gateway/proxy/IAM boundary.
 
 ## Implementation-Backed Features
 
+The existing composite-review family supports JSON-only ordinary monthly source
+amendments as `composite_review.v6`; see
+[contract, source and proof boundaries](composite-monthly-source-amendment.md).
+`eligibility_selection` has an explicit v2 variant while historical v4 stays frozen.
+Evidence lives in `src/app/composite_reporting/amendment_*`, the v6 schema/examples,
+`test_monthly_amendment.py` and native PostgreSQL retention tests. Manage transport
+is controlled in local proof. XLSX, producer TCP composition and full #417 remain open.
+
 | Feature key | Surface | Evidence | Notes |
 | --- | --- | --- | --- |
 | `lotus-report.reporting.portfolio_review.allocation_qualification.v1` | Summary/review allocation, snapshot lineage and Render allocation qualification | `src/app/models/allocation_qualification.py`, `src/app/reporting_lineage/allocation_qualification.py`, `tests/unit/reporting_lineage/test_allocation_qualification.py`, `tests/integration/test_allocation_valuation_qualification.py`, `docs/allocation-valuation-qualification.md` | Preserves Core coverage/counts, independent nullable values/weights, measured zero, signed exposure and source look-through/lineage. Refuses scope/date/currency conflicts; qualified uncertainty downgrades readiness and excludes unknown competitors from largest-bucket claims. Retained presentation preserves immutable snapshot bytes/hash without source refresh. Render consumer acceptance is separately source-qualified. |

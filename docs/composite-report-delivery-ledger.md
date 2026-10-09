@@ -1,5 +1,27 @@
 # Composite Report Delivery Ledger
 
+## Current monthly source-amendment JSON increment (#417 / Manage #797)
+
+Manage qualified main `545269b3` provides ordinary-month source-correction
+proposal/approval/receipt v2, independently of definition v1/v2. Report reserves
+`composite_review.v6` after the fresh registry/open-PR check and uses the existing
+versioned eligibility selector and lifecycle. Earlier no-family/no-source trigger
+descriptions below are historical; they do not describe current implementation.
+
+The v6 schema and both definition-axis examples preserve full correction graphs
+and explicit JSON-only availability. Controlled in-memory Manage domain fixtures
+remain labelled as such: prior native tests did not retain full raw source packets.
+Focused registered ASGI/native Report PostgreSQL worker proof covers two successive
+corrections and fresh-process reopening for both definition versions. Source TCP,
+receiver v6/XLSX, institutional authority and full #417 remain open. No producer
+runtime, joined campaign or financial calculation is part of this increment.
+
+The first Report test database attempt refused its tmpfs-shape premise before
+pytest and retired its owned container. The corrected native proof checks Docker's
+`HostConfig.Tmpfs` with no persistent mounts, passes both PostgreSQL cases and
+retires the helper-owned test container. This is test evidence, not R8 recovery;
+the frozen failed R8 artifacts and detached Report4af remain unchanged.
+
 ## Manage read-authority composition increment (#417 / Manage #795)
 
 Root executed actual Report #429 header construction and Manage authorization

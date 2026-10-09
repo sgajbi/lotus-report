@@ -17,6 +17,7 @@ from app.composite_reporting.admission import (
 from app.composite_reporting.eligibility_tables import build_eligibility_dataset
 from app.composite_reporting.linked_tables import build_linked_dataset
 from app.composite_reporting.models import (
+    AmendmentEligibilitySelection,
     CompositeReportSelection,
     CompositeReviewJobRequest,
     EligibilitySelection,
@@ -306,7 +307,7 @@ class CompositeInputProvider:
     async def _capture_eligibility(
         self,
         job: ReportJobLedgerRecord,
-        selection: EligibilitySelection,
+        selection: EligibilitySelection | AmendmentEligibilitySelection,
         calls: list[_RecordedUpstreamCall],
     ) -> dict[str, Any]:
         from app.composite_reporting.admission import response_digest
@@ -329,8 +330,9 @@ class CompositeInputProvider:
             f"{base}/{quote(selection.composite_id, safe='')}/definitions/"
             f"{quote(selection.definition_version, safe='')}"
         )
-        months = []
+        months: list[dict[str, Any]] = []
         for pin in selection.months:
+            month: dict[str, Any]
             if isinstance(pin, PublishedEligibilityPin):
                 member_path = f"{definition}/membership/{quote(pin.membership_revision, safe='')}"
                 member = await read(member_path)
@@ -362,7 +364,9 @@ class CompositeInputProvider:
                 }
                 if binding != {
                     "product_name": "CompositeMonthlyEvaluationApproval",
-                    "product_version": "v1",
+                    "product_version": "v2"
+                    if isinstance(selection, AmendmentEligibilitySelection)
+                    else "v1",
                     "revision": pin.evaluation_revision,
                     "digest": pin.approval_content_hash,
                 }:
@@ -389,12 +393,36 @@ class CompositeInputProvider:
                         ),
                     ),
                 }
+            if isinstance(selection, AmendmentEligibilitySelection):
+                from app.composite_reporting.eligibility_contract import proposal_for_month
+
+                proposal, _ = proposal_for_month(month)
+                if isinstance(pin, PublishedEligibilityPin):
+                    month["parent_publication"] = await read(
+                        f"{base}/publications/{proposal['amendment']['expected_current_publication_sequence']}"
+                    )
+                month["lineage_receipts"] = [
+                    await read(
+                        f"{definition}/eligibility-evidence/resolve",
+                        {
+                            "product_name": "CompositeMonthlyEvaluationApproval",
+                            "product_version": prior.product_version,
+                            "revision": prior.evaluation_revision,
+                            "digest": prior.approval_content_hash,
+                        },
+                    )
+                    for prior in selection.months[len(months)].lineage_receipts
+                ]
             month["response_digests"] = {
                 key: response_digest(value)
                 for key, value in month.items()
                 if isinstance(value, dict)
             }
             months.append(month)
+        if isinstance(selection, AmendmentEligibilitySelection):
+            from app.composite_reporting.amendment_tables import build_amendment_dataset
+
+            return build_amendment_dataset(selection, months)
         return build_eligibility_dataset(selection, months)
 
     async def _manage_read(

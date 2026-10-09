@@ -247,6 +247,11 @@ financial supplier or official publication authority. Full #417 remains open.
 
 ## Exact pooled money-weighted primary
 
+Ordinary-month source correction uses a separate JSON-only
+[v6 eligibility variant](composite-monthly-source-amendment.md), under the existing
+`eligibility_selection` with explicit `selection_version: "v2"`. Definition version
+is independent. Historical untagged eligibility requests retain v4.
+
 Use the same `POST /reports/composite-reviews` with the exclusive typed
 [`pooled_selection`](../contracts/examples/composite-review.v5.original.request.json).
 The [original](../contracts/examples/composite-review.v5.original.json) and

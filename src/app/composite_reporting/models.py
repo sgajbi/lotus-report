@@ -13,7 +13,16 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    WithJsonSchema,
+    model_validator,
+)
 
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^\S+$")]
@@ -403,6 +412,66 @@ class EligibilitySelection(BaseModel):
         return self
 
 
+class MonthlyReceiptPin(BaseModel):
+    """Caller-pinned retained monthly receipt; no latest authority inference."""
+
+    model_config = ConfigDict(extra="forbid")
+    product_version: Literal["v1", "v2"]
+    evaluation_revision: Identifier
+    approval_content_hash: Digest
+    receipt_content_hash: Digest
+    receipt_response_digest: Digest
+
+
+class AmendmentEvaluatedPin(EvaluatedEligibilityPin):
+    lineage_receipts: list[MonthlyReceiptPin] = Field(min_length=1, max_length=31)
+
+
+class AmendmentPublishedPin(PublishedEligibilityPin):
+    lineage_receipts: list[MonthlyReceiptPin] = Field(min_length=1, max_length=31)
+    parent_publication_response_digest: Digest
+
+
+class AmendmentEligibilitySelection(BaseModel):
+    """Explicit source-v2 ordinary-month selection; independent definition version."""
+
+    model_config = ConfigDict(extra="forbid")
+    selection_version: Literal["v2"]
+    tenant_id: Identifier
+    composite_id: Identifier
+    definition_version: Identifier
+    reporting_currency: str = Field(pattern=r"^[A-Z]{3}$")
+    period_start: date
+    period_end: date
+    months: list[
+        Annotated[
+            AmendmentPublishedPin | AmendmentEvaluatedPin, Field(discriminator="evidence_kind")
+        ]
+    ] = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def require_ordered_months(self) -> AmendmentEligibilitySelection:
+        plain = self.model_dump(mode="json", exclude={"selection_version"})
+        for month in plain["months"]:
+            month.pop("lineage_receipts")
+            month.pop("parent_publication_response_digest", None)
+        EligibilitySelection.model_validate(plain)
+        return self
+
+
+def eligibility_selection_version(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(value.get("selection_version", "v1"))
+    return str(getattr(value, "selection_version", "v1"))
+
+
+VersionedEligibilitySelection = Annotated[
+    Annotated[EligibilitySelection, Tag("v1")]
+    | Annotated[AmendmentEligibilitySelection, Tag("v2")],
+    Discriminator(eligibility_selection_version),
+]
+
+
 class PooledSourcePin(BaseModel):
     """Exact retained owner source vector, distinct from read authority."""
 
@@ -488,7 +557,7 @@ class CompositeReviewJobRequest(BaseModel):
         exclude_if=lambda value: value is None,
         description="Exact linked-analysis primary operation; exclusive of TWR return products.",
     )
-    eligibility_selection: EligibilitySelection | None = Field(
+    eligibility_selection: VersionedEligibilitySelection | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
         description="Exact published or evaluated-only monthly eligibility; NOT_ATTESTED.",
@@ -549,6 +618,7 @@ class CompositeReviewJobRequest(BaseModel):
         CompositeReportSelection
         | LinkedAnalysisSelection
         | EligibilitySelection
+        | AmendmentEligibilitySelection
         | PooledAnalysisSelection
     ):
         if self.pooled_selection is not None:
