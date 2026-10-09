@@ -136,6 +136,12 @@ readiness requires supplier runtime plus the exact template's type, contract and
 output-format evidence. Global PDF readiness does not imply workbook support;
 development template publication does not imply distribution authority.
 
+Method-binding object keys are sorted before assigning Methods row identities
+and escaped source pointers. JSON object insertion order, including PostgreSQL
+JSONB key normalization, cannot change the semantic table for the same retained
+values. Existing snapshots and their stored tables remain immutable; rerender
+uses those tables rather than rebuilding them under a newer projection.
+
 The current generic regenerate/replay command routes remain portfolio-review
 only. Composite source correction requires a fresh composite order with explicit
 corrected pins and a new retry identity; no command silently substitutes the

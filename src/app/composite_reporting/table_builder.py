@@ -271,7 +271,7 @@ def _contributions(dataset: dict[str, Any]) -> CompositeTable:
 def _methods(dataset: dict[str, Any]) -> CompositeTable:
     pointers = ["/selection/methodology", "/selection/engine_version"]
     for index, window in enumerate(dataset["selection"]["windows"]):
-        for key in window["method_binding"]:
+        for key in sorted(window["method_binding"]):
             escaped = key.replace("~", "~0").replace("/", "~1")
             pointers.append(f"/selection/windows/{index}/method_binding/{escaped}")
     return _pointer_table(dataset, "Methods", pointers)
