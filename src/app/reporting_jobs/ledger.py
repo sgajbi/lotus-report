@@ -142,6 +142,7 @@ def resolve_job_accepted_contract(
     output_formats: list[str] | None,
     inherited_template: tuple[str | None, str | None] | None,
     inherited_contract: dict[str, Any] | None,
+    options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The one contract-minting path both ledgers share.
 
@@ -154,7 +155,7 @@ def resolve_job_accepted_contract(
 
     if inherited_contract is not None:
         return inherited_contract
-    return dict(
+    contract = dict(
         accepted_document_contract(
             report_type,
             output_formats,
@@ -162,6 +163,22 @@ def resolve_job_accepted_contract(
             inherited_template=inherited_template,
         )
     )
+    if report_type == "composite_review" and options and "composite_source_products" in options:
+        contract["report_data_contract_version"] = "composite_review.v2"
+        contract["input_snapshot_contract_version"] = "composite_review.v2"
+        if contract.get("template_id") is not None:
+            contract["template_version"] = "v2"
+    return contract
+
+
+def template_for_accepted_contract(
+    contract: dict[str, Any],
+    resolved: tuple[str | None, str | None],
+) -> tuple[str | None, str | None]:
+    """A selected composite product profile overrides only its own template axis."""
+    if contract.get("report_data_contract_version") == "composite_review.v2":
+        return contract.get("template_id"), contract.get("template_version")
+    return resolved
 
 
 #: Request-option keys the SERVER derives and injects after acceptance
@@ -293,7 +310,7 @@ def _request_parts(
             selection.period_end,
             list(request.requested_output_formats),
             selection.reporting_currency,
-            {**request.options, "composite_selection": selection.model_dump(mode="json")},
+            request.capture_options(),
         )
     if isinstance(request, PortfolioReviewJobRequest):
         options = dict(request.options)
@@ -875,6 +892,10 @@ class ReportJobLedger:
             output_formats=output_formats,
             inherited_template=inherited_template,
             inherited_contract=inherited_contract,
+            options=options,
+        )
+        render_template_id, render_template_version = template_for_accepted_contract(
+            job_accepted_contract, (render_template_id, render_template_version)
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(

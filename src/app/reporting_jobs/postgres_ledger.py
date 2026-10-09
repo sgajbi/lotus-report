@@ -29,6 +29,7 @@ from app.reporting_jobs.ledger import (
     client_identity_hash_from_record,
     compute_request_hash,
     resolve_job_accepted_contract,
+    template_for_accepted_contract,
     utc_now,
 )
 from app.reporting_jobs.lifecycle_policy import (
@@ -351,6 +352,10 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             output_formats=output_formats,
             inherited_template=inherited_template,
             inherited_contract=inherited_contract,
+            options=options,
+        )
+        render_template_id, render_template_version = template_for_accepted_contract(
+            job_accepted_contract, (render_template_id, render_template_version)
         )
         normalized_key = idempotency_key.strip()
         request_hash = compute_request_hash(

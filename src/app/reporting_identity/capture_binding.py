@@ -97,6 +97,17 @@ def source_revision_vector_for_capture(
     composite_revision = _revision_from_composite_response(snapshot_payload)
     if composite_revision is not None:
         stated.append(composite_revision)
+    if snapshot_payload.get("contract_version") == "composite_review.v2":
+        for product in snapshot_payload.get("source_products", []):
+            if isinstance(product, dict):
+                revision = _revision_from_composite_response(
+                    {
+                        "contract_version": "composite_review.v2",
+                        "source_response": product.get("source_response"),
+                    }
+                )
+                if revision is not None:
+                    stated.append(revision)
     for section_key in _SOURCE_PRODUCT_SECTIONS:
         section = snapshot_payload.get(section_key)
         if not isinstance(section, dict):
@@ -162,7 +173,7 @@ def revision_for_capture(
 
 
 def _revision_from_composite_response(payload: dict[str, Any]) -> SourceRevision | None:
-    if payload.get("contract_version") != "composite_review.v1":
+    if payload.get("contract_version") not in {"composite_review.v1", "composite_review.v2"}:
         return None
     response = payload.get("source_response")
     if not isinstance(response, dict):

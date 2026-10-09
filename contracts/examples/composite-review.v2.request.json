@@ -1,0 +1,111 @@
+{
+  "options": {},
+  "requested_output_formats": [
+    "json"
+  ],
+  "selection": {
+    "calculation_fingerprint": "sha256:9d7dd9127d3358189c3f0c1f670d9c4769e6bd6966685da06fd647bfa07a1435",
+    "calculation_id": "a9686913-27da-49d6-a12a-1b77b89c906e",
+    "composite_id": "SYNTHETIC_OR-02",
+    "engine_version": "lotus-performance-calculation-engine.v16",
+    "methodology": "persisted_member_return_asset_weighted_twr_v1",
+    "period_end": "2026-02-28",
+    "period_start": "2026-01-01",
+    "reporting_currency": "USD",
+    "response_digest": "sha256:9ed0be022ac38f8841b6d30d9f52b2c1b5456ccd70bc439c391917a1bf16cb00",
+    "return_view": "GROSS",
+    "tenant_id": "synthetic-tenant-a",
+    "windows": [
+      {
+        "attestation_content_hash": "sha256:eb5bb149318fa01d496371aba42bae90c305b24dd1c971cf9c596d2aa53e4f27",
+        "definition_content_hash": "sha256:3cef79993dae709c4d4139854b97e2d1726cc6284df3bf6f5fa5a873ebb22fc8",
+        "materialization_id": "2190526a-c9dd-40b0-be56-8f72e6305903",
+        "membership_content_hash": "sha256:4b3e05673b1451a3e726459b3a6051dad64bd7b680657c7c3ec7e29b8f0f2398",
+        "method_binding": {
+          "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e",
+          "product_name": "SyntheticReturnMethodProfile",
+          "product_version": "v1",
+          "revision": "synthetic.method.r1"
+        },
+        "period_end": "2026-01-31",
+        "period_start": "2026-01-01",
+        "restatement_sequence": 1,
+        "retained_receipt_fingerprint": "sha256:aaf11d896e8fe90d7c888421d89ca395211c4557cd0816f16de438822f153411",
+        "source_cut_id": "synthetic-cut-original"
+      },
+      {
+        "attestation_content_hash": "sha256:7621014bb0f7d74b49ca6697c4559b2d6eaa151a93facc4d0da0da0e497fcce5",
+        "definition_content_hash": "sha256:09b723d4f05beeddebf9df5fb6face9ecbef586987a74e33811a3def717d362d",
+        "materialization_id": "f3e6ac4f-0d5e-4fd8-93e4-7ab68358c871",
+        "membership_content_hash": "sha256:41fe08e7e0f7c89e79b7dc8173ad54496624b2e0201acc235956d418ebbfcb9f",
+        "method_binding": {
+          "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e",
+          "product_name": "SyntheticReturnMethodProfile",
+          "product_version": "v1",
+          "revision": "synthetic.method.r1"
+        },
+        "period_end": "2026-02-28",
+        "period_start": "2026-02-01",
+        "restatement_sequence": 2,
+        "retained_receipt_fingerprint": "sha256:e2a9bb8e0c285282591660b0cefe0d342c56e05ffe7aaef7c8c6877f4e52e50f",
+        "source_cut_id": "synthetic-cut-original"
+      }
+    ]
+  },
+  "source_products": [
+    {
+      "kind": "TRAILING_RETURN",
+      "months": 2,
+      "product_key": "trailing_2m",
+      "selection": {
+        "calculation_fingerprint": "sha256:9d7dd9127d3358189c3f0c1f670d9c4769e6bd6966685da06fd647bfa07a1435",
+        "calculation_id": "a9686913-27da-49d6-a12a-1b77b89c906e",
+        "composite_id": "SYNTHETIC_OR-02",
+        "engine_version": "lotus-performance-calculation-engine.v16",
+        "methodology": "persisted_member_return_asset_weighted_twr_v1",
+        "period_end": "2026-02-28",
+        "period_start": "2026-01-01",
+        "reporting_currency": "USD",
+        "response_digest": "sha256:9ed0be022ac38f8841b6d30d9f52b2c1b5456ccd70bc439c391917a1bf16cb00",
+        "return_view": "GROSS",
+        "tenant_id": "synthetic-tenant-a",
+        "windows": [
+          {
+            "attestation_content_hash": "sha256:eb5bb149318fa01d496371aba42bae90c305b24dd1c971cf9c596d2aa53e4f27",
+            "definition_content_hash": "sha256:3cef79993dae709c4d4139854b97e2d1726cc6284df3bf6f5fa5a873ebb22fc8",
+            "materialization_id": "2190526a-c9dd-40b0-be56-8f72e6305903",
+            "membership_content_hash": "sha256:4b3e05673b1451a3e726459b3a6051dad64bd7b680657c7c3ec7e29b8f0f2398",
+            "method_binding": {
+              "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e",
+              "product_name": "SyntheticReturnMethodProfile",
+              "product_version": "v1",
+              "revision": "synthetic.method.r1"
+            },
+            "period_end": "2026-01-31",
+            "period_start": "2026-01-01",
+            "restatement_sequence": 1,
+            "retained_receipt_fingerprint": "sha256:aaf11d896e8fe90d7c888421d89ca395211c4557cd0816f16de438822f153411",
+            "source_cut_id": "synthetic-cut-original"
+          },
+          {
+            "attestation_content_hash": "sha256:7621014bb0f7d74b49ca6697c4559b2d6eaa151a93facc4d0da0da0e497fcce5",
+            "definition_content_hash": "sha256:09b723d4f05beeddebf9df5fb6face9ecbef586987a74e33811a3def717d362d",
+            "materialization_id": "f3e6ac4f-0d5e-4fd8-93e4-7ab68358c871",
+            "membership_content_hash": "sha256:41fe08e7e0f7c89e79b7dc8173ad54496624b2e0201acc235956d418ebbfcb9f",
+            "method_binding": {
+              "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e",
+              "product_name": "SyntheticReturnMethodProfile",
+              "product_version": "v1",
+              "revision": "synthetic.method.r1"
+            },
+            "period_end": "2026-02-28",
+            "period_start": "2026-02-01",
+            "restatement_sequence": 2,
+            "retained_receipt_fingerprint": "sha256:e2a9bb8e0c285282591660b0cefe0d342c56e05ffe7aaef7c8c6877f4e52e50f",
+            "source_cut_id": "synthetic-cut-original"
+          }
+        ]
+      }
+    }
+  ]
+}

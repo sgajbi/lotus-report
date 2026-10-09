@@ -137,3 +137,61 @@ The owning unit fixture also replays the actual registered Performance response
 from merged main with explicitly controlled economic/provider/verifier inputs.
 Actual workbook and Archive qualification are separate producer/consumer proofs
 recorded in the delivery ledger. These tests do not establish institutional authority.
+## Captured calendar and trailing products
+
+The same `POST /reports/composite-reviews` endpoint accepts an optional typed
+`source_products` array of 1–8 exact selections. Omit it to preserve the existing
+v1 request, identity and retained dataset. An empty array is invalid. Each entry
+has a unique `product_key`, an independent `selection` and one of:
+
+- `kind: CALENDAR_RETURN`, with an integer `year` and exactly twelve complete
+  January–December monthly pins.
+- `kind: TRAILING_RETURN`, with an integer `months` and that exact number of
+  complete monthly pins ending on the primary selection's as-of date.
+
+Tenant, composite, currency, fee view, methodology and engine must agree with the
+primary selection. Every product pin must deep-match the corresponding primary
+window, including materialization, restatement, source cut, hashes, method and
+receipt fingerprint. An original calendar response cannot be combined with a
+corrected primary. Since-inception and annual dispersion are not selector kinds.
+Report calls the existing Performance TWR endpoint for each required selection;
+it never links returns locally. Failure, empty HTTP200, changed digest or context
+refuses capture and records failed upstream lineage rather than a partial
+successful dataset. Transport unavailability retains the existing `unavailable`
+call status; semantic refusals retain `error`.
+
+Product orders persist `composite_review.v2` for both input and data contract.
+XLSX additionally requires actual readiness for `composite-review/v2`, the v2
+data contract and XLSX format before order admission. Missing or incompatible
+evidence returns HTTP503 `composite_product_render_unavailable`. JSON orders do
+not need a renderer. Accepted contract axes, source calls, snapshot, source-stated
+revisions and product custody pins remain immutable. Retained rerender makes no
+source request. Existing v1 orders keep their accepted v1 template and identity.
+
+The executable [trailing request](../contracts/examples/composite-review.v2.request.json),
+[dataset](../contracts/examples/composite-review.v2.json) and
+[schema](../contracts/composite_review.v2.schema.json) use the actual retained R2
+two-month controlled synthetic source, with a separately captured trailing product
+of the same horizon. Full calendar and trailing regression fixtures use accepted
+Performance `75f2f3c585cd7d42075bb8310eced02ecdfad7a9` source evidence.
+Run the following from the
+`lotus-report` checkout to exercise actual full72/calendar2020/trailing12
+original and corrected source captures through the registered Report API/worker:
+
+```powershell
+python -m pytest tests/unit/composite_reporting/test_source_products.py -q
+```
+
+```bash
+python -m pytest tests/unit/composite_reporting/test_source_products.py -q
+```
+
+These tests use recorded registered producer responses, SQLite and controlled
+Performance transport. They establish test execution, not a live upstream
+deployment. All expected values are literal source outputs: original full72
+`-0.011980394452`, calendar2020 `-0.002172769524`, trailing12
+`-0.008153771882`; corrected full72 `-0.009996419341`, calendar2020
+`-0.000169100387`, trailing12 `-0.008153771882`. Source annual member dispersion
+returned HTTP422 `ANNUAL_DISPERSION_POLICY_BASIS_MISMATCH`; it supplies no metric
+value. Calendar return is not annual member dispersion. All evidence remains
+`NOT_ATTESTED`; full #417 and RPT-01–12 acceptance remain open.

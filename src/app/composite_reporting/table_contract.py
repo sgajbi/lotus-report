@@ -87,13 +87,17 @@ class CompositeTable(TableModel):
     @model_validator(mode="after")
     def require_complete_rows(self) -> CompositeTable:
         keys = [column.column_id for column in self.columns]
-        if len(keys) != len(set(keys)):
-            raise ValueError("Table columns must be unique")
-        if len({row.row_id for row in self.rows}) != len(self.rows):
-            raise ValueError("Table row identities must be unique")
-        if any(set(row.cells) != set(keys) for row in self.rows):
-            raise ValueError("Every row must account for every declared column")
+        require_complete_table(keys, [(row.row_id, set(row.cells)) for row in self.rows])
         return self
+
+
+def require_complete_table(keys: list[str], rows: list[tuple[str, set[str]]]) -> None:
+    if len(keys) != len(set(keys)):
+        raise ValueError("Table columns must be unique")
+    if len({row_id for row_id, _ in rows}) != len(rows):
+        raise ValueError("Table row identities must be unique")
+    if any(cells != set(keys) for _, cells in rows):
+        raise ValueError("Every row must account for every declared column")
 
 
 def resolve_source_pointer(dataset: dict[str, Any], pointer: str) -> Any:

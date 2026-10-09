@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, Protocol
 
 from app.clients.render_client import RenderClient
@@ -86,6 +87,29 @@ class ReportOrderingCatalogueService:
         return ReportOrderingCatalogueResponse(
             report_families=report_families,
             supportability=_catalogue_supportability(report_families),
+        )
+
+    async def document_contract_supportability(
+        self,
+        *,
+        report_type: str,
+        format_id: str,
+        contract_version: str,
+        template_version: str,
+    ) -> ReportCatalogueSupportability:
+        """Check a selected contract against the same runtime/template evidence."""
+        definition = next(item for item in self._definitions if item.report_type == report_type)
+        render_status, metadata = await self._render_client.get_metadata()
+        template_status, projection = await self._render_client.get_template_projection()
+        return _family_document_supportability(
+            replace(
+                definition,
+                report_data_contract_version=contract_version,
+                template_version=template_version,
+            ),
+            format_id=format_id,
+            runtime=_document_supportability(render_status, metadata, format_id),
+            templates=_template_projection_index(template_status, projection),
         )
 
 

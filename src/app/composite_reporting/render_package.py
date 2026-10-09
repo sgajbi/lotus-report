@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.composite_reporting.semantic_contract import CompositeReportData
+from app.composite_reporting.product_contract import validate_composite_dataset
 from app.reporting_document_format import document_output_format
 from app.reporting_identity.capture_binding import revision_for_capture
 from app.reporting_jobs.models import ReportJobLedgerRecord
@@ -51,8 +51,9 @@ def build_composite_render_package(
 def composite_archive_custody(
     *, job: ReportJobLedgerRecord, record: ReportInputSnapshotRecord
 ) -> dict[str, Any]:
-    data = CompositeReportData.model_validate(record.snapshot_payload)
+    data = validate_composite_dataset(record.snapshot_payload)
     selection = data.selection
+    _require_custody_contract(job, record, data.contract_version)
     if (
         record.report_job_id != job.job_id
         or record.report_type != job.report_type
@@ -110,4 +111,27 @@ def composite_archive_custody(
         value = job.options.get(field)
         if value:
             custody[field] = value
+    if data.contract_version == "composite_review.v2":
+        custody["composite_report_identity"]["source_products"] = [
+            {
+                "pin": product.pin.model_dump(mode="json"),
+                "source_response_digest": product.source_response_digest,
+            }
+            for product in data.source_products
+        ]
     return custody
+
+
+def _require_custody_contract(
+    job: ReportJobLedgerRecord,
+    record: ReportInputSnapshotRecord,
+    contract_version: str,
+) -> None:
+    accepted = job.accepted_document_contract or {}
+    axes = (
+        record.report_data_contract_version,
+        accepted.get("report_data_contract_version", contract_version),
+        accepted.get("input_snapshot_contract_version", contract_version),
+    )
+    if any(axis != contract_version for axis in axes):
+        raise ValueError("COMPOSITE_CUSTODY_CONTRACT_CONFLICT")

@@ -86,3 +86,26 @@ async def test_exact_development_workbook_is_orderable_for_internal_use():
     assert family.output_formats[1].state == "ready"
     assert family.supportability.state == "ready"
     assert projection == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["v1_only", "wrong_contract", "correct_v2", "wrong_format"])
+async def test_selected_v2_contract_requires_exact_template_axes(case):
+    definition, metadata, projection = workbook_sources()
+    entry = projection["templates"][0]
+    if case != "v1_only":
+        entry["template_version"] = "v2"
+    if case != "wrong_contract":
+        entry["supported_report_data_contract_versions"] = ["composite_review.v2"]
+    if case == "wrong_format":
+        entry["supported_output_formats"] = ["pdf"]
+    support = await ReportOrderingCatalogueService(
+        render_client=_RenderMetadataClient(200, metadata, templates_payload=projection),
+        definitions=[definition],
+    ).document_contract_supportability(
+        report_type="composite_review",
+        format_id="xlsx",
+        contract_version="composite_review.v2",
+        template_version="v2",
+    )
+    assert support.state == ("ready" if case == "correct_v2" else "unavailable")

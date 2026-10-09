@@ -440,6 +440,15 @@ REPORT_FAMILY_DEFINITIONS = (
                 defaulting_policy="caller_required",
                 value_source="caller",
             ),
+            ReportConfigurationFieldDefinition(
+                field_id="composite_source_products",
+                business_label="Pinned calendar and trailing sources",
+                description="Optional exact source products bound to the primary version vector.",
+                input_type="pinned_source_selection",
+                requirement="optional",
+                defaulting_policy="omitted_preserves_legacy_contract",
+                value_source="caller",
+            ),
         ),
     ),
 )
