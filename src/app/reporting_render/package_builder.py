@@ -15,6 +15,7 @@ from app.report_ordering_catalogue.template_resolution import (
     resolve_report_data_contract,
     resolve_report_family,
 )
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.allocation_presentation import (
     ALLOCATION_DIMENSIONS,
@@ -29,6 +30,7 @@ from app.reporting_lineage.allocation_qualification import (
     top_allocation_bucket,
 )
 from app.reporting_lineage.benchmark_presentation import resolve_benchmark_presentation
+from app.reporting_lineage.models import ReportInputSnapshotRecord
 from app.reporting_render.attribution_bridge import build_attribution_bridge
 from app.reporting_render.contribution_ranking import build_contribution_ranking
 from app.reporting_render.document_reference import mint_document_reference
@@ -44,6 +46,35 @@ from app.services.performance_history import performance_history_statement
 
 
 def _build_render_package(
+    *,
+    job: ReportJobLedgerRecord,
+    snapshot: dict[str, Any],
+    render_job_id: str,
+    snapshot_id: str,
+    report_revision_id: str | None = None,
+    snapshot_record: ReportInputSnapshotRecord | None = None,
+) -> dict[str, Any]:
+    if job.report_type == "composite_review":
+        from app.composite_reporting.render_package import build_composite_render_package
+
+        return build_composite_render_package(
+            job=job,
+            snapshot=snapshot,
+            render_job_id=render_job_id,
+            snapshot_id=snapshot_id,
+            report_revision_id=report_revision_id,
+            snapshot_record=snapshot_record,
+        )
+    return _build_existing_render_package(
+        job=job,
+        snapshot=snapshot,
+        render_job_id=render_job_id,
+        snapshot_id=snapshot_id,
+        report_revision_id=report_revision_id,
+    )
+
+
+def _build_existing_render_package(
     *,
     job: ReportJobLedgerRecord,
     snapshot: dict[str, Any],
@@ -984,6 +1015,7 @@ def _render_package_envelope(
     lineage_refs: list[str],
     disclosure_refs: list[str],
     report_revision_id: str | None = None,
+    archive_custody: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The envelope every render package shares; only the typed content varies.
 
@@ -1017,7 +1049,7 @@ def _render_package_envelope(
         "template_version": template_version,
         "locale": _accepted_axis(job, "locale") or GOVERNED_LOCALE,
         "brand_variant": _accepted_axis(job, "brand_variant") or GOVERNED_BRAND_VARIANT,
-        "output_format": "pdf",
+        "output_format": document_output_format(job.requested_output_formats) or "pdf",
         "render_context": {
             "timezone": "Asia/Singapore",
             # The canonical revision identity of the facts this document
@@ -1042,7 +1074,9 @@ def _render_package_envelope(
             # overlays identity, provenance, and the declared digest LAST, so
             # nothing stated here can override what Render actually did -
             # which is also why none of those overlaid fields appear here.
-            "archive": _archive_custody_block(
+            "archive": archive_custody
+            if archive_custody is not None
+            else _archive_custody_block(
                 job=job, snapshot=snapshot, report_revision_id=report_revision_id
             ),
         },

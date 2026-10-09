@@ -796,6 +796,17 @@ class ReportingReadPortfolioReviewInputProvider:
             return await self._collect_for_job(job)
 
     async def _collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
+        if job.report_type == "composite_review":
+            from app.composite_reporting.source_capture import CompositeInputProvider
+
+            return await CompositeInputProvider(
+                performance_client=PerformanceClient(
+                    base_url=settings.performance_base_url,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                )
+            ).collect_for_job(job)
         recorder = _UpstreamRecorder(
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
@@ -978,28 +989,10 @@ class PortfolioReviewSnapshotCaptureService:
         except PortfolioReviewInputCaptureError as exc:
             upstream_calls = exc.upstream_calls
             failure_category, failure_message, retry_eligible = _map_job_failure(exc.original_error)
-            snapshot_payload = {
-                "report_id": (
-                    f"portfolio-review:{_first_portfolio_id(job)}:{job.as_of_date.isoformat()}"
-                ),
-                "portfolio_id": _first_portfolio_id(job),
-                "as_of_date": job.as_of_date.isoformat(),
-                "capture_status": "failed",
-                "failure_category": failure_category,
-                "failure_message": failure_message,
-            }
+            snapshot_payload = _failed_capture_payload(job, failure_category, failure_message)
         except Exception as exc:
             failure_category, failure_message, retry_eligible = _map_job_failure(exc)
-            snapshot_payload = {
-                "report_id": (
-                    f"portfolio-review:{_first_portfolio_id(job)}:{job.as_of_date.isoformat()}"
-                ),
-                "portfolio_id": _first_portfolio_id(job),
-                "as_of_date": job.as_of_date.isoformat(),
-                "capture_status": "failed",
-                "failure_category": failure_category,
-                "failure_message": failure_message,
-            }
+            snapshot_payload = _failed_capture_payload(job, failure_category, failure_message)
 
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
@@ -1851,6 +1844,25 @@ def _capture_integrity_error(
     if any(call.trace_id != snapshot.trace_id for call in calls):
         return "lineage_trace_id_mismatch"
     return None
+
+
+def _failed_capture_payload(
+    job: ReportJobLedgerRecord, category: str, message: str
+) -> dict[str, Any]:
+    if job.report_type == "composite_review":
+        identity = {"composite_id": job.portfolio_scope.get("composite_id")}
+        report_id = f"composite-review:{identity['composite_id']}:{job.as_of_date.isoformat()}"
+    else:
+        identity = {"portfolio_id": _first_portfolio_id(job)}
+        report_id = f"portfolio-review:{identity['portfolio_id']}:{job.as_of_date.isoformat()}"
+    return {
+        "report_id": report_id,
+        **identity,
+        "as_of_date": job.as_of_date.isoformat(),
+        "capture_status": "failed",
+        "failure_category": category,
+        "failure_message": message,
+    }
 
 
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:

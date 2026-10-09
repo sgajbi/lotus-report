@@ -9,6 +9,7 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
+from app.composite_reporting.models import CompositeReviewJobRequest
 from app.postgres import PostgresConnectionProvider
 from app.report_ordering_catalogue.template_resolution import job_template_identity
 from app.reporting_jobs.event_contracts import (
@@ -187,6 +188,24 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             if not rerender_rows:
                 raise RuntimeError("report_rerender_attempt_schema_missing")
 
+    def submit_composite_review_job(
+        self,
+        *,
+        request: CompositeReviewJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        if request.selection.tenant_id != caller_context.tenant_id:
+            raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
+        return self._create_report_job(
+            report_type="composite_review",
+            accepted_message="Composite review dataset job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+            enqueue=True,
+        )
+
     def create_portfolio_review_job(
         self,
         *,
@@ -302,7 +321,8 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         *,
         report_type: str,
         accepted_message: str,
-        request: PortfolioReviewJobRequest
+        request: CompositeReviewJobRequest
+        | PortfolioReviewJobRequest
         | OutcomeReviewReportJobRequest
         | ProofPackReportJobRequest
         | WaveReportJobRequest,
@@ -1378,7 +1398,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 return _rerender_attempt_from_row(existing), False
             now = utc_now()
             attempt_id = f"rrnd_{uuid4().hex}"
-            render_job_id = f"rdr_{attempt_id}_pdf"
+            output_format = job.render_output_format or "pdf"
+            template_id, template_version = job_template_identity(job.report_type, [output_format])
+            render_job_id = f"rdr_{attempt_id}_{output_format}"
             connection.execute(
                 """
                 INSERT INTO report_rerender_attempt (
@@ -1403,9 +1425,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                     job.render_job_id,
                     job.archive_document_id,
                     render_job_id,
-                    "pdf",
-                    "portfolio-review",
-                    "v1",
+                    output_format,
+                    job.render_template_id or template_id,
+                    job.render_template_version or template_version,
                     False,
                     actor,
                     reason,

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
+from app.composite_reporting.models import CompositeReviewJobRequest
 from app.config import settings
 from app.report_ordering_catalogue.template_resolution import (
     accepted_document_contract,
@@ -48,7 +49,8 @@ from app.reporting_jobs.work_queue import (
 )
 
 ReportJobRequest: TypeAlias = (
-    PortfolioReviewJobRequest
+    CompositeReviewJobRequest
+    | PortfolioReviewJobRequest
     | OutcomeReviewReportJobRequest
     | ProofPackReportJobRequest
     | WaveReportJobRequest
@@ -284,6 +286,15 @@ def _request_parts(
     report_type: str,
     request: ReportJobRequest,
 ) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
+    if isinstance(request, CompositeReviewJobRequest):
+        selection = request.selection
+        return (
+            {"composite_id": selection.composite_id},
+            selection.period_end,
+            list(request.requested_output_formats),
+            selection.reporting_currency,
+            {**request.options, "composite_selection": selection.model_dump(mode="json")},
+        )
     if isinstance(request, PortfolioReviewJobRequest):
         options = dict(request.options)
         if request.proposal_narrative_package is not None:
@@ -702,6 +713,24 @@ class ReportJobLedger:
                 ON report_job_work_item(status, available_at, created_at)
                 """
             )
+
+    def submit_composite_review_job(
+        self,
+        *,
+        request: CompositeReviewJobRequest,
+        caller_context: ReportCallerContext,
+        idempotency_key: str | None,
+    ) -> ReportJobLedgerRecord:
+        if request.selection.tenant_id != caller_context.tenant_id:
+            raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
+        return self._create_report_job(
+            report_type="composite_review",
+            accepted_message="Composite review dataset job accepted.",
+            request=request,
+            caller_context=caller_context,
+            idempotency_key=idempotency_key,
+            enqueue=True,
+        )
 
     def create_portfolio_review_job(
         self,
@@ -1877,7 +1906,11 @@ class ReportJobLedger:
                 now = utc_now()
                 now_text = _dt_to_text(now)
                 attempt_id = f"rrnd_{uuid4().hex}"
-                render_job_id = f"rdr_{attempt_id}_pdf"
+                output_format = job.render_output_format or "pdf"
+                template_id, template_version = job_template_identity(
+                    job.report_type, [output_format]
+                )
+                render_job_id = f"rdr_{attempt_id}_{output_format}"
                 connection.execute(
                     """
                     INSERT INTO report_rerender_attempt (
@@ -1899,9 +1932,9 @@ class ReportJobLedger:
                         job.render_job_id,
                         job.archive_document_id,
                         render_job_id,
-                        "pdf",
-                        "portfolio-review",
-                        "v1",
+                        output_format,
+                        job.render_template_id or template_id,
+                        job.render_template_version or template_version,
                         0,
                         actor,
                         reason,

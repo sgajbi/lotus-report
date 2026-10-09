@@ -405,4 +405,41 @@ REPORT_FAMILY_DEFINITIONS = (
         ),
         supported_output_formats=("json", "pdf"),
     ),
+    ReportFamilyDefinition(
+        report_family_id="composite_review",
+        report_type="composite_review",
+        business_label="Composite review dataset",
+        description=(
+            "Exact retained composite calculation with unavailable source products declared."
+        ),
+        intended_use="internal_composite_calculated_review",
+        audience_roles=("portfolio_manager", "investment_control", "audit"),
+        client_release_posture="internal_control_only",
+        template_id="composite-review",
+        template_version="v1",
+        report_data_contract_version="composite_review.v1",
+        input_snapshot_contract_version="composite_review.v1",
+        standard_disclosure_ref="composite-review.standard-disclosures.v1",
+        ordering_modes=(
+            ReportOrderingModeDefinition(
+                mode_id="single_composite",
+                business_label="Exact composite selection",
+                description="Capture one exact retained composite calculation vector.",
+                default_output_format="json",
+                interactive=False,
+            ),
+        ),
+        supported_output_formats=("json",),
+        configuration_fields=(
+            ReportConfigurationFieldDefinition(
+                field_id="composite_selection",
+                business_label="Pinned calculated source",
+                description="Exact composite vector, fee, currency, method and response identity.",
+                input_type="pinned_source_selection",
+                requirement="required",
+                defaulting_policy="caller_required",
+                value_source="caller",
+            ),
+        ),
+    ),
 )

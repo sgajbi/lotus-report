@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from app.clients.archive_client import ArchiveClient
 from app.clients.render_client import RenderClient
 from app.config import settings
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -249,6 +250,7 @@ class PortfolioReviewRerenderService:
             render_job_id=attempt.render_job_id,
             snapshot_id=snapshot.snapshot_id,
             report_revision_id=snapshot.report_revision_id,
+            snapshot_record=snapshot,
         )
         status_code, render_response = await self._render_client.submit_render_package(
             payload,
@@ -526,11 +528,11 @@ def rerender_eligible(job: ReportJobLedgerRecord) -> bool:
     operator command and the diagnostics claim, so the two can never
     disagree (one fact, one name). Render exposes NO re-render surface: a
     rerender is a fresh submission needing a full package, which only an
-    archived PDF job possesses end to end."""
+    archived document job possesses end to end."""
 
     return (
         job.status == "archived"
-        and "pdf" in job.requested_output_formats
+        and document_output_format(job.requested_output_formats) is not None
         and bool(job.render_job_id)
         and bool(job.archive_document_id)
     )

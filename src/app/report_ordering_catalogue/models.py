@@ -8,7 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 #: catalogue can declare the same types the response models validate. These
 #: were inline on each field, which left ``definitions.py`` carrying ``str``
 #: for every one of them and the agreement between the two unchecked.
-ConfigurationInputType = Literal["business_date", "currency", "benchmark", "multi_select", "text"]
+ConfigurationInputType = Literal[
+    "business_date", "currency", "benchmark", "multi_select", "text", "pinned_source_selection"
+]
 ConfigurationRequirement = Literal["required", "optional", "conditional"]
 ConfigurationValueSource = Literal[
     "caller",
@@ -18,6 +20,7 @@ ConfigurationValueSource = Literal[
 ]
 SectionSelectionPosture = Literal["required", "optional"]
 OrderingModeId = Literal[
+    "single_composite",
     "single_portfolio",
     "explicit_portfolio_batch",
     "governed_schedule",

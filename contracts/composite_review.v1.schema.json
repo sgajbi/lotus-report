@@ -1,0 +1,887 @@
+{
+  "$defs": {
+    "CompositeCell": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Canonical Value"
+        },
+        "availability": {
+          "enum": [
+            "AVAILABLE",
+            "UNAVAILABLE",
+            "UNKNOWN",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "source_pointer": {
+          "pattern": "^/(source_response|selection|report_facts)/",
+          "title": "Source Pointer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_value",
+        "availability",
+        "reason_codes",
+        "source_pointer"
+      ],
+      "title": "CompositeCell",
+      "type": "object"
+    },
+    "CompositeColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "column_id": {
+          "minLength": 1,
+          "title": "Column Id",
+          "type": "string"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value_type": {
+          "enum": [
+            "TEXT",
+            "DECIMAL_RETURN",
+            "MONEY",
+            "COUNT"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "TEXT",
+            "DECIMAL_RATIO",
+            "CURRENCY_UNITS",
+            "PORTFOLIO_COUNT"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "display_unit": {
+          "enum": [
+            "TEXT",
+            "PERCENT",
+            "PERCENTAGE_POINTS",
+            "CURRENCY_UNITS",
+            "PORTFOLIO_COUNT"
+          ],
+          "title": "Display Unit",
+          "type": "string"
+        },
+        "display_conversion": {
+          "enum": [
+            "IDENTITY",
+            "RATIO_TO_PERCENT_DISPLAY"
+          ],
+          "title": "Display Conversion",
+          "type": "string"
+        },
+        "display_decimal_places": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Display Decimal Places"
+        },
+        "display_rounding_mode": {
+          "const": "HALF_UP",
+          "default": "HALF_UP",
+          "title": "Display Rounding Mode",
+          "type": "string"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currency"
+        },
+        "scale": {
+          "const": "1",
+          "default": "1",
+          "title": "Scale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column_id",
+        "label",
+        "value_type",
+        "unit",
+        "display_unit",
+        "display_conversion",
+        "display_decimal_places",
+        "currency"
+      ],
+      "title": "CompositeColumn",
+      "type": "object"
+    },
+    "CompositeReportSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "description": "Must match admitted caller tenant; no body authority.",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "calculation_id": {
+          "format": "uuid",
+          "title": "Calculation Id",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "return_view": {
+          "enum": [
+            "GROSS",
+            "NET_ACTUAL",
+            "NET_MODEL_FEE"
+          ],
+          "title": "Return View",
+          "type": "string"
+        },
+        "methodology": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Methodology",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "calculation_fingerprint": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Calculation Fingerprint",
+          "type": "string"
+        },
+        "response_digest": {
+          "description": "Expected canonical raw response SHA-256, not approval.",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Response Digest",
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/CompositeWindowPin"
+          },
+          "maxItems": 120,
+          "minItems": 1,
+          "title": "Windows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "calculation_id",
+        "period_start",
+        "period_end",
+        "reporting_currency",
+        "return_view",
+        "methodology",
+        "engine_version",
+        "calculation_fingerprint",
+        "response_digest",
+        "windows"
+      ],
+      "title": "CompositeReportSelection",
+      "type": "object"
+    },
+    "CompositeRow": {
+      "additionalProperties": false,
+      "properties": {
+        "row_id": {
+          "minLength": 1,
+          "title": "Row Id",
+          "type": "string"
+        },
+        "cells": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CompositeCell"
+          },
+          "title": "Cells",
+          "type": "object"
+        }
+      },
+      "required": [
+        "row_id",
+        "cells"
+      ],
+      "title": "CompositeRow",
+      "type": "object"
+    },
+    "CompositeTable": {
+      "additionalProperties": false,
+      "properties": {
+        "table_id": {
+          "minLength": 1,
+          "title": "Table Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/CompositeColumn"
+          },
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/CompositeRow"
+          },
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "table_id",
+        "title",
+        "columns",
+        "rows"
+      ],
+      "title": "CompositeTable",
+      "type": "object"
+    },
+    "CompositeWindowPin": {
+      "additionalProperties": false,
+      "properties": {
+        "materialization_id": {
+          "format": "uuid",
+          "title": "Materialization Id",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "restatement_sequence": {
+          "minimum": 1,
+          "title": "Restatement Sequence",
+          "type": "integer"
+        },
+        "definition_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Definition Content Hash",
+          "type": "string"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "attestation_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Attestation Content Hash",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "method_binding": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "minProperties": 1,
+          "title": "Method Binding",
+          "type": "object"
+        },
+        "retained_receipt_fingerprint": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Retained Receipt Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "materialization_id",
+        "period_start",
+        "period_end",
+        "restatement_sequence",
+        "definition_content_hash",
+        "membership_content_hash",
+        "attestation_content_hash",
+        "source_cut_id",
+        "method_binding",
+        "retained_receipt_fingerprint"
+      ],
+      "title": "CompositeWindowPin",
+      "type": "object"
+    },
+    "CompositeMemberContribution": {
+      "additionalProperties": true,
+      "properties": {
+        "portfolio_id": {
+          "minLength": 1,
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "return_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Return Value"
+        },
+        "beginning_market_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Beginning Market Value"
+        },
+        "beginning_asset_weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Beginning Asset Weight"
+        },
+        "contribution": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Contribution"
+        },
+        "source_snapshot_id": {
+          "minLength": 1,
+          "title": "Source Snapshot Id",
+          "type": "string"
+        },
+        "source_fingerprint": {
+          "minLength": 1,
+          "title": "Source Fingerprint",
+          "type": "string"
+        },
+        "restatement_version": {
+          "minLength": 1,
+          "title": "Restatement Version",
+          "type": "string"
+        },
+        "restatement_sequence": {
+          "minimum": 1,
+          "title": "Restatement Sequence",
+          "type": "integer"
+        },
+        "calculation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculation Id"
+        },
+        "source_authority_identity": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Authority Identity"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "period_start",
+        "period_end",
+        "return_value",
+        "beginning_market_value",
+        "beginning_asset_weight",
+        "contribution",
+        "source_snapshot_id",
+        "source_fingerprint",
+        "restatement_version",
+        "restatement_sequence"
+      ],
+      "title": "CompositeMemberContribution",
+      "type": "object"
+    },
+    "CompositePeriod": {
+      "additionalProperties": true,
+      "properties": {
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "READY",
+            "DEGRADED",
+            "BLOCKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "return_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Return Value"
+        },
+        "cumulative_return": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cumulative Return"
+        },
+        "beginning_market_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Beginning Market Value"
+        },
+        "ending_market_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Ending Market Value"
+        },
+        "member_count": {
+          "minimum": 0,
+          "title": "Member Count",
+          "type": "integer"
+        },
+        "excluded_member_count": {
+          "minimum": 0,
+          "title": "Excluded Member Count",
+          "type": "integer"
+        },
+        "dispersion_equal_weight": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Dispersion Equal Weight"
+        },
+        "return_view": {
+          "anyOf": [
+            {
+              "enum": [
+                "GROSS",
+                "NET_ACTUAL",
+                "NET_MODEL_FEE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Return View"
+        },
+        "reporting_currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reporting Currency"
+        },
+        "source_fingerprints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Fingerprints",
+          "type": "array"
+        },
+        "restatement_versions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Restatement Versions",
+          "type": "array"
+        },
+        "restatement_sequence": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Restatement Sequence"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "member_contributions": {
+          "items": {
+            "$ref": "#/$defs/CompositeMemberContribution"
+          },
+          "title": "Member Contributions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "period_start",
+        "period_end",
+        "status",
+        "return_value",
+        "cumulative_return",
+        "beginning_market_value",
+        "ending_market_value",
+        "member_count",
+        "excluded_member_count",
+        "dispersion_equal_weight",
+        "return_view",
+        "reporting_currency",
+        "source_fingerprints",
+        "restatement_versions",
+        "restatement_sequence",
+        "reason_codes",
+        "member_contributions"
+      ],
+      "title": "CompositePeriod",
+      "type": "object"
+    },
+    "CompositeSelectionManifest": {
+      "additionalProperties": true,
+      "properties": {
+        "qualification": {
+          "const": "EXPLICIT_RETAINED_CALCULATED_REPLAY",
+          "title": "Qualification",
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/CompositeWindowPin"
+          },
+          "title": "Windows",
+          "type": "array"
+        },
+        "engine_version": {
+          "minLength": 1,
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "calculation_fingerprint": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Calculation Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "qualification",
+        "windows",
+        "engine_version",
+        "calculation_fingerprint"
+      ],
+      "title": "CompositeSelectionManifest",
+      "type": "object"
+    },
+    "CompositeCalculatedResponse": {
+      "additionalProperties": true,
+      "properties": {
+        "calculation_id": {
+          "format": "uuid",
+          "title": "Calculation Id",
+          "type": "string"
+        },
+        "composite_id": {
+          "minLength": 1,
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "READY",
+            "DEGRADED",
+            "BLOCKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "cumulative_return": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cumulative Return"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "periods": {
+          "items": {
+            "$ref": "#/$defs/CompositePeriod"
+          },
+          "minItems": 1,
+          "title": "Periods",
+          "type": "array"
+        },
+        "methodology": {
+          "minLength": 1,
+          "title": "Methodology",
+          "type": "string"
+        },
+        "selection_manifest": {
+          "$ref": "#/$defs/CompositeSelectionManifest"
+        }
+      },
+      "required": [
+        "calculation_id",
+        "composite_id",
+        "status",
+        "period_start",
+        "period_end",
+        "cumulative_return",
+        "reason_codes",
+        "periods",
+        "methodology",
+        "selection_manifest"
+      ],
+      "title": "CompositeCalculatedResponse",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "composite_review.v1",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "qualification": {
+      "const": "EXPLICIT_RETAINED_CALCULATED_REPLAY",
+      "title": "Qualification",
+      "type": "string"
+    },
+    "publication_state": {
+      "const": "NOT_ATTESTED",
+      "title": "Publication State",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "selection": {
+      "$ref": "#/$defs/CompositeReportSelection"
+    },
+    "source_response_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Source Response Digest",
+      "type": "string"
+    },
+    "source_response": {
+      "$ref": "#/$defs/CompositeCalculatedResponse"
+    },
+    "report_facts": {
+      "additionalProperties": true,
+      "title": "Report Facts",
+      "type": "object"
+    },
+    "tables": {
+      "items": {
+        "$ref": "#/$defs/CompositeTable"
+      },
+      "title": "Tables",
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract_version",
+    "qualification",
+    "publication_state",
+    "tenant_id",
+    "selection",
+    "source_response_digest",
+    "source_response",
+    "report_facts",
+    "tables"
+  ],
+  "title": "CompositeReportData",
+  "type": "object"
+}

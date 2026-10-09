@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.execution import ReportJobExecutionResult
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
@@ -186,4 +187,6 @@ class ReportJobWorker:
 def _is_terminal_job(job: ReportJobLedgerRecord) -> bool:
     if job.status in TERMINAL_JOB_STATUSES:
         return True
-    return job.status == "data_ready" and "pdf" not in job.requested_output_formats
+    return (
+        job.status == "data_ready" and document_output_format(job.requested_output_formats) is None
+    )

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.observability import bind_propagation_context
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_render.waiting import RenderWaiting
 
@@ -53,7 +54,7 @@ class ReportJobExecutionService:
         if job.status in {"accepted", "collecting_data"}:
             job = await self._capture_service.capture_for_job(job)
         if job.status in {"data_ready", "rendering", "completed", "archiving"} and (
-            "pdf" in job.requested_output_formats
+            document_output_format(job.requested_output_formats) is not None
         ):
             rendered = await self._render_service.render_for_job(job)
             if isinstance(rendered, RenderWaiting):

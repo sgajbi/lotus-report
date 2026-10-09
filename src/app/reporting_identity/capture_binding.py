@@ -94,6 +94,9 @@ def source_revision_vector_for_capture(
     """
 
     stated: list[SourceRevision] = []
+    composite_revision = _revision_from_composite_response(snapshot_payload)
+    if composite_revision is not None:
+        stated.append(composite_revision)
     for section_key in _SOURCE_PRODUCT_SECTIONS:
         section = snapshot_payload.get(section_key)
         if not isinstance(section, dict):
@@ -156,6 +159,28 @@ def revision_for_capture(
         factual_content_digest=factual_content_digest(snapshot_payload),
     )
     return identity, vector
+
+
+def _revision_from_composite_response(payload: dict[str, Any]) -> SourceRevision | None:
+    if payload.get("contract_version") != "composite_review.v1":
+        return None
+    response = payload.get("source_response")
+    if not isinstance(response, dict):
+        return None
+    manifest = response.get("selection_manifest")
+    if not isinstance(manifest, dict):
+        return None
+    fingerprint = _stated_str(manifest.get("calculation_fingerprint"))
+    calculation_id = _stated_str(response.get("calculation_id"))
+    if fingerprint is None or calculation_id is None:
+        return None
+    return SourceRevision(
+        source_service="lotus-performance",
+        content_hash=fingerprint,
+        calculation_run_id=calculation_id,
+        methodology_version=_stated_str(manifest.get("engine_version")),
+        supportability_status=_stated_str(response.get("status")),
+    )
 
 
 def _revision_from_source_product(block: dict[str, Any]) -> SourceRevision | None:

@@ -88,11 +88,32 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 | `src/app/reporting_lineage/` | immutable snapshot capture, upstream-call lineage, admissibility |
 | `src/app/reporting_jobs/` | durable job ledger, work queue, leasing, lifecycle transitions |
 | `src/app/reporting_render/` | render-package assembly and the semantic model sent to Render |
+| `src/app/composite_reporting/` | exact pinned composite intake, source admission, semantic tables and composite custody; no return engine |
 | `src/app/report_batch_orchestrator/` | batches, schedules, selector materialization |
 | `src/app/clients/` | typed upstream clients (core, performance, risk, render, archive, ai) |
 | `scripts/`, `contracts/`, `wiki/` | governance gates, domain-product declarations, operator docs |
 
 ## Runtime And Integration Boundaries
+
+### Composite report foundation (#417)
+
+`POST /reports/composite-reviews` accepts an exact tenant/composite calculation
+selection and up to 120 contiguous retained windows. The public catalogue admits
+JSON only. Capture uses Performance's explicit-vector `POST /composites/twr`,
+compares all selected pins and response digest, and preserves the source payload
+through the existing worker, immutable snapshot and revision machinery.
+`composite_review.v1` carries exact canonical cells, units, source pointers and
+explicit unavailable products. See `docs/composite-report-semantic-contract.md`.
+
+The prepared workbook composer consumes the persisted snapshot record and
+verifies its revision binding before producing exclusive composite Archive
+identity. Actual PostgreSQL/process-retention proof uses controlled Performance;
+a test-only candidate XLSX definition enables the actual producer package proof.
+Neither establishes real supplier, workbook, official, GIPS or enterprise
+acceptance. Protected Performance #630, Render #338 and Archive #176 qualification
+and independent workbook/lifecycle reconciliation remain required before Excel
+catalogue activation. Full #417/RPT-01–12 stays open.
+
 
 Risk calculate/rolling admission reads typed nested producer supportability and consumed
 Performance identity/coverage. HTTP success and numeric availability never establish readiness.

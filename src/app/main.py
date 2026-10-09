@@ -3,6 +3,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
+from app.composite_reporting.router import router as composite_reporting_router
 from app.enterprise_readiness import (
     build_enterprise_audit_middleware,
     validate_enterprise_runtime_config,
@@ -82,6 +83,7 @@ app.include_router(integration_router)
 app.include_router(report_ordering_catalogue_router)
 app.include_router(aggregations_router)
 app.include_router(report_job_submission_router)
+app.include_router(composite_reporting_router)
 app.include_router(reports_router)
 app.include_router(report_batches_router)
 app.include_router(report_batch_schedules_router)
