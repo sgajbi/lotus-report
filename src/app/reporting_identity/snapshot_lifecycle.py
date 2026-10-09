@@ -26,7 +26,7 @@ def snapshot_lifecycle_claim(*, capture_failed: bool) -> dict[str, str]:
     a successful capture supports recomposing the exact document semantics
     and answering what was presented; a failed capture records failure
     evidence only. The executable rerender COMMAND is a separate,
-    lifecycle-dependent fact (archived PDF only - rerender_eligible in the
+    lifecycle-dependent fact (archived document only - rerender_eligible in the
     rerender service) surfaced at readback, because a capture-time stamp
     can never truthfully promise a command whose eligibility the job has
     not yet earned. Policy 1.0.0 stamped "rerender_from_snapshot" here;

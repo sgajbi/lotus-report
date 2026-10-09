@@ -26,7 +26,7 @@ OrderingModeId = Literal[
     "governed_schedule",
     "source_workflow",
 ]
-OutputFormatId = Literal["json", "pdf"]
+OutputFormatId = Literal["json", "pdf", "xlsx"]
 ClientReleasePosture = Literal[
     "advisor_review_required_distribution_not_supported",
     "internal_control_only",

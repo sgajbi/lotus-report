@@ -24,6 +24,7 @@ def _shipped_template_projection() -> dict[str, object]:
             "published_by": None,
             "supported_report_types": [report_type],
             "supported_report_data_contract_versions": [contract],
+            "supported_output_formats": ["xlsx" if report_type == "composite_review" else "pdf"],
         }
 
     return {
@@ -39,6 +40,7 @@ def _shipped_template_projection() -> dict[str, object]:
             entry("proof-pack", "v1", "proof_pack", "dpm_proof_pack_report_input.v1"),
             entry("outcome-review", "v1", "outcome_review", "dpm_outcome_report_input.v1"),
             entry("rebalance-wave", "v1", "rebalance_wave", "dpm_wave_report_input.v1"),
+            entry("composite-review", "v1", "composite_review", "composite_review.v1"),
         ]
     }
 
@@ -70,7 +72,7 @@ class _RenderMetadataClient:
 
 def _ready_render_metadata() -> dict[str, object]:
     return {
-        "supportedOutputFormats": ["pdf"],
+        "supportedOutputFormats": ["pdf", "xlsx"],
         "supportability": {
             "state": "ready",
             "reason": "render_supportability_ready",
@@ -141,9 +143,11 @@ async def test_catalogue_keeps_structured_data_ready_when_render_is_unavailable(
         outputs = {output.format_id: output for output in family.output_formats}
         assert outputs["json"].state == "ready"
         if family.report_family_id == "composite_review":
-            assert set(outputs) == {"json"}
+            assert set(outputs) == {"json", "xlsx"}
+            assert outputs["xlsx"].state == "unavailable"
+            assert outputs["xlsx"].reason_code == "render_metadata_unavailable"
             assert family.client_release_posture == "internal_control_only"
-            assert family.supportability.state == "ready"
+            assert family.supportability.state == "partial"
             continue
         assert outputs["pdf"].state == "unavailable"
         assert outputs["pdf"].reason_code == "render_metadata_unavailable"
@@ -276,7 +280,11 @@ async def test_unreadable_template_evidence_fails_every_pdf_family_visible():
 
     for item in catalogue.report_families:
         if item.report_family_id == "composite_review":
-            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {
+                "json": "ready",
+                "xlsx": "unavailable",
+            }
+            assert item.output_formats[1].reason_code == "render_templates_unavailable"
             continue
         pdf = _pdf_format(item)
         assert pdf.state == "unavailable"
@@ -315,7 +323,11 @@ async def test_a_malformed_template_projection_fails_visible_like_an_unreachable
 
     for item in catalogue.report_families:
         if item.report_family_id == "composite_review":
-            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {
+                "json": "ready",
+                "xlsx": "unavailable",
+            }
+            assert item.output_formats[1].reason_code == "render_templates_unavailable"
             continue
         assert _pdf_format(item).reason_code == "render_templates_unavailable"
 
@@ -358,7 +370,11 @@ async def test_a_degraded_runtime_is_stated_before_template_verification():
     # never pretend template evidence was consulted.
     for item in catalogue.report_families:
         if item.report_family_id == "composite_review":
-            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {"json": "ready"}
+            assert {fmt.format_id: fmt.state for fmt in item.output_formats} == {
+                "json": "ready",
+                "xlsx": "partial",
+            }
+            assert item.output_formats[1].reason_code == "render_supportability_draining"
             continue
         assert _pdf_format(item).state == "partial"
         assert _pdf_format(item).reason_code == "render_supportability_draining"

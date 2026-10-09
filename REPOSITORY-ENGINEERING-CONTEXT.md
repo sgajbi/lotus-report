@@ -95,26 +95,30 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 
 ## Runtime And Integration Boundaries
 
-### Composite report foundation (#417)
+### Composite calculated review (#417)
 
 `POST /reports/composite-reviews` accepts an exact tenant/composite calculation
-selection and up to 120 contiguous retained windows. The public catalogue admits
-JSON only. Capture uses Performance's explicit-vector `POST /composites/twr`,
+selection and up to 120 contiguous retained windows. The catalogue admits
+JSON/XLSX for internal `NOT_ATTESTED` calculated review; exact runtime/template
+format evidence determines workbook availability. Capture uses Performance's
+explicit-vector `POST /composites/twr`,
 compares all selected pins and response digest, and preserves the source payload
 through the existing worker, immutable snapshot and revision machinery.
 `composite_review.v1` carries exact canonical cells, units, source pointers and
 explicit unavailable products. See `docs/composite-report-semantic-contract.md`.
 
-The prepared workbook composer consumes the persisted snapshot record and
+The workbook composer consumes the persisted snapshot record and
 verifies its revision binding before producing exclusive composite Archive
 identity. An actual registered Performance PostgreSQL response from merged
 `c100c885752c86b8d950d7970c99a8d223e6376a` is captured with provenance in the
 owning unit fixtures and replayed through Report's registered workflow. The
 producer uses controlled economic/provider/authority inputs; transport replay
-does not establish live network or institutional acceptance. A test-only candidate
-XLSX definition enables the producer package proof. Supplier exact-main release,
-fresh workbook/Archive reconciliation and lifecycle qualification remain required
-before Excel catalogue activation. Full #417/RPT-01–12 stays open.
+does not establish live network or institutional acceptance. Normal shipped XLSX
+admission reaches the existing worker/composer/Render/Archive adapters. Retained
+rerender keeps the original snapshot/template/format; corrected financial source
+requires a new exact-pinned composite order. The report job binds output format,
+so document reference identity needs no additional format field. Unavailable
+products remain explicit. Full #417/RPT-01–12 stays open.
 
 
 Risk calculate/rolling admission reads typed nested producer supportability and consumed

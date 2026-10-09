@@ -35,8 +35,10 @@
   without raw payloads or storage references
 - public request, query, and response fields use canonical snake_case names
 - Swagger must reflect shipped API surfaces only, with no stale placeholder endpoints
-- composite review has an internal exact-selection JSON foundation; Excel and
-  official publication remain unavailable. See [Composite Review](Composite-Review).
+- composite calculated review supports exact-selection JSON/XLSX for internal
+  control use with `NOT_ATTESTED` qualification; unavailable supplier products
+  remain explicit. Official publication and full acceptance remain open.
+  See [Composite Review](Composite-Review).
 
 ## Most important commands
 

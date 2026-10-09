@@ -408,7 +408,7 @@ REPORT_FAMILY_DEFINITIONS = (
     ReportFamilyDefinition(
         report_family_id="composite_review",
         report_type="composite_review",
-        business_label="Composite review dataset",
+        business_label="Composite calculated review",
         description=(
             "Exact retained composite calculation with unavailable source products declared."
         ),
@@ -429,7 +429,7 @@ REPORT_FAMILY_DEFINITIONS = (
                 interactive=False,
             ),
         ),
-        supported_output_formats=("json",),
+        supported_output_formats=("json", "xlsx"),
         configuration_fields=(
             ReportConfigurationFieldDefinition(
                 field_id="composite_selection",

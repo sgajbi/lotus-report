@@ -62,7 +62,6 @@ class ReportOrderingCatalogueService:
             correlation_id=correlation_id,
             trace_id=trace_id,
         )
-        runtime_supportability = _pdf_supportability(render_status, render_metadata)
         templates_status, templates_payload = await self._render_client.get_template_projection(
             correlation_id=correlation_id,
             trace_id=trace_id,
@@ -71,11 +70,16 @@ class ReportOrderingCatalogueService:
         report_families = [
             _family_item(
                 definition,
-                _family_pdf_supportability(
-                    definition,
-                    runtime=runtime_supportability,
-                    templates=templates,
-                ),
+                {
+                    format_id: _family_document_supportability(
+                        definition,
+                        format_id=format_id,
+                        runtime=_document_supportability(render_status, render_metadata, format_id),
+                        templates=templates,
+                    )
+                    for format_id in definition.supported_output_formats
+                    if format_id != "json"
+                },
             )
             for definition in self._definitions
         ]
@@ -111,7 +115,7 @@ def _validate_definitions(definitions: tuple[ReportFamilyDefinition, ...]) -> No
             raise ReportCatalogueDefinitionError(
                 f"report catalogue family {definition.report_family_id} has no output format"
             )
-        unknown_formats = set(definition.supported_output_formats) - {"json", "pdf"}
+        unknown_formats = set(definition.supported_output_formats) - {"json", "pdf", "xlsx"}
         if unknown_formats:
             raise ReportCatalogueDefinitionError(
                 f"report catalogue family {definition.report_family_id} has unknown output formats"
@@ -139,16 +143,17 @@ def _validate_sections(definition: ReportFamilyDefinition) -> None:
             )
 
 
-def _pdf_supportability(
+def _document_supportability(
     status_code: int,
     metadata: dict[str, Any],
+    format_id: str,
 ) -> ReportCatalogueSupportability:
     if status_code != 200:
         return ReportCatalogueSupportability(
             state="unavailable",
             reason_code="render_metadata_unavailable",
             message=(
-                "Governed PDF creation is unavailable because rendering evidence could not be read."
+                "Document creation is unavailable because rendering evidence could not be read."
             ),
         )
     supportability = metadata.get("supportability")
@@ -156,9 +161,7 @@ def _pdf_supportability(
         return ReportCatalogueSupportability(
             state="unavailable",
             reason_code="render_supportability_invalid",
-            message=(
-                "Governed PDF creation is unavailable because rendering evidence is incomplete."
-            ),
+            message=("Document creation is unavailable because rendering evidence is incomplete."),
         )
     state = str(supportability.get("state") or "").lower()
     reason = str(supportability.get("reason") or "render_supportability_invalid")
@@ -170,32 +173,37 @@ def _pdf_supportability(
             state="unavailable",
             reason_code="render_output_formats_invalid",
             message=(
-                "Governed PDF creation is unavailable because output-format evidence is incomplete."
+                "Document creation is unavailable because output-format evidence is incomplete."
             ),
+        )
+    if format_id not in supported_formats:
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="render_output_format_not_supported",
+            message=f"The renderer does not declare {format_id} support.",
         )
     ready_evidence = (
         state == "ready"
         and supportability.get("deterministicOutputSupported") is True
         and supportability.get("templateRegistryReady") is True
         and supportability.get("runtimeAvailable") is True
-        and "pdf" in supported_formats
     )
     if ready_evidence:
         return ReportCatalogueSupportability(
             state="ready",
             reason_code="render_supportability_ready",
-            message="Governed PDF creation is available.",
+            message="Document creation is available.",
         )
     if state == "degraded":
         return ReportCatalogueSupportability(
             state="partial",
             reason_code=reason,
-            message="Governed PDF creation is temporarily degraded.",
+            message="Document creation is temporarily degraded.",
         )
     return ReportCatalogueSupportability(
         state="unavailable",
         reason_code=reason,
-        message="Governed PDF creation is unavailable.",
+        message="Document creation is unavailable.",
     )
 
 
@@ -205,7 +213,7 @@ def _template_projection_index(
 ) -> dict[tuple[str, str], dict[str, Any]] | None:
     """The shipped render#265 projection, indexed by (id, version).
 
-    None means the evidence could not be read - every PDF-capable family
+    None means the evidence could not be read - every document-capable family
     then states unavailability rather than guessing.
     """
 
@@ -225,13 +233,14 @@ def _template_projection_index(
     return index
 
 
-def _family_pdf_supportability(
+def _family_document_supportability(
     definition: ReportFamilyDefinition,
     *,
+    format_id: str,
     runtime: ReportCatalogueSupportability,
     templates: dict[tuple[str, str], dict[str, Any]] | None,
 ) -> ReportCatalogueSupportability:
-    """Version-aware: can Render create THIS family's intended template?
+    """Can Render create this family's exact template and requested format?
 
     Proves the exact (template_id, template_version) the family orders is
     registered, renderable for new renders, and supports the family's report
@@ -241,8 +250,6 @@ def _family_pdf_supportability(
     are different questions, and this seam answers only the first.
     """
 
-    if "pdf" not in definition.supported_output_formats:
-        return runtime
     if runtime.state != "ready":
         return runtime
     if templates is None:
@@ -250,7 +257,7 @@ def _family_pdf_supportability(
             state="unavailable",
             reason_code="render_templates_unavailable",
             message=(
-                "Governed PDF creation is unavailable because template evidence could not be read."
+                "Document creation is unavailable because template evidence could not be read."
             ),
         )
     entry = templates.get((definition.template_id, definition.template_version))
@@ -259,7 +266,7 @@ def _family_pdf_supportability(
             state="unavailable",
             reason_code="template_version_not_registered",
             message=(
-                f"Governed PDF creation is unavailable because template "
+                f"Document creation is unavailable because template "
                 f"{definition.template_id}/{definition.template_version} is not "
                 "registered with the renderer."
             ),
@@ -269,7 +276,7 @@ def _family_pdf_supportability(
             state="unavailable",
             reason_code="template_not_renderable",
             message=(
-                f"Governed PDF creation is unavailable because template "
+                f"Document creation is unavailable because template "
                 f"{definition.template_id}/{definition.template_version} is "
                 f"{entry.get('status') or 'in an unstated status'} for new renders."
             ),
@@ -280,7 +287,7 @@ def _family_pdf_supportability(
             state="unavailable",
             reason_code="report_type_not_supported",
             message=(
-                f"Governed PDF creation is unavailable because template "
+                f"Document creation is unavailable because template "
                 f"{definition.template_id}/{definition.template_version} does not "
                 f"support report type {definition.report_type}."
             ),
@@ -294,9 +301,27 @@ def _family_pdf_supportability(
             state="unavailable",
             reason_code="report_data_contract_not_supported",
             message=(
-                f"Governed PDF creation is unavailable because template "
+                f"Document creation is unavailable because template "
                 f"{definition.template_id}/{definition.template_version} does not "
                 f"accept contract {definition.report_data_contract_version}."
+            ),
+        )
+    supported_formats = entry.get("supported_output_formats")
+    # Historical PDF projections predate per-template format evidence. XLSX
+    # requires the additive supplier field and never borrows global PDF readiness.
+    if supported_formats is None and format_id == "pdf":
+        return runtime
+    if (
+        not isinstance(supported_formats, list)
+        or not all(isinstance(item, str) for item in supported_formats)
+        or format_id not in supported_formats
+    ):
+        return ReportCatalogueSupportability(
+            state="unavailable",
+            reason_code="template_output_format_not_supported",
+            message=(
+                f"Template {definition.template_id}/{definition.template_version} "
+                f"does not declare {format_id} support."
             ),
         )
     return runtime
@@ -304,10 +329,10 @@ def _family_pdf_supportability(
 
 def _family_item(
     definition: ReportFamilyDefinition,
-    pdf_supportability: ReportCatalogueSupportability,
+    document_supportability: dict[str, ReportCatalogueSupportability],
 ) -> ReportFamilyCatalogueItem:
     output_formats = [
-        _output_format(format_id, pdf_supportability)
+        _output_format(format_id, document_supportability.get(format_id))
         for format_id in definition.supported_output_formats
     ]
     family_supportability = _family_supportability(output_formats)
@@ -339,7 +364,7 @@ def _family_item(
 
 def _output_format(
     format_id: str,
-    pdf_supportability: ReportCatalogueSupportability,
+    supportability: ReportCatalogueSupportability | None,
 ) -> ReportOutputFormat:
     if format_id == "json":
         return ReportOutputFormat(
@@ -349,12 +374,16 @@ def _output_format(
             state="ready",
             reason_code="report_data_ready",
         )
+    if supportability is None:
+        raise ReportCatalogueDefinitionError("Document format has no supportability evidence")
     return ReportOutputFormat(
-        format_id="pdf",
-        business_label="Governed PDF document",
+        format_id="xlsx" if format_id == "xlsx" else "pdf",
+        business_label=(
+            "Calculated review workbook" if format_id == "xlsx" else "Governed PDF document"
+        ),
         use_posture="governed_document",
-        state=pdf_supportability.state,
-        reason_code=pdf_supportability.reason_code,
+        state=supportability.state,
+        reason_code=supportability.reason_code,
     )
 
 

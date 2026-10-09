@@ -34,12 +34,13 @@ class CompositeJobLedger(Protocol):
     "/composite-reviews",
     status_code=202,
     response_model=ReportJobHandleResponse,
-    summary="Order an exact retained composite review dataset",
+    summary="Order an exact retained composite calculated review",
     description=(
         "Queues one immutable calculated composite selection for the existing report worker. "
         "No latest selection, financial recalculation or official approval is inferred. "
         "The structured dataset retains exact provenance and explicit unavailable products. "
-        "Excel delivery is currently unavailable."
+        "XLSX requests render the retained dataset through Render and Archive. "
+        "The calculated review is NOT_ATTESTED and restricted to internal control use."
     ),
     responses={
         400: {

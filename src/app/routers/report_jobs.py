@@ -1720,7 +1720,7 @@ async def get_report_job_events(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Rerender archived report job from immutable snapshot",
     description=(
-        "Rerenders an already archived PDF report from the durable input snapshot captured for "
+        "Rerenders an already archived document from the durable input snapshot captured for "
         "the source job. This command does not recollect upstream domain data. It preserves the "
         "source snapshot id and snapshot hash, creates a new render attempt identity, and records "
         "the archive correction consequence when a new document is handed off to lotus-archive."
@@ -1756,7 +1756,7 @@ async def get_report_job_events(
         **_error_response(
             409,
             example_key="report_job_cannot_be_rerendered",
-            description="Returned when the report job is not archived PDF output.",
+            description="Returned when the report job is not an archived PDF or XLSX document.",
         ),
     },
 )

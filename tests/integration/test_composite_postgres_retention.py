@@ -21,7 +21,7 @@ from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 from tests.unit.composite_reporting.test_registered_lifecycle import (
     HEADERS,
     composite_lifecycle,
-    exercise_candidate_worker_package,
+    exercise_registered_worker_package,
 )
 from tests.unit.composite_reporting.test_registered_lifecycle import (
     test_missing_month_is_failed_immutable_evidence_not_false_empty as exercise_missing_month,
@@ -43,9 +43,9 @@ finally:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing_month", [False, True])
+@pytest.mark.parametrize("missing_format", [None, "json", "xlsx"])
 async def test_registered_postgres_capture_and_separate_process_retention(
-    tmp_path, monkeypatch, missing_month
+    tmp_path, monkeypatch, missing_format
 ):
     database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
     if not database_url:
@@ -60,8 +60,10 @@ async def test_registered_postgres_capture_and_separate_process_retention(
     with composite_lifecycle(tmp_path, monkeypatch, adapters=adapters) as stack:
         key = "composite-pg-" + uuid4().hex
         monkeypatch.setitem(HEADERS, "Idempotency-Key", key)
-        exercise = exercise_missing_month if missing_month else exercise_retention
-        await exercise(stack)
+        if missing_format is None:
+            await exercise_retention(stack)
+        else:
+            await exercise_missing_month(stack, missing_format)
         ledger, store, worker, _ = stack
         await worker.run_once(worker_id="composite-pg-drain", max_items=10, lease_seconds=30)
         # Each parameter runs in the session database: locate this test's job
@@ -84,7 +86,7 @@ async def test_registered_postgres_capture_and_separate_process_retention(
 
 
 @pytest.mark.asyncio
-async def test_registered_postgres_candidate_render_package(tmp_path, monkeypatch):
+async def test_registered_postgres_xlsx_render_package(tmp_path, monkeypatch):
     database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
     if not database_url:
         pytest.skip("REPORT_JOB_LEDGER_DATABASE_URL is required for actual PostgreSQL proof")
@@ -95,8 +97,8 @@ async def test_registered_postgres_candidate_render_package(tmp_path, monkeypatc
             own_postgres_adapter(PostgresReportInputSnapshotStore(database_url)),
         )
 
-    monkeypatch.setitem(HEADERS, "Idempotency-Key", "composite-candidate-pg-" + uuid4().hex)
-    packet = await exercise_candidate_worker_package(tmp_path, monkeypatch, adapters=adapters)
+    monkeypatch.setitem(HEADERS, "Idempotency-Key", "composite-xlsx-pg-" + uuid4().hex)
+    packet = await exercise_registered_worker_package(tmp_path, monkeypatch, adapters=adapters)
     destination = os.environ.get("COMPOSITE_PRODUCER_PACKET_DIR")
     if destination:
         directory = Path(destination)
