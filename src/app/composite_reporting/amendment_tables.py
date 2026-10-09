@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.composite_reporting.admission import CompositeEvidenceRefused
+from app.composite_reporting.amendment_contract import MonthlyAmendment
 from app.composite_reporting.eligibility_contract import proposal_for_month
 from app.composite_reporting.eligibility_tables import (
     _cell,
@@ -46,7 +47,14 @@ def amendment_tables(data: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for index, month in enumerate(data["source_months"]):
         proposal, suffix = proposal_for_month(month)
-        paths = [(proposal["amendment"], f"/source_months/{index}/{suffix}/amendment")]
+        # JSON object order is not durable (notably in PostgreSQL JSONB). Typed
+        # field order preserves the published row order while lists retain theirs.
+        paths = [
+            (
+                MonthlyAmendment.model_validate(proposal["amendment"]).model_dump(mode="json"),
+                f"/source_months/{index}/{suffix}/amendment",
+            )
+        ]
         for position, receipt in enumerate(month["lineage_receipts"]):
             base = f"/source_months/{index}/lineage_receipts/{position}"
             paths.append(
@@ -64,7 +72,12 @@ def amendment_tables(data: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             )
             if receipt["product_version"] == "v2":
-                paths.append((receipt["lineage"], base + "/lineage"))
+                paths.append(
+                    (
+                        MonthlyAmendment.model_validate(receipt["lineage"]).model_dump(mode="json"),
+                        base + "/lineage",
+                    )
+                )
         for value, base in paths:
             for pointer in _leaves(value, base):
                 rows.append(

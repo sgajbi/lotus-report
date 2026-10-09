@@ -11,6 +11,8 @@ No Performance aggregates are joined. Staged roots, cascade, conflicting authori
 dates/sequences/digests and missing/cyclic/oversized history refuse.
 V6 supplies no TWR, MWR, dispersion, contribution or model-fee calculation.
 Its unavailable facts describe eligibility evidence and convey no financial authority.
+Amendment projections preserve their declared field and array order across JSONB
+object-key reordering, so retained snapshots revalidate without changing the wire.
 
 JSON uses registered intake/worker/snapshot retrieval; repeated requests retain the
 same job. V6 XLSX returns `503`; Render #352 and Archive #188 must explicitly support
