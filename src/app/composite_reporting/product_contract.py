@@ -17,7 +17,13 @@ from app.composite_reporting.models import (
     ReturnProductSelection,
     require_product_scope,
 )
-from app.composite_reporting.semantic_contract import CompositeReportData, composite_report_schema
+from app.composite_reporting.projection import require_complete_projection
+from app.composite_reporting.semantic_contract import (
+    CompositeReportData,
+    composite_report_schema,
+    require_primary_evidence,
+)
+from app.composite_reporting.table_builder import build_composite_tables
 from app.composite_reporting.table_contract import (
     CompositeCell,
     CompositeColumn,
@@ -106,17 +112,13 @@ class CompositeProductReportData(TableModel):
                 "report_facts",
             )
         }
-        # The retained v1 validator still owns primary evidence and authority.
-        # This temporary validation view never replaces or rewrites custody.
-        CompositeReportData.model_validate(
-            {
-                **primary,
-                "contract_version": "composite_review.v1",
-                "tables": [],
-            }
-        )
+        require_primary_evidence(primary)
         validate_product_tables(raw, self.tables)
         require_product_table_layout(self.selection, self.source_products, self.tables)
+        from app.composite_reporting.product_tables import project_product_tables
+
+        expected = project_product_tables(build_composite_tables(primary), self.source_products)
+        require_complete_projection(raw, expected)
         return self
 
 

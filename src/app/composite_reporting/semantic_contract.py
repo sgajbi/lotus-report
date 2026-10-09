@@ -12,6 +12,7 @@ from app.composite_reporting.models import (
     CompositeReportSelection,
     Digest,
 )
+from app.composite_reporting.projection import require_complete_primary_projection
 from app.composite_reporting.table_contract import CompositeTable, TableModel, validate_cell_lineage
 
 
@@ -28,28 +29,37 @@ class CompositeReportData(TableModel):
 
     @model_validator(mode="after")
     def require_pinned_dataset_and_cells(self) -> CompositeReportData:
-        admitted = admit_composite_response(
-            selection=self.selection,
-            admitted_tenant_id=self.tenant_id,
-            status_code=200,
-            payload=self.source_response,
-        )
-        if self.source_response_digest != admitted["source_response_digest"]:
-            raise CompositeEvidenceRefused("COMPOSITE_REPORT_DATASET_DIGEST_CONFLICT")
-        if self.report_facts.get("authority") != {
-            "receipt": None,
-            "control_revision": None,
-            "availability": "UNAVAILABLE",
-            "reason_code": "SOURCE_AUTHORITY_NOT_ATTESTED",
-        }:
-            raise CompositeEvidenceRefused("COMPOSITE_REPORT_AUTHORITY_NOT_SUPPORTED")
-        if (
-            self.report_facts.get("qualification") != self.qualification
-            or self.report_facts.get("publication_state") != self.publication_state
-        ):
-            raise CompositeEvidenceRefused("COMPOSITE_REPORT_AUTHORITY_CONFLICT")
-        validate_cell_lineage(self.model_dump(mode="json"), self.tables)
+        raw = self.model_dump(mode="json")
+        require_primary_evidence(raw)
+        validate_cell_lineage(raw, self.tables)
+        require_complete_primary_projection(raw)
         return self
+
+
+def require_primary_evidence(dataset: dict[str, Any]) -> None:
+    """Shared source and authority admission without an invented empty-table dataset."""
+    selection = CompositeReportSelection.model_validate(dataset["selection"])
+    admitted = admit_composite_response(
+        selection=selection,
+        admitted_tenant_id=dataset["tenant_id"],
+        status_code=200,
+        payload=dataset["source_response"],
+    )
+    if dataset["source_response_digest"] != admitted["source_response_digest"]:
+        raise CompositeEvidenceRefused("COMPOSITE_REPORT_DATASET_DIGEST_CONFLICT")
+    facts = dataset["report_facts"]
+    if facts.get("authority") != {
+        "receipt": None,
+        "control_revision": None,
+        "availability": "UNAVAILABLE",
+        "reason_code": "SOURCE_AUTHORITY_NOT_ATTESTED",
+    }:
+        raise CompositeEvidenceRefused("COMPOSITE_REPORT_AUTHORITY_NOT_SUPPORTED")
+    if (
+        facts.get("qualification") != dataset["qualification"]
+        or facts.get("publication_state") != dataset["publication_state"]
+    ):
+        raise CompositeEvidenceRefused("COMPOSITE_REPORT_AUTHORITY_CONFLICT")
 
 
 def composite_report_schema() -> dict[str, Any]:

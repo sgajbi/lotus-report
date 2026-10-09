@@ -104,6 +104,17 @@ name describes meaning rather than a mandatory storage representation. It does
 not authorize changing a source return, double scaling, or dropping precision
 from retained canonical text.
 
+V1 and v2 admission checks the complete captured source projection as well as each
+cell pointer. Omitting a financial member/period, coherently removing a column,
+adding a copied member row, changing a label/precision/null reason or rewriting a
+disclosure refuses with `COMPOSITE_REPORT_PROJECTION_CONFLICT`. These checks cover
+the captured financial population, not an uncaptured expected eligibility universe.
+The existing builders remain the canonical projection; no financial values are
+recomputed. Valid dataset fields, wire contracts and stored bytes remain unchanged.
+Historical Methods ordering remains valid only for a complete permutation of the
+same source paths with exact retained ordinal row/pointer bindings. Validation
+normalizes a temporary comparison copy and never rewrites retained evidence.
+
 Render owns display conversion, formatting and declared partitions. Render
 must retain an exact canonical text companion for each financial cell whenever
 Excel's numeric precision cannot preserve the source value, and describe numeric

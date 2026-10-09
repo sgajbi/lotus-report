@@ -701,6 +701,13 @@ OOXML bytes independently and checks the complete source projection and policies
 At the custody boundary, only exact bare SHA-256 hex and its known `sha256:` encoding
 may identify the same digest; arbitrary prefixes or changed content must fail closed.
 Keep historical packets/readers immutable and failed attempts explicitly diagnostic.
+V1/v2 admission must compare the complete captured financial projection, including
+row population, columns, display/null policies and Report-owned disclosures.
+Reuse canonical builders and source admission; never substitute a fabricated
+empty-table v1 dataset for v2 validation. Complete historical Methods path ordering
+is compatible only with exact retained ordinal bindings; comparison must not mutate
+the retained snapshot. Financial fact completeness does not establish eligibility
+universe completeness.
 
 ## Cross-Links
 
