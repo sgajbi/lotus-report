@@ -34,7 +34,13 @@ percentage points. Report never computes either value. Literal identifiers and
 canonical companions must survive workbook creation without formulas or precision loss.
 
 Summary, monthly or partial-period returns, contributions, methods, lineage and
-disclosures are source-backed. Annual returns, risk, complete member universe,
+disclosures are source-backed. Optional exact calendar/trailing TWR selections
+use `composite_review.v2` and the `composite-review/v2` template. Calendar rows
+populate `AnnualReturns`; `TrailingReturns` exists only when selected. Absent
+products preserve v1 request/identity and unavailable states. Actual compatible
+Render runtime/template/contract/format evidence is required for v2 XLSX orders.
+Annual member dispersion remains uncaptured after a source policy-basis refusal.
+Risk, complete member universe,
 eligibility reasons/history, attribution and restatement remain explicit uncaptured
 products. Qualification is `EXPLICIT_RETAINED_CALCULATED_REPLAY`, publication state
 `NOT_ATTESTED`; the authority receipt/control revision are unavailable.

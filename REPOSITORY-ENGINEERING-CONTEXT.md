@@ -106,6 +106,11 @@ compares all selected pins and response digest, and preserves the source payload
 through the existing worker, immutable snapshot and revision machinery.
 `composite_review.v1` carries exact canonical cells, units, source pointers and
 explicit unavailable products. See `docs/composite-report-semantic-contract.md`.
+Optional typed calendar/trailing selections use `composite_review.v2`, separate
+raw captures and exact product pointers. Absence preserves v1 request identity.
+V2 XLSX admission checks compatible `composite-review/v2` evidence. Existing source
+clients, capture ledger, revision identity and retained rerender own the lifecycle;
+there is no return calculator or new runtime. Annual dispersion remains uncaptured.
 Methods row identities and escaped source pointers use sorted binding keys so
 PostgreSQL JSONB object-key normalization cannot change the semantic projection.
 Retained snapshots keep their original stored tables for technical rerender.

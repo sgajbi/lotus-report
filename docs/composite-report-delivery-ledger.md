@@ -2,17 +2,53 @@
 
 Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
-Feature: `composite_review.v1`. Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
+Feature: retained `composite_review.v1` and captured-return `composite_review.v2`.
+Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
 ## Current Evidence: Six-Year Registered Delivery
 
 The exact pinned calculated-review flow is qualified for one controlled six-year
 source vector, January 2020 through December 2025, with 72 monthly windows and
 2016 member contribution rows. This is bounded RPT-01 evidence; Report #417 and
-all RPT-01–12 acceptance remain open. Calendar/trailing/SI products, complete
+all RPT-01–12 acceptance remain open. Since-inception products, complete
 eligibility/history, other supported metrics and institutional authority still
 require separately captured upstream products. Report calculates no investment
 returns.
+
+## Captured Calendar And Trailing Increment
+
+Frozen Performance `75f2f3c585cd7d42075bb8310eced02ecdfad7a9` r2 exports are
+independently accepted for original/corrected full72, calendar2020 and trailing12
+TWR. Report rehashed all 49 supplier sealed-manifest entries (`ca43ae`, exit 0).
+Root receipt SHA-256 is
+`94bd6b3846517460355743b5d52e48101bbfe11442629f7ba8537a1c5ecbad8e`;
+the accepted requested-products SHA-256 is
+`6c2da4e0ef2b7bab9a0687983150b91f83c9fdb9fa85494dc3ec41cd145152a8`.
+Failed supplier r1 is unqualified. Annual dispersion returned
+`ANNUAL_DISPERSION_POLICY_BASIS_MISMATCH`, with no financial metric value.
+
+Report's typed v2 order captures each exact TWR response separately through the
+existing client/worker/immutable snapshot. All source calls and actual source-stated
+revision fingerprints/IDs are retained. Calendar/trailing vectors must match the
+primary version's complete monthly pins. Optional products absent preserves v1
+request and identity. Product XLSX orders require compatible v2 template evidence.
+The source-backed calendar table keeps `AnnualReturns`; trailing products add
+`TrailingReturns`. No new calculator, parser or deployable runtime exists.
+
+The shared producer/consumer schema/layout and actual original/corrected package
+profiles are frozen under manifest SHA-256
+`f0b3c41d829857605a7731faa6a0258d7f6ee4a39b661374a438612025eb99c4`
+(`f979e3`, exit 0). These profiles use registered Report SQLite capture, recorded
+accepted Performance responses and a controlled Render503 boundary. HTTPX
+serialization measures 7,565,462 / 7,566,158 bytes; it is not a socket capture.
+Actual uncommitted Render #344 candidates fit unchanged measured limits:
+44 sheets, 28,020 data rows, 202,071 physical cells and less than 16 MiB text.
+The unchanged independent raw OOXML reader reconciles every canonical/display
+cell (24,623 each), 8,571 financial cells, 81 policies, full pins/context and all
+partitions for both candidates (`d5e838`, exit 0). This is candidate test evidence,
+not qualified main, live source deployment or actual Render/Archive HTTP custody.
+Those later boundaries require their own exact-source evidence. Full #417 and
+RPT-01–12 remain open.
 
 Fresh phase `composite-supported-report-http-72m-20261009-r4` uses Report main
 `1c92b13b21b2e77bc899b5d3ba6c41d33889522e` (PR #421), Render main

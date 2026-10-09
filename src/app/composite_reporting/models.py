@@ -7,6 +7,7 @@ Additive producer fields survive custody; report selectors forbid unknown fields
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -162,11 +163,102 @@ class CompositeCalculatedResponse(SourceModel):
     selection_manifest: CompositeSelectionManifest
 
 
+class CalendarReturnSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["CALENDAR_RETURN"]
+    product_key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    year: int = Field(ge=1, le=9999, strict=True)
+    selection: CompositeReportSelection
+
+    @model_validator(mode="after")
+    def require_calendar_year(self) -> CalendarReturnSelection:
+        if (self.selection.period_start, self.selection.period_end) != (
+            date(self.year, 1, 1),
+            date(self.year, 12, 31),
+        ) or len(self.selection.windows) != 12:
+            raise ValueError("COMPOSITE_CALENDAR_YEAR_REQUIRED")
+        _require_complete_months(self.selection)
+        return self
+
+
+class TrailingReturnSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["TRAILING_RETURN"]
+    product_key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    months: int = Field(ge=1, le=120, strict=True)
+    selection: CompositeReportSelection
+
+    @model_validator(mode="after")
+    def require_month_count(self) -> TrailingReturnSelection:
+        if len(self.selection.windows) != self.months:
+            raise ValueError("COMPOSITE_TRAILING_MONTH_COUNT_REQUIRED")
+        _require_complete_months(self.selection)
+        return self
+
+
+ReturnProductSelection = Annotated[
+    CalendarReturnSelection | TrailingReturnSelection, Field(discriminator="kind")
+]
+
+
+def _require_complete_months(selection: CompositeReportSelection) -> None:
+    for window in selection.windows:
+        start, end = window.period_start, window.period_end
+        if (
+            start.day != 1
+            or (start.year, start.month) != (end.year, end.month)
+            or end.day != calendar.monthrange(start.year, start.month)[1]
+        ):
+            raise ValueError("COMPOSITE_PRODUCT_COMPLETE_MONTHS_REQUIRED")
+
+
+def require_product_scope(
+    primary: CompositeReportSelection, products: list[ReturnProductSelection]
+) -> None:
+    keys = [product.product_key for product in products]
+    if len(keys) != len(set(keys)):
+        raise ValueError("COMPOSITE_PRODUCT_KEY_DUPLICATED")
+    fields = (
+        "tenant_id",
+        "composite_id",
+        "reporting_currency",
+        "return_view",
+        "methodology",
+        "engine_version",
+    )
+    for product in products:
+        selection = product.selection
+        if any(getattr(primary, field) != getattr(selection, field) for field in fields):
+            raise ValueError("COMPOSITE_PRODUCT_SCOPE_CONFLICT")
+        windows = [
+            window
+            for window in primary.windows
+            if selection.period_start <= window.period_start
+            and window.period_end <= selection.period_end
+        ]
+        if windows != selection.windows:
+            raise ValueError("COMPOSITE_PRODUCT_PIN_VECTOR_CONFLICT")
+        if (
+            isinstance(product, TrailingReturnSelection)
+            and selection.period_end != primary.period_end
+        ):
+            raise ValueError("COMPOSITE_TRAILING_AS_OF_CONFLICT")
+
+
 class CompositeReviewJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selection: CompositeReportSelection = Field(
         description="Exact retained calculation. Official publication authority is unavailable."
+    )
+    source_products: list[ReturnProductSelection] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8,
+        exclude_if=lambda value: value is None,
+        description="Exact calendar/trailing calculations; absent retains the v1 contract.",
     )
     requested_output_formats: list[Literal["json", "xlsx"]] = Field(
         default=["json"],
@@ -175,3 +267,19 @@ class CompositeReviewJobRequest(BaseModel):
         description="Select one internal calculated-review output: JSON dataset or XLSX workbook.",
     )
     options: dict[str, Any] = Field(default_factory=dict, description="Governed retention options.")
+
+    @model_validator(mode="after")
+    def require_products(self) -> CompositeReviewJobRequest:
+        if "composite_source_products" in self.options:
+            raise ValueError("Use the typed source_products field")
+        if self.source_products is not None:
+            require_product_scope(self.selection, self.source_products)
+        return self
+
+    def capture_options(self) -> dict[str, Any]:
+        options = {**self.options, "composite_selection": self.selection.model_dump(mode="json")}
+        if self.source_products is not None:
+            options["composite_source_products"] = [
+                product.model_dump(mode="json") for product in self.source_products
+            ]
+        return options

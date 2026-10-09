@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.composite_reporting.models import CompositeReviewJobRequest
 from app.observability import correlation_id_var, trace_id_var
+from app.report_ordering_catalogue.router import get_report_ordering_catalogue_service
+from app.report_ordering_catalogue.service import ReportOrderingCatalogueService
 from app.reporting_jobs.ledger import IdempotencyConflictError, MissingIdempotencyKeyError
 from app.reporting_jobs.models import (
     ReportCallerContext,
@@ -49,10 +51,13 @@ class CompositeJobLedger(Protocol):
         409: {"description": "Idempotency key already identifies different report content."},
     },
 )
-def submit_composite_review(
+async def submit_composite_review(
     request: CompositeReviewJobRequest,
     caller: Annotated[ReportCallerContext, Depends(caller_context_dependency)],
     ledger: Annotated[CompositeJobLedger, Depends(get_report_job_ledger)],
+    catalogue: Annotated[
+        ReportOrderingCatalogueService, Depends(get_report_ordering_catalogue_service)
+    ],
     idempotency_key: Annotated[
         str | None,
         Header(alias="Idempotency-Key", description="Required immutable caller retry identity."),
@@ -71,10 +76,7 @@ def submit_composite_review(
         report_family_id="composite_review",
         ordering_mode_id="single_composite",
         requested_output_formats=request.requested_output_formats,
-        options={
-            **request.options,
-            "composite_selection": request.selection.model_dump(mode="json"),
-        },
+        options=request.capture_options(),
     )
     if request.selection.tenant_id != caller.tenant_id:
         raise HTTPException(
@@ -84,6 +86,21 @@ def submit_composite_review(
                 "message": "Pinned source scope does not match the caller.",
             },
         )
+    if request.source_products is not None and request.requested_output_formats == ["xlsx"]:
+        support = await catalogue.document_contract_supportability(
+            report_type="composite_review",
+            format_id="xlsx",
+            contract_version="composite_review.v2",
+            template_version="v2",
+        )
+        if support.state != "ready":
+            raise HTTPException(
+                503,
+                detail={
+                    "code": "composite_product_render_unavailable",
+                    "message": "The selected product contract has no compatible XLSX renderer.",
+                },
+            )
     try:
         record = ledger.submit_composite_review_job(
             request=request,

@@ -149,3 +149,34 @@ latest source. Workbook rerender retains the existing archived-job predicate,
 original snapshot, accepted template and output format. The original job identity
 already binds format; changing it requires a new job. The existing Archive client
 records the old-to-new technical presentation relationship after verified custody.
+## Captured return products: composite_review.v2
+
+The v2 root retains v1 primary `selection`, `source_response` and
+`source_response_digest` without adding fields to the supplier response. Its
+bounded `source_products` array stores each typed `pin`, fixed `POST /composites/twr`
+provenance, independent raw response and response digest. The v2 schema is
+`contracts/composite_review.v2.schema.json`; v1 schema/example bytes remain unchanged.
+
+All thirteen legacy table identities remain present. `AnnualReturns` contains
+calendar-product rows when selected, otherwise the exact legacy uncaptured
+`metric/value/reason_code` row. `TrailingReturns` exists only when trailing
+products were selected; there is no empty trailing placeholder. Source-backed
+return tables have eleven ordered columns: `product`, `kind`, `period_start`,
+`period_end`, `return_view`, `currency`, `return`, `status`, `methodology`,
+`engine_version`, `response_digest`. Row identity is the product key, in request
+order for that kind. Source indexes always refer to the original root array;
+filtering calendar/trailing rows does not renumber pointers.
+
+The sole additional financial path is
+`/source_products/<canonical-index>/source_response/cumulative_return`, with
+decimal ratio, percent display, two decimal places and HALF_UP rounding. Each
+text column has an explicit selection/source/digest pointer. Cross-kind rows,
+misleading labels, arbitrary financial basenames, period financial paths, TEXT
+relabels and financial values placed in `report_facts` refuse validation. Complete
+raw responses remain retained even when only their horizon return is presented.
+
+V2 bounds match the consumer: 32 tables, 32 columns, 10,000 rows per logical table,
+31-character table IDs, 256-character row IDs, 128-character column IDs,
+256-character labels/titles and 32 reasons per cell. These do not replace the
+renderer’s independent HTTP, expanded row/cell/sheet/text, output and execution
+limits. Neither evidence nor precision may be dropped to fit a workbook.
