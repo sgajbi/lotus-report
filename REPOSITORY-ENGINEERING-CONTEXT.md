@@ -107,12 +107,14 @@ explicit unavailable products. See `docs/composite-report-semantic-contract.md`.
 
 The prepared workbook composer consumes the persisted snapshot record and
 verifies its revision binding before producing exclusive composite Archive
-identity. Actual PostgreSQL/process-retention proof uses controlled Performance;
-a test-only candidate XLSX definition enables the actual producer package proof.
-Neither establishes real supplier, workbook, official, GIPS or enterprise
-acceptance. Protected Performance #630, Render #338 and Archive #176 qualification
-and independent workbook/lifecycle reconciliation remain required before Excel
-catalogue activation. Full #417/RPT-01–12 stays open.
+identity. An actual registered Performance PostgreSQL response from merged
+`c100c885752c86b8d950d7970c99a8d223e6376a` is captured with provenance in the
+owning unit fixtures and replayed through Report's registered workflow. The
+producer uses controlled economic/provider/authority inputs; transport replay
+does not establish live network or institutional acceptance. A test-only candidate
+XLSX definition enables the producer package proof. Supplier exact-main release,
+fresh workbook/Archive reconciliation and lifecycle qualification remain required
+before Excel catalogue activation. Full #417/RPT-01–12 stays open.
 
 
 Risk calculate/rolling admission reads typed nested producer supportability and consumed

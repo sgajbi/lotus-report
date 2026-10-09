@@ -1,0 +1,17 @@
+{
+  "qualification": "ACTUAL_REGISTERED_PERFORMANCE_RESPONSE_CONTROLLED_SYNTHETIC_INPUT_AND_VERIFIER_ONLY",
+  "producer_main": "c100c885752c86b8d950d7970c99a8d223e6376a",
+  "producer_tree": "cdd156587e6f6b01284c96e797e66dfa6396c504",
+  "producer_native_exit": 0,
+  "response_file_sha256_at_intake": "b7b4ec7a84c37c486aa5254671cefddd50a6972a69021377398d6a09e07674c0",
+  "handoff_file_sha256_at_intake": "4133c7dbf0fd9c50d3609085928c6054d62f8af7542e72d62731d84c214bdb18",
+  "admitted_tenant_from_authority_packets": "synthetic-tenant-a",
+  "request_reporting_currency": "USD",
+  "request_return_view": "GROSS",
+  "source_values_and_fields": "Unchanged captured response object; formatted file is not HTTP framing",
+  "limitations": [
+    "Source, provider, universe and approval verifier fixtures are controlled",
+    "No official approval, freeze, institutional or live IAM qualification",
+    "Consumer tests replay captured transport rather than a live supplier network"
+  ]
+}
