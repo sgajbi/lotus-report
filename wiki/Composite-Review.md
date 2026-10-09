@@ -198,3 +198,21 @@ resume remain disclosed in the
 This remains controlled synthetic/recorded Performance transport, local
 trusted-header scope and calculated `NOT_ATTESTED` evidence. Institutional authority,
 enterprise capacity/recovery, uncaptured products and full #417/RPT-01–12 remain open.
+
+The separately accepted r7 campaign delivered four genuine monthly eligibility
+XLSX orders and eight archived original/technical artifacts, with zero Manage reads
+during delivery/rerender. Independent validation reconciled 2,212 canonical cells
+across 96 sheets. Report, Render and Archive exercised bounded native backup/restore;
+all fresh source and receiver resources retired. This is controlled synthetic
+NOT_ATTESTED evidence, not genuine monthly financial amendment or enterprise IAM.
+See [public evidence](https://github.com/sgajbi/lotus-report/issues/417#issuecomment-6084244002).
+
+The additive pooled `composite_review.v5` primary uses exact retained Performance
+GETs, deployment-owned credentials and immutable source/policy/member/manifest
+pins. Original and corrected calculation results retain full source money and
+FLOAT64 diagnostics; Report has no solver. Rejected returns remain null; Dietz
+returns require explicit source FALLBACK_ANALYSIS and policy election. Existing
+v1–v4 contracts remain compatible. The
+[API guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-api-guide.md#exact-pooled-money-weighted-primary)
+describes source authority and proof limits. Recorded wire/ASGI/SQLite tests do not
+establish live principal, PostgreSQL or XLSX/custody acceptance; these remain open.

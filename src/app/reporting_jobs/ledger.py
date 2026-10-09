@@ -182,6 +182,11 @@ def resolve_job_accepted_contract(
         contract["input_snapshot_contract_version"] = "composite_review.v4"
         if contract.get("template_id") is not None:
             contract["template_version"] = "v4"
+    if report_type == "composite_review" and options and "composite_pooled_selection" in options:
+        contract["report_data_contract_version"] = "composite_review.v5"
+        contract["input_snapshot_contract_version"] = "composite_review.v5"
+        if contract.get("template_id") is not None:
+            contract["template_version"] = "v5"
     return contract
 
 
@@ -194,6 +199,7 @@ def template_for_accepted_contract(
         "composite_review.v2",
         "composite_review.v3",
         "composite_review.v4",
+        "composite_review.v5",
     }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved

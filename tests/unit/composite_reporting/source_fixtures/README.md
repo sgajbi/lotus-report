@@ -34,3 +34,35 @@ all four member-period rows, two member totals and nested source authority.
 Expected values are source outputs, without Report linking arithmetic. The source
 producer used real PostgreSQL with controlled synthetic provider inputs. Report
 unit tests replay the recorded transport; this is not a live supplier claim.
+
+## Pooled money-weighted result pair
+
+`pooled-mwr-98a4bef-pair.json.gz` preserves the two full retained result dictionaries
+from Performance main `98a4befee87905fe202b72f62ceb5169a081dab7`, supplied in the
+original/correction packet SHA-256
+`0509c634f84cbdc21236e8baa91370fde99ab63167bae5aafb173c76f95421d4`.
+Compressed fixture SHA-256:
+`03ab16347a010efc04e15c6daa7128d61a2c5fb5514693cb49dc266182dcd2fc`.
+Uncompressed canonical JSON SHA-256:
+`796adeac1e8f67edde63ec4dfc8f2f016c7cb19a5f1a7500f922ead8b0f07ca6`.
+The fixture retains all source money, raw source bodies, source pins, policy,
+dated investor cash flows, correction identity and original FLOAT64 solver output.
+Source returns are approximately 0.1 and 0.2 with ACT/365; no Report solver or
+expected-value rounding produced them. Source production used controlled synthetic
+inputs and PostgreSQL. Report unit tests use recorded transport and SQLite;
+the fixture establishes no live principal authority, bank data or XLSX acceptance.
+
+`pooled-mwr-98a4bef-dispositions.json.gz` preserves the complete recorded response
+bodies for all12 registered cases from packet SHA-256
+`e3800b792757ab2b9dac3824f08f0b99052ef47d626093c01acd6e71bd6a73f3`.
+Compressed fixture SHA-256:
+`dbdfdea0fb0a08725366bb475447b75c66f379252306a1d5b8b0e5d1a74b20dc`.
+Uncompressed canonical JSON SHA-256:
+`9b568d8c947c8cc4d0c99e442539c5e62188bd550f07f01a5b5dd73c1ef060c0`.
+The five final solver bodies cover ambiguous, elected fallback, one-sided,
+work-limit and zero outcomes, preserving nulls and original diagnostics exactly.
+The source capture was `ce5675/0`, 12 cases in5.40s, FastAPI TestClient/per-test
+SQLite. It retained no process PID, HTTP headers or raw socket bytes; none are
+inferred from the separate PostgreSQL campaign. Numerical-domain sparse failure
+is separately tested from source semantics and is not labeled captured registered
+wire evidence because that packet contains no such case.

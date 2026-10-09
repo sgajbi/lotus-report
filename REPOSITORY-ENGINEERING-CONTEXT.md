@@ -115,6 +115,22 @@ Methods row identities and escaped source pointers use sorted binding keys so
 PostgreSQL JSONB object-key normalization cannot change the semantic projection.
 Retained snapshots keep their original stored tables for technical rerender.
 
+The exclusive typed pooled primary uses `composite_review.v5`, preserving v1–v4.
+It reads exact retained Performance results and the selected correction predecessor
+through `/performance/composites/analytics/results/{calculation_id}`. Deployment
+secret `LOTUS_PERFORMANCE_READ_BEARER_TOKEN` has no default authority; caller
+credentials/capabilities are never forwarded. Performance verifies tenant and
+historical member grants. Capture checks complete selected manifest/source vector,
+source bodies, policy, fee/date/currency/population/outcome and correction identity;
+it retains the entire source response and original solver diagnostics without a
+financial calculator. Exact decimal money remains distinct from FLOAT64 roots.
+Complete canonical JSON evidence uses sorted object keys so PostgreSQL JSONB cannot
+change table row identities. JSON uses the existing durable lifecycle; XLSX requires
+compatible current `composite-review/v5` capability and otherwise refuses503.
+Recorded transport, registered ASGI and SQLite unit proof are not live principal,
+PostgreSQL, workbook or bank-authority acceptance. See the API guide and delivery
+ledger for proof boundaries; genuine monthly eligibility amendment remains separate.
+
 The workbook composer consumes the persisted snapshot record and
 verifies its revision binding before producing exclusive composite Archive
 identity. An actual registered Performance PostgreSQL response from merged
