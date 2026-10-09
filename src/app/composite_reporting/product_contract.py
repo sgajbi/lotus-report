@@ -18,6 +18,7 @@ from app.composite_reporting.models import (
     ReturnProductSelection,
     require_product_scope,
 )
+from app.composite_reporting.pooled_contract import CompositePooledReportData
 from app.composite_reporting.projection import require_complete_projection
 from app.composite_reporting.semantic_contract import (
     CompositeReportData,
@@ -130,7 +131,10 @@ def validate_composite_dataset(
     | CompositeProductReportData
     | CompositeLinkedReportData
     | CompositeEligibilityReportData
+    | CompositePooledReportData
 ):
+    if payload.get("contract_version") == "composite_review.v5":
+        return CompositePooledReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v4":
         return CompositeEligibilityReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v3":

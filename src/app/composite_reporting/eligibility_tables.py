@@ -444,10 +444,14 @@ def _display(column: dict[str, Any], cell: dict[str, Any]) -> str:
         return str(value)
     with localcontext() as context:
         context.prec = max(80, len(value) + 20)
-        display = format(
-            Decimal(value).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP), "f"
-        )
-    return display + (f" {column['currency']}" if column["value_type"] == "MONEY" else "")
+        number = Decimal(value)
+        if column["display_conversion"] == "RATIO_TO_PERCENT_DISPLAY":
+            number *= 100
+        display = format(number.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP), "f")
+    suffix = {"PERCENT": "%", "PERCENTAGE_POINTS": " pp"}.get(column["display_unit"], "")
+    if column["value_type"] == "MONEY":
+        suffix = f" {column['currency']}"
+    return display + suffix
 
 
 def _identity_fragments(fields: dict[str, Any]) -> list[tuple[str, str]]:
@@ -606,7 +610,9 @@ def eligibility_workbook_projection(
     return projected
 
 
-def preflight_eligibility_package(package: dict[str, Any]) -> dict[str, int]:
+def preflight_eligibility_package(
+    package: dict[str, Any], *, failure_prefix: str = "COMPOSITE_ELIGIBILITY"
+) -> dict[str, int]:
     """Refuse measured request and workbook limits before Render/Archive side effects.
 
     Output ZIP size remains Render's writer guard; it cannot be truthfully predicted
@@ -630,14 +636,14 @@ def preflight_eligibility_package(package: dict[str, Any]) -> dict[str, int]:
         totals["total_rows"] += len(rows)
         totals["total_cells"] += (len(rows) + partitions) * len(headers)
         if len(headers) > CAPACITY_POLICY["max_columns"]:
-            raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_WORKBOOK_CAPACITY_EXCEEDED")
+            raise CompositeEvidenceRefused(f"{failure_prefix}_WORKBOOK_CAPACITY_EXCEEDED")
         for row in [headers] * partitions + rows:
             for value in row:
                 if len(value.encode("utf-16-le")) // 2 > CAPACITY_POLICY[
                     "max_cell_utf16_units"
                 ] or any(ord(char) < 32 and char not in "\t\r\n" for char in value):
-                    raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_WORKBOOK_LITERAL_INVALID")
+                    raise CompositeEvidenceRefused(f"{failure_prefix}_WORKBOOK_LITERAL_INVALID")
                 totals["total_text_bytes"] += len(value.encode("utf-8"))
     if any(value > CAPACITY_POLICY["max_" + key] for key, value in totals.items()):
-        raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_WORKBOOK_CAPACITY_EXCEEDED")
+        raise CompositeEvidenceRefused(f"{failure_prefix}_WORKBOOK_CAPACITY_EXCEEDED")
     return totals

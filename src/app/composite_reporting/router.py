@@ -87,7 +87,9 @@ async def submit_composite_review(
             },
         )
     profile = (
-        "v4"
+        "v5"
+        if request.pooled_selection is not None
+        else "v4"
         if request.eligibility_selection is not None
         else ("v3" if request.linked_selection is not None else "v2")
     )
@@ -95,6 +97,7 @@ async def submit_composite_review(
         request.source_products is not None
         or request.linked_selection is not None
         or request.eligibility_selection is not None
+        or request.pooled_selection is not None
     ) and request.requested_output_formats == ["xlsx"]:
         support = await catalogue.document_contract_supportability(
             report_type="composite_review",

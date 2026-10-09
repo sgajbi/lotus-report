@@ -331,3 +331,42 @@ official activation. COMPLETE coverage is not bank authority. Controlled unit
 examples and Report worker execution do not establish genuine producer publication,
 actual workbook or Archive acceptance. Complete RPT-04, original RPT-01–12,
 Report #417 and parent Platform #923 remain open.
+
+## Pooled analysis v5
+
+`composite_review.v5` adds an exclusive pooled primary to the existing report
+family. Its [schema](../contracts/composite_review.v5.schema.json) and examples retain
+the entire source result, observation, bundle, raw source bodies, source pins,
+membership, money, policy, correction predecessor, solver diagnostics and original
+solver output. Canonical source dictionaries are not rewritten from parsed models.
+Typed projection rejects nonfinite or inexact source money, mixed selected identity,
+manifest, member, source body, fee, interval, policy and correction evidence.
+
+The source owns all financial values. Exact decimal money and decimal-fraction
+returns remain distinct from FLOAT64 root, rate bounds, residuals and convergence
+controls. Source-stated AVAILABLE XIRR requires qualified convergence and unique-root
+controls. Report checks the stated controls; it does not scan roots or solve XIRR.
+NOT_CALCULABLE requires all three return values null and explicit reasons, even
+when rejected original solver diagnostics contain a Dietz value. FALLBACK_ANALYSIS
+requires the explicitly selected ALLOW_MODIFIED_DIETZ policy and source fallback
+identity/reason; its actual method remains visible.
+
+The complete deterministic table projection contains summary, outcome, monetary
+observation, dated investor and portfolio cash flows, valuations, member controls,
+source pins, membership, policy and disclosures, plus exact JSON
+evidence for every source and predecessor leaf, including additive supplier fields.
+Changing a cell, unit/conversion, policy, row, column, table, pointer or qualification
+refuses the dataset. Return values convert decimal ratios to percent once for
+display; source values remain unchanged. SourceEvidence JSON preserves booleans,
+nulls and FLOAT64 diagnostics without pretending they are exact decimal money.
+The immutable snapshot/revision and existing composite Archive envelope bind these
+values; custody does not promote source qualification or institutional attestation.
+The complete serialized dataset has an 8 MiB admission budget. XLSX preflight
+checks worksheet dimensions, cell literal length and exact display projection;
+oversized evidence refuses delivery without truncating the retained source.
+
+The checked-in original/correction pair comes from qualified Performance main
+`98a4befee87905fe202b72f62ceb5169a081dab7`, controlled synthetic PostgreSQL production.
+Report unit proof uses recorded transport, registered ASGI and SQLite. Live
+Performance principal admission, PostgreSQL and receiver XLSX/custody remain
+separate acceptance gates. Genuine monthly eligibility amendment and full #417 are open.

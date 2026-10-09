@@ -46,10 +46,15 @@ def build_composite_render_package(
         disclosure_refs=[_job_disclosure_baseline(job)],
         archive_custody=custody,
     )
-    if snapshot["contract_version"] == "composite_review.v4":
+    if snapshot["contract_version"] in {"composite_review.v4", "composite_review.v5"}:
         from app.composite_reporting.eligibility_tables import preflight_eligibility_package
 
-        preflight_eligibility_package(package)
+        prefix = (
+            "COMPOSITE_POOLED"
+            if snapshot["contract_version"] == "composite_review.v5"
+            else ("COMPOSITE_ELIGIBILITY")
+        )
+        preflight_eligibility_package(package, failure_prefix=prefix)
     return package
 
 

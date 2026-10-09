@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_LOTUS_CORE_QUERY_BASE_URL = "http://core-query.dev.lotus"
@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     performance_base_url: str = Field(
         DEFAULT_LOTUS_PERFORMANCE_BASE_URL,
         alias="LOTUS_PERFORMANCE_BASE_URL",
+    )
+    performance_read_bearer_token: SecretStr = Field(
+        default=SecretStr(""), alias="LOTUS_PERFORMANCE_READ_BEARER_TOKEN"
     )
     ai_base_url: str = Field(
         DEFAULT_LOTUS_AI_BASE_URL,

@@ -21,6 +21,7 @@ from app.composite_reporting.models import (
     CompositeReviewJobRequest,
     EligibilitySelection,
     LinkedAnalysisSelection,
+    PooledAnalysisSelection,
     PublishedEligibilityPin,
 )
 from app.composite_reporting.product_contract import (
@@ -40,6 +41,10 @@ from app.reporting_lineage.capture_service import (
 
 
 class CompositePerformanceClient(Protocol):
+    async def get_retained_composite_pooled_result(
+        self, calculation_id: Any, *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]: ...
+
     async def get_composite_twr(
         self, payload: dict[str, Any], *, admitted_tenant_id: str
     ) -> tuple[int, dict[str, Any]]: ...
@@ -78,6 +83,7 @@ class CompositeInputProvider:
                         "selection": job.options.get("composite_selection"),
                         "linked_selection": job.options.get("composite_linked_selection"),
                         "eligibility_selection": job.options.get("composite_eligibility_selection"),
+                        "pooled_selection": job.options.get("composite_pooled_selection"),
                         "source_products": job.options.get("composite_source_products"),
                     }
                 )
@@ -92,7 +98,9 @@ class CompositeInputProvider:
                 or job.reporting_currency != selection.reporting_currency
             ):
                 raise CompositeEvidenceRefused("COMPOSITE_REPORT_JOB_IDENTITY_MISMATCH")
-            if request.eligibility_selection is not None:
+            if request.pooled_selection is not None:
+                dataset = await self._capture_pooled(job, request.pooled_selection, calls)
+            elif request.eligibility_selection is not None:
                 dataset = await self._capture_eligibility(job, request.eligibility_selection, calls)
             elif request.linked_selection is not None:
                 dataset = await self._capture_linked(job, request.linked_selection, calls)
@@ -129,6 +137,94 @@ class CompositeInputProvider:
             raise PortfolioReviewInputCaptureError(
                 original_error=exc, upstream_calls=calls
             ) from exc
+
+    async def _capture_pooled(
+        self,
+        job: ReportJobLedgerRecord,
+        selection: PooledAnalysisSelection,
+        calls: list[_RecordedUpstreamCall],
+    ) -> dict[str, Any]:
+        from app.composite_reporting.pooled_contract import admit_pooled_response
+        from app.composite_reporting.pooled_tables import build_pooled_dataset
+
+        payload = await self._read_pooled(job, selection.calculation_id, calls)
+        admit_pooled_response(
+            selection=selection, admitted_tenant_id=job.tenant_id, status_code=200, payload=payload
+        )
+        predecessor = None
+        if selection.correction_of_calculation_id is not None:
+            predecessor = await self._read_pooled(
+                job, selection.correction_of_calculation_id, calls
+            )
+        if (
+            sum(
+                len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+                for value in (payload, predecessor)
+                if value is not None
+            )
+            > 8_388_608
+        ):
+            raise CompositeEvidenceRefused("COMPOSITE_POOLED_CAPTURE_CAPACITY_EXCEEDED")
+        return build_pooled_dataset(
+            selection=selection,
+            admitted_tenant_id=job.tenant_id,
+            status_code=200,
+            payload=payload,
+            predecessor=predecessor,
+        )
+
+    async def _read_pooled(
+        self,
+        job: ReportJobLedgerRecord,
+        calculation_id: Any,
+        calls: list[_RecordedUpstreamCall],
+    ) -> dict[str, Any]:
+        endpoint = f"/performance/composites/analytics/results/{calculation_id}"
+        started = perf_counter()
+        assert self._performance_client is not None
+        try:
+            with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
+                (
+                    status,
+                    response,
+                ) = await self._performance_client.get_retained_composite_pooled_result(
+                    calculation_id, admitted_tenant_id=job.tenant_id
+                )
+        except Exception as exc:
+            recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
+            recorder.append_failure(
+                service_name="lotus-performance",
+                endpoint=endpoint,
+                method="GET",
+                request_payload={},
+                started_at=started,
+                exc=exc,
+            )
+            calls.extend(recorder.calls)
+            raise
+        calls.append(
+            _RecordedUpstreamCall(
+                service_name="lotus-performance",
+                endpoint=endpoint,
+                method="GET",
+                contract_version="composite-pooled-mwr.v1",
+                request_payload={},
+                response_payload=response,
+                response_ref=str(calculation_id),
+                status_code=status,
+                latency_ms=max(0, int((perf_counter() - started) * 1000)),
+                supportability_status="partial",
+                completeness_status="partial",
+                failure_category="partial_data",
+                failure_message="Source authority is not attested.",
+                captured_at=datetime.now(UTC),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        if status != 200:
+            raise CompositeEvidenceRefused("COMPOSITE_REPORT_SOURCE_UNAVAILABLE")
+        return response
 
     async def _capture_linked(
         self,

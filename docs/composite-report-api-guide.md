@@ -244,3 +244,44 @@ Tests use registered Report ASGI admission/worker, SQLite and recorded supplier
 transport. PostgreSQL integration adds isolated database and fresh-process retention
 proof when `REPORT_JOB_LEDGER_DATABASE_URL` is supplied. Neither establishes a live
 financial supplier or official publication authority. Full #417 remains open.
+
+## Exact pooled money-weighted primary
+
+Use the same `POST /reports/composite-reviews` with the exclusive typed
+[`pooled_selection`](../contracts/examples/composite-review.v5.original.request.json).
+The [original](../contracts/examples/composite-review.v5.original.json) and
+[corrected](../contracts/examples/composite-review.v5.corrected.json) datasets retain
+Performance's complete `composite-pooled-mwr.v1` response. The profile is
+`composite_review.v5`; existing v1–v4 selections and captured datasets keep their
+original meanings. A monthly eligibility amendment is a separate source product
+and is not represented by this calculation-correction profile.
+
+Selection pins the calculation, expected predecessor and its response digest,
+tenant/composite/horizon/currency, requested method, engine, manifest and raw bundle
+digests, fee view/basis, policy, day basis, fallback election, complete member
+population and exact source vector. Capture uses only the retained result GET
+`/performance/composites/analytics/results/{calculation_id}`. A correction also
+reads its exact selected predecessor and retains both responses. Report submits
+no new calculation and has no XIRR, cash-flow, linking or fee calculator.
+
+Configure `LOTUS_PERFORMANCE_READ_BEARER_TOKEN` through the deployment's secret
+mechanism. It has no default authority and is not accepted in report request
+options. The Performance deployment must verify that credential against its
+existing principal trust and grant authority, including the admitted tenant and
+every historical member. Report forwards only its configured bearer, admitted
+tenant and diagnostic correlation headers; caller Authorization and capability
+claims are not forwarded. An unavailable grant authority, missing configuration,
+401/403/404/409 response or pending202 refuses successful financial capture. Do not
+put credentials in examples, command evidence, snapshots or logs.
+
+JSON orders use the existing durable worker/snapshot lifecycle. XLSX orders require
+current ready support for `composite-review/v5`, `composite_review.v5` and XLSX;
+until that receiver capability is qualified, admission returns503. A unit-level
+package, recorded supplier response or local SQLite reopen is not live Performance
+principal, PostgreSQL, Render or Archive acceptance. Full #417 remains open.
+
+From the `lotus-report` checkout, PowerShell or Bash:
+
+```text
+python -m pytest tests/unit/composite_reporting/test_pooled_analysis.py tests/unit/composite_reporting/test_pooled_capture.py -q
+```

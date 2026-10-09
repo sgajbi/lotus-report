@@ -861,3 +861,66 @@ sidebar in this slice, then use governed pre-merge parity and post-merge publica
 Repository-local architecture and proof boundaries are recorded in the context.
 No central skill/routing change is needed: existing backend, pre-merge and wiki
 skills already route this work, and supplier implementations remain separate owners.
+
+## Current eligibility evidence r7: actual XLSX custody and isolated restore
+
+Qualified source cuts: Report `0e658df7a3334a7d8cc6ce4b4980788080a3cd89`, Manage
+`566d32fe6dd77eeb8e3121bee900b4853bd73a8b`, Render
+`68b8d39ddf27e84432aeff1a2af788e50b9ff417`, Archive
+`75b84ee8760f615693ca11e12eb99e376e080939`. Fresh definition v1/v2 source windows
+each supplied 32 actual Manage TCP reads and two genuine registered XLSX captures.
+Both receivers accepted exact actual capture/package pins before submission.
+Actual worker delivery `866384/0` and `d539d2/0` archived four originals and four
+retained technical rerenders with zero further Manage reads. Original job Archive
+projection stays original; technical lineage is a separate retained attempt.
+
+Independent OOXML `ee8abe/0` reconciled eight workbooks, 96 sheets and 2,212 canonical
+source cells. Root live QA `90e289/0` checked 48 HTTP reads and full bytes, current
+technical lineage, tenant refusal and financial/relationship invariance. Archive
+same-store restart received independent Root post-read `40fc0c/0` (40 HTTP reads).
+Report separate-process reopening `8787fe/0`, native backup `4e5730/0` and isolated
+native restore `b781b1/0` matched all14 public tables including four jobs/snapshots,
+32 upstream calls, 40 events and four rerender attempts. Render independently
+restored SQLite and read all eight rows through a fresh native registered ASGI
+reader; its optional HTTP restart `f4e7f4/1` failed and is not claimed. Archive
+native restore matched four tables/eight objects and fresh native API readbacks.
+
+All owners retired exact fresh source/receiver resources, preserving foreign and
+older resources. Report `e513bf/0`, Render `ab461b/0`, Archive native retirement
+receipt `e58cc45d132b59dfe21bdd03cfd44b7957a68f2000bc082bdf1ad09e4355d5e2` prove
+bounded cleanup. Report qualification `bba863/0`, SHA256
+`472d49b48ff855b0a6620129bffd635fbd8388d3008d30b3e0b48996085c93d7`, binds287 Report
+artifacts and external owner receipts. Root final `df9a70/0`, SHA256
+`11e6ad06e84c338c71be41009bc3a22d96fb5d1f0db875f81ed9bc4791daf026`, independently
+verified287 Report and417 Archive artifacts plus resource absence. The eight native
+workbook ZIP SHA256 is `0b8974d126f0162a2f62fe3b77ca0d574d79c8eefdc376651e8a004594f4eae6`.
+[Public evidence](https://github.com/sgajbi/lotus-report/issues/417#issuecomment-6084244002)
+was posted `9cc402/0`, exact UTF8 body/issueOPEN verified `323c00/0`.
+
+This closes the controlled eligibility workbook increment. Source setup remains
+synthetic NOT_ATTESTED; Report intake was registered in-process ASGI and source/
+receiver traffic actual TCP. Ordinary definition v1/v2 and technical rerenders
+are not genuine monthly financial correction. Local restore proof is not enterprise
+recovery. Full417/RPT-04/RPT-01–12/Platform923, monthly amendment, pooled consumer
+and enterprise IAM remain open. Wiki truth changes in this slice and requires
+governed parity/publication after merge; no central skill/routing change is needed.
+
+## Pooled v5 consumer implementation validation
+
+The existing composite family adds an exclusive retained pooled primary and exact
+correction predecessor. Qualified Performance `98a4bef` original/correction and
+all five recorded registered solver dispositions are checked in with immutable
+packet hashes and transport limits. Report preserves complete source evidence,
+exact monetary values, rejected null returns and explicitly elected fallback.
+Deployment-owned read authentication has no default authority or caller forwarding.
+
+Local composite suite `f76da6` / `851d80`, exit0, passed404 tests including earlier
+v1–v4 profiles, registered Report ASGI/SQLite capture/reopen, genuine XLSX job package
+construction through a named declining receiver boundary, semantic refusals and
+dataset/cell capacity checks. Monetary guard `9f10e2/0`, mypy `a1aa33/0`, OpenAPI
+`18b2d1/0`, complexity `08493e/0`, domain products `6bce80/0`, source size
+`da45ca/0`, dead code `1a3e10/0` and dependency hygiene `672551/0` passed. Complexity
+ceilings remain28/eight high-complexity functions; the monetary allowlist only moves
+an existing locator by two lines, with no added exception. Full Linux CI and actual
+Performance principal/PG capture, receiver workbook and Archive custody are separate
+acceptance gates. This implementation does not close full #417 or monthly amendment.

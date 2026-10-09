@@ -1,0 +1,69 @@
+{
+  "pooled_selection": {
+    "tenant_id": "controlled-tenant",
+    "composite_id": "CONTROLLED_POOL",
+    "calculation_id": "244ffcc5-16c1-4402-af7f-74e544bc9c83",
+    "schema_version": "composite-pooled-mwr.v1",
+    "metric_id": "POOLED_MONEY_WEIGHTED_RETURN",
+    "method": "XIRR:v1",
+    "period_start": "2025-01-01",
+    "period_end": "2026-01-01",
+    "reporting_currency": "USD",
+    "return_view": "GROSS",
+    "fee_basis": "GROSS_BEFORE_FEES",
+    "policy_binding_id": "controlled-xirr-policy-v1",
+    "policy_content_hash": "controlled-policy-hash",
+    "day_count_basis": "ACT/365",
+    "fallback_policy": "REQUIRE_XIRR",
+    "engine_version": "lotus-performance-calculation-engine.v16",
+    "source_manifest_id": "controlled-correction-v2",
+    "input_manifest_digest": "sha256:d46cc70004a28001f65471245af1d2630fc3afef241b945a2cdf5cb0c77d60d8",
+    "source_bundle_digest": "sha256:1d9ddbb9b935a9810c405cd5d7741b38a8f769108ae369a39f1cc382b2fcda9b",
+    "response_digest": "sha256:ded4e2d39acf79b382886943af41c2d70ea61236d0b7f3a2f0e5ab0845aca2e0",
+    "expected_portfolio_ids": [
+      "member-a",
+      "member-b"
+    ],
+    "source_pins": [
+      {
+        "pin_id": "population",
+        "owner": "CONTROLLED_TEST_OWNER",
+        "product_name": "population",
+        "product_version": "v1",
+        "revision": "population-v1",
+        "source_cut_id": "population-cut",
+        "payload_digest": "sha256:f84901088a8075f337a6bca5721c4c9e11425e63cb4dbd019fd71e05b0c9a821",
+        "compatibility_group": "population-owner-local",
+        "coverage_from": "2025-01-01",
+        "coverage_to": "2026-01-01",
+        "completeness": "COMPLETE",
+        "page_ids": [
+          "population-page-1"
+        ],
+        "expected_page_count": 1
+      },
+      {
+        "pin_id": "money",
+        "owner": "CONTROLLED_TEST_OWNER",
+        "product_name": "money",
+        "product_version": "v1",
+        "revision": "money-v1",
+        "source_cut_id": "money-cut",
+        "payload_digest": "sha256:31a1b1f8333a3f9bbe9313435c9b0b93cbd4be28a13bdccbfea01a58523363e8",
+        "compatibility_group": "money-owner-local",
+        "coverage_from": "2025-01-01",
+        "coverage_to": "2026-01-01",
+        "completeness": "COMPLETE",
+        "page_ids": [
+          "money-page-1"
+        ],
+        "expected_page_count": 1
+      }
+    ],
+    "correction_of_calculation_id": "6a7fd1c2-31ba-4597-9422-36c4cee79700",
+    "predecessor_response_digest": "sha256:7416c3bfd7f1f03a6ba9724d137a9ff52a6e298622ae1eb2150d7e4aa3c46823"
+  },
+  "requested_output_formats": [
+    "json"
+  ]
+}

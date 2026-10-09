@@ -473,6 +473,17 @@ REPORT_FAMILY_DEFINITIONS = (
                 defaulting_policy="omitted_preserves_legacy_contract",
                 value_source="caller",
             ),
+            ReportConfigurationFieldDefinition(
+                field_id="composite_pooled_selection",
+                business_label="Pinned pooled money-weighted analysis",
+                description=(
+                    "Exact retained outcome, source vector and correction lineage; NOT_ATTESTED."
+                ),
+                input_type="pinned_source_selection",
+                requirement="conditional",
+                defaulting_policy="omitted_preserves_legacy_contract",
+                value_source="caller",
+            ),
         ),
     ),
 )

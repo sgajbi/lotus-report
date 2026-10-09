@@ -81,6 +81,37 @@ def series_key_for_job(job: "ReportJobLedgerRecord") -> ReportSeriesKey:
     )
 
 
+def _pooled_revisions(payload: dict[str, Any]) -> list[SourceRevision]:
+    revisions = []
+    for response_key in ("source_response", "predecessor_source_response"):
+        response = payload.get(response_key)
+        if not isinstance(response, dict):
+            continue
+        revisions.append(
+            SourceRevision(
+                source_service="lotus-performance",
+                source_product=response["schema_version"],
+                content_hash=response["input_manifest_digest"],
+                calculation_run_id=response["calculation_id"],
+                methodology_version=response["calculation_engine_version"],
+                supportability_status=response["outcome"]["availability"],
+            )
+        )
+        for pin in response["observation"]["source_bundle"]["source_pins"]:
+            revisions.append(
+                SourceRevision(
+                    source_service=pin["owner"],
+                    source_product=pin["product_name"],
+                    source_product_version=pin["product_version"],
+                    content_hash=pin["payload_digest"],
+                    source_snapshot_id=pin["source_cut_id"],
+                    restatement_version=pin["revision"],
+                    supportability_status=pin["completeness"],
+                )
+            )
+    return revisions
+
+
 def source_revision_vector_for_capture(
     *,
     snapshot_payload: dict[str, Any],
@@ -94,6 +125,8 @@ def source_revision_vector_for_capture(
     """
 
     stated: list[SourceRevision] = []
+    if snapshot_payload.get("contract_version") == "composite_review.v5":
+        stated.extend(_pooled_revisions(snapshot_payload))
     if snapshot_payload.get("contract_version") == "composite_review.v4":
         from app.composite_reporting.eligibility_contract import proposal_for_month
 

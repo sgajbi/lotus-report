@@ -2,10 +2,11 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import UUID
 
 import httpx
 
-from app.clients.http_resilience import post_with_retry, response_payload
+from app.clients.http_resilience import bounded_read_with_retry, post_with_retry, response_payload
 from app.observability import propagation_headers
 
 
@@ -37,6 +38,7 @@ class PerformanceClient:
         poll_budget_seconds: float = 10.0,
         clock: Callable[[], float] | None = None,
         sleeper: Callable[[float], Awaitable[None]] | None = None,
+        read_bearer_token: str = "",
     ):
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
@@ -50,6 +52,44 @@ class PerformanceClient:
         #: sleeper rather than wall-clock sleeps.
         self._clock = clock or time.monotonic
         self._sleeper = sleeper
+        self._read_bearer_token = read_bearer_token
+
+    async def get_retained_composite_pooled_result(
+        self, calculation_id: UUID, *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]:
+        """Deployment credential only; receiver verifies tenant and historical members.
+
+        No caller Authorization or claimed capability is propagated. Missing
+        deployment credentials fail before I/O, never becoming default authority.
+        """
+        if not isinstance(calculation_id, UUID):
+            raise ValueError("COMPOSITE_POOLED_EXACT_CALCULATION_REQUIRED")
+        token = self._read_bearer_token
+        if not token or any(char.isspace() or not 33 <= ord(char) <= 126 for char in token):
+            raise ValueError("COMPOSITE_PERFORMANCE_READ_CREDENTIAL_REQUIRED")
+        if not admitted_tenant_id or any(
+            char.isspace() or char == "," or not 33 <= ord(char) <= 126
+            for char in admitted_tenant_id
+        ):
+            raise ValueError("COMPOSITE_PERFORMANCE_READ_TENANT_REQUIRED")
+        diagnostics = {
+            key: value
+            for key, value in propagation_headers().items()
+            if key in {"X-Correlation-Id", "X-Request-Id", "X-Trace-Id", "traceparent"}
+        }
+        return await bounded_read_with_retry(
+            url=f"{self._base_url}/performance/composites/analytics/results/{calculation_id}",
+            timeout_seconds=self._timeout_seconds,
+            headers={
+                **diagnostics,
+                "X-Tenant-Id": admitted_tenant_id,
+                "Authorization": "Bearer " + token,
+            },
+            json_body=None,
+            max_response_bytes=8_388_608,
+            max_retries=self._max_retries,
+            backoff_seconds=self._retry_backoff_seconds,
+        )
 
     async def get_composite_twr(
         self, payload: dict[str, Any], *, admitted_tenant_id: str

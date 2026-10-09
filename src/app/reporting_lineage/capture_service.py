@@ -812,6 +812,7 @@ class ReportingReadPortfolioReviewInputProvider:
                 ),
                 performance_client=PerformanceClient(
                     base_url=settings.performance_base_url,
+                    read_bearer_token=settings.performance_read_bearer_token.get_secret_value(),
                     timeout_seconds=settings.upstream_timeout_seconds,
                     max_retries=settings.upstream_max_retries,
                     retry_backoff_seconds=settings.upstream_retry_backoff_seconds,

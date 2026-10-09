@@ -952,7 +952,9 @@ def _job_report_data_contract(job: ReportJobLedgerRecord) -> str:
     if job.report_type == "composite_review" and accepted in {
         "composite_review.v2",
         "composite_review.v3",
-    } | {"composite_review.v4"}:
+        "composite_review.v4",
+        "composite_review.v5",
+    }:
         return accepted
     if accepted is not None and accepted != current:
         raise ValueError(
