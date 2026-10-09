@@ -56,8 +56,76 @@ Minimal closure SHA-256 is
 The owned venv was realigned to that closure (`5280ff`, exit 0). The hook and its
 stale FastAPI negative test remain unchanged. The broad-refresh proof cut and
 initial PostgreSQL package output are diagnostic, not final producer correspondence.
-Rerun against the minimal closure before PR qualification. Actual v3 Render/Archive HTTP
-completion, Excel acceptance and full RPT-01–12 acceptance remain unqualified here.
+The final minimal-closure run passes 2643 unit tests with one skip (`0750d7`, exit 0)
+and eight isolated real PostgreSQL retention/process-reopening integration cases
+(`276f3f`, exit 0). Native static/contract gates pass (`d9b6b7`, exit 0), as do
+minimal-closure security audit (`d300d0`, exit 0) and pip check. Four genuine legacy
+v1/v2 original/corrected datasets validate with complete source dictionaries
+unchanged; recursive schema comparison confines changes to SourceNumber metadata
+(`9785ef`, exit 0). The unchanged runtime guard and its tests pass.
+
+### Current linked consumer contract and PostgreSQL custody proof
+
+The new immutable 33-file current-source packet has manifest SHA-256
+`036a775cdc0ac6dcc1533211fa80b6a9d6f2413f2397be2a931cbf9cb17a6c72`.
+It supersedes the r3 proposal for current consumer fixtures without modifying r3.
+The actual request adds optional-null-only `restatement_sequence`; numeric values
+are refused. Uncaptured null cells carry `SOURCE_PRODUCT_NOT_CAPTURED`; a nullable
+source calculation ID retains `SOURCE_IDENTITY_NOT_PROVIDED`. Other reviewed
+table, row, column, pointer and financial display policies are unchanged.
+
+Registered Report ASGI admission/worker and actual owned PostgreSQL produce true
+distinct original/corrected job, snapshot, revision, render-package and custody
+identities (`2a7ec5`, exit 0), under a frozen 503-file candidate cut. Original is
+`rjob_151fa6d5e3ee49518ba8437c28f22b05` /
+`rsnap_78cfe5f126b94d479e0cb8e1895dd154`; correction is
+`rjob_d408832216674923a1f49c649084db46` /
+`rsnap_9bef46a34fb942279db2365331fb491b`. Source transport replays the exact accepted
+current controlled synthetic supplier pair. V3 capability and Render503 are named
+controlled boundaries. Both jobs correctly fail at Render. Retained-original is
+an exact persisted package rebuild, not an archived rerender or document completion.
+
+Root independently verifies all 33 hashes, six schemas, three complete seven-table
+datasets (345 cells), source pair and ten meaningful negative controls
+(`c8b221`, exit 0). Its independent process reopens actual PostgreSQL with REPEATABLE
+READ READ ONLY, verifies complete jobs/snapshots/digests/status/source-call hashes,
+and observes unchanged counts: four jobs, four snapshots, four calls and 20 events.
+Two earlier diagnostic captures remain separate. No source refetch or adapter
+construction occurs. Root acceptance receipt SHA-256 is
+`8eaa97c297cdcdf77112c7158162066f45d2ab55875322a4d86949dfaac11066`;
+the fresh PG receipt is
+`866a69653c808808edcd695ea3ee8473d0134b113fbfd9b328abca344c67e5b7`.
+
+All 503 committed blob/hash-map references are verified. All 149 loaded runtime
+files are independently recoverable exactly or with Git EOL normalization.
+Eight mixed-EOL non-runtime paths retain explicitly owner-reported raw
+correspondence; they are not claimed independently raw-reconstructable. Root's
+earlier helper EOL/default-user/column failures remain diagnostic and do not
+constitute product failures. The final native read succeeds.
+
+After Root read acknowledgement, the exact Report-owned container and volume were
+backed up and retired (`9de952`, exit 0). The custom backup is 80,569 bytes, SHA-256
+`d3b59fda7e73fbc871ee5a74778b585c00e2865d89c78f771f4e99bc6adecbcc`, with
+validated snapshot/upstream-call entries in its table of contents. Exact container/volume absence
+and loopback port 57922 closure are verified (`11aaf3`, exit 0). No foreign resource
+is modified; sealed original/corrected captures and packet remain intact.
+
+Report PR #425 passed all seven protected checks at signed source
+`f2dc41302aacf7214f2d44721a6969b0542eb68f`, complete review pagination and valid
+signature (`aa47b9`, exit 0). Normal protected rebase produced main
+`7c8e8737522981304ae41f9bfd127426be13bcea`; tested/main tree is exactly
+`72697fda4b5162ef87912660660c337e2a505c76`. Wiki publication
+`d178f87aace49058b00e669d37ecaf7148a86834` passes strict parity and all 21 committed
+blob comparisons (`97d10e` / `3ed53f`, exit 0).
+
+The natural main releasability run `37916873303` passes all nine jobs at exact
+`7c8e8737522981304ae41f9bfd127426be13bcea`, including combined coverage and Docker
+build. This qualifies the bounded Report implementation; it does not qualify the
+controlled downstream boundaries as a completed document flow.
+
+Actual v3 Render/Archive HTTP completion, Excel acceptance, institutional authority
+and full RPT-01–12 acceptance remain unqualified here. Render #347 and Archive #185
+own their consumer delivery; a new joined runtime phase needs its own admission.
 
 ## Current Evidence: Six-Year Registered Delivery
 

@@ -127,3 +127,14 @@ and retained source values remain unchanged. See the
 [semantic contract](../docs/composite-report-semantic-contract.md#linked-member-analysis-composite_reviewv3)
 and [API guide](../docs/composite-report-api-guide.md#exact-linked-contribution-primary).
 This advances bounded RPT-01/RPT-06 evidence; full #417 and the twelve products remain open.
+
+Report PR #425 is merged with the exact tested tree. Its current-source consumer
+packet is independently accepted for complete schema, projection and real Report
+PostgreSQL identity, including original/corrected retained source hashes and
+read-only process reopening. Financial transport, v3 capability and the declining
+Render503 boundary remain controlled. This establishes no actual Render/Archive
+completion or archived rerender. Task-owned PostgreSQL was backed up and retired
+after independent reads; the immutable packet and captured identities remain.
+See the delivery ledger for exact commits, receipt hashes, native checks and the
+eight non-runtime mixed-EOL correspondence limits. Downstream v3 consumers remain
+separate owner deliveries under Render #347 and Archive #185.
