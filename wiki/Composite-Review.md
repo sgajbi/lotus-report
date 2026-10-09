@@ -47,6 +47,28 @@ products. Qualification is `EXPLICIT_RETAINED_CALCULATED_REPLAY`, publication st
 
 ## Workbook custody and acceptance
 
+The R5 v2 phase independently qualifies actual calendar/trailing workbook custody
+using Report PR #423, Render PR #345 and Archive PR #183. Registered Report ASGI
+routes and real PostgreSQL capture six accepted recorded Performance responses;
+the existing actual Render/Archive HTTP clients archive original, financial
+correction and retained-original rerender. Rerender makes no source request.
+Each downloaded workbook reconciles 24,623 canonical/display cells, 8,571 financial
+cells, 81 policies and complete pinned source products/identity/context.
+Root independently accepts full bytes, tenant refusal and current financial
+chain before and after Archive's same-PG/new-HTTP-process restart. Fresh-process
+PostgreSQL-enforced read-only reopening preserves both jobs/snapshots, all six
+upstream call records and pinned replay packages. Report's final consistent
+backup is validated before exact owned PG/container/volume cleanup.
+
+This remains calculated `NOT_ATTESTED` proof with recorded Performance transport,
+explicit isolated Archive adapters and disclosed controlled degraded health.
+The Archive financial-chain QA control is separate from Report correction
+orchestration and institutional approval. Annual dispersion, since-inception,
+complete membership history and full #417/RPT-01–12 acceptance remain open.
+Exact source revisions, manifests, native receipts and proof limits are in the
+[R5 delivery ledger](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-delivery-ledger.md#current-v2-evidence-r5-actual-http-custody).
+
+The historical v1 R4 evidence remains immutable:
 One controlled six-year vector (January 2020–December 2025, 72 windows and 2016
 member rows) is independently qualified through registered Report PostgreSQL
 capture, actual Render/Archive HTTP, retained-original rerender and Archive
