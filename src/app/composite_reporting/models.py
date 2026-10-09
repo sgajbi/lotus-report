@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, WithJsonSchema, model_validator
 
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^\S+$")]
@@ -30,7 +30,21 @@ def _finite_source_number(value: Any) -> Any:
 
 
 SourceNumber = Annotated[
-    Decimal, BeforeValidator(_finite_source_number), Field(allow_inf_nan=False)
+    Decimal,
+    BeforeValidator(_finite_source_number),
+    Field(allow_inf_nan=False),
+    WithJsonSchema(
+        {
+            "anyOf": [
+                {"type": "integer"},
+                {
+                    "type": "string",
+                    "pattern": r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+                },
+            ]
+        },
+        mode="validation",
+    ),
 ]
 
 
@@ -247,11 +261,87 @@ def require_product_scope(
             raise ValueError("COMPOSITE_TRAILING_AS_OF_CONFLICT")
 
 
+class LinkedAnalysisRequest(BaseModel):
+    """Exact registered Performance operation; no client-supplied economics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric_id: Literal["LINKED_MEMBER_CONTRIBUTION"]
+    method: Literal["CARINO:v1"]
+    composite_id: Identifier
+    calculation_id: UUID
+    period_start: date
+    period_end: date
+    return_view: FeeView
+    reporting_currency: str = Field(pattern=r"^[A-Z]{3}$")
+    materialization_ids: list[UUID] = Field(min_length=1, max_length=120)
+    restatement_sequence: None = Field(
+        default=None, description="Exact vector selection forbids a competing numeric sequence."
+    )
+
+
+class LinkedAnalysisSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: Identifier
+    source_request: LinkedAnalysisRequest
+    windows: list[CompositeWindowPin] = Field(min_length=1, max_length=120)
+    engine_version: Identifier
+    calculation_fingerprint: Digest
+    response_digest: Digest
+
+    @model_validator(mode="after")
+    def require_exact_vector(self) -> LinkedAnalysisSelection:
+        request = self.source_request
+        identifiers = [window.materialization_id for window in self.windows]
+        if identifiers != request.materialization_ids or len(set(identifiers)) != len(identifiers):
+            raise ValueError("COMPOSITE_LINKED_PIN_VECTOR_CONFLICT")
+        if (self.windows[0].period_start, self.windows[-1].period_end) != (
+            request.period_start,
+            request.period_end,
+        ):
+            raise ValueError("COMPOSITE_LINKED_PERIOD_CONFLICT")
+        for previous, current in zip(self.windows, self.windows[1:]):
+            if current.period_start != previous.period_end + timedelta(days=1):
+                raise ValueError("COMPOSITE_LINKED_WINDOW_GAP")
+        return self
+
+    @property
+    def composite_id(self) -> str:
+        return self.source_request.composite_id
+
+    @property
+    def period_start(self) -> date:
+        return self.source_request.period_start
+
+    @property
+    def period_end(self) -> date:
+        return self.source_request.period_end
+
+    @property
+    def reporting_currency(self) -> str:
+        return self.source_request.reporting_currency
+
+    @property
+    def calculation_id(self) -> UUID:
+        return self.source_request.calculation_id
+
+    def performance_request(self) -> dict[str, Any]:
+        return self.source_request.model_dump(mode="json")
+
+
 class CompositeReviewJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    selection: CompositeReportSelection = Field(
-        description="Exact retained calculation. Official publication authority is unavailable."
+    selection: CompositeReportSelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Exact retained calculation. Official publication authority is unavailable.",
+    )
+    linked_selection: LinkedAnalysisSelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Exact linked-analysis primary operation; exclusive of TWR return products.",
     )
     source_products: list[ReturnProductSelection] | None = Field(
         default=None,
@@ -272,11 +362,30 @@ class CompositeReviewJobRequest(BaseModel):
     def require_products(self) -> CompositeReviewJobRequest:
         if "composite_source_products" in self.options:
             raise ValueError("Use the typed source_products field")
+        if "composite_linked_selection" in self.options:
+            raise ValueError("Use the typed linked_selection field")
+        if (self.selection is None) == (self.linked_selection is None):
+            raise ValueError("Select exactly one composite primary operation")
         if self.source_products is not None:
+            if self.selection is None:
+                raise ValueError("Linked analysis cannot be a TWR return product")
             require_product_scope(self.selection, self.source_products)
         return self
 
+    @property
+    def primary_selection(self) -> CompositeReportSelection | LinkedAnalysisSelection:
+        if self.linked_selection is not None:
+            return self.linked_selection
+        assert self.selection is not None
+        return self.selection
+
     def capture_options(self) -> dict[str, Any]:
+        if self.linked_selection is not None:
+            return {
+                **self.options,
+                "composite_linked_selection": self.linked_selection.model_dump(mode="json"),
+            }
+        assert self.selection is not None
         options = {**self.options, "composite_selection": self.selection.model_dump(mode="json")}
         if self.source_products is not None:
             options["composite_source_products"] = [

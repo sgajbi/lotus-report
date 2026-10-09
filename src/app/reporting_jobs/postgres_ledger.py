@@ -196,7 +196,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:
-        if request.selection.tenant_id != caller_context.tenant_id:
+        if request.primary_selection.tenant_id != caller_context.tenant_id:
             raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
         return self._create_report_job(
             report_type="composite_review",

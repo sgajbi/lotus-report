@@ -168,6 +168,11 @@ def resolve_job_accepted_contract(
         contract["input_snapshot_contract_version"] = "composite_review.v2"
         if contract.get("template_id") is not None:
             contract["template_version"] = "v2"
+    if report_type == "composite_review" and options and "composite_linked_selection" in options:
+        contract["report_data_contract_version"] = "composite_review.v3"
+        contract["input_snapshot_contract_version"] = "composite_review.v3"
+        if contract.get("template_id") is not None:
+            contract["template_version"] = "v3"
     return contract
 
 
@@ -176,7 +181,10 @@ def template_for_accepted_contract(
     resolved: tuple[str | None, str | None],
 ) -> tuple[str | None, str | None]:
     """A selected composite product profile overrides only its own template axis."""
-    if contract.get("report_data_contract_version") == "composite_review.v2":
+    if contract.get("report_data_contract_version") in {
+        "composite_review.v2",
+        "composite_review.v3",
+    }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved
 
@@ -304,7 +312,7 @@ def _request_parts(
     request: ReportJobRequest,
 ) -> tuple[dict[str, Any], date, list[str], str | None, dict[str, Any]]:
     if isinstance(request, CompositeReviewJobRequest):
-        selection = request.selection
+        selection = request.primary_selection
         return (
             {"composite_id": selection.composite_id},
             selection.period_end,
@@ -738,7 +746,7 @@ class ReportJobLedger:
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
     ) -> ReportJobLedgerRecord:
-        if request.selection.tenant_id != caller_context.tenant_id:
+        if request.primary_selection.tenant_id != caller_context.tenant_id:
             raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
         return self._create_report_job(
             report_type="composite_review",

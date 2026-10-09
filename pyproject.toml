@@ -24,6 +24,7 @@ Repository = "https://github.com/sgajbi/lotus-report"
 
 [project.optional-dependencies]
 dev = [
+  "jsonschema==4.23.0",
   "PyYAML>=6.0",
   "radon==6.0.1",
   "vulture==2.16",

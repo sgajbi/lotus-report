@@ -106,3 +106,24 @@ Methods rows use sorted method-binding keys so JSON object key order, including
 PostgreSQL JSONB normalization, does not change row identity or source pointers.
 The retained source values remain exact. Previously captured snapshots keep their
 stored tables, and technical rerender continues to consume those immutable tables.
+
+## Linked contribution primary (v3)
+
+The existing order endpoint also accepts an exclusive typed `linked_selection`.
+It captures the exact source-owned linked member analysis through
+`POST /composites/analytics`, independently of the TWR primary and return products.
+Its accepted data/input contract is `composite_review.v3`; XLSX requires ready
+`composite-review/v3` support before capture. JSON has no Render dependency.
+Seven source-bound tables preserve complete member/period rows, canonical decimals,
+methods, nested source authority and explicit uncaptured products. Report validates
+the whole projection, with no investment linking or residual allocation.
+
+The original/corrected fixture comes from accepted Performance main `6e9bdbb` with
+controlled synthetic inputs and real supplier PostgreSQL. Report's tests replay
+that transport; publication remains `NOT_ATTESTED`. New correction orders keep
+distinct retained identities. Current generated v1/v2 scalar schemas explicitly
+accept genuine finite scientific decimal strings, while frozen historical schemas
+and retained source values remain unchanged. See the
+[semantic contract](../docs/composite-report-semantic-contract.md#linked-member-analysis-composite_reviewv3)
+and [API guide](../docs/composite-report-api-guide.md#exact-linked-contribution-primary).
+This advances bounded RPT-01/RPT-06 evidence; full #417 and the twelve products remain open.

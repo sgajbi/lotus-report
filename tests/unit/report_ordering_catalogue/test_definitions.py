@@ -4,6 +4,19 @@ from app.report_ordering_catalogue.definitions import (
 )
 
 
+def test_linked_primary_stays_in_existing_family_with_legacy_defaults():
+    family = next(
+        item for item in REPORT_FAMILY_DEFINITIONS if item.report_family_id == "composite_review"
+    )
+    assert family.template_version == "v1"
+    assert family.input_snapshot_contract_version == "composite_review.v1"
+    fields = {item.field_id: item for item in family.configuration_fields}
+    assert fields["composite_selection"].requirement == "conditional"
+    assert fields["composite_linked_selection"].requirement == "conditional"
+    assert fields["composite_linked_selection"].value_source == "caller"
+    assert fields["composite_source_products"].requirement == "optional"
+
+
 def test_report_family_definitions_are_unique_and_implementation_backed() -> None:
     family_ids = [definition.report_family_id for definition in REPORT_FAMILY_DEFINITIONS]
     report_types = [definition.report_type for definition in REPORT_FAMILY_DEFINITIONS]

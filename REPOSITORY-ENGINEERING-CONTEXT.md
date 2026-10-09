@@ -673,6 +673,24 @@ is added or retired · an invariant is added, removed or weakened · priorities 
 Everything else — what shipped, when, and under which RFC slice — belongs in the review ledger,
 the RFCs, the wiki, or GitHub issues.
 
+### Linked-analysis practice (#417)
+
+The same composite family accepts one exclusive `linked_selection` primary with
+`composite_review.v3` accepted input/data axes. Capture uses the existing Performance
+client and `POST /composites/analytics`; no financial linking belongs in Report.
+Keep genuine nullable source request fields and the complete member/period source
+authority, pins and response digest. Validate the whole expected source projection,
+including coherent table/row/column omission, before persistence and rendering.
+V1/v2 selectors, retained identities and historical snapshot/schema packets remain
+valid. Current generated financial-scalar schemas explicitly accept finite
+scientific decimals; native finite Decimal/type checks remain authoritative.
+
+JSON admission needs no renderer. V3 XLSX must pass exact current v3 contract,
+template and format readiness. Recorded financial source replay and controlled
+supportability/Render boundaries are test execution, not live supplier or document
+completion claims. Use existing isolated PostgreSQL fixtures for custody/process
+reopening; never write tests into a product database. Full #417 stays open.
+
 ## Cross-Links
 
 1. `../lotus-platform/context/LOTUS-QUICKSTART-CONTEXT.md`

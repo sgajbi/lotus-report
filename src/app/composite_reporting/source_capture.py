@@ -12,7 +12,12 @@ from app.composite_reporting.admission import (
     CompositeEvidenceRefused,
     admit_composite_response,
 )
-from app.composite_reporting.models import CompositeReportSelection, CompositeReviewJobRequest
+from app.composite_reporting.linked_tables import build_linked_dataset
+from app.composite_reporting.models import (
+    CompositeReportSelection,
+    CompositeReviewJobRequest,
+    LinkedAnalysisSelection,
+)
 from app.composite_reporting.product_contract import (
     CapturedReturnProduct,
     validate_composite_dataset,
@@ -34,6 +39,10 @@ class CompositePerformanceClient(Protocol):
         self, payload: dict[str, Any], *, admitted_tenant_id: str
     ) -> tuple[int, dict[str, Any]]: ...
 
+    async def get_composite_analytics(
+        self, payload: dict[str, Any], *, admitted_tenant_id: str
+    ) -> tuple[int, dict[str, Any]]: ...
+
 
 class CompositeInputProvider:
     def __init__(self, *, performance_client: CompositePerformanceClient) -> None:
@@ -46,10 +55,11 @@ class CompositeInputProvider:
                 request = CompositeReviewJobRequest.model_validate(
                     {
                         "selection": job.options.get("composite_selection"),
+                        "linked_selection": job.options.get("composite_linked_selection"),
                         "source_products": job.options.get("composite_source_products"),
                     }
                 )
-                selection = request.selection
+                selection = request.primary_selection
             except ValidationError as exc:
                 raise CompositeEvidenceRefused("COMPOSITE_REPORT_SELECTION_INVALID") from exc
             if (
@@ -60,8 +70,12 @@ class CompositeInputProvider:
                 or job.reporting_currency != selection.reporting_currency
             ):
                 raise CompositeEvidenceRefused("COMPOSITE_REPORT_JOB_IDENTITY_MISMATCH")
-            dataset = await self._capture_selection(job, selection, calls)
-            dataset = build_composite_tables(dataset)
+            if request.linked_selection is not None:
+                dataset = await self._capture_linked(job, request.linked_selection, calls)
+            else:
+                assert request.selection is not None
+                dataset = await self._capture_selection(job, request.selection, calls)
+                dataset = build_composite_tables(dataset)
             products = []
             for product in request.source_products or []:
                 captured = await self._capture_selection(job, product.selection, calls)
@@ -91,6 +105,42 @@ class CompositeInputProvider:
             raise PortfolioReviewInputCaptureError(
                 original_error=exc, upstream_calls=calls
             ) from exc
+
+    async def _capture_linked(
+        self,
+        job: ReportJobLedgerRecord,
+        selection: LinkedAnalysisSelection,
+        calls: list[_RecordedUpstreamCall],
+    ) -> dict[str, Any]:
+        started = perf_counter()
+        try:
+            with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
+                status, response = await self._performance_client.get_composite_analytics(
+                    selection.performance_request(), admitted_tenant_id=job.tenant_id
+                )
+        except Exception as exc:
+            recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
+            recorder.append_failure(
+                service_name="lotus-performance",
+                endpoint="/composites/analytics",
+                method="POST",
+                request_payload=selection.performance_request(),
+                started_at=started,
+                exc=exc,
+            )
+            calls.extend(recorder.calls)
+            raise
+        calls.append(
+            _source_call(
+                job, selection, status, response, started, endpoint="/composites/analytics"
+            )
+        )
+        return build_linked_dataset(
+            selection=selection,
+            admitted_tenant_id=job.tenant_id,
+            status_code=status,
+            payload=response,
+        )
 
     async def _capture_selection(
         self,
@@ -134,16 +184,20 @@ class CompositeInputProvider:
 
 def _source_call(
     job: ReportJobLedgerRecord,
-    selection: CompositeReportSelection,
+    selection: CompositeReportSelection | LinkedAnalysisSelection,
     status: int,
     response: dict[str, Any],
     started: float,
+    *,
+    endpoint: str = "/composites/twr",
 ) -> _RecordedUpstreamCall:
     return _RecordedUpstreamCall(
         service_name="lotus-performance",
-        endpoint="/composites/twr",
+        endpoint=endpoint,
         method="POST",
-        contract_version="composite-twr.explicit-retained-selection.v1",
+        contract_version="composite-linked.explicit-retained-selection.v1"
+        if isinstance(selection, LinkedAnalysisSelection)
+        else "composite-twr.explicit-retained-selection.v1",
         request_payload=selection.performance_request(),
         response_payload=response,
         response_ref=str(selection.calculation_id),

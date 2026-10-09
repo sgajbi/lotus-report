@@ -173,7 +173,11 @@ def revision_for_capture(
 
 
 def _revision_from_composite_response(payload: dict[str, Any]) -> SourceRevision | None:
-    if payload.get("contract_version") not in {"composite_review.v1", "composite_review.v2"}:
+    if payload.get("contract_version") not in {
+        "composite_review.v1",
+        "composite_review.v2",
+        "composite_review.v3",
+    }:
         return None
     response = payload.get("source_response")
     if not isinstance(response, dict):

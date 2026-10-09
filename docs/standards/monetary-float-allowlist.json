@@ -10,7 +10,7 @@
       "review_by": "2026-10-20"
     },
     {
-      "finding": "src/app/reporting_render/package_builder.py:1956:if isinstance(value, bool) or not isinstance(value, (int, float)):",
+      "finding": "src/app/reporting_render/package_builder.py:1959:if isinstance(value, bool) or not isinstance(value, (int, float)):",
       "justification": "Temporary approved monetary float usage; migrate to Decimal.",
       "owner": "platform-governance",
       "review_by": "2027-03-04"
