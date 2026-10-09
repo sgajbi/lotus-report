@@ -86,7 +86,10 @@ async def test_evaluated_source_is_one_exact_get_with_full_unknowns_and_partial_
 
     monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", get)
     source = ManageClient(
-        base_url="http://manage", actor_id="configured-report-reader", timeout_seconds=1
+        base_url="http://manage",
+        actor_id="configured-report-reader",
+        timeout_seconds=1,
+        service_identity="configured-report-service",
     )
     capture = await CompositeInputProvider(manage_client=source).collect_for_job(
         eligibility_job(selection)
@@ -99,6 +102,9 @@ async def test_evaluated_source_is_one_exact_get_with_full_unknowns_and_partial_
     assert sent[0]["headers"]["X-Tenant-Id"] == "test-tenant"
     assert sent[0]["headers"]["X-Actor-Id"] == "configured-report-reader"
     assert sent[0]["headers"]["X-Role"] == "REPORT_COMPOSITE_READER"
+    assert sent[0]["headers"]["X-Service-Identity"] == "configured-report-service"
+    assert sent[0]["headers"]["X-Capabilities"] == "manage.read"
+    assert "Authorization" not in sent[0]["headers"]
     assert sent[0]["headers"]["X-Correlation-Id"] == "corr-composite"
     assert sent[0]["headers"]["X-Trace-Id"] == "trace-composite"
     assert capture.snapshot_payload["source_months"] == months
@@ -178,7 +184,10 @@ async def test_manage_identity_refuses_before_transport(actor, tenant, monkeypat
     monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", forbidden)
     with pytest.raises(ValueError):
         await ManageClient(
-            base_url="http://manage", actor_id=actor, timeout_seconds=1
+            base_url="http://manage",
+            actor_id=actor,
+            timeout_seconds=1,
+            service_identity="configured-report-service",
         ).read_eligibility(
             endpoint="/api/v1/rebalance/composites/c/definitions/d",
             binding=None,
@@ -198,9 +207,16 @@ async def test_actual_order_worker_snapshot_retrieval_uses_manage_and_preserves_
         return 200, deepcopy(months[0]["proposal"])
 
     monkeypatch.setattr(settings, "manage_read_actor_id", "configured-reader")
+    monkeypatch.setattr(settings, "manage_read_service_identity", "configured-report-service")
     monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", source)
     with composite_lifecycle(tmp_path, monkeypatch) as (ledger, store, worker, performance):
-        headers = {**HEADERS, "X-Tenant-Id": "test-tenant"}
+        headers = {
+            **HEADERS,
+            "X-Tenant-Id": "test-tenant",
+            "X-Service-Identity": "caller-write-service",
+            "X-Capabilities": "manage.write",
+            "Authorization": "Bearer caller-credential-not-forwarded",
+        }
         request = {"eligibility_selection": selection.model_dump(mode="json")}
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://report"
@@ -234,7 +250,107 @@ async def test_actual_order_worker_snapshot_retrieval_uses_manage_and_preserves_
                 == 2
             )
             assert len(sent) == 1
+            assert sent[0]["headers"]["X-Service-Identity"] == "configured-report-service"
+            assert sent[0]["headers"]["X-Actor-Id"] == "configured-reader"
+            assert sent[0]["headers"]["X-Role"] == "REPORT_COMPOSITE_READER"
+            assert sent[0]["headers"]["X-Capabilities"] == "manage.read"
+            assert "Authorization" not in sent[0]["headers"]
             assert performance["calls"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["actor", "tenant", "service", "correlation"])
+@pytest.mark.parametrize(
+    "value",
+    ["", " ", "reader,writer", "reader\rforged", "reader\nforged", " reader", "reader\tforged"],
+)
+async def test_single_read_authority_fields_refuse_before_transport(field, value, monkeypatch):
+    async def forbidden(**kwargs):
+        pytest.fail("Malformed or unconfigured read authority reached transport")
+
+    values = {
+        "actor": "report-actor",
+        "tenant": "tenant-A",
+        "service": "report-reader",
+        "correlation": "corr-read",
+    }
+    values[field] = value
+    monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", forbidden)
+    monkeypatch.setattr(
+        "app.clients.manage_client.propagation_headers",
+        lambda: {"X-Correlation-Id": values["correlation"]},
+    )
+    with pytest.raises(ValueError, match="READ_IDENTITY_REQUIRED"):
+        await ManageClient(
+            base_url="http://manage",
+            actor_id=values["actor"],
+            service_identity=values["service"],
+            timeout_seconds=1,
+        ).read_eligibility(
+            endpoint="/api/v1/rebalance/composites/c/definitions/d/membership/r",
+            binding=None,
+            admitted_tenant_id=values["tenant"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_reader_actor_alone_never_enrolls_a_default_service_identity(monkeypatch):
+    async def forbidden(**kwargs):
+        pytest.fail("Reader actor alone acquired service identity")
+
+    monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", forbidden)
+    with pytest.raises(ValueError, match="READ_IDENTITY_REQUIRED"):
+        await ManageClient(
+            base_url="http://manage", actor_id="report-actor", timeout_seconds=1
+        ).read_eligibility(
+            endpoint="/api/v1/rebalance/composites/c/definitions/d/membership/r",
+            binding=None,
+            admitted_tenant_id="tenant-A",
+        )
+
+
+@pytest.mark.asyncio
+async def test_read_grant_and_service_are_deployment_owned_and_never_caller_forwarded(monkeypatch):
+    sent = []
+
+    async def read(**kwargs):
+        sent.append(kwargs)
+        return 200, {"retained": True}
+
+    monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", read)
+    monkeypatch.setattr(
+        "app.clients.manage_client.propagation_headers",
+        lambda: {
+            "X-Correlation-Id": "corr-read",
+            "X-Request-Id": "req-read",
+            "X-Trace-Id": "trace-read",
+            "Authorization": "Bearer caller-secret",
+            "X-Service-Identity": "caller-write-service",
+            "X-Capabilities": "manage.write",
+            "X-Role": "DPM_COMPOSITE_ADMIN",
+        },
+    )
+    client = ManageClient(
+        base_url="http://manage",
+        actor_id="report-actor",
+        service_identity="report-reader",
+        timeout_seconds=1,
+    )
+    assert await client.read_eligibility(
+        endpoint="/api/v1/rebalance/composites/c/definitions/d/eligibility-evidence/resolve",
+        binding={"product_name": "CompositeMonthlyEvaluationApproval"},
+        admitted_tenant_id="tenant-A",
+    ) == (200, {"retained": True})
+    assert sent[0]["headers"] == {
+        "X-Correlation-Id": "corr-read",
+        "X-Request-Id": "req-read",
+        "X-Trace-Id": "trace-read",
+        "X-Tenant-Id": "tenant-A",
+        "X-Actor-Id": "report-actor",
+        "X-Service-Identity": "report-reader",
+        "X-Role": "REPORT_COMPOSITE_READER",
+        "X-Capabilities": "manage.read",
+    }
 
 
 def workbook_package():
@@ -430,6 +546,7 @@ async def test_v4_worker_package_and_retained_rerender_bind_actual_manage_snapsh
 
     monkeypatch.setattr(ReportOrderingCatalogueService, "document_contract_supportability", ready)
     monkeypatch.setattr(settings, "manage_read_actor_id", "configured-reader")
+    monkeypatch.setattr(settings, "manage_read_service_identity", "configured-report-service")
     monkeypatch.setattr("app.clients.manage_client.bounded_read_with_retry", source)
     boundary = ControlledRenderBoundary()  # real package emission, deliberately no workbook claim
     with composite_lifecycle(tmp_path, monkeypatch, render_client=boundary) as (

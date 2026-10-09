@@ -286,9 +286,34 @@ universe can have a distinct cut; published receipt, membership, universe and
 publication bind that input-universe cut. Original product and POLICY_INPUT locator
 cuts remain unchanged and are bound by complete source and response hashes.
 
-Configure `LOTUS_MANAGE_BASE_URL` and `LOTUS_MANAGE_READ_ACTOR_ID`. An empty default
-actor refuses reads. A fixed service read role never forwards caller approval roles;
-trusted-ingress headers do not establish enterprise IAM.
+Configure `LOTUS_MANAGE_BASE_URL`, `LOTUS_MANAGE_READ_ACTOR_ID` and
+`LOTUS_MANAGE_READ_SERVICE_IDENTITY`. Actor and service identity default to empty;
+either missing value refuses before transport. They are deployment-owned, while
+tenant comes only from admitted caller scope. Every bounded Manage read sends one
+`X-Service-Identity`, `X-Actor-Id`, `X-Tenant-Id` and `X-Correlation-Id`, with fixed
+`X-Role: REPORT_COMPOSITE_READER` and `X-Capabilities: manage.read`. The grant is not
+caller-configurable and has no `manage.write` fallback. Only diagnostic propagation
+headers pass through; caller Authorization, service identity, grant and role never do.
+Blank, padded, comma-separated or control-character identity/correlation values
+refuse before transport. Configured headers do not establish enterprise IAM.
+
+Manage #795 owns enrollment and authorization of these existing read operations.
+For example, Report settings `LOTUS_MANAGE_READ_SERVICE_IDENTITY=report-reader` and
+`LOTUS_MANAGE_READ_ACTOR_ID=report-actor` with admitted tenant `tenant-A` must match
+Manage's explicit `DPM_COMPOSITE_READ_SERVICE_GRANTS_JSON` enrollment:
+
+```json
+[{"service_identity":"report-reader","actor_id":"report-actor","tenant_id":"tenant-A"}]
+```
+
+This example is a controlled trusted-header enrollment, not a credential or bank
+grant. Manage has no enrollment default. Published capture uses the exact receipt
+resolver POST, membership/parent GETs, universe-attestation GET and publication GET.
+Evaluated-only capture uses the existing exact monthly-evaluation proposal GET.
+The owner must authorize those read purposes and reject mutation attempts by the
+same reader, including spoofed write roles/capabilities. Policy tests, source replay
+and intercepted transport do not prove live composition: enforced-auth TCP with
+actual configured Report calls and negative controls is required separately.
 `LOTUS_MANAGE_MAX_RESPONSE_BYTES` can reduce the 8 MiB ceiling, never raise it.
 Responses are streamed and bounded before JSON parsing through existing retry
 policy; compressed responses refuse on this bounded path. Nothing is truncated.

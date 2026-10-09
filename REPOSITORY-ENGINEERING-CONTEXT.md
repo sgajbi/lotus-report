@@ -717,7 +717,12 @@ proposal evidence distinct; missing observations remain visible. Use transport-o
 DTOs, exact source content/response pins, all assessments and complete projection.
 Do not import upstream evaluators or invent Performance run IDs, approvals, history
 or bank authority. Keep known empty/unused slots distinct from unavailable evidence.
-Configure the Manage read actor explicitly and bound whole responses before parsing;
+Configure both Manage read actor and service identity explicitly; never infer a
+service enrollment or forward caller credentials/grants. The fixed `manage.read`
+grant and `REPORT_COMPOSITE_READER` role must match Manage's scoped read policy;
+no `manage.write` fallback is permitted. Validate single identity/correlation values
+before transport. Live enforced-auth composition needs separate TCP/negative proof.
+Bound whole responses before parsing;
 measure full Render request/evidence/identity/chunk overhead before downstream calls.
 Retained rerender reuses snapshots. Consumer support and genuine source authority
 need separate evidence; preserve all legacy v1/v2/v3 retained bytes.

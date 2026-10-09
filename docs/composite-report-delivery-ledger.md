@@ -1,5 +1,34 @@
 # Composite Report Delivery Ledger
 
+## Manage read-authority composition increment (#417 / Manage #795)
+
+Root executed actual Report #429 header construction and Manage authorization
+under the enforced native profile (`841bbb/0`): missing service identity refused;
+adding identity alone still required broad `manage.write`. This was actual component
+execution with intercepted transport, not configured live HTTP or enterprise IAM.
+Manage #795 owns a narrow read-purpose policy and explicit reader enrollment;
+Report now composes `LOTUS_MANAGE_READ_SERVICE_IDENTITY` with the existing explicit
+read actor, admitted tenant, fixed `REPORT_COMPOSITE_READER` and fixed `manage.read`.
+There is no enrollment default, write-grant fallback, caller identity/grant/role or
+Authorization forwarding. Malformed identity/correlation values refuse before I/O.
+
+Owning capture controls failed before implementation (`f58862/1`, 36 failed), then
+passed unchanged (`2ba09a/0`, 55 passed) after client/config/capture wiring. Additional
+default-no-enrollment and actual API caller-spoof controls cover the same boundary.
+The existing exact evaluated-only proposal GET must be included in Manage's policy
+alongside the five published reads. This changes no source schema, selection,
+custody envelope, financial calculations, Render limits or retained v1/v2/v3 bytes.
+Actual enforced-auth TCP/PostgreSQL composition and mutation/negative controls await
+both owner cuts' qualification; local mocks and synthetic trusted headers do not
+establish those claims. Complete RPT-04, #417 and parent #923 remain OPEN.
+
+Final composite subset `c5974f` -> `1ffb0f/0` passed 347 tests, including the 30 new
+read-authority controls. Native lint/typecheck/code-health/OpenAPI gates
+`b5e5ee` -> `4b6ec8/0` passed with all 29 existing monetary allowances unchanged;
+Linux CI remains the evaluator for dependency closure. Authored-wiki check
+`c4880f/0` reported the single intentional unpublished change. Protected PR/main
+and published wiki qualification are recorded in issue evidence after delivery.
+
 ## RPT-04 controlled custody implementation increment
 
 The existing family now implements exclusive published/evaluated-only eligibility

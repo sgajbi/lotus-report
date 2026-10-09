@@ -804,6 +804,7 @@ class ReportingReadPortfolioReviewInputProvider:
                 manage_client=ManageClient(
                     base_url=settings.manage_base_url,
                     actor_id=settings.manage_read_actor_id,
+                    service_identity=settings.manage_read_service_identity,
                     max_response_bytes=settings.manage_max_response_bytes,
                     timeout_seconds=settings.upstream_timeout_seconds,
                     max_retries=settings.upstream_max_retries,

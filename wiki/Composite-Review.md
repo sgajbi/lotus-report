@@ -17,6 +17,17 @@ capture/job/snapshot lifecycle. XLSX needs actual exact v4 Render readiness and
 separate consumer admission. Explicit configured Manage read identity, bounded
 whole responses and full request/workbook overhead preflight are required.
 
+Configure `LOTUS_MANAGE_READ_SERVICE_IDENTITY` and `LOTUS_MANAGE_READ_ACTOR_ID`
+explicitly; empty defaults refuse reads. These deployment-owned values and admitted
+caller tenant must match Manage's `DPM_COMPOSITE_READ_SERVICE_GRANTS_JSON` enrollment.
+Report always sends fixed `REPORT_COMPOSITE_READER` / `manage.read`; no broad write
+grant or caller credential/service/grant forwarding is supported. Identity and
+correlation values must be single, nonempty and free of padding, commas and controls.
+Manage #795 owns the existing resolver and exact GET read-purpose policy, including
+the evaluated-only proposal read. These are controlled trusted headers, not bank IAM.
+Actual enforced-auth TCP read success and mutation-denial proof remain separate from
+local policy/transport tests and retained source projection.
+
 This is controlled source replay / NOT_ATTESTED, with unsigned approval, unverified
 population/completeness and unavailable official activation. It does not establish
 bank authority, genuine producer/runtime/Excel/Archive acceptance, or completion of
