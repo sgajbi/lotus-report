@@ -27,13 +27,16 @@ Gateway/proxy/IAM boundary.
 
 ## Implementation-Backed Features
 
-The existing composite-review family supports JSON-only ordinary monthly source
+The existing composite-review family supports ordinary monthly source
 amendments as `composite_review.v6`; see
 [contract, source and proof boundaries](composite-monthly-source-amendment.md).
 `eligibility_selection` has an explicit v2 variant while historical v4 stays frozen.
 Evidence lives in `src/app/composite_reporting/amendment_*`, the v6 schema/examples,
 `test_monthly_amendment.py` and native PostgreSQL retention tests. Manage transport
-is controlled in local proof. XLSX, producer TCP composition and full #417 remain open.
+is controlled in local proof. Exact-ready v6 XLSX packaging uses the same validated
+dataset, whole-workbook preflight and persisted custody; `test_amendment_delivery.py`
+and native PG package reopening cover producer behavior. Actual producer TCP,
+joined Render/Archive delivery and institutional/full #417 acceptance remain open.
 
 | Feature key | Surface | Evidence | Notes |
 | --- | --- | --- | --- |

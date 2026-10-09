@@ -42,7 +42,7 @@ class CompositeJobLedger(Protocol):
         "No latest selection, financial recalculation or official approval is inferred. "
         "The structured dataset retains exact provenance and explicit unavailable products. "
         "Supported XLSX contracts render the retained dataset through Render and Archive. "
-        "Monthly source-correction v6 is JSON-only eligibility evidence: it supplies no "
+        "Monthly source-correction v6 is eligibility evidence: it supplies no "
         "TWR, MWR, dispersion, contribution or model-fee calculation. "
         "The calculated review is NOT_ATTESTED and restricted to internal control use."
     ),
@@ -75,18 +75,6 @@ async def submit_composite_review(
             "trace_id": caller.trace_id or trace_id_var.get(),
         }
     )
-    if isinstance(
-        request.eligibility_selection, AmendmentEligibilitySelection
-    ) and request.requested_output_formats == ["xlsx"]:
-        raise HTTPException(
-            503,
-            detail={
-                "code": "composite_amendment_render_unavailable",
-                "message": (
-                    "Monthly source amendment XLSX requires explicit Render and Archive v6 support."
-                ),
-            },
-        )
     enforce_report_ordering_submission(
         report_family_id="composite_review",
         ordering_mode_id="single_composite",
@@ -104,6 +92,8 @@ async def submit_composite_review(
     profile = (
         "v5"
         if request.pooled_selection is not None
+        else "v6"
+        if isinstance(request.eligibility_selection, AmendmentEligibilitySelection)
         else "v4"
         if request.eligibility_selection is not None
         else ("v3" if request.linked_selection is not None else "v2")

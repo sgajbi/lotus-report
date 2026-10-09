@@ -727,16 +727,22 @@ universe completeness.
 
 ## Monthly eligibility working practice
 
-The explicit `eligibility_selection.selection_version=v2` selects JSON-only
+The explicit `eligibility_selection.selection_version=v2` selects
 `composite_review.v6` monthly source amendments. Absence keeps historical v4
 serialization/fingerprints. Transport DTOs preserve source-v2 independently of
 definition-v1/v2; exact bounded predecessor/original receipt graphs and canonical
 parent publication are retained. Ordinary same-policy/population corrections only;
-no Performance join, staged roots, cascade or v6 XLSX fallback. New cohesive
+no Performance join, staged roots, cascade or template fallback. XLSX requires
+exact current `composite-review/v6` support and uses the same validated JSON dataset,
+persisted custody and complete workbook preflight through the existing package path.
+New cohesive
 `composite_reporting/amendment_*` modules own this concern; the existing runtime,
 worker and snapshots remain shared. Canonicalize claim fields before ordered table
 projection: PostgreSQL JSONB does not preserve JSON object insertion order. Preserve
 source arrays and revalidate actual fresh-process PostgreSQL payloads.
+Keep Amendment row ordinals global across months (`m1:a34` after 34 first-month rows).
+Emitted packages are component proof; joined TCP/custody/retention needs a reviewed
+campaign and separate lease. Never promote package construction to full #417 truth.
 See `docs/composite-monthly-source-amendment.md`
 for executable requests, availability/lineage dictionary and focused test commands.
 

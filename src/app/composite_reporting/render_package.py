@@ -26,8 +26,6 @@ def build_composite_render_package(
 
     if document_output_format(job.requested_output_formats) != "xlsx":
         raise ValueError("COMPOSITE_RENDER_XLSX_REQUIRED")
-    if snapshot.get("contract_version") == "composite_review.v6":
-        raise ValueError("COMPOSITE_AMENDMENT_RENDER_UNAVAILABLE")
     if (
         snapshot_record is None
         or snapshot_record.snapshot_id != snapshot_id
@@ -48,12 +46,18 @@ def build_composite_render_package(
         disclosure_refs=[_job_disclosure_baseline(job)],
         archive_custody=custody,
     )
-    if snapshot["contract_version"] in {"composite_review.v4", "composite_review.v5"}:
+    if snapshot["contract_version"] in {
+        "composite_review.v4",
+        "composite_review.v5",
+        "composite_review.v6",
+    }:
         from app.composite_reporting.eligibility_tables import preflight_eligibility_package
 
         prefix = (
             "COMPOSITE_POOLED"
             if snapshot["contract_version"] == "composite_review.v5"
+            else "COMPOSITE_AMENDMENT"
+            if snapshot["contract_version"] == "composite_review.v6"
             else ("COMPOSITE_ELIGIBILITY")
         )
         preflight_eligibility_package(package, failure_prefix=prefix)
@@ -81,7 +85,7 @@ def composite_archive_custody(
         job=job,
         snapshot_payload=record.snapshot_payload,
         upstream_services=("lotus-manage",)
-        if data.contract_version == "composite_review.v4"
+        if data.contract_version in {"composite_review.v4", "composite_review.v6"}
         else ("lotus-performance",),
     )
     if binding is None:

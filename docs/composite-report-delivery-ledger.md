@@ -1,5 +1,28 @@
 # Composite Report Delivery Ledger
 
+## Monthly amendment package enablement (#417)
+
+The existing v6 eligibility selector now orders XLSX only when exact current
+`composite-review/v6` supportability is ready. JSON and XLSX use the same frozen
+validated dataset. The shared worker/package path binds accepted v6 axes,
+persisted source revision/custody, bounded full lineage and complete workbook
+preflight. No new engine, calculator, source evaluator, API or ledger is added.
+Typed field order, global amendment row ordinals and legacy v4 behavior stay fixed.
+
+Receiver implementations are eligible at qualified Render `28ff812e` and Archive
+`3ec80ca9`; Archive migration 019 is a deployment prerequisite. Original/corrected,
+definition-v1/v2, evaluated/published and two-month producer packages are exercised
+through registered intake/worker with controlled Manage and declining Render
+boundaries. Native PG integration reconstructs packages in a fresh process without
+source reads. Readiness, source, capacity and custody failures refuse before
+downstream side effects. Frozen single-month examples/schema remain unchanged.
+
+This is a package producer component milestone. Actual source TCP, Render/Archive
+delivery/current/retention, institutional authority and full #417/#923 acceptance
+remain open. A concrete bounded joined campaign requires Root review and a new
+explicit resource lease; earlier failed campaign artifacts remain frozen.
+Historical JSON-only gates below describe earlier slices.
+
 ## Current monthly source-amendment JSON increment (#417 / Manage #797)
 
 Manage qualified main `545269b3` provides ordinary-month source-correction

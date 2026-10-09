@@ -86,10 +86,10 @@ def test_frozen_v4_request_fingerprints(factory, expected):
     )
 
 
-def test_no_v6_retained_xlsx_package_fallback():
+def test_v6_xlsx_package_requires_persisted_snapshot():
     selection, _ = example()
     job = eligibility_job(selection).model_copy(update={"requested_output_formats": ["xlsx"]})
-    with pytest.raises(ValueError, match="COMPOSITE_AMENDMENT_RENDER_UNAVAILABLE"):
+    with pytest.raises(ValueError, match="COMPOSITE_RENDER_PERSISTED_SNAPSHOT_REQUIRED"):
         build_composite_render_package(
             job=job,
             snapshot={"contract_version": "composite_review.v6"},

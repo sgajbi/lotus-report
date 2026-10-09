@@ -1,0 +1,75 @@
+{
+  "eligibility_selection": {
+    "selection_version": "v2",
+    "tenant_id": "synthetic-tenant",
+    "composite_id": "synthetic-composite",
+    "definition_version": "synthetic-definition",
+    "reporting_currency": "USD",
+    "period_start": "2026-09-01",
+    "period_end": "2026-10-31",
+    "months": [
+      {
+        "evidence_kind": "PUBLISHED",
+        "month": "2026-09",
+        "evaluation_revision": "synthetic.corrected.evaluation.r2",
+        "proposal_content_hash": "sha256:b683c1b480730ed75f6b4408351c4455647ee3500aadc5809ca445bf0c6cbac3",
+        "approval_content_hash": "sha256:102649de9ba2ec59975e37d428cc948dbff211ec7974705b50bbee1e2c3fb38b",
+        "receipt_content_hash": "sha256:6f6045b9599429af4e5e7ecbd3c778e561f45b2ff2ac8f8b003ffd72d6f9ab84",
+        "receipt_response_digest": "sha256:cdcbc3cc296ed3add8f3cee587abfedc7f00ea55486172935f05b0dedc49168f",
+        "membership_revision": "synthetic.corrected.membership.r2",
+        "membership_content_hash": "sha256:eb9461e48b0f45f4fb6552c307936a5f3a9a8dd14890f92f7b1799cc158b4451",
+        "membership_response_digest": "sha256:f0a85b0ead89c0bd4303b950fcf4492601f8780c26fc1304db0091abf72e2684",
+        "attestation_version": "synthetic.corrected.evaluation.r2",
+        "universe_content_hash": "sha256:72f325543ca4669cc75986857fa150bc34684297627a2cb36a14a42c3d4238fc",
+        "universe_response_digest": "sha256:9e6968afa2d3525428df3fbb5648b23f2c2c3bf5bbb8144f03c890f76bae7049",
+        "parent_membership_revision": "synthetic.original.membership.r1",
+        "parent_membership_content_hash": "sha256:ecbc727fc100065c585c1cc244f6916e341191626ffe6bc5b26a7259574a6a92",
+        "parent_response_digest": "sha256:a93c1e181ea2117e1a191224c85d3cb5b12fbf314070ea1d8aa08904fa44cdb5",
+        "publication_sequence": 3,
+        "publication_response_digest": "sha256:d650cb12794ba5f3c0341f8ea87a5029ce40ae38f3becebaf182be0346af258e",
+        "source_cut_id": "synthetic-monthly-cut",
+        "lineage_receipts": [
+          {
+            "product_version": "v1",
+            "evaluation_revision": "synthetic.original.evaluation.r1",
+            "approval_content_hash": "sha256:37048a4790640f0278c8485284ad6de415aac8402ae03d9ce0f46fcd768adf8b",
+            "receipt_content_hash": "sha256:6bc18f4e40cc205273aa4831f356c435124c2bd0209d49f9b0008d4fdc9fd9ed",
+            "receipt_response_digest": "sha256:31e264bd7e21999c0522603ff7f271f6fad696ead6474af1316af0c07261e049"
+          }
+        ],
+        "parent_publication_response_digest": "sha256:3ffe3b8d9724f3b7cde5b75c29cf924d5047b5bd8c3ee1e9ba5b29850497c1e9"
+      },
+      {
+        "evidence_kind": "PUBLISHED",
+        "month": "2026-10",
+        "evaluation_revision": "synthetic.corrected.evaluation.r4",
+        "proposal_content_hash": "sha256:877cb24add965ff3c5f2b6cf729cae2869a56e102ab155873d78273d1fe01395",
+        "approval_content_hash": "sha256:c8a4634d3c7a16417fffe55324e1e33856e77a26dee9cb4e7290c33468d0d283",
+        "receipt_content_hash": "sha256:7f8f8da29d00b3ca3207855b21f0c269bf7c63f8bf94cf20403cb4a642b57ceb",
+        "receipt_response_digest": "sha256:17bc75672709d1862600b624470f836b87e2cb2660371f3d9d83782dd40a7f03",
+        "membership_revision": "synthetic.corrected.membership.r4",
+        "membership_content_hash": "sha256:38f65eddc6cea2bc6f15de633ee766e0d0f7574007ee467995d3adedd19d2003",
+        "membership_response_digest": "sha256:d3827cfc5f3cb635d4c610e46ebee931c48e54e3d10ec4c31beace3cd3fe4c66",
+        "attestation_version": "synthetic.corrected.evaluation.r4",
+        "universe_content_hash": "sha256:51729d6fe5126e8d408ecb019c7b72c9a1fd3555d0ef449662ef2724f64d3837",
+        "universe_response_digest": "sha256:a17af1fad9c326df3a82a30bd6a7527949123ee85d0d47eb4b95a9adca46d67e",
+        "parent_membership_revision": "synthetic.october.membership.r1",
+        "parent_membership_content_hash": "sha256:3052f92220775a85b4a72c81cbdb12de93ddfe4b74e7b58317355de878179987",
+        "parent_response_digest": "sha256:7c9b333311612d90484c422ba91cdac586430f964c8ecd47f7ff7fa61e7ac02d",
+        "publication_sequence": 5,
+        "publication_response_digest": "sha256:fc9d107fbbc3316e1252dcaaf28bd24a3de060d9d237b81390ae02bab1be6e0d",
+        "source_cut_id": "synthetic-monthly-cut",
+        "lineage_receipts": [
+          {
+            "product_version": "v1",
+            "evaluation_revision": "synthetic.october.evaluation.r1",
+            "approval_content_hash": "sha256:4b60dff45c0512bfeae9b6338f442bdf3e6b00f7c6dd93d9aeaab55f0e0fcaf7",
+            "receipt_content_hash": "sha256:437e6cce2655792a8fb869e3fd2ef95f616c1753f1eb94c8756c37818b4c9f1b",
+            "receipt_response_digest": "sha256:7a1ad4efca8510a5a97fbac15830bd4905470d9ed70596b243337e742a709802"
+          }
+        ],
+        "parent_publication_response_digest": "sha256:2c75137469ae7aeb83c6b732e635dda7cc9851cda2c36a4f354a7fbc13068673"
+      }
+    ]
+  }
+}
