@@ -34,6 +34,13 @@ document itself.
 | Composite calculated review | Exact retained Performance selection, source values and semantic tables with unavailable products declared | Internal JSON/XLSX calculated review, `NOT_ATTESTED`; runtime and exact template-format support are required. Official publication and full #417 acceptance remain open |
 | Idea evidence pack | Intake, materialization and versioned recovery of reviewed opportunity evidence | Implemented internal foundation, **not certified**; publication and external support remain blocked |
 
+Composite orders also support an exclusive exact-pinned linked-contribution primary
+under `composite_review.v3`. Report retains Performance's member/period values and
+source authority without linking arithmetic. See the
+[v3 API request](docs/composite-report-api-guide.md#exact-linked-contribution-primary).
+XLSX requires exact v3 downstream readiness; controlled contract tests do not imply
+actual document completion or institutional attestation.
+
 Implemented is not certified: the
 [supported features registry](docs/supported-features.md) is the authoritative,
 implementation-backed statement of what is a product capability versus a foundation, and the

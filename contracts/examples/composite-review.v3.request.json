@@ -1,0 +1,62 @@
+{
+  "linked_selection": {
+    "tenant_id": "synthetic-tenant-a",
+    "source_request": {
+      "metric_id": "LINKED_MEMBER_CONTRIBUTION",
+      "method": "CARINO:v1",
+      "composite_id": "SYNTHETIC_LINKED_USD",
+      "calculation_id": "06310000-0000-4000-8000-000000000001",
+      "period_start": "2026-01-01",
+      "period_end": "2026-02-28",
+      "return_view": "GROSS",
+      "reporting_currency": "USD",
+      "materialization_ids": [
+        "166e2af0-d202-579e-9181-afede29ee523",
+        "a4eca033-cecf-5989-8393-3df1e7975367"
+      ],
+      "restatement_sequence": null
+    },
+    "windows": [
+      {
+        "materialization_id": "166e2af0-d202-579e-9181-afede29ee523",
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c89df20198c95783192eac7e46ff468d2c8cca7d7557c5535d64f3f2cd3f6124",
+        "membership_content_hash": "sha256:e03443162c1559cc71c836167b328c27eb838b502a05482ef15a5ea355d63969",
+        "attestation_content_hash": "sha256:e3e3c9b6f4751d64c271795275e163cfac544582ed41cd4709e33271b741b86e",
+        "source_cut_id": "synthetic-cut-original",
+        "method_binding": {
+          "product_name": "SyntheticReturnMethodProfile",
+          "product_version": "v1",
+          "revision": "synthetic.method.r1",
+          "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e"
+        },
+        "retained_receipt_fingerprint": "sha256:8c0309f4666de3a0c97dda940a3faec05a9d5753307df9ae0ac883a0d9da2d19"
+      },
+      {
+        "materialization_id": "a4eca033-cecf-5989-8393-3df1e7975367",
+        "period_start": "2026-02-01",
+        "period_end": "2026-02-28",
+        "restatement_sequence": 2,
+        "definition_content_hash": "sha256:b86fa0c11057a08e0cc2f9f57efd863c5a5c71b7eb52c14c2cc63bfdadc38f0b",
+        "membership_content_hash": "sha256:25d930507f65b0c41a773dafeef9f468faf58342fd0c8eb3808f844461a8afd3",
+        "attestation_content_hash": "sha256:94290d0fcdb69c1b291d06593d2d7d1380c92a64e020d4086f0ccbb9cfc6e27b",
+        "source_cut_id": "synthetic-cut-original",
+        "method_binding": {
+          "product_name": "SyntheticReturnMethodProfile",
+          "product_version": "v1",
+          "revision": "synthetic.method.r1",
+          "digest": "sha256:56fc8f8777176e6d0697036c9100c8bebb780d924bc1a689526777a61e7ac80e"
+        },
+        "retained_receipt_fingerprint": "sha256:06cf2b52111219051bf734f351013da0e83fd3a1325caa1f9aff65e58decaf2b"
+      }
+    ],
+    "engine_version": "lotus-performance-calculation-engine.v16",
+    "calculation_fingerprint": "sha256:4620fbc0de8f8f6dba79ca2f35d7318c6353368716ec53790b106515fdf5f46c",
+    "response_digest": "sha256:1d562f2aeb4b221ca7cc6f53838f653f740322d205862c4446617bce27804091"
+  },
+  "requested_output_formats": [
+    "json"
+  ]
+}

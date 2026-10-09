@@ -2,8 +2,62 @@
 
 Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
-Feature: retained `composite_review.v1` and captured-return `composite_review.v2`.
+Feature: retained `composite_review.v1`, captured-return `composite_review.v2` and
+exclusive linked-analysis `composite_review.v3`.
 Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
+
+## Linked-analysis implementation increment (not full acceptance)
+
+The reviewed v3 proposal manifest is
+`c03c79ce3d9a99d09027d33d5525a779b6a6e639d34c8cea5ec0ea222f18d386`;
+its historical source gap is resolved by the accepted current-main supplier pair
+at `6e9bdbb07468d198aaa77a2defd26039f5465fc7`, manifest
+`d397d25d1884940fe2cbfdeb363d74083a8221c73d49b9da18c72d326c78b391`.
+All 56 artifacts were rehashed at native intake (`167c5f`, exit 0). Root acceptance
+receipt is `3ef78da3354c41968bc34dd6071546b6de50fe198bcf69a3094649e87356562c`.
+No frozen proposal or historical source packet was rewritten.
+
+The implementation uses an exclusive linked primary in the existing family,
+exact source request/response binding, seven complete source-projection tables and
+existing immutable snapshot/revision/custody lifecycle. Actual requests retain
+`restatement_sequence: null`; numeric competing sequences are refused.
+The current fixture carries original cumulative return `0.030200` and corrected
+`0.04040`, all source-owned. The source producer used real PostgreSQL with controlled
+synthetic inputs. Report tests replay those responses and calculate no returns,
+linking factors, member totals or residuals.
+
+Native linked tests pass 65 cases (`41da19`, exit 0), including coherent missing/extra
+columns, complete population, source failure lineage, distinct original/correction
+identity and retained reads without source fetch. The earlier combined 100-case
+focused run passes (`77ec0f`, exit 0), including genuine v1 `0E-12` raw source
+preservation and v1/v2 request identity. Repo-native Linux dependency refresh passes
+(`1df43a`, exit 0) and the exact refreshed closure security audit reports no known
+vulnerabilities (`27f073`, exit 0). The initial Windows MSYS Docker-path failure
+(`27d0b5`, exit 1) was corrected by disabling path conversion for the same target.
+
+Ruff, mypy (154 sources), monetary guard and both Idea gates pass (`b4f4dc`, exit 0).
+The monetary guard's existing unchanged numeric type check moved three lines; Root
+approved only its allowlist anchor 1956→1959. Its code, allowance, rationale and
+expiry are unchanged. Complexity initially exceeded the count by one (`ecf4c5`,
+exit 1); source scope and population checks were separated, restoring eight high
+complexity functions. OpenAPI and code-health subcommands pass; the combined
+domain-product invocation initially failed to locate the platform checkout under
+the worktree parent (`16d5e2`, exit 1). The same native target passes with explicit
+`LOTUS_PLATFORM_ROOT` (`b4f4dc`, exit 0).
+
+The first full unit run reports 2631 passed, one skipped and seven environment-guard
+failures (`8d1099`, exit 1): the environment still had old versions after the Linux
+closure refresh. This failed run is not acceptance. Root then rejected the broad
+refresh's unrelated runtime upgrades. The same native Linux install/freeze recipe
+was constrained to committed base pins (`64e3a4`, exit 0), preserving all 79 existing
+versions and adding only JSONSchema and its four required transitive packages.
+Minimal closure SHA-256 is
+`c1b2ad3fea68a453da503e629c0c17a0c9dee2e48a2e32b2f26396e08e60a38c`.
+The owned venv was realigned to that closure (`5280ff`, exit 0). The hook and its
+stale FastAPI negative test remain unchanged. The broad-refresh proof cut and
+initial PostgreSQL package output are diagnostic, not final producer correspondence.
+Rerun against the minimal closure before PR qualification. Actual v3 Render/Archive HTTP
+completion, Excel acceptance and full RPT-01–12 acceptance remain unqualified here.
 
 ## Current Evidence: Six-Year Registered Delivery
 

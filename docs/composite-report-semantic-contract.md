@@ -155,7 +155,13 @@ The v2 root retains v1 primary `selection`, `source_response` and
 `source_response_digest` without adding fields to the supplier response. Its
 bounded `source_products` array stores each typed `pin`, fixed `POST /composites/twr`
 provenance, independent raw response and response digest. The v2 schema is
-`contracts/composite_review.v2.schema.json`; v1 schema/example bytes remain unchanged.
+`contracts/composite_review.v2.schema.json`; the v1 example remains unchanged.
+Current generated v1/v2 financial-scalar schema branches also accept finite
+scientific decimal strings, including genuine retained `0E-12`. This explicit
+`SourceNumber` metadata correction changes no native Decimal validation, retained
+snapshot, historical schema packet or source value. JSON Schema's integer type
+describes mathematical integers; native admission independently rejects Python
+float inputs. Nonfinite values, booleans and malformed decimal text remain refused.
 
 All thirteen legacy table identities remain present. `AnnualReturns` contains
 calendar-product rows when selected, otherwise the exact legacy uncaptured
@@ -180,3 +186,40 @@ V2 bounds match the consumer: 32 tables, 32 columns, 10,000 rows per logical tab
 256-character labels/titles and 32 reasons per cell. These do not replace the
 renderer’s independent HTTP, expanded row/cell/sheet/text, output and execution
 limits. Neither evidence nor precision may be dropped to fit a workbook.
+
+## Linked member analysis: composite_review.v3
+
+The same `composite_review` family accepts an exclusive `linked_selection` primary
+operation. It is not a return-product selector and cannot be combined with TWR
+`selection` or `source_products`. The caller pins the complete source request,
+monthly selection windows, engine, calculation fingerprint and response digest.
+The actual source request includes `restatement_sequence: null`; a numeric sequence
+cannot compete with its explicit materialization IDs. The worker calls
+`POST /composites/analytics` once and retains the complete response, including each
+period's nested `source_authority_identity`.
+
+The strict v3 root and typed source schema are in
+`contracts/composite_review.v3.schema.json`. Seven logical tables are complete
+source projections: Summary, LinkedContribution, LinkedPeriods, Methods, Lineage,
+Disclosures and UncapturedProducts. Validation reconstructs the complete expected
+projection from the retained source. Missing, extra or duplicate tables, rows,
+columns, pointers, values or display policies refuse admission even when the
+surviving pointers are valid. Member counts, period coverage and each member's
+restatement identity must agree with the selected vector. These are identity and
+completeness checks; Report does no investment calculation.
+
+Canonical decimal text remains exact. Returns and weights display as percent;
+contributions display as percentage points, each with two decimal places.
+`DECIMAL_FACTOR` uses identity decimal-ratio display at twelve places. Source
+reconciliation and display differences use percentage points at twelve places;
+money uses source currency at two places; `COUNT` uses `PERIOD_COUNT` with zero
+places. HALF_UP applies only to presentation. Source totals and differences are
+never recomputed or allocated by Report.
+
+Calendar, trailing, since-inception, risk, attribution, approved restatement and
+complete eligibility population remain explicitly uncaptured in this standalone
+analysis. Their null cells carry `SOURCE_PRODUCT_NOT_CAPTURED`. A missing source
+calculation ID carries `SOURCE_IDENTITY_NOT_PROVIDED`. Qualification stays
+`CALCULATED_ANALYSIS` / `RETAINED_SOURCE_ATTESTATION_NOT_LIVE_QUALIFIED`, with Report
+publication `NOT_ATTESTED`. The v1/v2 accepted lifecycle and identities remain valid;
+v3 is a bounded RPT-01/RPT-06 increment, not full #417 acceptance.

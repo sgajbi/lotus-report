@@ -208,3 +208,39 @@ snapshots and all six upstream call records. See the
 for exact revisions, manifests, native outcomes and owned backup/cleanup.
 This bounded evidence keeps the controlled transport and `NOT_ATTESTED` authority
 limits above; it does not establish the remaining source products or full #417.
+
+## Exact linked contribution primary
+
+Use the same `POST /reports/composite-reviews` endpoint with the typed
+[`linked_selection` request](../contracts/examples/composite-review.v3.request.json).
+Omit TWR `selection` and `source_products`: exactly one primary operation is required.
+The [v3 dataset](../contracts/examples/composite-review.v3.json) preserves actual
+original supplier output from Performance `6e9bdbb07468d198aaa77a2defd26039f5465fc7`.
+The source fixture also retains its explicit financial correction. These are
+controlled synthetic, source-owned linked analyses with no institutional attestation.
+
+The request's materialization IDs and complete monthly pins are immutable. Keep
+the genuine `restatement_sequence: null`; numeric competing sequences are refused.
+Source capture uses `POST /composites/analytics` and the admitted tenant, with no
+latest fallback or local linking. Failure or changed source content records failed
+lineage and refuses a partial successful dataset. Accepted input/data axes are
+`composite_review.v3`. JSON requires no renderer. XLSX requires exact current ready
+support for `composite-review/v3`, `composite_review.v3` and XLSX; otherwise admission
+returns HTTP503 before source capture. A package or controlled boundary test does
+not establish actual Render/Archive completion.
+
+Correction requires a fresh order, corrected complete pins and a new idempotency
+key. Retained retrieval uses the captured source and revision identity without
+refetching. Existing generic regenerate/replay commands remain portfolio-only.
+The same snapshot, source revision and custody digest checks apply to v3.
+
+From the `lotus-report` checkout, in either PowerShell or Bash:
+
+```text
+python -m pytest tests/unit/composite_reporting/test_linked_analysis.py -q
+```
+
+Tests use registered Report ASGI admission/worker, SQLite and recorded supplier
+transport. PostgreSQL integration adds isolated database and fresh-process retention
+proof when `REPORT_JOB_LEDGER_DATABASE_URL` is supplied. Neither establishes a live
+financial supplier or official publication authority. Full #417 remains open.

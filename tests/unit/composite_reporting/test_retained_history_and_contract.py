@@ -7,9 +7,37 @@ from datetime import date
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+from jsonschema import Draft202012Validator
+
+from app.composite_reporting.admission import admit_composite_response
 from app.composite_reporting.semantic_contract import CompositeReportData, composite_report_schema
+from app.composite_reporting.table_builder import build_composite_tables
 from tests.unit.composite_reporting.fixtures import calculated_example
 from tests.unit.composite_reporting.test_table_contract import example_tables
+
+
+@pytest.mark.parametrize("version", ["original", "corrected"])
+def test_current_v1_schema_accepts_genuine_retained_scientific_decimals(version):
+    from tests.unit.composite_reporting.test_actual_performance_wire import (
+        actual_performance_selection,
+    )
+
+    response, selection = actual_performance_selection(
+        f"performance-main-c100-pair-{version}.json",
+        "performance-main-c100-pair-provenance.json",
+    )
+    assert response["periods"][1]["dispersion_equal_weight"] == "0E-12"
+    data = build_composite_tables(
+        admit_composite_response(
+            selection=selection,
+            admitted_tenant_id=selection.tenant_id,
+            status_code=200,
+            payload=response,
+        )
+    )
+    Draft202012Validator(composite_report_schema()).validate(data)
+    assert data["source_response"] == response
 
 
 def test_shared_schema_and_example_match_the_executable_producer():

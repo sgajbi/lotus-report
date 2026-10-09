@@ -18,6 +18,7 @@ from app.reporting_jobs.models import ReportJobListFilters
 from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from tests.integration.postgres_adapter_ownership import own_postgres_adapter
+from tests.unit.composite_reporting import test_linked_analysis as linked_cases
 from tests.unit.composite_reporting import test_source_products as product_cases
 from tests.unit.composite_reporting.test_registered_lifecycle import (
     HEADERS,
@@ -41,6 +42,40 @@ try:
 finally:
     store.close()
 """
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", ["original", "corrected"])
+async def test_linked_source_postgres_capture_and_process_reopening(tmp_path, monkeypatch, version):
+    database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
+    if not database_url:
+        pytest.skip("REPORT_JOB_LEDGER_DATABASE_URL is required for actual PostgreSQL proof")
+
+    def adapters():
+        return (
+            own_postgres_adapter(PostgresReportJobLedger(database_url)),
+            own_postgres_adapter(PostgresReportInputSnapshotStore(database_url)),
+        )
+
+    # Unique retry identity across real PostgreSQL cases, preserving admitted tenant.
+    monkeypatch.setitem(HEADERS, "Idempotency-Key", "linked-pg-" + uuid4().hex)
+    job_id = await linked_cases.test_registered_linked_capture_and_retained_custody(
+        tmp_path, monkeypatch, version, adapters=adapters
+    )
+    _, store = adapters()
+    expected = store.get_snapshot_by_job(job_id)
+    process = subprocess.run(
+        [sys.executable, "-c", READ_RETAINED, job_id],
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert process.returncode == 0, process.stderr
+    reopened = json.loads(process.stdout)
+    assert reopened["pid"] != os.getpid()
+    assert reopened["snapshot"] == expected.model_dump(mode="json")
 
 
 @pytest.mark.asyncio

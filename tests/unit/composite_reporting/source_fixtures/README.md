@@ -17,3 +17,20 @@ source scalar values, IDs, pins or raw response dictionaries. Deterministic gzip
 preserves those exact bytes within the repository file-size limit. No Report formulas
 produced expected returns. Qualification is controlled test execution,
 NOT_ATTESTED; no deployment or institutional authority is claimed.
+
+## Current linked contribution pair
+
+`linked-contribution-6e9.json` preserves literal original/corrected requests,
+responses, complete selected vectors and raw wire hashes from Performance main
+`6e9bdbb07468d198aaa77a2defd26039f5465fc7`. All 56 supplier manifest artifacts
+were independently rehashed before intake. Accepted manifest SHA-256:
+`d397d25d1884940fe2cbfdeb363d74083a8221c73d49b9da18c72d326c78b391`.
+Root acceptance receipt SHA-256:
+`3ef78da3354c41968bc34dd6071546b6de50fe198bcf69a3094649e87356562c`.
+Fixture SHA-256:
+`43a1a9e3fbda4ab5a2f8c4106c97238e6271a530983b217846936a780b8f02dd`.
+Both requests retain actual `restatement_sequence: null`; each response retains
+all four member-period rows, two member totals and nested source authority.
+Expected values are source outputs, without Report linking arithmetic. The source
+producer used real PostgreSQL with controlled synthetic provider inputs. Report
+unit tests replay the recorded transport; this is not a live supplier claim.

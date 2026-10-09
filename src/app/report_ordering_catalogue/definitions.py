@@ -436,8 +436,20 @@ REPORT_FAMILY_DEFINITIONS = (
                 business_label="Pinned calculated source",
                 description="Exact composite vector, fee, currency, method and response identity.",
                 input_type="pinned_source_selection",
-                requirement="required",
+                requirement="conditional",
                 defaulting_policy="caller_required",
+                value_source="caller",
+            ),
+            ReportConfigurationFieldDefinition(
+                field_id="composite_linked_selection",
+                business_label="Pinned linked member analysis",
+                description=(
+                    "Exact source-owned linked contribution; select instead of the TWR primary "
+                    "and calendar/trailing products. Official authority remains unavailable."
+                ),
+                input_type="pinned_source_selection",
+                requirement="conditional",
+                defaulting_policy="omitted_preserves_legacy_contract",
                 value_source="caller",
             ),
             ReportConfigurationFieldDefinition(

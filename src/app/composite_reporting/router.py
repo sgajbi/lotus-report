@@ -78,7 +78,7 @@ async def submit_composite_review(
         requested_output_formats=request.requested_output_formats,
         options=request.capture_options(),
     )
-    if request.selection.tenant_id != caller.tenant_id:
+    if request.primary_selection.tenant_id != caller.tenant_id:
         raise HTTPException(
             400,
             detail={
@@ -86,12 +86,15 @@ async def submit_composite_review(
                 "message": "Pinned source scope does not match the caller.",
             },
         )
-    if request.source_products is not None and request.requested_output_formats == ["xlsx"]:
+    profile = "v3" if request.linked_selection is not None else "v2"
+    if (
+        request.source_products is not None or request.linked_selection is not None
+    ) and request.requested_output_formats == ["xlsx"]:
         support = await catalogue.document_contract_supportability(
             report_type="composite_review",
             format_id="xlsx",
-            contract_version="composite_review.v2",
-            template_version="v2",
+            contract_version=f"composite_review.{profile}",
+            template_version=profile,
         )
         if support.state != "ready":
             raise HTTPException(

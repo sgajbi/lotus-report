@@ -406,10 +406,10 @@
         "return_value": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -418,10 +418,10 @@
         "beginning_market_value": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -430,10 +430,10 @@
         "beginning_asset_weight": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -442,10 +442,10 @@
         "contribution": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -538,10 +538,10 @@
         "return_value": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             },
             {
@@ -553,10 +553,10 @@
         "cumulative_return": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             },
             {
@@ -568,10 +568,10 @@
         "beginning_market_value": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -580,10 +580,10 @@
         "ending_market_value": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             }
           ],
@@ -602,10 +602,10 @@
         "dispersion_equal_weight": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             },
             {
@@ -774,10 +774,10 @@
         "cumulative_return": {
           "anyOf": [
             {
-              "type": "number"
+              "type": "integer"
             },
             {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
               "type": "string"
             },
             {

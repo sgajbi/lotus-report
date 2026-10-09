@@ -61,6 +61,30 @@ class _SequencedRecordingAsyncClient:
         return self.responses.pop(0)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 404, 409])
+async def test_composite_linked_client_preserves_source_request_and_failure(monkeypatch, status):
+    request = {
+        "metric": "LINKED_CONTRIBUTION",
+        "restatement_sequence": None,
+        "materialization_ids": ["exact-retained-id"],
+    }
+    response = {"status": "CALCULATED_ANALYSIS"} if status == 200 else {"detail": "refused"}
+    recorder = _RecordingAsyncClient(_FakeResponse(status, response))
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
+    )
+    client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
+    assert await client.get_composite_analytics(request, admitted_tenant_id="tenant-linked") == (
+        status,
+        response,
+    )
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["url"] == "http://performance/composites/analytics"
+    assert recorder.calls[0]["json"] == request
+    assert recorder.calls[0]["headers"]["X-Tenant-Id"] == "tenant-linked"
+
+
 @pytest.mark.parametrize(
     ("payload", "text", "expected"),
     [

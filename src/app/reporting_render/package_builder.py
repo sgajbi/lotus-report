@@ -949,7 +949,10 @@ def _job_report_data_contract(job: ReportJobLedgerRecord) -> str:
 
     current = resolve_report_data_contract(job.report_type)
     accepted = _accepted_axis(job, "report_data_contract_version")
-    if job.report_type == "composite_review" and accepted == "composite_review.v2":
+    if job.report_type == "composite_review" and accepted in {
+        "composite_review.v2",
+        "composite_review.v3",
+    }:
         return accepted
     if accepted is not None and accepted != current:
         raise ValueError(
