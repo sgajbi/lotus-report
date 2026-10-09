@@ -37,13 +37,71 @@ typecheck, code-health and OpenAPI passed (`79af10`, exit 0). Earlier fixture
 expectations for JSON-only catalogue and worker run counters were corrected to
 the actual new behavior; their failed runs are not passing evidence.
 
-Final supplier seam: Render #340 projects the real `supported_output_formats`
-for each template version. Registered corrected financial-source capture must
-be accepted independently from technical rerender. A distinct owned Render/Archive
-HTTP phase will validate normal Report adapters on the frozen candidate; old
-supplier leases have been cleaned up and must not be reused. No dependency or
-protected-main gate is waived. This slice introduces no financial engine,
-deployment split, migration or change to document-reference derivation.
+PR [#420](https://github.com/sgajbi/lotus-report/pull/420) signed head
+`e7737eab3dab0493529c69fd7ba1a9f4927f31c9` passed all seven required checks in
+`37873409210`. Its follow-up fixtures preserve a fresh matched Performance
+original/corrected pair from committed `c100c885752c86b8d950d7970c99a8d223e6376a`.
+Intake verified all 12 handoff artifact hashes and both exact response objects
+(`ad203b`, exit 0); 117 composite and 17 catalogue cases pass. Corrected January
+is `0.035000000000`, with final cumulative `0.055700000000`; original cumulative
+remains `0.030200000000`. February's monthly facts and pin are retained, while
+its cumulative value includes corrected January. Report does not recompute them.
+
+Render #340 merged at `162016d4a64769b31c90511f7604c145929979f0`, with exact-main
+run `37872720046` passing all eight jobs, wiki publication and strict parity.
+Its real registered template projection declares `supported_output_formats`.
+The frozen Report candidate's registered catalogue consumed that real HTTP
+projection and reported internal XLSX ready. A separate exact signed-export
+consumer proof accepts valid evidence and refuses seven missing, malformed or
+incompatible runtime/template cases (`787218`, exit 0).
+
+Fresh phase `composite-supported-report-http-20261009-r2` used owned Render
+HTTP `55878` and Archive HTTP `55877` at qualified main
+`524d4d607712324b6f04a980590d55cf1db55ca9`. Normal registered Report ASGI API
+orders, actual PostgreSQL ledger/capture, unmodified RenderClient call-through
+and ArchiveClient lifecycle calls passed (`65822f`/`f4fa2c`, exit 0). Two exact
+captured Performance response replays produced original and corrected XLSX
+orders; retained original rerender made the third artifact without recapture.
+Each order and rerender reused its own key; foreign snapshots/rerender refused
+404 before any additional submit. Source/snapshot/report revisions remain exact
+for each financially different capture. Helper-owned Report database cleanup
+completed; supplier leases remain for independent reads and controlled cleanup.
+
+Original Archive document is `doc_d9ca4116c60c4a0897ddd102eb9d1db0`, corrected
+is `doc_cd52613e0e724eb28d9f36b79238d9a8`, and retained original rerender is
+`doc_aeda2ce252a44354b6cb51d525a00b79`. Report's ArchiveClient recorded original
+to technical-rerender `correct` with 201 and ledger evidence. A separately
+coordinator-authorized Archive owner proof used the existing controlled Report
+service caller to record current technical-rerender to financially corrected
+document with 201, exact relationship retry and foreign-tenant refusal. Each
+document retained its own financial source/snapshot/revision and bytes; current
+resolution reaches the corrected document. This supplier proof does not add a
+Report financial-correction command or change generic portfolio-only regenerate.
+
+All three actual authorized-download workbooks independently reconcile 162
+canonical/display cells, 31 financial cells, 62 column policies, nine typed
+unavailable cells and the entire pinned dataset across 17 sheets. Each refuses
+six representative corruptions, then accepts unchanged bytes (`57a9ee`, `cec630`,
+`bce71f`, exits 0). Formula and hyperlink counts are zero. The first parser run
+passed numerical checks but emitted a historical Report-main metadata default;
+its files remain separate. Qualified-head reruns identify the frozen candidate
+correctly and do not claim Report-main release. Raw original/corrected/rerender
+SHA-256 values are `28a986ac6197897d7a114fdd7578c494ed8ee8e9484fa715164a7309f86fc018`,
+`fd42d9004c2c59f91313999759cb6c7b6cc26d4c5570c2e1534bb36028b2d148`, and
+`4f277ba036a656f95d0f40dfe9f36f2667d67f5884053f5740592c5eeedf34a7`.
+
+Performance transport and economic/provider/universe/verifier inputs remain
+explicitly controlled, calculated `NOT_ATTESTED`; Render/Archive network calls
+are actual. Fresh original/corrected custody is separate from technical rerender.
+This proof closes neither full #417 nor RPT-01–12, institutional authority,
+uncaptured supplier products, capacity/partition/history qualification or GIPS.
+Latest exact-head/main validation, ordinary review, wiki publication and strict
+parity remain required before supporting this candidate on merged Report main.
+The proof-only follow-up does not change authored wiki workflow truth; the
+branch's three existing workflow source changes still publish after merge.
+No dependency, financial guard or protected-main gate is waived. This slice
+introduces no financial engine, deployment split, migration or change to
+document-reference derivation.
 
 Actual Performance exact-main release `37868693351` and Render exact-main release
 `37869568626` passed at `c100c885752c86b8d950d7970c99a8d223e6376a` and
