@@ -3,6 +3,7 @@
 import json
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -20,6 +21,7 @@ from app.composite_reporting.amendment_tables import build_amendment_dataset
 from app.composite_reporting.models import CompositeReviewJobRequest
 from app.composite_reporting.render_package import build_composite_render_package
 from app.config import settings
+from app.report_ordering_catalogue.service import ReportOrderingCatalogueService
 from app.reporting_jobs.ledger import compute_request_hash
 from app.reporting_jobs.models import ReportCallerContext
 from app.reporting_lineage.capture_service import _hash_payload
@@ -239,6 +241,19 @@ async def exercise_amendment_lifecycle(
     tmp_path, monkeypatch, version, *, adapters=None, corrupt=False
 ):
     """Named controlled Manage transport; registered native Report adapters/worker."""
+
+    async def unavailable_render(self, **kwargs):
+        assert kwargs == {
+            "report_type": "composite_review",
+            "format_id": "xlsx",
+            "contract_version": "composite_review.v6",
+            "template_version": "v6",
+        }
+        return SimpleNamespace(state="unavailable")
+
+    monkeypatch.setattr(
+        ReportOrderingCatalogueService, "document_contract_supportability", unavailable_render
+    )
     monkeypatch.setattr(settings, "manage_read_actor_id", "configured-reader")
     monkeypatch.setattr(settings, "manage_read_service_identity", "configured-report-service")
     state, calls, retained = {}, [], []
