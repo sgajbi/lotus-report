@@ -26,6 +26,8 @@ def build_composite_render_package(
 
     if document_output_format(job.requested_output_formats) != "xlsx":
         raise ValueError("COMPOSITE_RENDER_XLSX_REQUIRED")
+    if snapshot.get("contract_version") == "composite_review.v6":
+        raise ValueError("COMPOSITE_AMENDMENT_RENDER_UNAVAILABLE")
     if (
         snapshot_record is None
         or snapshot_record.snapshot_id != snapshot_id

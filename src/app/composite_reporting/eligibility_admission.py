@@ -22,7 +22,13 @@ from app.composite_reporting.eligibility_contract import (
     PublishedSourceMonth,
     proposal_for_month,
 )
-from app.composite_reporting.models import EligibilitySelection, PublishedEligibilityPin
+from app.composite_reporting.models import (
+    AmendmentEligibilitySelection,
+    EligibilitySelection,
+    PublishedEligibilityPin,
+)
+
+MonthlySelection = EligibilitySelection | AmendmentEligibilitySelection
 
 
 def source_hash(payload: dict[str, Any], *, recursive: bool = False) -> str:
@@ -49,7 +55,7 @@ def require_hash(payload: dict[str, Any], *, recursive: bool = False) -> None:
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_SOURCE_HASH_CONFLICT")
 
 
-def _require_scope(selection: EligibilitySelection, payload: dict[str, Any]) -> None:
+def _require_scope(selection: MonthlySelection, payload: dict[str, Any]) -> None:
     if any(
         payload.get(key) != getattr(selection, key)
         for key in ("tenant_id", "composite_id", "definition_version")
@@ -57,8 +63,13 @@ def _require_scope(selection: EligibilitySelection, payload: dict[str, Any]) -> 
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_SOURCE_SCOPE_CONFLICT")
 
 
-def _require_population(proposal: dict[str, Any]) -> None:
-    evaluation = EligibilityProposal.model_validate(proposal).evaluation
+def _require_population(proposal: dict[str, Any], *, source_version: str = "v1") -> None:
+    if source_version == "v2":
+        from app.composite_reporting.amendment_contract import AmendmentProposal
+
+        evaluation = AmendmentProposal.model_validate(proposal).evaluation
+    else:
+        evaluation = EligibilityProposal.model_validate(proposal).evaluation
     ids = [row.portfolio_id for row in evaluation.portfolios]
     expected = proposal["universe"]["expected_portfolio_ids"]
     observations = proposal["observations"]["portfolios"]
@@ -94,10 +105,14 @@ def _require_population(proposal: dict[str, Any]) -> None:
 
 
 def _require_proposal(
-    selection: EligibilitySelection, index: int, proposal: dict[str, Any]
+    selection: MonthlySelection,
+    index: int,
+    proposal: dict[str, Any],
+    *,
+    source_version: str = "v1",
 ) -> None:
     pin = selection.months[index]
-    _require_population(proposal)
+    _require_population(proposal, source_version=source_version)
     EligibilityObservations.model_validate(proposal["observations"])
     require_hash(proposal)
     evaluation, universe, observations = (
@@ -148,7 +163,7 @@ def _require_proposal(
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_INPUT_BINDING_CONFLICT")
 
 
-def _require_policy(selection: EligibilitySelection, month: str, proposal: dict[str, Any]) -> None:
+def _require_policy(selection: MonthlySelection, month: str, proposal: dict[str, Any]) -> None:
     approval = proposal["policy_approval"]
     policy_proposal = approval["proposal"]
     policy = policy_proposal["policy"]
@@ -186,7 +201,9 @@ def _require_policy(selection: EligibilitySelection, month: str, proposal: dict[
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_OBSERVATION_LOCATOR_CONFLICT")
 
 
-def require_source_months(selection: EligibilitySelection, months: list[dict[str, Any]]) -> None:
+def require_source_months(
+    selection: MonthlySelection, months: list[dict[str, Any]], *, source_version: str = "v1"
+) -> None:
     if len(months) != len(selection.months):
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_MONTH_POPULATION_CONFLICT")
     for index, (pin, month) in enumerate(zip(selection.months, months, strict=True)):
@@ -197,14 +214,29 @@ def require_source_months(selection: EligibilitySelection, months: list[dict[str
             if isinstance(pin, PublishedEligibilityPin)
             else EvaluatedSourceMonth
         )
-        model.model_validate(month)
+        if source_version == "v2":
+            from app.composite_reporting.amendment_contract import (
+                AmendmentEvaluatedMonth,
+                AmendmentPublishedMonth,
+            )
+
+            amendment_model = (
+                AmendmentPublishedMonth
+                if isinstance(pin, PublishedEligibilityPin)
+                else AmendmentEvaluatedMonth
+            )
+            amendment_model.model_validate(month)
+        else:
+            model.model_validate(month)
         proposal, _ = proposal_for_month(month)
-        _require_proposal(selection, index, proposal)
-        expected_keys = (
+        _require_proposal(selection, index, proposal, source_version=source_version)
+        expected_keys: tuple[str, ...] = (
             ("receipt", "membership", "universe", "parent_membership", "publication")
             if (isinstance(pin, PublishedEligibilityPin))
             else ("proposal",)
         )
+        if source_version == "v2" and isinstance(pin, PublishedEligibilityPin):
+            expected_keys += ("parent_publication",)
         if set(month["response_digests"]) != set(expected_keys):
             raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_CAPTURE_DIGEST_SET_CONFLICT")
         for key in expected_keys:
@@ -216,11 +248,15 @@ def require_source_months(selection: EligibilitySelection, months: list[dict[str
             ):
                 raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_CAPTURE_DIGEST_CONFLICT")
         if isinstance(pin, PublishedEligibilityPin):
-            _require_publication(selection, pin, month)
+            _require_publication(selection, pin, month, source_version=source_version)
 
 
 def _require_publication(
-    selection: EligibilitySelection, pin: PublishedEligibilityPin, month: dict[str, Any]
+    selection: MonthlySelection,
+    pin: PublishedEligibilityPin,
+    month: dict[str, Any],
+    *,
+    source_version: str = "v1",
 ) -> None:
     receipt, member, universe, parent = (
         month["receipt"],
@@ -232,10 +268,15 @@ def _require_publication(
         receipt.get("product_name"),
         receipt.get("product_version"),
         receipt.get("completeness"),
-    ) != ("CompositeMonthlyEligibilityPublicationReceipt", "v1", "UNVERIFIED"):
+    ) != ("CompositeMonthlyEligibilityPublicationReceipt", source_version, "UNVERIFIED"):
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_RECEIPT_PRODUCT_CONFLICT")
     require_hash(receipt)
-    EligibilityReceipt.model_validate(receipt)
+    if source_version == "v2":
+        from app.composite_reporting.amendment_contract import AmendmentReceipt
+
+        AmendmentReceipt.model_validate(receipt)
+    else:
+        EligibilityReceipt.model_validate(receipt)
     approval = receipt["approval"]
     require_hash(approval)
     if (
@@ -243,7 +284,12 @@ def _require_publication(
         approval.get("product_version"),
         approval.get("evidence_kind"),
         approval.get("official_activation"),
-    ) != ("CompositeMonthlyEvaluationApproval", "v1", "SYNTHETIC_UNSIGNED", "UNAVAILABLE"):
+    ) != (
+        "CompositeMonthlyEvaluationApproval",
+        source_version,
+        "SYNTHETIC_UNSIGNED",
+        "UNAVAILABLE",
+    ):
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_APPROVAL_PRODUCT_CONFLICT")
     for product in (member, universe, parent):
         _require_scope(selection, product)
@@ -292,7 +338,7 @@ def _require_publication(
         pin.publication_sequence,
     ):
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_RECEIPT_PIN_CONFLICT")
-    _require_canonical_products(pin, month)
+    _require_canonical_products(pin, month, source_version=source_version)
     _require_published_joins(selection, pin, month)
 
 
@@ -314,7 +360,7 @@ def _require_history_intervals(membership: dict[str, Any]) -> None:
 
 
 def _require_published_joins(
-    selection: EligibilitySelection, pin: PublishedEligibilityPin, month: dict[str, Any]
+    selection: MonthlySelection, pin: PublishedEligibilityPin, month: dict[str, Any]
 ) -> None:
     member, universe, publication, receipt = (
         month["membership"],
@@ -386,7 +432,9 @@ def _require_published_population(
         raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_PUBLISHED_POPULATION_CONFLICT")
 
 
-def _require_canonical_products(pin: PublishedEligibilityPin, month: dict[str, Any]) -> None:
+def _require_canonical_products(
+    pin: PublishedEligibilityPin, month: dict[str, Any], *, source_version: str = "v1"
+) -> None:
     member, universe, parent, receipt = (
         month["membership"],
         month["universe"],
@@ -426,7 +474,7 @@ def _require_canonical_products(pin: PublishedEligibilityPin, month: dict[str, A
             and item.get("product_name") == "CompositeMonthlyEvaluationApproval"
         )
     ]
-    expected = ("v1", pin.evaluation_revision, pin.approval_content_hash)
+    expected = (source_version, pin.evaluation_revision, pin.approval_content_hash)
     if (
         len(locators) != 1
         or tuple(

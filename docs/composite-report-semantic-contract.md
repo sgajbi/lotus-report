@@ -1,5 +1,10 @@
 # Composite Review Semantic Contract
 
+Monthly source amendments use additive `composite_review.v6`, documented in
+[Monthly source-amendment JSON capture](composite-monthly-source-amendment.md).
+Source-v2 and definition-v1/v2 are independent axes. V1–v5 meanings remain frozen;
+amended eligibility is never joined to previously captured Performance aggregates.
+
 Draft shared version: `composite_review.v1`, under Report #417 and Render #338.
 The executable schema is [the shared JSON schema](../contracts/composite_review.v1.schema.json).
 The [synthetic example](../contracts/examples/composite-review.v1.json) binds to

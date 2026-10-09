@@ -10,6 +10,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from app.composite_reporting.admission import CompositeEvidenceRefused, admit_composite_response
+from app.composite_reporting.amendment_contract import CompositeAmendmentReportData
 from app.composite_reporting.eligibility_contract import CompositeEligibilityReportData
 from app.composite_reporting.linked_contract import CompositeLinkedReportData
 from app.composite_reporting.models import (
@@ -131,8 +132,11 @@ def validate_composite_dataset(
     | CompositeProductReportData
     | CompositeLinkedReportData
     | CompositeEligibilityReportData
+    | CompositeAmendmentReportData
     | CompositePooledReportData
 ):
+    if payload.get("contract_version") == "composite_review.v6":
+        return CompositeAmendmentReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v5":
         return CompositePooledReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v4":

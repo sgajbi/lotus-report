@@ -178,10 +178,15 @@ def resolve_job_accepted_contract(
         and options
         and "composite_eligibility_selection" in options
     ):
-        contract["report_data_contract_version"] = "composite_review.v4"
-        contract["input_snapshot_contract_version"] = "composite_review.v4"
+        version = (
+            "v6"
+            if options["composite_eligibility_selection"].get("selection_version") == "v2"
+            else "v4"
+        )
+        contract["report_data_contract_version"] = f"composite_review.{version}"
+        contract["input_snapshot_contract_version"] = f"composite_review.{version}"
         if contract.get("template_id") is not None:
-            contract["template_version"] = "v4"
+            contract["template_version"] = version
     if report_type == "composite_review" and options and "composite_pooled_selection" in options:
         contract["report_data_contract_version"] = "composite_review.v5"
         contract["input_snapshot_contract_version"] = "composite_review.v5"
@@ -200,6 +205,7 @@ def template_for_accepted_contract(
         "composite_review.v3",
         "composite_review.v4",
         "composite_review.v5",
+        "composite_review.v6",
     }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved
