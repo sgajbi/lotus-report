@@ -691,6 +691,17 @@ supportability/Render boundaries are test execution, not live supplier or docume
 completion claims. Use existing isolated PostgreSQL fixtures for custody/process
 reopening; never write tests into a product database. Full #417 stays open.
 
+Bounded actual v3 HTTP custody and isolated PostgreSQL restore are independently
+qualified in the delivery ledger. Keep source transport qualification separate
+from actual Render/Archive delivery. Retained technical rerender must reuse the
+original snapshot without recapture. Compare complete public-table state for
+Report restore proof, including work items, rerender, relationships and source
+lineage; table counts alone are insufficient. Workbook acceptance reads delivered
+OOXML bytes independently and checks the complete source projection and policies.
+At the custody boundary, only exact bare SHA-256 hex and its known `sha256:` encoding
+may identify the same digest; arbitrary prefixes or changed content must fail closed.
+Keep historical packets/readers immutable and failed attempts explicitly diagnostic.
+
 ## Cross-Links
 
 1. `../lotus-platform/context/LOTUS-QUICKSTART-CONTEXT.md`
