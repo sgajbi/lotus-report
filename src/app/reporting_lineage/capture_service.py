@@ -797,15 +797,24 @@ class ReportingReadPortfolioReviewInputProvider:
 
     async def _collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
         if job.report_type == "composite_review":
+            from app.clients.manage_client import ManageClient
             from app.composite_reporting.source_capture import CompositeInputProvider
 
             return await CompositeInputProvider(
+                manage_client=ManageClient(
+                    base_url=settings.manage_base_url,
+                    actor_id=settings.manage_read_actor_id,
+                    max_response_bytes=settings.manage_max_response_bytes,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                ),
                 performance_client=PerformanceClient(
                     base_url=settings.performance_base_url,
                     timeout_seconds=settings.upstream_timeout_seconds,
                     max_retries=settings.upstream_max_retries,
                     retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
-                )
+                ),
             ).collect_for_job(job)
         recorder = _UpstreamRecorder(
             correlation_id=job.correlation_id,

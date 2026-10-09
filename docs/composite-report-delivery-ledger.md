@@ -1,9 +1,74 @@
 # Composite Report Delivery Ledger
 
+## RPT-04 controlled custody implementation increment
+
+The existing family now implements exclusive published/evaluated-only eligibility
+capture, complete assessments/reasons, original interval history and Manage
+provenance on the existing job/snapshot/custody flow. New schema:
+`contracts/composite_review.v4.schema.json`. Earlier contracts remain unchanged.
+
+Root's known-zero-reasons finding was reproduced by owning literal controls:
+`a7cac4/1` failed both zero-reason and unused READINESS-ratio assertions;
+unchanged controls passed `09ba5d/0` after the narrow NOT_APPLICABLE correction.
+Missing flow evidence remains UNAVAILABLE. Frozen r1 stays immutable; corrected r2
+has a new dataset/matrix hash and unchanged selector hash.
+
+Actual retained Manage `79525fa6` proposals exposed distinct monthly observation
+and retained-universe cuts (`200236/1`). An unchanged owning control failed
+`34b811/1` and passed `204f6c/0` after correcting only those custody joins. All 17
+actual controlled proposals then admitted offline (`ee5793/0`), including missing
+observations; receipt SHA-256
+`a1e9aaa090071eb3d5214c37bead8e67135a20b69c70287af43d3a399eab7497`.
+Frozen r3 clarifies cut semantics with unchanged r2 dataset/selector schemas.
+This is retained proposal admission, with no new source capture or rule evaluation.
+The subsequent complete immutable producer R2 capture admits all six published
+cases and all 30 actual HTTP bodies offline (`4154b6/0`), preserving both v1/v2
+July-to-September status sequences EXCLUDED, EXCLUDED, INCLUDED. Receipt SHA-256:
+`982de58490039a614b72deeef164d48cc991638a320c1088f751a91034a7d7bc`.
+This establishes bounded source custody/projection, not joined runtime delivery.
+
+Render's independent 12-sheet writer found a seven-byte preflight text difference.
+The v4 rounding phrase was already correct; the dry template-digest placeholder
+omitted Render's `sha256:` prefix. Literal counters failed `0baa95/1` then passed
+unchanged `8c7f45/0` after adding only that prefix. Remeasurement `bd215b/0` matches
+Render's 85,372 / 93,119 text bytes for the unchanged r2 unit packages; original
+receipts stay immutable. Corrected receipt SHA-256:
+`567fc8a75cb91efa77e2bd4da96d644da8734dd74d7188d9aa5d5da4f2da87eb`.
+
+Local source/projection/history controls passed `4ced20/0` (27 tests plus six-file
+mypy); expanded controlled client/worker/schema/capacity controls passed
+`b92e59/0` (48 tests); bounded actual HTTPX transport, exact v4 capability refusal,
+worker package emission and retained reconstruction passed `32b5c4/0`
+(25 capture tests). A first capacity-test premise wrongly treated a valid 6 MiB
+identity as exceeding 16 MiB; valid large identity and invalid evidence-overhead
+controls replaced that premise without weakening limits.
+
+These are local controlled examples and Report execution, not actual Manage
+publication, producer PostgreSQL replay, workbook or Archive admission. Final
+CI/main/wiki qualification is recorded in task evidence after delivery. No runtime
+or fresh source campaign belongs to this increment. Root coordinates Render #352
+and Archive #188 against frozen interfaces. Controlled synthetic / NOT_ATTESTED,
+UNVERIFIED source population/completeness and UNAVAILABLE official activation stay
+explicit. Complete RPT-04, RPT-01–12, Report #417 and parent #923 remain OPEN.
+
+Final local v4 controls: `06f6bf/0`, 66 passed, including cumulative source/dataset
+budget, published population/history/cut joins and whole-response nested-locator
+integrity. Final full composite subset `dda0cb` -> `fbc4ec/0`, 317 passed.
+All nine actual retained v1/v2/v3 packages and complete packet manifests passed
+unchanged-byte/model validation `563e90/0`, without runtime or recalculation.
+Native static gates `b9839b` -> `4f8874/0` passed lint, typecheck (159 sources),
+complexity (28 maximum/eight existing high functions), source size, dead-code,
+dependency hygiene and OpenAPI. Linux dependency closure remains a CI-enforced
+platform limitation of the Windows local gate. Final lint `d8bbb3/0` preserved all
+29 existing monetary allowances. Pre-merge authored-wiki check `d9cfe5/0` reported
+the single intentional unpublished wiki change. Progress evidence is published at
+https://github.com/sgajbi/lotus-report/issues/417#issuecomment-6081754003.
+
 Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
 Feature: retained `composite_review.v1`, captured-return `composite_review.v2` and
-exclusive linked-analysis `composite_review.v3`.
+exclusive linked-analysis `composite_review.v3`, and controlled monthly eligibility
+`composite_review.v4`.
 Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
 ## Complete captured projection increment (not full acceptance)

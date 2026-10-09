@@ -461,6 +461,18 @@ REPORT_FAMILY_DEFINITIONS = (
                 defaulting_policy="omitted_preserves_legacy_contract",
                 value_source="caller",
             ),
+            ReportConfigurationFieldDefinition(
+                field_id="composite_eligibility_selection",
+                business_label="Pinned monthly eligibility evidence",
+                description=(
+                    "Exact published or evaluated-only sources; NOT_ATTESTED. "
+                    "Select as the exclusive primary."
+                ),
+                input_type="pinned_source_selection",
+                requirement="conditional",
+                defaulting_policy="omitted_preserves_legacy_contract",
+                value_source="caller",
+            ),
         ),
     ),
 )

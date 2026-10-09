@@ -94,6 +94,23 @@ def source_revision_vector_for_capture(
     """
 
     stated: list[SourceRevision] = []
+    if snapshot_payload.get("contract_version") == "composite_review.v4":
+        from app.composite_reporting.eligibility_contract import proposal_for_month
+
+        for month in snapshot_payload["source_months"]:
+            proposal, _ = proposal_for_month(month)
+            product = month["receipt"] if month["evidence_kind"] == "PUBLISHED" else proposal
+            stated.append(
+                SourceRevision(
+                    source_service="lotus-manage",
+                    source_product=product["product_name"],
+                    source_product_version=product["product_version"],
+                    content_hash=product["content_hash"],
+                    source_snapshot_id=proposal["evaluation_revision"],
+                    generated_at=proposal["evaluation"]["evaluated_at"],
+                    supportability_status="UNVERIFIED",
+                )
+            )
     composite_revision = _revision_from_composite_response(snapshot_payload)
     if composite_revision is not None:
         stated.append(composite_revision)

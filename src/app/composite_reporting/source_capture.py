@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, Protocol
+from urllib.parse import quote
 
 from pydantic import ValidationError
 
@@ -12,11 +14,14 @@ from app.composite_reporting.admission import (
     CompositeEvidenceRefused,
     admit_composite_response,
 )
+from app.composite_reporting.eligibility_tables import build_eligibility_dataset
 from app.composite_reporting.linked_tables import build_linked_dataset
 from app.composite_reporting.models import (
     CompositeReportSelection,
     CompositeReviewJobRequest,
+    EligibilitySelection,
     LinkedAnalysisSelection,
+    PublishedEligibilityPin,
 )
 from app.composite_reporting.product_contract import (
     CapturedReturnProduct,
@@ -44,9 +49,25 @@ class CompositePerformanceClient(Protocol):
     ) -> tuple[int, dict[str, Any]]: ...
 
 
+class CompositeManageClient(Protocol):
+    async def read_eligibility(
+        self,
+        *,
+        endpoint: str,
+        binding: dict[str, Any] | None,
+        admitted_tenant_id: str,
+    ) -> tuple[int, dict[str, Any]]: ...
+
+
 class CompositeInputProvider:
-    def __init__(self, *, performance_client: CompositePerformanceClient) -> None:
+    def __init__(
+        self,
+        *,
+        performance_client: CompositePerformanceClient | None = None,
+        manage_client: CompositeManageClient | None = None,
+    ) -> None:
         self._performance_client = performance_client
+        self._manage_client = manage_client
 
     async def collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
         calls: list[_RecordedUpstreamCall] = []
@@ -56,6 +77,7 @@ class CompositeInputProvider:
                     {
                         "selection": job.options.get("composite_selection"),
                         "linked_selection": job.options.get("composite_linked_selection"),
+                        "eligibility_selection": job.options.get("composite_eligibility_selection"),
                         "source_products": job.options.get("composite_source_products"),
                     }
                 )
@@ -70,7 +92,9 @@ class CompositeInputProvider:
                 or job.reporting_currency != selection.reporting_currency
             ):
                 raise CompositeEvidenceRefused("COMPOSITE_REPORT_JOB_IDENTITY_MISMATCH")
-            if request.linked_selection is not None:
+            if request.eligibility_selection is not None:
+                dataset = await self._capture_eligibility(job, request.eligibility_selection, calls)
+            elif request.linked_selection is not None:
                 dataset = await self._capture_linked(job, request.linked_selection, calls)
             else:
                 assert request.selection is not None
@@ -113,6 +137,7 @@ class CompositeInputProvider:
         calls: list[_RecordedUpstreamCall],
     ) -> dict[str, Any]:
         started = perf_counter()
+        assert self._performance_client is not None
         try:
             with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
                 status, response = await self._performance_client.get_composite_analytics(
@@ -149,6 +174,7 @@ class CompositeInputProvider:
         calls: list[_RecordedUpstreamCall],
     ) -> dict[str, Any]:
         started = perf_counter()
+        assert self._performance_client is not None
         try:
             with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
                 status, response = await self._performance_client.get_composite_twr(
@@ -180,6 +206,152 @@ class CompositeInputProvider:
             call.failure_category = "partial_data"
             call.failure_message = "Composite source retains unavailable financial evidence."
         return dataset
+
+    async def _capture_eligibility(
+        self,
+        job: ReportJobLedgerRecord,
+        selection: EligibilitySelection,
+        calls: list[_RecordedUpstreamCall],
+    ) -> dict[str, Any]:
+        from app.composite_reporting.admission import response_digest
+        from app.composite_reporting.eligibility_admission import require_hash
+
+        captured_bytes = 0
+
+        async def read(endpoint: str, binding: dict[str, Any] | None = None) -> dict[str, Any]:
+            nonlocal captured_bytes
+            response = await self._manage_read(job, endpoint, calls, binding)
+            captured_bytes += len(
+                json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            )
+            if captured_bytes > 8_388_608:
+                raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_CAPTURE_CAPACITY_EXCEEDED")
+            return response
+
+        base = "/api/v1/rebalance/composites"
+        definition = (
+            f"{base}/{quote(selection.composite_id, safe='')}/definitions/"
+            f"{quote(selection.definition_version, safe='')}"
+        )
+        months = []
+        for pin in selection.months:
+            if isinstance(pin, PublishedEligibilityPin):
+                member_path = f"{definition}/membership/{quote(pin.membership_revision, safe='')}"
+                member = await read(member_path)
+                universe = await read(
+                    (
+                        f"{member_path}/universe-attestations/"
+                        f"{quote(pin.attestation_version, safe='')}"
+                    ),
+                )
+                require_hash(universe, recursive=True)
+                locators = [
+                    item
+                    for item in universe.get("source_products", [])
+                    if (
+                        item.get("owner_service") == "lotus-manage"
+                        and item.get("product_name") == "CompositeMonthlyEvaluationApproval"
+                    )
+                ]
+                if len(locators) != 1:
+                    raise CompositeEvidenceRefused(
+                        "COMPOSITE_ELIGIBILITY_APPROVAL_LOCATOR_CONFLICT"
+                    )
+                locator = locators[0]
+                binding = {
+                    "product_name": locator["product_name"],
+                    "product_version": locator["contract_version"],
+                    "revision": locator["source_watermark"],
+                    "digest": locator["content_hash"],
+                }
+                if binding != {
+                    "product_name": "CompositeMonthlyEvaluationApproval",
+                    "product_version": "v1",
+                    "revision": pin.evaluation_revision,
+                    "digest": pin.approval_content_hash,
+                }:
+                    raise CompositeEvidenceRefused(
+                        "COMPOSITE_ELIGIBILITY_APPROVAL_LOCATOR_CONFLICT"
+                    )
+                month = {
+                    "evidence_kind": "PUBLISHED",
+                    "membership": member,
+                    "universe": universe,
+                    "receipt": await read(f"{definition}/eligibility-evidence/resolve", binding),
+                    "parent_membership": await read(
+                        f"{definition}/membership/{quote(pin.parent_membership_revision, safe='')}",
+                    ),
+                    "publication": await read(f"{base}/publications/{pin.publication_sequence}"),
+                }
+            else:
+                month = {
+                    "evidence_kind": "EVALUATED_ONLY",
+                    "proposal": await read(
+                        (
+                            f"{definition}/monthly-eligibility/evaluations/"
+                            f"{quote(pin.evaluation_revision, safe='')}"
+                        ),
+                    ),
+                }
+            month["response_digests"] = {
+                key: response_digest(value)
+                for key, value in month.items()
+                if isinstance(value, dict)
+            }
+            months.append(month)
+        return build_eligibility_dataset(selection, months)
+
+    async def _manage_read(
+        self,
+        job: ReportJobLedgerRecord,
+        endpoint: str,
+        calls: list[_RecordedUpstreamCall],
+        binding: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        started = perf_counter()
+        method = "GET" if binding is None else "POST"
+        try:
+            if self._manage_client is None:
+                raise CompositeEvidenceRefused("COMPOSITE_MANAGE_READ_CLIENT_REQUIRED")
+            with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
+                status, response = await self._manage_client.read_eligibility(
+                    endpoint=endpoint, binding=binding, admitted_tenant_id=job.tenant_id
+                )
+        except Exception as exc:
+            recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
+            recorder.append_failure(
+                service_name="lotus-manage",
+                endpoint=endpoint,
+                method=method,
+                request_payload=binding or {},
+                started_at=started,
+                exc=exc,
+            )
+            calls.extend(recorder.calls)
+            raise
+        calls.append(
+            _RecordedUpstreamCall(
+                service_name="lotus-manage",
+                endpoint=endpoint,
+                method=method,
+                contract_version="composite-eligibility.exact-custody.v1",
+                request_payload=binding or {},
+                response_payload=response,
+                response_ref=response.get("content_hash"),
+                status_code=status,
+                latency_ms=max(0, int((perf_counter() - started) * 1000)),
+                supportability_status="partial",
+                completeness_status="partial",
+                failure_category="partial_data",
+                failure_message="Controlled eligibility source is not attested.",
+                captured_at=datetime.now(UTC),
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        )
+        if status != 200:
+            raise CompositeEvidenceRefused("COMPOSITE_ELIGIBILITY_SOURCE_UNAVAILABLE")
+        return response
 
 
 def _source_call(

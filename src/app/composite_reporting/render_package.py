@@ -34,7 +34,7 @@ def build_composite_render_package(
     ):
         raise ValueError("COMPOSITE_RENDER_PERSISTED_SNAPSHOT_REQUIRED")
     custody = composite_archive_custody(job=job, record=snapshot_record)
-    return _render_package_envelope(
+    package = _render_package_envelope(
         job=job,
         snapshot=snapshot,
         render_job_id=render_job_id,
@@ -46,6 +46,11 @@ def build_composite_render_package(
         disclosure_refs=[_job_disclosure_baseline(job)],
         archive_custody=custody,
     )
+    if snapshot["contract_version"] == "composite_review.v4":
+        from app.composite_reporting.eligibility_tables import preflight_eligibility_package
+
+        preflight_eligibility_package(package)
+    return package
 
 
 def composite_archive_custody(
@@ -66,7 +71,11 @@ def composite_archive_custody(
     ):
         raise ValueError("COMPOSITE_CUSTODY_JOB_IDENTITY_MISMATCH")
     binding = revision_for_capture(
-        job=job, snapshot_payload=record.snapshot_payload, upstream_services=("lotus-performance",)
+        job=job,
+        snapshot_payload=record.snapshot_payload,
+        upstream_services=("lotus-manage",)
+        if data.contract_version == "composite_review.v4"
+        else ("lotus-performance",),
     )
     if binding is None:
         raise ValueError("COMPOSITE_CUSTODY_REVISION_REQUIRED")

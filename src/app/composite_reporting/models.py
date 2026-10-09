@@ -330,6 +330,79 @@ class LinkedAnalysisSelection(BaseModel):
         return self.source_request.model_dump(mode="json")
 
 
+class EvaluatedEligibilityPin(BaseModel):
+    """Exact retained proposal; never implies checker approval or publication."""
+
+    model_config = ConfigDict(extra="forbid")
+    evidence_kind: Literal["EVALUATED_ONLY"]
+    month: str = Field(pattern=r"^[0-9]{4}-(?:0[1-9]|1[0-2])$")
+    evaluation_revision: Identifier
+    proposal_content_hash: Digest
+    proposal_response_digest: Digest
+    parent_membership_revision: Identifier
+    parent_membership_content_hash: Digest
+    source_cut_id: Identifier
+
+
+class PublishedEligibilityPin(BaseModel):
+    """Whole publication custody plus independently pinned canonical products."""
+
+    model_config = ConfigDict(extra="forbid")
+    evidence_kind: Literal["PUBLISHED"]
+    month: str = Field(pattern=r"^[0-9]{4}-(?:0[1-9]|1[0-2])$")
+    evaluation_revision: Identifier
+    proposal_content_hash: Digest
+    approval_content_hash: Digest
+    receipt_content_hash: Digest
+    receipt_response_digest: Digest
+    membership_revision: Identifier
+    membership_content_hash: Digest
+    membership_response_digest: Digest
+    attestation_version: Identifier
+    universe_content_hash: Digest
+    universe_response_digest: Digest
+    parent_membership_revision: Identifier
+    parent_membership_content_hash: Digest
+    parent_response_digest: Digest
+    publication_sequence: int = Field(gt=0, strict=True)
+    publication_response_digest: Digest
+    source_cut_id: Identifier
+
+
+EligibilityMonthPin = Annotated[
+    PublishedEligibilityPin | EvaluatedEligibilityPin, Field(discriminator="evidence_kind")
+]
+
+
+class EligibilitySelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: Identifier
+    composite_id: Identifier
+    definition_version: Identifier
+    reporting_currency: str = Field(pattern=r"^[A-Z]{3}$")
+    period_start: date
+    period_end: date
+    months: list[EligibilityMonthPin] = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def require_ordered_months(self) -> EligibilitySelection:
+        months = [pin.month for pin in self.months]
+        if months != sorted(set(months)) or self.period_end < self.period_start:
+            raise ValueError("COMPOSITE_ELIGIBILITY_MONTH_VECTOR_INVALID")
+        if months[0] != self.period_start.strftime("%Y-%m") or months[-1] != (
+            self.period_end.strftime("%Y-%m")
+        ):
+            raise ValueError("COMPOSITE_ELIGIBILITY_HORIZON_CONFLICT")
+        if (
+            self.period_start.day != 1
+            or self.period_end.day
+            != calendar.monthrange(self.period_end.year, self.period_end.month)[1]
+        ):
+            raise ValueError("COMPOSITE_ELIGIBILITY_COMPLETE_MONTHS_REQUIRED")
+        # Noncontiguous selected months remain explicit gaps, never filled forward.
+        return self
+
+
 class CompositeReviewJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -342,6 +415,11 @@ class CompositeReviewJobRequest(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
         description="Exact linked-analysis primary operation; exclusive of TWR return products.",
+    )
+    eligibility_selection: EligibilitySelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Exact published or evaluated-only monthly eligibility; NOT_ATTESTED.",
     )
     source_products: list[ReturnProductSelection] | None = Field(
         default=None,
@@ -364,7 +442,15 @@ class CompositeReviewJobRequest(BaseModel):
             raise ValueError("Use the typed source_products field")
         if "composite_linked_selection" in self.options:
             raise ValueError("Use the typed linked_selection field")
-        if (self.selection is None) == (self.linked_selection is None):
+        if "composite_eligibility_selection" in self.options:
+            raise ValueError("Use the typed eligibility_selection field")
+        if (
+            sum(
+                item is not None
+                for item in (self.selection, self.linked_selection, self.eligibility_selection)
+            )
+            != 1
+        ):
             raise ValueError("Select exactly one composite primary operation")
         if self.source_products is not None:
             if self.selection is None:
@@ -373,13 +459,24 @@ class CompositeReviewJobRequest(BaseModel):
         return self
 
     @property
-    def primary_selection(self) -> CompositeReportSelection | LinkedAnalysisSelection:
+    def primary_selection(
+        self,
+    ) -> CompositeReportSelection | LinkedAnalysisSelection | EligibilitySelection:
+        if self.eligibility_selection is not None:
+            return self.eligibility_selection
         if self.linked_selection is not None:
             return self.linked_selection
         assert self.selection is not None
         return self.selection
 
     def capture_options(self) -> dict[str, Any]:
+        if self.eligibility_selection is not None:
+            return {
+                **self.options,
+                "composite_eligibility_selection": self.eligibility_selection.model_dump(
+                    mode="json"
+                ),
+            }
         if self.linked_selection is not None:
             return {
                 **self.options,
