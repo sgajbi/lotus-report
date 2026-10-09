@@ -4,9 +4,58 @@ Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
 Feature: `composite_review.v1`. Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
-## Current Slice: Deterministic Methods Rows
+## Current Evidence: Six-Year Registered Delivery
 
-Branch `fix/composite-method-order-417` starts from qualified main
+The exact pinned calculated-review flow is qualified for one controlled six-year
+source vector, January 2020 through December 2025, with 72 monthly windows and
+2016 member contribution rows. This is bounded RPT-01 evidence; Report #417 and
+all RPT-01–12 acceptance remain open. Calendar/trailing/SI products, complete
+eligibility/history, other supported metrics and institutional authority still
+require separately captured upstream products. Report calculates no investment
+returns.
+
+Fresh phase `composite-supported-report-http-72m-20261009-r4` uses Report main
+`1c92b13b21b2e77bc899b5d3ba6c41d33889522e` (PR #421), Render main
+`c1aa32cd1fb8d7311bddc88dc020f8bfa8db3f07` (PR #343) and Archive main
+`3834ea25e0e2fc2d4d0edfc202490575370fd552`. Report's registered ASGI routes
+and real PostgreSQL capture/worker call the existing actual Render/Archive HTTP
+clients. Original, genuine financial correction and retained-original technical
+rerender all archive successfully (`54f9e2`, exit 0). Each order's exact pins,
+snapshot and revision are retained; two captured registered Performance responses
+are replayed, and rerender does not refetch or rewrite the original.
+
+All three actual authorized Archive downloads independently reconcile 24,604
+canonical/display cells, 8569 financial cells, 62 column policies, explicit
+unavailable reasons, full pinned data and identity context (`2b82d7`, exit 0).
+Each workbook has 43 physical sheets, three Contribution partitions and 25
+CellEvidence partitions. Render's lossless ordered JSON identity fragments
+preserve large context without changing financial cells or Excel's physical
+cell limit. The 45-file producer/read bundle is sealed (`755afb`, exit 0).
+
+Root independently validates source figures, every semantic cell and ten actual
+Archive reads, including foreign-tenant 403 and original-current resolution to
+the financial correction (`468ca1`, exit 0). Archive's actual HTTP restart
+retains its PostgreSQL/filesystem state; Root repeats the ten reads and verifies
+full metadata/bytes/current-chain preservation (`b68442`, exit 0). The independent
+Report join checks all three complete metadata objects, own package/wire pins,
+exact bytes, owner backups and all 45 sealed files (`4d6dca`, exit 0). Render,
+Archive and Report owned resource cleanup passes (`74ee42`, `53ba3b`, `70bddd`,
+exit 0). The financial relationship is a separately authorized Archive QA API
+control, not automatic Report correction orchestration or bank approval.
+
+The original and technical rerender retain source cumulative return
+`-0.011980394452`; the financial correction retains `-0.009996419341` with its
+own materialization. These source-owned values display -1.20% and -1.00% using
+the declared rounding policy. Source/provider/verifier inputs remain controlled,
+and Archive uses explicit local diagnostic real adapters. Publication remains
+NOT_ATTESTED; this is not live institutional IAM, GIPS production or enterprise
+capacity certification. The historical R2 artifacts and R3 413 refusal remain
+unchanged. Durable issue evidence is
+[Report #417's r4 proof](https://github.com/sgajbi/lotus-report/issues/417#issuecomment-6075090685).
+
+## Historical Slice: Deterministic Methods Rows
+
+The branch `fix/composite-method-order-417` started from qualified main
 `bbc1d65f64357e2267002fff0b1db76505a14317` (PR #420). It sorts method-binding
 keys before assigning Methods row identities and escaped source pointers.
 PostgreSQL JSONB key normalization previously changed these rows for equal
@@ -31,13 +80,17 @@ reconstructs 6,893,642 request bytes, above 5,242,880. The source-backed tables
 also require at least 27,430 worksheet data rows including CellEvidence, above
 Render's 20,000-row bound. The failed phase is sealed (`851800`, exit 0).
 Render [#342](https://github.com/sgajbi/lotus-render/issues/342) owns the measured
-capacity remedy and its independent guards; no source/evidence rows are dropped.
+capacity remedy and its independent guards; PR #343 subsequently qualified it
+on main for the fresh r4 flow above. No source/evidence rows are dropped.
 
 Sources and verifiers remain controlled, exact captured Performance transport
 is replayed, and publication remains NOT_ATTESTED. This slice does not establish
 long-history workbook acceptance, uncaptured products, all RPT-01–12 families,
-institutional approval or enterprise capacity. Current native/CI/main gates and
-wiki publication remain required. Native unit tests passed: 2532 passed, one
+institutional approval or enterprise capacity. PR #421 subsequently merged to
+main `1c92b13b21b2e77bc899b5d3ba6c41d33889522e`, with all seven required PR
+checks and all nine natural main release jobs successful. Wiki publication
+`f3cf259ec823de542e9b360743edc4842f499124` matches all 21 committed source
+pages. Native unit tests passed: 2532 passed, one
 existing skip, three deprecation warnings (`473fec`, exit 0). Lint, typecheck,
 code-health, OpenAPI and domain contracts passed (`1f0d03`/`178bd2`, exit 0);
 Linux installed-closure evaluation remains a required CI gate. The before-fix

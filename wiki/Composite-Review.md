@@ -41,6 +41,21 @@ products. Qualification is `EXPLICIT_RETAINED_CALCULATED_REPLAY`, publication st
 
 ## Workbook custody and acceptance
 
+One controlled six-year vector (January 2020–December 2025, 72 windows and 2016
+member rows) is independently qualified through registered Report PostgreSQL
+capture, actual Render/Archive HTTP, retained-original rerender and Archive
+restart. Each of the three actual workbooks reconciles all 24,604 semantic cells
+across 43 sheets, including complete contribution/evidence partitions and
+lossless identity fragments. Original and corrected source cumulative returns
+remain exact; version-specific pins and unavailable reasons are preserved.
+Root independently checks custody, tenant refusal and current financial-chain
+resolution before and after restart; all owned phase resources are cleaned.
+See the [delivery ledger](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-delivery-ledger.md) and
+[bounded issue proof](https://github.com/sgajbi/lotus-report/issues/417#issuecomment-6075090685)
+for revisions and evidence. This is controlled calculated NOT_ATTESTED evidence,
+not institutional authority or enterprise capacity. Full #417 acceptance,
+uncaptured source products and the other RPT families remain open.
+
 The workbook composer reads the persisted snapshot record and checks its revision
 binding. Archive metadata has `portfolio_scope=composite`, null `portfolio_id`,
 the real `composite_id` and `composite_report_identity` carrying exact selection
