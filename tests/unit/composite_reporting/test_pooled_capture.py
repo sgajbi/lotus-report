@@ -235,6 +235,10 @@ async def test_registered_original_correction_capture_and_reopen_preserve_source
     tmp_path,
     monkeypatch,
 ):
+    await exercise_registered_pooled_capture(tmp_path, monkeypatch)
+
+
+async def exercise_registered_pooled_capture(tmp_path, monkeypatch, *, adapters=None):
     original, corrected = pair()
     responses = {payload["calculation_id"]: payload for payload in (original, corrected)}
     calls = []
@@ -249,7 +253,12 @@ async def test_registered_original_correction_capture_and_reopen_preserve_source
         settings, "performance_read_bearer_token", SecretStr("controlled-unit-test-only")
     )
     headers = {**HEADERS, "X-Tenant-Id": "controlled-tenant"}
-    with composite_lifecycle(tmp_path, monkeypatch) as (ledger, store, worker, _):
+    with composite_lifecycle(tmp_path, monkeypatch, adapters=adapters) as (
+        ledger,
+        store,
+        worker,
+        _,
+    ):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://report"
         ) as client:
@@ -257,7 +266,10 @@ async def test_registered_original_correction_capture_and_reopen_preserve_source
             for payload, parent in ((original, None), (corrected, original)):
                 pin = selection(payload, parent)
                 request = {"pooled_selection": pin.model_dump(mode="json")}
-                scoped = {**headers, "Idempotency-Key": "pooled-" + payload["calculation_id"]}
+                scoped = {
+                    **headers,
+                    "Idempotency-Key": HEADERS["Idempotency-Key"] + payload["calculation_id"],
+                }
                 ordered = await client.post(
                     "/reports/composite-reviews", headers=scoped, json=request
                 )
@@ -296,7 +308,12 @@ async def test_registered_original_correction_capture_and_reopen_preserve_source
                     headers={**headers, "X-Tenant-Id": "foreign"},
                 )
                 assert foreign.status_code == 404
-            reopened = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+            reopened = (
+                adapters()[1]
+                if adapters is not None
+                else ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+            )
             for job_id, expected in retained:
                 assert reopened.get_snapshot_by_job(job_id).model_dump(mode="json") == expected
             assert len(calls) == 3
+            return retained

@@ -19,6 +19,7 @@ from app.reporting_jobs.postgres_ledger import PostgresReportJobLedger
 from app.reporting_lineage.postgres_store import PostgresReportInputSnapshotStore
 from tests.integration.postgres_adapter_ownership import own_postgres_adapter
 from tests.unit.composite_reporting import test_linked_analysis as linked_cases
+from tests.unit.composite_reporting import test_pooled_capture as pooled_cases
 from tests.unit.composite_reporting import test_source_products as product_cases
 from tests.unit.composite_reporting.test_registered_lifecycle import (
     HEADERS,
@@ -42,6 +43,41 @@ try:
 finally:
     store.close()
 """
+
+
+@pytest.mark.asyncio
+async def test_pooled_original_correction_postgres_capture_and_fresh_process_retention(
+    tmp_path, monkeypatch
+):
+    database_url = os.environ.get("REPORT_JOB_LEDGER_DATABASE_URL")
+    if not database_url:
+        pytest.skip("REPORT_JOB_LEDGER_DATABASE_URL is required for actual PostgreSQL proof")
+
+    def adapters():
+        return (
+            own_postgres_adapter(PostgresReportJobLedger(database_url)),
+            own_postgres_adapter(PostgresReportInputSnapshotStore(database_url)),
+        )
+
+    monkeypatch.setitem(HEADERS, "Idempotency-Key", "pooled-pg-" + uuid4().hex)
+    retained = await pooled_cases.exercise_registered_pooled_capture(
+        tmp_path, monkeypatch, adapters=adapters
+    )
+    assert len(retained) == 2
+    assert retained[0][1]["report_revision_id"] != retained[1][1]["report_revision_id"]
+    for job_id, expected in retained:
+        process = subprocess.run(
+            [sys.executable, "-c", READ_RETAINED, job_id],
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        assert process.returncode == 0, process.stderr
+        reopened = json.loads(process.stdout)
+        assert reopened["pid"] != os.getpid()
+        assert reopened["snapshot"] == expected
 
 
 @pytest.mark.asyncio
