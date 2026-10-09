@@ -28,9 +28,12 @@ from tests.unit.composite_reporting.test_registered_lifecycle import (
 FIXTURES = Path(__file__).with_name("wire_fixtures")
 
 
-def actual_performance_selection():
-    response = json.loads((FIXTURES / "performance-main-c100-or02-response.json").read_text())
-    provenance = json.loads((FIXTURES / "performance-main-c100-provenance.json").read_text())
+def actual_performance_selection(
+    response_name="performance-main-c100-or02-response.json",
+    provenance_name="performance-main-c100-provenance.json",
+):
+    response = json.loads((FIXTURES / response_name).read_text())
+    provenance = json.loads((FIXTURES / provenance_name).read_text())
     assert provenance["producer_native_exit"] == 0
     selection = CompositeReportSelection.model_validate(
         {
@@ -55,6 +58,93 @@ def actual_performance_selection():
         }
     )
     return response, selection
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("format_id", ["json", "xlsx"])
+async def test_actual_financial_correction_retains_both_pinned_calculations(
+    tmp_path, monkeypatch, format_id
+):
+    provenance_name = "performance-main-c100-pair-provenance.json"
+    captures = {
+        name: actual_performance_selection(
+            f"performance-main-c100-pair-{name}.json", provenance_name
+        )
+        for name in ("original", "corrected")
+    }
+    original, corrected = (captures[name][0] for name in ("original", "corrected"))
+    assert original["cumulative_return"] == "0.030200000000"
+    assert corrected["cumulative_return"] == "0.055700000000"
+    assert corrected["periods"][0]["return_value"] == "0.035000000000"
+    # February's retained monthly evidence is unchanged; its cumulative
+    # return includes the corrected January and therefore must differ.
+    assert {
+        key: value for key, value in original["periods"][1].items() if key != "cumulative_return"
+    } == {
+        key: value for key, value in corrected["periods"][1].items() if key != "cumulative_return"
+    }
+    boundary = ControlledRenderBoundary()
+    with composite_lifecycle(tmp_path, monkeypatch, render_client=boundary) as stack:
+        ledger, store, worker, supplier = stack
+        retained = {}
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://report"
+        ) as client:
+            for name, (response, selection) in captures.items():
+                supplier["response"] = deepcopy(response)
+                headers = {
+                    **HEADERS,
+                    "X-Tenant-Id": selection.tenant_id,
+                    "Idempotency-Key": f"actual-pair-{name}",
+                }
+                request = {
+                    "selection": selection.model_dump(mode="json"),
+                    "requested_output_formats": [format_id],
+                }
+                ordered = await client.post(
+                    "/reports/composite-reviews", json=request, headers=headers
+                )
+                assert ordered.status_code == 202, ordered.text
+                job_id = ordered.json()["report_job_id"]
+                run = await worker.run_once(
+                    worker_id=f"actual-pair-{name}", max_items=1, lease_seconds=30
+                )
+                assert run.completed_count == 1
+                job = ledger.get_job(job_id)
+                if format_id == "json":
+                    assert job.status == "data_ready"
+                else:
+                    assert job.status == "failed"
+                    assert job.failure_category == "render_execution_failed"
+                    assert boundary.packages[-1]["report_data"]["source_response"] == response
+                snapshot = store.get_snapshot_by_job(job_id)
+                assert snapshot.snapshot_payload["source_response"] == response
+                assert snapshot.snapshot_payload["selection"] == selection.model_dump(mode="json")
+                assert snapshot.snapshot_payload["publication_state"] == "NOT_ATTESTED"
+                retained[name] = snapshot
+                retry = await client.post(
+                    "/reports/composite-reviews", json=request, headers=headers
+                )
+                assert retry.status_code == 202 and retry.json()["report_job_id"] == job_id
+            assert len(supplier["calls"]) == 2
+            assert (
+                retained["original"].report_revision_id != retained["corrected"].report_revision_id
+            )
+            assert (
+                retained["original"].source_revision_digest
+                != retained["corrected"].source_revision_digest
+            )
+            reopened = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+            for name, snapshot in retained.items():
+                read = await client.get(
+                    f"/reports/jobs/{snapshot.report_job_id}/snapshot",
+                    headers={**HEADERS, "X-Tenant-Id": captures[name][1].tenant_id},
+                )
+                assert read.status_code == 200
+                assert read.json()["snapshot_payload"]["source_response"] == captures[name][0]
+                assert reopened.get_snapshot_by_job(snapshot.report_job_id).model_dump(
+                    mode="json"
+                ) == (snapshot.model_dump(mode="json"))
 
 
 @pytest.mark.asyncio

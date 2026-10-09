@@ -1,0 +1,19 @@
+{
+  "qualification": "ACTUAL_REGISTERED_C100_ORIGINAL_AND_FINANCIALLY_CORRECTED_CALCULATED_CONTROLLED_SYNTHETIC_NOT_ATTESTED",
+  "producer_main": "c100c885752c86b8d950d7970c99a8d223e6376a",
+  "producer_tree": "cdd156587e6f6b01284c96e797e66dfa6396c504",
+  "producer_native_exit": 0,
+  "handoff_file_sha256_at_intake": "41016a8db54e4fd26d57f76bc6b1532bf79f1e8d18e2735416399ebf6d111860",
+  "paired_export_file_sha256_at_intake": "a3d46de46cce5807c1ed3d43d27473f44a9155bef41c071ef7e46f20edce912e",
+  "original_response_file_sha256_at_intake": "cc04024d682a9b8cdc2e1d509db010b668d9a4e28b479ad86982032bb8447418",
+  "corrected_response_file_sha256_at_intake": "2def449ac712731ad8cf8d16a6b3e3baf3cdc7ee72d0044b221e4af85341a74b",
+  "admitted_tenant_from_authority_packets": "synthetic-tenant-a",
+  "request_reporting_currency": "USD",
+  "request_return_view": "GROSS",
+  "source_values_and_fields": "Unchanged captured response objects; formatted fixtures are not HTTP framing",
+  "limitations": [
+    "Economic, provider, universe and approval verifier inputs are controlled",
+    "Transport is captured response replay, not a live Performance network",
+    "No institutional approval, freeze or official publication qualification"
+  ]
+}
