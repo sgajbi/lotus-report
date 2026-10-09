@@ -86,9 +86,15 @@ async def submit_composite_review(
                 "message": "Pinned source scope does not match the caller.",
             },
         )
-    profile = "v3" if request.linked_selection is not None else "v2"
+    profile = (
+        "v4"
+        if request.eligibility_selection is not None
+        else ("v3" if request.linked_selection is not None else "v2")
+    )
     if (
-        request.source_products is not None or request.linked_selection is not None
+        request.source_products is not None
+        or request.linked_selection is not None
+        or request.eligibility_selection is not None
     ) and request.requested_output_formats == ["xlsx"]:
         support = await catalogue.document_contract_supportability(
             report_type="composite_review",

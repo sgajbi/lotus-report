@@ -1,0 +1,2268 @@
+{
+  "$defs": {
+    "EligibilityApproval": {
+      "additionalProperties": true,
+      "properties": {
+        "approved_at": {
+          "title": "Approved At",
+          "type": "string"
+        },
+        "approved_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Approved By",
+          "type": "string"
+        },
+        "claims_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Claims Digest",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "evidence_kind": {
+          "const": "SYNTHETIC_UNSIGNED",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEvaluationApproval",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "proposal": {
+          "$ref": "#/$defs/EligibilityProposal"
+        },
+        "published_universe_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Published Universe Content Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "evidence_kind",
+        "official_activation",
+        "proposal",
+        "approved_by",
+        "approved_at",
+        "claims_digest",
+        "membership_content_hash",
+        "published_universe_content_hash",
+        "content_hash"
+      ],
+      "title": "EligibilityApproval",
+      "type": "object"
+    },
+    "EligibilityAssessment": {
+      "additionalProperties": true,
+      "properties": {
+        "admitted_flow_count": {
+          "anyOf": [
+            {
+              "maximum": 250,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Admitted Flow Count"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Denominator"
+        },
+        "failure_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Reasons",
+          "type": "array"
+        },
+        "gross_inflow": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gross Inflow"
+        },
+        "gross_outflow": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gross Outflow"
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Numerator"
+        },
+        "outcome": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNKNOWN"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "ratio": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ratio"
+        },
+        "rule": {
+          "enum": [
+            "SIGNIFICANT_FLOW",
+            "CASH",
+            "READINESS"
+          ],
+          "title": "Rule",
+          "type": "string"
+        },
+        "unknown_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rule",
+        "outcome",
+        "failure_reasons",
+        "unknown_reasons",
+        "numerator",
+        "denominator",
+        "ratio",
+        "gross_inflow",
+        "gross_outflow",
+        "admitted_flow_count"
+      ],
+      "title": "EligibilityAssessment",
+      "type": "object"
+    },
+    "EligibilityCell": {
+      "additionalProperties": false,
+      "properties": {
+        "availability": {
+          "enum": [
+            "AVAILABLE",
+            "UNAVAILABLE",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "canonical_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Canonical Value"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "source_pointer": {
+          "pattern": "^/(source_months|selection|report_facts)/",
+          "title": "Source Pointer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_value",
+        "availability",
+        "reason_codes",
+        "source_pointer"
+      ],
+      "title": "EligibilityCell",
+      "type": "object"
+    },
+    "EligibilityColumn": {
+      "additionalProperties": false,
+      "properties": {
+        "column_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Column Id",
+          "type": "string"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currency"
+        },
+        "display_conversion": {
+          "const": "IDENTITY",
+          "title": "Display Conversion",
+          "type": "string"
+        },
+        "display_decimal_places": {
+          "anyOf": [
+            {
+              "maximum": 12,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Display Decimal Places"
+        },
+        "display_rounding_mode": {
+          "const": "HALF_UP",
+          "title": "Display Rounding Mode",
+          "type": "string"
+        },
+        "display_unit": {
+          "enum": [
+            "TEXT",
+            "DECIMAL_RATIO",
+            "CURRENCY_UNITS",
+            "PORTFOLIO_COUNT",
+            "EVENT_COUNT",
+            "BOOLEAN"
+          ],
+          "title": "Display Unit",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "scale": {
+          "const": "1",
+          "title": "Scale",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "TEXT",
+            "DECIMAL_RATIO",
+            "CURRENCY_UNITS",
+            "PORTFOLIO_COUNT",
+            "EVENT_COUNT",
+            "BOOLEAN"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "value_type": {
+          "enum": [
+            "TEXT",
+            "DECIMAL_FACTOR",
+            "MONEY",
+            "COUNT",
+            "BOOLEAN"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column_id",
+        "label",
+        "value_type",
+        "unit",
+        "display_unit",
+        "display_conversion",
+        "display_decimal_places",
+        "display_rounding_mode",
+        "currency",
+        "scale"
+      ],
+      "title": "EligibilityColumn",
+      "type": "object"
+    },
+    "EligibilityEvaluation": {
+      "additionalProperties": true,
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "declared_universe_coverage": {
+          "enum": [
+            "COMPLETE",
+            "INCOMPLETE"
+          ],
+          "title": "Declared Universe Coverage",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "evaluated_at": {
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "evidence_class": {
+          "enum": [
+            "SYNTHETIC_UNQUALIFIED",
+            "SOURCE_UNVERIFIED"
+          ],
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "excluded_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Excluded Count",
+          "type": "integer"
+        },
+        "expected_count": {
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Expected Count",
+          "type": "integer"
+        },
+        "included_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Included Count",
+          "type": "integer"
+        },
+        "input_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Input Content Hash",
+          "type": "string"
+        },
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "observed_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Observed Count",
+          "type": "integer"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "pending_review_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Pending Review Count",
+          "type": "integer"
+        },
+        "population_verification": {
+          "const": "UNVERIFIED",
+          "title": "Population Verification",
+          "type": "string"
+        },
+        "portfolios": {
+          "items": {
+            "$ref": "#/$defs/EligibilityMember"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Portfolios",
+          "type": "array"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityEvaluation",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "resolved_policy": {
+          "$ref": "#/$defs/EligibilityPolicy"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "universe_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Universe Content Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "evidence_class",
+        "official_activation",
+        "population_verification",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "month",
+        "source_cut_id",
+        "source_revision",
+        "evaluated_at",
+        "input_content_hash",
+        "universe_content_hash",
+        "resolved_policy",
+        "declared_universe_coverage",
+        "expected_count",
+        "observed_count",
+        "included_count",
+        "excluded_count",
+        "pending_review_count",
+        "portfolios",
+        "content_hash"
+      ],
+      "title": "EligibilityEvaluation",
+      "type": "object"
+    },
+    "EligibilityMember": {
+      "additionalProperties": true,
+      "properties": {
+        "assessments": {
+          "items": {
+            "$ref": "#/$defs/EligibilityAssessment"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Assessments",
+          "type": "array"
+        },
+        "observations_present": {
+          "title": "Observations Present",
+          "type": "boolean"
+        },
+        "portfolio_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "INCLUDED",
+            "EXCLUDED",
+            "PENDING_REVIEW"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "observations_present",
+        "status",
+        "assessments"
+      ],
+      "title": "EligibilityMember",
+      "type": "object"
+    },
+    "EligibilityMembership": {
+      "additionalProperties": true,
+      "properties": {
+        "affected_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Affected From"
+        },
+        "affected_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Affected To"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "decided_at": {
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decided_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Decided By",
+          "type": "string"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/MembershipDecision"
+          },
+          "minItems": 1,
+          "title": "Decisions",
+          "type": "array"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMembership",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "supersedes_membership_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Supersedes Membership Revision"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "membership_revision",
+        "policy_version",
+        "source_cut_id",
+        "decisions",
+        "decided_at",
+        "decided_by",
+        "correlation_id",
+        "supersedes_membership_revision",
+        "affected_from",
+        "affected_to",
+        "content_hash"
+      ],
+      "title": "EligibilityMembership",
+      "type": "object"
+    },
+    "EligibilityObservationMember": {
+      "additionalProperties": true,
+      "properties": {
+        "cash_as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cash As Of"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "discretionary": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Discretionary"
+        },
+        "flow_coverage_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Coverage From"
+        },
+        "flow_coverage_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Coverage To"
+        },
+        "flows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 250,
+          "title": "Flows",
+          "type": "array"
+        },
+        "funded": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Funded"
+        },
+        "invested": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Invested"
+        },
+        "month_end_assets": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Month End Assets"
+        },
+        "portfolio_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "prior_assets_as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prior Assets As Of"
+        },
+        "prior_month_end_assets": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prior Month End Assets"
+        },
+        "readiness_as_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Readiness As Of"
+        },
+        "settled_unencumbered_cash": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Settled Unencumbered Cash"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "currency",
+        "prior_month_end_assets",
+        "prior_assets_as_of",
+        "month_end_assets",
+        "settled_unencumbered_cash",
+        "cash_as_of",
+        "discretionary",
+        "funded",
+        "invested",
+        "readiness_as_of",
+        "flow_coverage_from",
+        "flow_coverage_to",
+        "flows"
+      ],
+      "title": "EligibilityObservationMember",
+      "type": "object"
+    },
+    "EligibilityObservations": {
+      "additionalProperties": true,
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "evidence_class": {
+          "enum": [
+            "SYNTHETIC_UNQUALIFIED",
+            "SOURCE_UNVERIFIED"
+          ],
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "expected_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Expected Portfolio Ids",
+          "type": "array"
+        },
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "portfolios": {
+          "items": {
+            "$ref": "#/$defs/EligibilityObservationMember"
+          },
+          "maxItems": 1000,
+          "title": "Portfolios",
+          "type": "array"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityObservations",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_generated_at": {
+          "title": "Source Generated At",
+          "type": "string"
+        },
+        "source_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "evidence_class",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "month",
+        "source_cut_id",
+        "source_revision",
+        "reporting_currency",
+        "source_generated_at",
+        "expected_portfolio_ids",
+        "portfolios"
+      ],
+      "title": "EligibilityObservations",
+      "type": "object"
+    },
+    "EligibilityPolicy": {
+      "additionalProperties": true,
+      "properties": {
+        "cash_breach_operator": {
+          "const": "GREATER_THAN",
+          "title": "Cash Breach Operator",
+          "type": "string"
+        },
+        "cash_denominator": {
+          "const": "MONTH_END_NET_ASSETS",
+          "title": "Cash Denominator",
+          "type": "string"
+        },
+        "cash_numerator": {
+          "const": "SETTLED_UNENCUMBERED_CASH_ONLY",
+          "title": "Cash Numerator",
+          "type": "string"
+        },
+        "cash_threshold": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            }
+          ],
+          "title": "Cash Threshold"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "currency_treatment": {
+          "const": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+          "title": "Currency Treatment",
+          "type": "string"
+        },
+        "evaluation_timing": {
+          "const": "AFTER_MONTH_END",
+          "title": "Evaluation Timing",
+          "type": "string"
+        },
+        "flow_breach_operator": {
+          "const": "GREATER_THAN_OR_EQUAL",
+          "title": "Flow Breach Operator",
+          "type": "string"
+        },
+        "flow_date_basis": {
+          "const": "SOURCE_BUSINESS_DATE_UTC",
+          "title": "Flow Date Basis",
+          "type": "string"
+        },
+        "flow_denominator": {
+          "const": "PRIOR_MONTH_END_NET_ASSETS",
+          "title": "Flow Denominator",
+          "type": "string"
+        },
+        "flow_measure": {
+          "const": "ABS_NET",
+          "title": "Flow Measure",
+          "type": "string"
+        },
+        "flow_threshold": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?$",
+              "type": "string"
+            }
+          ],
+          "title": "Flow Threshold"
+        },
+        "holiday_treatment": {
+          "const": "NO_DATE_SHIFT",
+          "title": "Holiday Treatment",
+          "type": "string"
+        },
+        "layers": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Layers",
+          "type": "array"
+        },
+        "membership_frequency": {
+          "const": "CALENDAR_MONTH",
+          "title": "Membership Frequency",
+          "type": "string"
+        },
+        "missing_data": {
+          "const": "REQUIRED_UNKNOWN",
+          "title": "Missing Data",
+          "type": "string"
+        },
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "observation_window": {
+          "const": "WHOLE_TARGET_MONTH",
+          "title": "Observation Window",
+          "type": "string"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityPolicy",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "profile_kind": {
+          "const": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "ratio_unit": {
+          "const": "DECIMAL_FRACTION",
+          "title": "Ratio Unit",
+          "type": "string"
+        },
+        "reentry": {
+          "const": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+          "title": "Reentry",
+          "type": "string"
+        },
+        "scope": {
+          "additionalProperties": true,
+          "title": "Scope",
+          "type": "object"
+        },
+        "source_cut_timing": {
+          "const": "AFTER_MONTH_END",
+          "title": "Source Cut Timing",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "profile_kind",
+        "official_activation",
+        "month",
+        "scope",
+        "layers",
+        "flow_threshold",
+        "cash_threshold",
+        "membership_frequency",
+        "flow_measure",
+        "flow_denominator",
+        "flow_breach_operator",
+        "cash_denominator",
+        "cash_numerator",
+        "cash_breach_operator",
+        "ratio_unit",
+        "flow_date_basis",
+        "holiday_treatment",
+        "currency_treatment",
+        "observation_window",
+        "evaluation_timing",
+        "source_cut_timing",
+        "missing_data",
+        "reentry",
+        "content_hash"
+      ],
+      "title": "EligibilityPolicy",
+      "type": "object"
+    },
+    "EligibilityProposal": {
+      "additionalProperties": true,
+      "properties": {
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "evaluation": {
+          "$ref": "#/$defs/EligibilityEvaluation"
+        },
+        "evaluation_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Evaluation Revision",
+          "type": "string"
+        },
+        "observations": {
+          "$ref": "#/$defs/EligibilityObservations"
+        },
+        "parent_membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Parent Membership Content Hash",
+          "type": "string"
+        },
+        "parent_membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Parent Membership Revision",
+          "type": "string"
+        },
+        "policy_approval": {
+          "additionalProperties": true,
+          "title": "Policy Approval",
+          "type": "object"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEvaluationProposal",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "proposed_at": {
+          "title": "Proposed At",
+          "type": "string"
+        },
+        "proposed_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Proposed By",
+          "type": "string"
+        },
+        "target_membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Target Membership Revision",
+          "type": "string"
+        },
+        "universe": {
+          "additionalProperties": true,
+          "title": "Universe",
+          "type": "object"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "evaluation_revision",
+        "target_membership_revision",
+        "parent_membership_revision",
+        "parent_membership_content_hash",
+        "policy_approval",
+        "universe",
+        "observations",
+        "evaluation",
+        "proposed_by",
+        "proposed_at",
+        "correlation_id",
+        "content_hash"
+      ],
+      "title": "EligibilityProposal",
+      "type": "object"
+    },
+    "EligibilityPublication": {
+      "additionalProperties": true,
+      "properties": {
+        "affected_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Affected From"
+        },
+        "affected_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Affected To"
+        },
+        "completeness": {
+          "const": "UNVERIFIED",
+          "title": "Completeness",
+          "type": "string"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "decided_at": {
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decision_count": {
+          "minimum": 1,
+          "title": "Decision Count",
+          "type": "integer"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMembershipPublication",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "published_at": {
+          "title": "Published At",
+          "type": "string"
+        },
+        "sequence": {
+          "exclusiveMinimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "supersedes_membership_revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Supersedes Membership Revision"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "sequence",
+        "membership_revision",
+        "membership_content_hash",
+        "policy_version",
+        "source_cut_id",
+        "decision_count",
+        "supersedes_membership_revision",
+        "affected_from",
+        "affected_to",
+        "decided_at",
+        "published_at",
+        "completeness"
+      ],
+      "title": "EligibilityPublication",
+      "type": "object"
+    },
+    "EligibilityReceipt": {
+      "additionalProperties": true,
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/EligibilityApproval"
+        },
+        "completeness": {
+          "const": "UNVERIFIED",
+          "title": "Completeness",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "definition": {
+          "additionalProperties": true,
+          "title": "Definition",
+          "type": "object"
+        },
+        "membership_binding": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Membership Binding",
+          "type": "object"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityPublicationReceipt",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "publication_sequence": {
+          "exclusiveMinimum": 0,
+          "title": "Publication Sequence",
+          "type": "integer"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "universe_binding": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Universe Binding",
+          "type": "object"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "definition",
+        "approval",
+        "membership_binding",
+        "universe_binding",
+        "source_cut_id",
+        "publication_sequence",
+        "completeness",
+        "content_hash"
+      ],
+      "title": "EligibilityReceipt",
+      "type": "object"
+    },
+    "EligibilityRow": {
+      "additionalProperties": false,
+      "properties": {
+        "cells": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EligibilityCell"
+          },
+          "title": "Cells",
+          "type": "object"
+        },
+        "row_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Row Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "row_id",
+        "cells"
+      ],
+      "title": "EligibilityRow",
+      "type": "object"
+    },
+    "EligibilitySelection": {
+      "additionalProperties": false,
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "months": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "EVALUATED_ONLY": "#/$defs/EvaluatedEligibilityPin",
+                "PUBLISHED": "#/$defs/PublishedEligibilityPin"
+              },
+              "propertyName": "evidence_kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PublishedEligibilityPin"
+              },
+              {
+                "$ref": "#/$defs/EvaluatedEligibilityPin"
+              }
+            ]
+          },
+          "maxItems": 120,
+          "minItems": 1,
+          "title": "Months",
+          "type": "array"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "reporting_currency",
+        "period_start",
+        "period_end",
+        "months"
+      ],
+      "title": "EligibilitySelection",
+      "type": "object"
+    },
+    "EligibilityTable": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/EligibilityColumn"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/EligibilityRow"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        },
+        "table_id": {
+          "maxLength": 31,
+          "minLength": 1,
+          "title": "Table Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "table_id",
+        "title",
+        "columns",
+        "rows"
+      ],
+      "title": "EligibilityTable",
+      "type": "object"
+    },
+    "EligibilityUniverse": {
+      "additionalProperties": true,
+      "properties": {
+        "attestation_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Attestation Version",
+          "type": "string"
+        },
+        "attested_at": {
+          "title": "Attested At",
+          "type": "string"
+        },
+        "attested_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Attested By",
+          "type": "string"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "correlation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "coverage_from": {
+          "title": "Coverage From",
+          "type": "string"
+        },
+        "coverage_gap_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "title": "Coverage Gap Portfolio Ids",
+          "type": "array"
+        },
+        "coverage_to": {
+          "title": "Coverage To",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "expected_portfolio_count": {
+          "minimum": 0,
+          "title": "Expected Portfolio Count",
+          "type": "integer"
+        },
+        "expected_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "title": "Expected Portfolio Ids",
+          "type": "array"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "missing_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "title": "Missing Portfolio Ids",
+          "type": "array"
+        },
+        "observed_portfolio_count": {
+          "minimum": 0,
+          "title": "Observed Portfolio Count",
+          "type": "integer"
+        },
+        "policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "posture": {
+          "enum": [
+            "COMPLETE",
+            "INCOMPLETE",
+            "UNAVAILABLE"
+          ],
+          "title": "Posture",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeUniverseAttestation",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_products": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "minItems": 1,
+          "title": "Source Products",
+          "type": "array"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "unexpected_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "title": "Unexpected Portfolio Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "membership_revision",
+        "membership_content_hash",
+        "attestation_version",
+        "coverage_from",
+        "coverage_to",
+        "policy_version",
+        "source_cut_id",
+        "source_products",
+        "posture",
+        "expected_portfolio_ids",
+        "expected_portfolio_count",
+        "observed_portfolio_count",
+        "missing_portfolio_ids",
+        "unexpected_portfolio_ids",
+        "coverage_gap_portfolio_ids",
+        "reason_code",
+        "attested_at",
+        "attested_by",
+        "correlation_id",
+        "content_hash"
+      ],
+      "title": "EligibilityUniverse",
+      "type": "object"
+    },
+    "EvaluatedEligibilityPin": {
+      "additionalProperties": false,
+      "description": "Exact retained proposal; never implies checker approval or publication.",
+      "properties": {
+        "evaluation_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Evaluation Revision",
+          "type": "string"
+        },
+        "evidence_kind": {
+          "const": "EVALUATED_ONLY",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$",
+          "title": "Month",
+          "type": "string"
+        },
+        "parent_membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Parent Membership Content Hash",
+          "type": "string"
+        },
+        "parent_membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Parent Membership Revision",
+          "type": "string"
+        },
+        "proposal_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Proposal Content Hash",
+          "type": "string"
+        },
+        "proposal_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Proposal Response Digest",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "month",
+        "evaluation_revision",
+        "proposal_content_hash",
+        "proposal_response_digest",
+        "parent_membership_revision",
+        "parent_membership_content_hash",
+        "source_cut_id"
+      ],
+      "title": "EvaluatedEligibilityPin",
+      "type": "object"
+    },
+    "EvaluatedSourceMonth": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_kind": {
+          "const": "EVALUATED_ONLY",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "proposal": {
+          "$ref": "#/$defs/EligibilityProposal"
+        },
+        "response_digests": {
+          "additionalProperties": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Response Digests",
+          "type": "object"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "proposal",
+        "response_digests"
+      ],
+      "title": "EvaluatedSourceMonth",
+      "type": "object"
+    },
+    "MembershipDecision": {
+      "additionalProperties": true,
+      "properties": {
+        "approval_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Approval Ref"
+        },
+        "discretionary": {
+          "title": "Discretionary",
+          "type": "boolean"
+        },
+        "effective_from": {
+          "title": "Effective From",
+          "type": "string"
+        },
+        "effective_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Effective To"
+        },
+        "portfolio_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason Code"
+        },
+        "source_snapshot_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Snapshot Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "INCLUDED",
+            "EXCLUDED",
+            "PENDING_REVIEW"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "effective_from",
+        "effective_to",
+        "status",
+        "reason_code",
+        "discretionary",
+        "approval_ref",
+        "source_snapshot_id"
+      ],
+      "title": "MembershipDecision",
+      "type": "object"
+    },
+    "PublishedEligibilityPin": {
+      "additionalProperties": false,
+      "description": "Whole publication custody plus independently pinned canonical products.",
+      "properties": {
+        "approval_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Approval Content Hash",
+          "type": "string"
+        },
+        "attestation_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Attestation Version",
+          "type": "string"
+        },
+        "evaluation_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Evaluation Revision",
+          "type": "string"
+        },
+        "evidence_kind": {
+          "const": "PUBLISHED",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "membership_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Response Digest",
+          "type": "string"
+        },
+        "membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$",
+          "title": "Month",
+          "type": "string"
+        },
+        "parent_membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Parent Membership Content Hash",
+          "type": "string"
+        },
+        "parent_membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Parent Membership Revision",
+          "type": "string"
+        },
+        "parent_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Parent Response Digest",
+          "type": "string"
+        },
+        "proposal_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Proposal Content Hash",
+          "type": "string"
+        },
+        "publication_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Publication Response Digest",
+          "type": "string"
+        },
+        "publication_sequence": {
+          "exclusiveMinimum": 0,
+          "title": "Publication Sequence",
+          "type": "integer"
+        },
+        "receipt_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Receipt Content Hash",
+          "type": "string"
+        },
+        "receipt_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Receipt Response Digest",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "universe_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Universe Content Hash",
+          "type": "string"
+        },
+        "universe_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Universe Response Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "month",
+        "evaluation_revision",
+        "proposal_content_hash",
+        "approval_content_hash",
+        "receipt_content_hash",
+        "receipt_response_digest",
+        "membership_revision",
+        "membership_content_hash",
+        "membership_response_digest",
+        "attestation_version",
+        "universe_content_hash",
+        "universe_response_digest",
+        "parent_membership_revision",
+        "parent_membership_content_hash",
+        "parent_response_digest",
+        "publication_sequence",
+        "publication_response_digest",
+        "source_cut_id"
+      ],
+      "title": "PublishedEligibilityPin",
+      "type": "object"
+    },
+    "PublishedSourceMonth": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_kind": {
+          "const": "PUBLISHED",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "membership": {
+          "$ref": "#/$defs/EligibilityMembership"
+        },
+        "parent_membership": {
+          "$ref": "#/$defs/EligibilityMembership"
+        },
+        "publication": {
+          "$ref": "#/$defs/EligibilityPublication"
+        },
+        "receipt": {
+          "$ref": "#/$defs/EligibilityReceipt"
+        },
+        "response_digests": {
+          "additionalProperties": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Response Digests",
+          "type": "object"
+        },
+        "universe": {
+          "$ref": "#/$defs/EligibilityUniverse"
+        }
+      },
+      "required": [
+        "evidence_kind",
+        "receipt",
+        "membership",
+        "universe",
+        "parent_membership",
+        "publication",
+        "response_digests"
+      ],
+      "title": "PublishedSourceMonth",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "composite_review.v4",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "publication_state": {
+      "const": "NOT_ATTESTED",
+      "title": "Publication State",
+      "type": "string"
+    },
+    "qualification": {
+      "const": "CONTROLLED_ELIGIBILITY_SOURCE_REPLAY",
+      "title": "Qualification",
+      "type": "string"
+    },
+    "report_facts": {
+      "additionalProperties": true,
+      "title": "Report Facts",
+      "type": "object"
+    },
+    "selection": {
+      "$ref": "#/$defs/EligibilitySelection"
+    },
+    "source_months": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/EvaluatedSourceMonth"
+          },
+          {
+            "$ref": "#/$defs/PublishedSourceMonth"
+          }
+        ]
+      },
+      "maxItems": 120,
+      "minItems": 1,
+      "title": "Source Months",
+      "type": "array"
+    },
+    "tables": {
+      "items": {
+        "$ref": "#/$defs/EligibilityTable"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "title": "Tables",
+      "type": "array"
+    },
+    "tenant_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Tenant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "qualification",
+    "publication_state",
+    "tenant_id",
+    "selection",
+    "source_months",
+    "report_facts",
+    "tables"
+  ],
+  "title": "CompositeEligibilityReportData",
+  "type": "object"
+}

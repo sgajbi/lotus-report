@@ -234,3 +234,75 @@ calculation ID carries `SOURCE_IDENTITY_NOT_PROVIDED`. Qualification stays
 `CALCULATED_ANALYSIS` / `RETAINED_SOURCE_ATTESTATION_NOT_LIVE_QUALIFIED`, with Report
 publication `NOT_ATTESTED`. The v1/v2 accepted lifecycle and identities remain valid;
 v3 is a bounded RPT-01/RPT-06 increment, not full #417 acceptance.
+
+## Monthly eligibility and original history: composite_review.v4
+
+The same endpoint accepts an exclusive `eligibility_selection`, with exact tenant,
+composite, definition, currency, horizon and ordered monthly pins. It cannot be
+combined with TWR, linked analysis or return products. The new dataset contract is
+`composite_review.v4`, template `composite-review/v4`, consumer layout
+`composite_workbook.v4`. Earlier schemas and serialization stay unchanged. JSON
+uses the existing capture/job/snapshot lifecycle; XLSX requires actual exact v4
+Render capability. Consumer deployment and joint runtime acceptance are separate.
+
+`PUBLISHED` reads the whole monthly publication receipt plus exact canonical
+membership, published universe, parent membership and publication. Its resolver
+binding comes from the published universe's `CompositeMonthlyEvaluationApproval`
+locator and content hash, never `claims_digest`. `EVALUATED_ONLY` reads the exact
+proposal, complete expected universe, observations and all assessments. Approval,
+publication and history are unavailable for that variant. Missing expected
+observations remain source UNKNOWN assessments and PENDING_REVIEW outcomes.
+Proposals and receipts cannot substitute for one another.
+
+Eight ordered tables are Summary, Members, EligibilityAssessments,
+EligibilityReasons, MembershipHistory, Methods, Lineage and Disclosures. Every
+expected member and all three source rules are retained. Every failure and unknown
+reason occurrence retains its exact ordinal/pointer. Membership's single
+`reason_code` is only the first reason. Source unique excluded member counts differ
+from reason occurrences. Known zero reason occurrences use a month-bound
+NOT_APPLICABLE row with `NO_APPLICABLE_REASONS`. Rule-defined unused numeric nulls
+(READINESS numeric slots and CASH gross-flow/event slots) use
+`RULE_FIELD_NOT_APPLICABLE`; genuinely missing evidence remains UNAVAILABLE.
+Nothing is silently converted to zero.
+
+Whole raw values, decimal spelling, explicit nulls, booleans, nested authority and
+locator hashes remain retained. Ratios use identity DECIMAL_RATIO display at twelve
+places, money uses selected currency at two, portfolio/event counts have distinct
+units at zero places, and booleans use lowercase text. HALF_UP is presentation only.
+Report does not re-evaluate eligibility, thresholds or investment economics.
+History preserves original inclusive parent/published intervals, supersedes and
+affected windows. Gaps stay gaps; absent/closed members are not filled forward.
+Same-month policy diffs are not history and one cleared reason cannot imply re-entry.
+
+Monthly receipt/proposal/evaluation/policy/approval and v2 definition hashes exclude
+root `content_hash`; membership/universe/v1 definition hashes exclude it recursively.
+Independent whole-response digests bind nested locator hashes as well. Hash
+self-consistency is not institutional authority. Transport DTOs never import Manage
+rule validators. Existing source revision and composite custody mechanisms identify
+lotus-manage truthfully, without a fabricated Performance calculation ID.
+
+The selected monthly cut binds evaluation and observations. The retained input
+universe can have a distinct cut; published receipt, membership, universe and
+publication bind that input-universe cut. Original product and POLICY_INPUT locator
+cuts remain unchanged and are bound by complete source and response hashes.
+
+Configure `LOTUS_MANAGE_BASE_URL` and `LOTUS_MANAGE_READ_ACTOR_ID`. An empty default
+actor refuses reads. A fixed service read role never forwards caller approval roles;
+trusted-ingress headers do not establish enterprise IAM.
+`LOTUS_MANAGE_MAX_RESPONSE_BYTES` can reduce the 8 MiB ceiling, never raise it.
+Responses are streamed and bounded before JSON parsing through existing retry
+policy; compressed responses refuse on this bounded path. Nothing is truncated.
+Preflight measures the full serialized Render request and visible/evidence/policy/
+identity/PinnedData projection, including chunks and partition headers, before
+Render/Archive calls. Existing 8 MiB request, 1,000 rows/sheet, 30,000 total rows,
+210,000 cells, 16 MiB text, 64 sheets, 100 columns and 32,767 UTF-16 units/literal
+limits remain unchanged. Logical tables retain 10,000 rows/32 columns. There is no
+invented three-month cap or unlimited history. Actual compressed output size stays
+under Render's 16 MiB writer guard; ZIP size cannot be known without writing.
+
+Qualification is CONTROLLED_ELIGIBILITY_SOURCE_REPLAY / NOT_ATTESTED, with source
+SYNTHETIC_UNSIGNED approval, UNVERIFIED population/completeness and UNAVAILABLE
+official activation. COMPLETE coverage is not bank authority. Controlled unit
+examples and Report worker execution do not establish genuine producer publication,
+actual workbook or Archive acceptance. Complete RPT-04, original RPT-01–12,
+Report #417 and parent Platform #923 remain open.

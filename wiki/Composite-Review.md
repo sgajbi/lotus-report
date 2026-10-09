@@ -1,5 +1,27 @@
 # Composite Review
 
+## Controlled monthly eligibility profile (v4)
+
+The same endpoint supports an exclusive `eligibility_selection`. PUBLISHED retains
+the whole monthly receipt and canonical membership/universe/parent/publication;
+EVALUATED_ONLY retains the exact proposal, universe, observations and assessments,
+with approval/publication/history unavailable. Missing-observation UNKNOWN cases
+remain visible. Eight typed tables preserve unique member counts, all three rules,
+every reason occurrence, original inclusive intervals, methods and cell lineage.
+Known zero reasons and unused rule slots are NOT_APPLICABLE; genuine missing
+evidence is UNAVAILABLE. Report performs no eligibility calculation or approval.
+
+New contract/template/layout axes are `composite_review.v4`, `composite-review/v4`
+and `composite_workbook.v4`; v1/v2/v3 remain unchanged. JSON uses the existing
+capture/job/snapshot lifecycle. XLSX needs actual exact v4 Render readiness and
+separate consumer admission. Explicit configured Manage read identity, bounded
+whole responses and full request/workbook overhead preflight are required.
+
+This is controlled source replay / NOT_ATTESTED, with unsigned approval, unverified
+population/completeness and unavailable official activation. It does not establish
+bank authority, genuine producer/runtime/Excel/Archive acceptance, or completion of
+RPT-04, #417 or #923. See the semantic contract and delivery ledger for evidence.
+
 Report #417 introduces an internal composite calculated review on the existing
 report lifecycle. The catalogue admits JSON/XLSX; XLSX readiness requires actual
 runtime and exact template-version/type/contract/format evidence. Full #417 and

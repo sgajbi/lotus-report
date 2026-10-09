@@ -709,6 +709,19 @@ is compatible only with exact retained ordinal bindings; comparison must not mut
 the retained snapshot. Financial fact completeness does not establish eligibility
 universe completeness.
 
+## Monthly eligibility working practice
+
+V4 uses an exclusive `eligibility_selection` in the
+existing family. Keep PUBLISHED whole receipt/canonical custody and EVALUATED_ONLY
+proposal evidence distinct; missing observations remain visible. Use transport-only
+DTOs, exact source content/response pins, all assessments and complete projection.
+Do not import upstream evaluators or invent Performance run IDs, approvals, history
+or bank authority. Keep known empty/unused slots distinct from unavailable evidence.
+Configure the Manage read actor explicitly and bound whole responses before parsing;
+measure full Render request/evidence/identity/chunk overhead before downstream calls.
+Retained rerender reuses snapshots. Consumer support and genuine source authority
+need separate evidence; preserve all legacy v1/v2/v3 retained bytes.
+
 ## Cross-Links
 
 1. `../lotus-platform/context/LOTUS-QUICKSTART-CONTEXT.md`

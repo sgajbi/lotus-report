@@ -128,3 +128,54 @@ async def get_with_retry(
         backoff_seconds=backoff_seconds,
         send_request=lambda client: client.get(url, params=params, headers=headers),
     )
+
+
+async def bounded_read_with_retry(
+    *,
+    url: str,
+    timeout_seconds: float,
+    headers: dict[str, str],
+    json_body: dict[str, Any] | None,
+    max_response_bytes: int,
+    max_retries: int = 2,
+    backoff_seconds: float = 0.2,
+) -> tuple[int, dict[str, Any]]:
+    """Read-only GET/resolver POST with a bound on decoded bytes before JSON parsing.
+
+    Existing adapters keep their original transport. This adapter shares the same
+    retry policy, closes refused streams and never truncates an admitted response.
+    """
+    if not 0 < max_response_bytes <= 8_388_608:
+        raise ValueError("UPSTREAM_RESPONSE_BYTE_BOUND_INVALID")
+
+    async def send(client: httpx.AsyncClient) -> httpx.Response:
+        method = "GET" if json_body is None else "POST"
+        read_headers = {**headers, "Accept-Encoding": "identity"}
+        async with client.stream(method, url, headers=read_headers, json=json_body) as response:
+            if response.headers.get("content-encoding", "identity").lower() != "identity":
+                raise ValueError("UPSTREAM_BOUNDED_RESPONSE_ENCODING_UNSUPPORTED")
+            body = bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=65536):
+                if len(body) + len(chunk) > max_response_bytes:
+                    raise ValueError("UPSTREAM_RESPONSE_BYTE_BOUND_EXCEEDED")
+                body.extend(chunk)
+            # aiter_bytes has already decoded HTTP content encoding. Retain retry
+            # metadata without reapplying compressed-content headers to those bytes.
+            metadata = {
+                key: value
+                for key, value in response.headers.items()
+                if key.lower() not in {"content-encoding", "content-length"}
+            }
+            return httpx.Response(
+                response.status_code,
+                headers=metadata,
+                content=bytes(body),
+                request=response.request,
+            )
+
+    return await _request_with_retry(
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        backoff_seconds=backoff_seconds,
+        send_request=send,
+    )
