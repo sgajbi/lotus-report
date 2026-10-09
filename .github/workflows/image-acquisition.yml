@@ -1,0 +1,52 @@
+name: Governed Image Acquisition
+
+on:
+  workflow_call:
+    inputs:
+      source-image:
+        required: true
+        type: string
+      distribution-image:
+        required: true
+        type: string
+    outputs:
+      image:
+        description: Exact admitted image after current source/distribution verification.
+        value: ${{ jobs.admission.outputs.image }}
+
+permissions:
+  contents: read
+
+jobs:
+  admission:
+    name: Verify Governed Image Distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.admission.outputs.image }}
+    steps:
+      - name: Check Out Qualified Platform Validator
+        uses: actions/checkout@v6
+        with:
+          repository: sgajbi/lotus-platform
+          # Independently qualified Platform #945 main revision.
+          ref: 386b40e13e76e60e761c6c4068fbe7a11256ca29
+          path: .lotus-image-policy
+          sparse-checkout: |
+            automation
+            platform-contracts
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Admit Exact Source and Distribution Tuple
+        id: admission
+        env:
+          SOURCE_IMAGE: ${{ inputs.source-image }}
+          DISTRIBUTION_IMAGE: ${{ inputs.distribution-image }}
+        run: >-
+          python .lotus-image-policy/automation/validate_technology_governance_policy.py
+          --source-image "$SOURCE_IMAGE"
+          --distribution-image "$DISTRIBUTION_IMAGE"
+          --platform linux/amd64
+          --verify-distribution
+          --github-output "$GITHUB_OUTPUT"

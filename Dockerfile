@@ -1,4 +1,10 @@
-FROM python:3.12-slim
+ARG PYTHON_IMAGE=public.ecr.aws/docker/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+FROM ${PYTHON_IMAGE}
+ARG PYTHON_IMAGE
+
+LABEL org.opencontainers.image.base.name="docker.io/library/python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
+LABEL org.opencontainers.image.base.digest="sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
+LABEL io.lotus.image.distribution="${PYTHON_IMAGE}"
 
 WORKDIR /app
 

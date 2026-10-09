@@ -11,7 +11,9 @@ def test_docker_compose_uses_host_reachable_upstreams_for_canonical_runtime() ->
     assert "LOTUS_PERFORMANCE_BASE_URL: http://host.docker.internal:8002" in compose
     assert "RISK_BASE_URL: http://host.docker.internal:8130" in compose
     assert "lotus-report-postgres:" in compose
-    assert "image: postgres:16-alpine" in compose
+    assert re.search(
+        r"image: public\.ecr\.aws/docker/library/postgres@sha256:[0-9a-f]{64}", compose
+    )
     assert "REPORT_JOB_LEDGER_DATABASE_URL: postgresql://" in compose
     assert "condition: service_healthy" in compose
     assert '"host.docker.internal:host-gateway"' in compose
