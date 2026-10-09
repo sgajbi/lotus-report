@@ -106,6 +106,9 @@ compares all selected pins and response digest, and preserves the source payload
 through the existing worker, immutable snapshot and revision machinery.
 `composite_review.v1` carries exact canonical cells, units, source pointers and
 explicit unavailable products. See `docs/composite-report-semantic-contract.md`.
+Methods row identities and escaped source pointers use sorted binding keys so
+PostgreSQL JSONB object-key normalization cannot change the semantic projection.
+Retained snapshots keep their original stored tables for technical rerender.
 
 The workbook composer consumes the persisted snapshot record and
 verifies its revision binding before producing exclusive composite Archive

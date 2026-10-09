@@ -58,3 +58,8 @@ Archive custody and technical rerender preserve the original snapshot, template
 and output format. Financial correction requires a fresh exact-pinned order/key;
 generic regenerate/replay remain portfolio-only. Manage #714,
 Performance #540/#610, Gateway #820 and institutional authority remain owner dependencies.
+
+Methods rows use sorted method-binding keys so JSON object key order, including
+PostgreSQL JSONB normalization, does not change row identity or source pointers.
+The retained source values remain exact. Previously captured snapshots keep their
+stored tables, and technical rerender continues to consume those immutable tables.

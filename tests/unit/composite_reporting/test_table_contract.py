@@ -26,6 +26,23 @@ def example_tables(payload=None):
     return build_composite_tables(dataset)
 
 
+def test_method_rows_are_stable_when_json_object_key_order_changes():
+    original = calculated_example()
+    for window in original["selection_manifest"]["windows"]:
+        window["method_binding"].update({"profile/revision": "profile.v1", "profile~id": "literal"})
+    reordered = deepcopy(original)
+    for window in reordered["selection_manifest"]["windows"]:
+        window["method_binding"] = dict(reversed(list(window["method_binding"].items())))
+    first, second = example_tables(original), example_tables(reordered)
+    # PostgreSQL JSONB and canonical JSON may reorder object keys. The values,
+    # response digest, method row identities and escaped pointers must agree.
+    assert first["source_response"] == original
+    assert second["source_response"] == reordered
+    assert first["source_response_digest"] == second["source_response_digest"]
+    assert first["report_facts"]["Methods"] == second["report_facts"]["Methods"]
+    assert first["tables"] == second["tables"]
+
+
 def test_every_cell_has_exact_retained_provenance_and_financial_units():
     dataset = example_tables()
     tables = [CompositeTable.model_validate(item) for item in dataset["tables"]]

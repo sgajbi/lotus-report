@@ -2,9 +2,54 @@
 
 Issue: [Report #417](https://github.com/sgajbi/lotus-report/issues/417), under
 [Platform #923](https://github.com/sgajbi/lotus-platform/issues/923).
-Feature: `feature/composite-performance`. Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
+Feature: `composite_review.v1`. Owner: chat `01a11def-da27-72c3-88e4-948bdff1b30b`.
 
-## Current Slice And Merged Foundation
+## Current Slice: Deterministic Methods Rows
+
+Branch `fix/composite-method-order-417` starts from qualified main
+`bbc1d65f64357e2267002fff0b1db76505a14317` (PR #420). It sorts method-binding
+keys before assigning Methods row identities and escaped source pointers.
+PostgreSQL JSONB key normalization previously changed these rows for equal
+source values; captured source responses and the other twelve tables agreed.
+Retained historical tables remain immutable and are used directly for rerender.
+
+The key-order permutation control fails before the change (`13565b`, exit 1)
+and the table-contract/history subset passes afterwards (`ac6506`, 21 tests,
+exit 0). A separately sealed c100 producer export covers 72 monthly windows
+and 2016 member rows. Its registered Report PostgreSQL capture, retry,
+foreign-tenant refusal and exact reopened snapshots pass with the owned local
+sort candidate (`3f7b59`/`cdbcb7`, exit 0); this is not a main qualification.
+The first capture comparisons (`c36944`, `5c6792`, exit 1) are retained as
+failure evidence. No financial values are recalculated.
+
+The before-fix application was restored to BBC for one real normal RenderClient
+diagnostic. Render main `162016d4a64769b31c90511f7604c145929979f0` refused
+the request with HTTP 413 `request_body_too_large` before workbook projection;
+Report retained the exact source snapshot and failed without an Archive document
+(`87b65f`/`01ad6c`, diagnostic controls exit 0). The same HTTPX serialization
+reconstructs 6,893,642 request bytes, above 5,242,880. The source-backed tables
+also require at least 27,430 worksheet data rows including CellEvidence, above
+Render's 20,000-row bound. The failed phase is sealed (`851800`, exit 0).
+Render [#342](https://github.com/sgajbi/lotus-render/issues/342) owns the measured
+capacity remedy and its independent guards; no source/evidence rows are dropped.
+
+Sources and verifiers remain controlled, exact captured Performance transport
+is replayed, and publication remains NOT_ATTESTED. This slice does not establish
+long-history workbook acceptance, uncaptured products, all RPT-01–12 families,
+institutional approval or enterprise capacity. Current native/CI/main gates and
+wiki publication remain required. Native unit tests passed: 2532 passed, one
+existing skip, three deprecation warnings (`473fec`, exit 0). Lint, typecheck,
+code-health, OpenAPI and domain contracts passed (`1f0d03`/`178bd2`, exit 0);
+Linux installed-closure evaluation remains a required CI gate. The before-fix
+72-month stored semantic dataset validates unchanged under the sort candidate
+(`94ae98`, exit 0). The owned diagnostic PostgreSQL container and volume were
+removed after all isolated helper databases closed (`8d25ba`, exit 0).
+Pre-merge wiki source verification acknowledges the one authored page change
+(`4aae97`, exit 0); publication follows protected main qualification.
+Authored wiki and repository context accompany
+the ordering change; no central architecture or routing change is needed.
+
+## Historical Foundation And Catalogue Preparation
 
 PR [#419](https://github.com/sgajbi/lotus-report/pull/419) merged by normal rebase
 to `439c9523c1413434ba6f74fbf48fd041f969f894` after all seven required checks
