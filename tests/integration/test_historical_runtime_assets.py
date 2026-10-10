@@ -19,6 +19,7 @@ def test_runtime_wheel_contains_exact_historical_schema_closure(tmp_path):
         root / "src", build_root / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info")
     )
     wheels = tmp_path / "wheels"
+    # Use the declared build backend; a fresh runtime need not preinstall setuptools.
     result = subprocess.run(
         [
             sys.executable,
@@ -27,7 +28,6 @@ def test_runtime_wheel_contains_exact_historical_schema_closure(tmp_path):
             "wheel",
             str(build_root),
             "--no-deps",
-            "--no-build-isolation",
             "--wheel-dir",
             str(wheels),
         ],
