@@ -1,5 +1,14 @@
 # Composite Report Delivery Ledger
 
+## Historical policy custody implementation (#417)
+
+The additive v7 / selection-v3 source slice retains controlled Manage policy-v2
+and monthly-v3/v4 evidence with complete provenance. Enablement defaults off;
+producer/consumer release qualification remains pending. Source implementation,
+full graph fixture checks and transport fit do not establish institutional
+authority or joined runtime delivery. The earlier R7 evidence remains immutable.
+See [v7 admission and release boundaries](composite-historical-policy-custody.md).
+
 ## Monthly amendment package enablement (#417)
 
 The existing v6 eligibility selector now orders XLSX only when exact current

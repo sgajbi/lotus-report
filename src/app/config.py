@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     manage_base_url: str = Field("http://manage.dev.lotus", alias="LOTUS_MANAGE_BASE_URL")
     manage_read_actor_id: str = Field("", alias="LOTUS_MANAGE_READ_ACTOR_ID")
     manage_read_service_identity: str = Field("", alias="LOTUS_MANAGE_READ_SERVICE_IDENTITY")
+    composite_historical_policy_enabled: bool = Field(
+        False, alias="LOTUS_COMPOSITE_HISTORICAL_POLICY_ENABLED"
+    )
     manage_max_response_bytes: int = Field(
         8_388_608, ge=1, le=8_388_608, alias="LOTUS_MANAGE_MAX_RESPONSE_BYTES"
     )

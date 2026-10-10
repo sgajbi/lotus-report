@@ -1,0 +1,93 @@
+# Historical monthly policy custody (v7)
+
+Report adds `eligibility_selection.selection_version: "v3"` within the existing
+composite-review intake, worker, immutable snapshot and retained-package lifecycle.
+It selects Manage policy proposal/approval v2 and ordinary monthly proposal/approval/
+receipt v3 or source-correction v4. Definitions retain their independent v1/v2 axis.
+Untagged selections and selection v2 retain frozen v4/v6 behavior and fingerprints.
+The output is `composite_review.v7`, template `composite-review/v7`, inside
+`render_package.v1`. It remains `CONTROLLED_HISTORICAL_POLICY_EVIDENCE_REPLAY` /
+`NOT_ATTESTED`; full #417 remains open.
+
+## Admission and release boundary
+
+`LOTUS_COMPOSITE_HISTORICAL_POLICY_ENABLED` defaults to false. Disabled capture
+refuses with `COMPOSITE_HISTORICAL_POLICY_RELEASE_NOT_ADMITTED` before source I/O.
+Enablement requires the producer's committed qualified main and normal Report,
+Render and Archive source, PR, main and wiki qualification. Exact current template
+supportability remains necessary for XLSX. Controlled fixture coverage does not
+constitute deployment qualification or authenticated institutional authority.
+
+Report consumes configured-identity producer responses and checks complete schema,
+hash, operation intent, actor, version, tenant, scope, date, currency and retained
+lineage bindings. Report preserves raw-original base64 and credentials completely.
+Manage owns original-format cryptographic verification, trust pins, revocation and
+current admission. Report checks recorded proof bindings and credential format;
+it does not perform cryptographic verification or grant fresh authorization from
+caller-supplied proofs. Fixed headers and reader enrollment do not establish bank
+provenance. No new cryptography dependency, trust service or execution runtime is
+introduced. Native historical institutional authority, production source-format
+adapter and service-principal qualification remain unavailable.
+
+Original proposal/approval events precede the target month; their original bytes
+and signing contract remain distinct from later normalized policy admission and
+operation proofs. Every correction retains its nearest predecessor first, ending
+at exactly one ordinary v3 root, with no cycles or version downgrade. The existing
+same-policy/population ordinary-month correction rules and canonical publication,
+membership, universe and projection-parent checks apply.
+
+## Projection and capacity
+
+The existing eight eligibility tables are followed by `Amendments` and
+`PolicyAdmission`. Both retain exact source scalar values as text and complete
+RFC6901 pointers. Traverse months in selection order, selected proposal first,
+then nearest-to-oldest retained receipt. Within each proposal, emit every
+`policy_approval` scalar with role `POLICY_ADMISSION`, then every
+`operation_verification` scalar with role `EVALUATION_PROPOSAL`; published and
+retained receipts also emit every approval operation proof scalar with role
+`EVALUATION_APPROVAL`. Object keys sort lexically, arrays retain order, and null
+leaves remain present. Policy `scope/run_id` null is
+`NOT_APPLICABLE` / `POLICY_RUN_NOT_APPLICABLE`.
+
+PolicyAdmission columns are `month`, `evidence_role`, `value`; row IDs are
+`m{month_index}:p{global_table_row_ordinal}`. Amendment columns are `month`, `value`;
+IDs use `m{month_index}:a{global_table_row_ordinal}`. Ordinary roots have an explicit
+`/report_facts/no_amendment` placeholder with `NOT_APPLICABLE` /
+`ORDINARY_ROOT_NO_AMENDMENT`. The exact custody boundary is also included in
+disclosures and the workbook Identity `calculation_boundary` field.
+
+Keep all existing aggregate, cell, sheet and package preflight caps. Each table
+has at most 10,000 rows, selections at most 120 months, and correction lineage at
+most 31 receipts. Oversize evidence refuses; proofs and raw bytes are never
+shortened. No TWR, MWR, dispersion, contribution or model-fee calculation is added.
+
+## Controlled source evidence and validation
+
+Pinned schemas/examples come from Manage schema packet manifest
+`42f303700e1699774df2a8babd34eb32d79aee3a261ddb7f7b6ceed141834a2e`;
+complete graphs use manifest
+`4b91c97835bcb2b00d095c0ce02009d9b519e81847966ac07e2557d64d644c57`.
+The unchanged schema packet and graph payloads are now published in signed Manage
+candidate `09bb66341b7aebc84922d20e4694d604bdd727a6`,
+[PR 799](https://github.com/sgajbi/lotus-manage/pull/799), based on
+`9224d85664fb07e8074ef21681b88449d05193e8`. Candidate publication is not qualified
+main or release admission. The later graph manifest
+`a64a6d19136391559b9802993170b89d1db295fe79042e23981f2f92a24db8ca`
+only records portable source-code provenance using UTF-8/LF; all twelve graph
+payload bytes match the retained first manifest. Original artifact bytes,
+base64 and signing contracts are never normalized.
+Graphs were exported through existing producer fixtures, memory UOW and registered
+TestClient routes with a generator-only clock. They cover both definition profiles,
+ordinary root followed by two corrections, and evaluated/published outcomes.
+
+From the Report checkout, PowerShell or Bash:
+
+```text
+python -m pytest tests/unit/composite_reporting/test_historical_policy.py tests/unit/composite_reporting/test_monthly_amendment.py
+```
+
+Generated `composite_historical_report_schema()` namespaces full producer schemas
+without changing their contents or the frozen v4/v6 schemas. Runtime distributions
+include the pinned JSON schemas as package data. Controlled package/snapshot-record
+examples are transport fixtures; they do not claim durable PostgreSQL or joined
+HTTP execution. Existing R7 campaign evidence remains immutable and is not repeated.

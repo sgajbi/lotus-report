@@ -1,5 +1,17 @@
 # Composite Review
 
+## Historical policy custody (v7)
+
+Explicit selection v3 retains Manage policy v2 and monthly ordinary v3/correction
+v4 through the existing Report lifecycle, with complete original bytes, normalized
+proofs, operation intents and bounded v3-root lineage. Ten tables add complete
+PolicyAdmission provenance and Amendments. XLSX uses `composite-review/v7` inside
+`render_package.v1`; frozen v4/v6 remain unchanged. Consumer enablement defaults off
+pending producer and consumer source/main/wiki qualification. This is configured-
+identity producer custody, `CONTROLLED / NOT_ATTESTED`; Manage owns signature/trust/
+revocation admission. Full #417 and institutional authority remain open.
+See [the admission, projection and release boundaries](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-historical-policy-custody.md).
+
 ## Monthly source amendments (v6)
 
 The existing `eligibility_selection` accepts explicit `selection_version: "v2"`

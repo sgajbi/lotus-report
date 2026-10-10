@@ -124,9 +124,18 @@ def require_receipt(selection: AmendmentEligibilitySelection, receipt: dict[str,
 
 
 def require_link(
-    proposal: dict[str, Any], predecessor: dict[str, Any], original: dict[str, Any]
+    proposal: dict[str, Any],
+    predecessor: dict[str, Any],
+    original: dict[str, Any],
+    *,
+    source_version: str = "v2",
 ) -> None:
-    AmendmentProposal.model_validate(proposal)
+    if source_version == "v4":
+        from app.composite_reporting.historical_source import validate_product
+
+        validate_product(proposal)
+    else:
+        AmendmentProposal.model_validate(proposal)
     claim = proposal["amendment"]
     prior = predecessor["approval"]["proposal"]
     refuse(

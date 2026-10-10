@@ -18,9 +18,15 @@ from app.composite_reporting.eligibility_tables import build_eligibility_dataset
 from app.composite_reporting.linked_tables import build_linked_dataset
 from app.composite_reporting.models import (
     AmendmentEligibilitySelection,
+    AmendmentEvaluatedPin,
+    AmendmentPublishedPin,
     CompositeReportSelection,
     CompositeReviewJobRequest,
     EligibilitySelection,
+    HistoricalEligibilitySelection,
+    HistoricalEvaluatedCorrectionPin,
+    HistoricalPublishedCorrectionPin,
+    HistoricalPublishedRootPin,
     LinkedAnalysisSelection,
     PooledAnalysisSelection,
     PublishedEligibilityPin,
@@ -63,6 +69,24 @@ class CompositeManageClient(Protocol):
         binding: dict[str, Any] | None,
         admitted_tenant_id: str,
     ) -> tuple[int, dict[str, Any]]: ...
+
+
+def _monthly_source_version(pin: PublishedEligibilityPin) -> str:
+    if isinstance(pin, (HistoricalPublishedRootPin, HistoricalPublishedCorrectionPin)):
+        return pin.product_version
+    return "v2" if isinstance(pin, AmendmentPublishedPin) else "v1"
+
+
+def _monthly_dataset(selection: Any, months: list[dict[str, Any]]) -> dict[str, Any]:
+    if isinstance(selection, HistoricalEligibilitySelection):
+        from app.composite_reporting.historical_tables import build_historical_dataset
+
+        return build_historical_dataset(selection, months)
+    if isinstance(selection, AmendmentEligibilitySelection):
+        from app.composite_reporting.amendment_tables import build_amendment_dataset
+
+        return build_amendment_dataset(selection, months)
+    return build_eligibility_dataset(selection, months)
 
 
 class CompositeInputProvider:
@@ -307,11 +331,19 @@ class CompositeInputProvider:
     async def _capture_eligibility(
         self,
         job: ReportJobLedgerRecord,
-        selection: EligibilitySelection | AmendmentEligibilitySelection,
+        selection: EligibilitySelection
+        | AmendmentEligibilitySelection
+        | HistoricalEligibilitySelection,
         calls: list[_RecordedUpstreamCall],
     ) -> dict[str, Any]:
         from app.composite_reporting.admission import response_digest
         from app.composite_reporting.eligibility_admission import require_hash
+
+        if isinstance(selection, HistoricalEligibilitySelection):
+            from app.config import settings
+
+            if not settings.composite_historical_policy_enabled:
+                raise CompositeEvidenceRefused("COMPOSITE_HISTORICAL_POLICY_RELEASE_NOT_ADMITTED")
 
         captured_bytes = 0
 
@@ -364,9 +396,7 @@ class CompositeInputProvider:
                 }
                 if binding != {
                     "product_name": "CompositeMonthlyEvaluationApproval",
-                    "product_version": "v2"
-                    if isinstance(selection, AmendmentEligibilitySelection)
-                    else "v1",
+                    "product_version": _monthly_source_version(pin),
                     "revision": pin.evaluation_revision,
                     "digest": pin.approval_content_hash,
                 }:
@@ -393,7 +423,15 @@ class CompositeInputProvider:
                         ),
                     ),
                 }
-            if isinstance(selection, AmendmentEligibilitySelection):
+            if isinstance(
+                pin,
+                (
+                    AmendmentEvaluatedPin,
+                    AmendmentPublishedPin,
+                    HistoricalEvaluatedCorrectionPin,
+                    HistoricalPublishedCorrectionPin,
+                ),
+            ):
                 from app.composite_reporting.eligibility_contract import proposal_for_month
 
                 proposal, _ = proposal_for_month(month)
@@ -411,19 +449,19 @@ class CompositeInputProvider:
                             "digest": prior.approval_content_hash,
                         },
                     )
-                    for prior in selection.months[len(months)].lineage_receipts
+                    for prior in pin.lineage_receipts
                 ]
+            elif isinstance(selection, HistoricalEligibilitySelection):
+                month["lineage_receipts"] = []
+                if isinstance(pin, PublishedEligibilityPin):
+                    month["parent_publication"] = None
             month["response_digests"] = {
                 key: response_digest(value)
                 for key, value in month.items()
                 if isinstance(value, dict)
             }
             months.append(month)
-        if isinstance(selection, AmendmentEligibilitySelection):
-            from app.composite_reporting.amendment_tables import build_amendment_dataset
-
-            return build_amendment_dataset(selection, months)
-        return build_eligibility_dataset(selection, months)
+        return _monthly_dataset(selection, months)
 
     async def _manage_read(
         self,

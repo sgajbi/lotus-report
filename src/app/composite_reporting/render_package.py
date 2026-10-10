@@ -50,6 +50,7 @@ def build_composite_render_package(
         "composite_review.v4",
         "composite_review.v5",
         "composite_review.v6",
+        "composite_review.v7",
     }:
         from app.composite_reporting.eligibility_tables import preflight_eligibility_package
 
@@ -58,6 +59,8 @@ def build_composite_render_package(
             if snapshot["contract_version"] == "composite_review.v5"
             else "COMPOSITE_AMENDMENT"
             if snapshot["contract_version"] == "composite_review.v6"
+            else "COMPOSITE_HISTORICAL"
+            if snapshot["contract_version"] == "composite_review.v7"
             else ("COMPOSITE_ELIGIBILITY")
         )
         preflight_eligibility_package(package, failure_prefix=prefix)
@@ -85,7 +88,8 @@ def composite_archive_custody(
         job=job,
         snapshot_payload=record.snapshot_payload,
         upstream_services=("lotus-manage",)
-        if data.contract_version in {"composite_review.v4", "composite_review.v6"}
+        if data.contract_version
+        in {"composite_review.v4", "composite_review.v6", "composite_review.v7"}
         else ("lotus-performance",),
     )
     if binding is None:
@@ -127,6 +131,10 @@ def composite_archive_custody(
             **digests,
         },
     }
+    if data.contract_version == "composite_review.v7":
+        from app.composite_reporting.historical_tables import CALCULATION_BOUNDARY
+
+        custody["composite_report_identity"]["calculation_boundary"] = CALCULATION_BOUNDARY
     for field in ("retention_policy_id", "retain_until_date"):
         value = job.options.get(field)
         if value:

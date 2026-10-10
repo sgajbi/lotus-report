@@ -4,7 +4,11 @@ from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from app.composite_reporting.models import AmendmentEligibilitySelection, CompositeReviewJobRequest
+from app.composite_reporting.models import (
+    AmendmentEligibilitySelection,
+    CompositeReviewJobRequest,
+    HistoricalEligibilitySelection,
+)
 from app.observability import correlation_id_var, trace_id_var
 from app.report_ordering_catalogue.router import get_report_ordering_catalogue_service
 from app.report_ordering_catalogue.service import ReportOrderingCatalogueService
@@ -92,6 +96,8 @@ async def submit_composite_review(
     profile = (
         "v5"
         if request.pooled_selection is not None
+        else "v7"
+        if isinstance(request.eligibility_selection, HistoricalEligibilitySelection)
         else "v6"
         if isinstance(request.eligibility_selection, AmendmentEligibilitySelection)
         else "v4"
