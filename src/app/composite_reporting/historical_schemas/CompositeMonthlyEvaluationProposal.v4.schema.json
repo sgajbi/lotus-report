@@ -1,0 +1,2367 @@
+{
+  "$defs": {
+    "DpmCompositeUniverseAttestation": {
+      "additionalProperties": false,
+      "description": "Approved, immutable reconciliation of one membership revision to its universe.",
+      "properties": {
+        "attestation_version": {
+          "title": "Attestation Version",
+          "type": "string"
+        },
+        "attested_at": {
+          "format": "date-time",
+          "title": "Attested At",
+          "type": "string"
+        },
+        "attested_by": {
+          "title": "Attested By",
+          "type": "string"
+        },
+        "composite_id": {
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "correlation_id": {
+          "title": "Correlation Id",
+          "type": "string"
+        },
+        "coverage_from": {
+          "title": "Coverage From",
+          "type": "string"
+        },
+        "coverage_gap_portfolio_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Coverage Gap Portfolio Ids",
+          "type": "array"
+        },
+        "coverage_to": {
+          "title": "Coverage To",
+          "type": "string"
+        },
+        "definition_version": {
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "expected_portfolio_count": {
+          "minimum": 0,
+          "title": "Expected Portfolio Count",
+          "type": "integer"
+        },
+        "expected_portfolio_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Portfolio Ids",
+          "type": "array"
+        },
+        "membership_content_hash": {
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "membership_revision": {
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "missing_portfolio_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Portfolio Ids",
+          "type": "array"
+        },
+        "observed_portfolio_count": {
+          "minimum": 0,
+          "title": "Observed Portfolio Count",
+          "type": "integer"
+        },
+        "policy_version": {
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "posture": {
+          "enum": [
+            "COMPLETE",
+            "INCOMPLETE",
+            "UNAVAILABLE"
+          ],
+          "title": "Posture",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeUniverseAttestation",
+          "default": "CompositeUniverseAttestation",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        },
+        "source_cut_id": {
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_products": {
+          "items": {
+            "$ref": "#/$defs/DpmCompositeUniverseSourceProduct"
+          },
+          "minItems": 1,
+          "title": "Source Products",
+          "type": "array"
+        },
+        "tenant_id": {
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "unexpected_portfolio_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unexpected Portfolio Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "membership_revision",
+        "membership_content_hash",
+        "attestation_version",
+        "coverage_from",
+        "coverage_to",
+        "policy_version",
+        "source_cut_id",
+        "source_products",
+        "posture",
+        "expected_portfolio_count",
+        "observed_portfolio_count",
+        "attested_at",
+        "attested_by",
+        "correlation_id"
+      ],
+      "title": "DpmCompositeUniverseAttestation",
+      "type": "object"
+    },
+    "DpmCompositeUniverseSourceProduct": {
+      "additionalProperties": false,
+      "description": "One versioned input used to establish the declared universe.",
+      "properties": {
+        "authority_scope": {
+          "enum": [
+            "AUTHORITATIVE_UNIVERSE",
+            "POLICY_INPUT",
+            "REFERENCE_INPUT"
+          ],
+          "title": "Authority Scope",
+          "type": "string"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "contract_version": {
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "owner_service": {
+          "title": "Owner Service",
+          "type": "string"
+        },
+        "product_name": {
+          "title": "Product Name",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_watermark": {
+          "title": "Source Watermark",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner_service",
+        "product_name",
+        "contract_version",
+        "authority_scope",
+        "source_cut_id",
+        "source_watermark",
+        "content_hash"
+      ],
+      "title": "DpmCompositeUniverseSourceProduct",
+      "type": "object"
+    },
+    "EvidenceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "product_name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "revision",
+        "digest"
+      ],
+      "title": "EvidenceBinding",
+      "type": "object"
+    },
+    "HistoricalMonthlyApprovalBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEvaluationApproval",
+          "default": "CompositeMonthlyEvaluationApproval",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "enum": [
+            "v3",
+            "v4"
+          ],
+          "title": "Product Version",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_version",
+        "revision",
+        "digest"
+      ],
+      "title": "HistoricalMonthlyApprovalBinding",
+      "type": "object"
+    },
+    "HistoricalMonthlyPolicyApproval": {
+      "additionalProperties": false,
+      "properties": {
+        "approved_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Approved At",
+          "type": "string"
+        },
+        "approved_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Approved By",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "evidence_kind": {
+          "const": "VERIFIED_HISTORICAL_MAPPING",
+          "default": "VERIFIED_HISTORICAL_MAPPING",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "default": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyPolicyApproval",
+          "default": "CompositeMonthlyPolicyApproval",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "proposal": {
+          "$ref": "#/$defs/HistoricalMonthlyPolicyProposal"
+        },
+        "verification": {
+          "$ref": "#/$defs/HistoricalPolicyVerification"
+        }
+      },
+      "required": [
+        "proposal",
+        "approved_by",
+        "approved_at",
+        "verification"
+      ],
+      "title": "HistoricalMonthlyPolicyApproval",
+      "type": "object"
+    },
+    "HistoricalMonthlyPolicyProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/EvidenceBinding"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Attachments",
+          "type": "array"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "eligibility_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Eligibility Policy Version",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/ResolvedMonthlyPolicy"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyPolicyProposal",
+          "default": "CompositeMonthlyPolicyProposal",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "proposal_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Proposal Revision",
+          "type": "string"
+        },
+        "proposed_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Proposed At",
+          "type": "string"
+        },
+        "proposed_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Proposed By",
+          "type": "string"
+        },
+        "verification": {
+          "$ref": "#/$defs/HistoricalPolicyVerification"
+        }
+      },
+      "required": [
+        "proposal_revision",
+        "eligibility_policy_version",
+        "policy",
+        "attachments",
+        "proposed_by",
+        "proposed_at",
+        "verification"
+      ],
+      "title": "HistoricalMonthlyPolicyProposal",
+      "type": "object"
+    },
+    "HistoricalMonthlyReceiptBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityPublicationReceipt",
+          "default": "CompositeMonthlyEligibilityPublicationReceipt",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "enum": [
+            "v3",
+            "v4"
+          ],
+          "title": "Product Version",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_version",
+        "revision",
+        "digest"
+      ],
+      "title": "HistoricalMonthlyReceiptBinding",
+      "type": "object"
+    },
+    "HistoricalMonthlySourceAmendment": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_from": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Affected From",
+          "type": "string"
+        },
+        "affected_to": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Affected To",
+          "type": "string"
+        },
+        "correction_kind": {
+          "const": "SOURCE_CORRECTION",
+          "title": "Correction Kind",
+          "type": "string"
+        },
+        "evidence_bindings": {
+          "items": {
+            "$ref": "#/$defs/EvidenceBinding"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Evidence Bindings",
+          "type": "array"
+        },
+        "expected_authority_binding": {
+          "$ref": "#/$defs/HistoricalMonthlyApprovalBinding"
+        },
+        "expected_current_publication_sequence": {
+          "exclusiveMinimum": 0,
+          "title": "Expected Current Publication Sequence",
+          "type": "integer"
+        },
+        "original_approval_binding": {
+          "$ref": "#/$defs/HistoricalMonthlyApprovalBinding"
+        },
+        "predecessor_approval_binding": {
+          "$ref": "#/$defs/HistoricalMonthlyApprovalBinding"
+        },
+        "predecessor_receipt_binding": {
+          "$ref": "#/$defs/HistoricalMonthlyReceiptBinding"
+        },
+        "projection_parent_membership_binding": {
+          "$ref": "#/$defs/EvidenceBinding"
+        },
+        "reason": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "reason_code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "correction_kind",
+        "predecessor_approval_binding",
+        "predecessor_receipt_binding",
+        "original_approval_binding",
+        "expected_authority_binding",
+        "projection_parent_membership_binding",
+        "expected_current_publication_sequence",
+        "affected_from",
+        "affected_to",
+        "reason_code",
+        "reason",
+        "evidence_bindings"
+      ],
+      "title": "HistoricalMonthlySourceAmendment",
+      "type": "object"
+    },
+    "HistoricalPolicyMapping": {
+      "additionalProperties": false,
+      "description": "Verified mapping is separate from the bytes and original signature format.",
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/EvidenceBinding"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Attachments",
+          "type": "array"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "eligibility_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Eligibility Policy Version",
+          "type": "string"
+        },
+        "original_approved_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Original Approved At",
+          "type": "string"
+        },
+        "original_approved_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Original Approved By",
+          "type": "string"
+        },
+        "original_credential": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Original Credential",
+          "type": "string"
+        },
+        "original_proposed_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Original Proposed At",
+          "type": "string"
+        },
+        "original_proposed_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Original Proposed By",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/ResolvedMonthlyPolicy"
+        },
+        "raw_original_base64": {
+          "maxLength": 2800000,
+          "minLength": 4,
+          "title": "Raw Original Base64",
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/HistoricalPolicyReference"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference",
+        "raw_original_base64",
+        "original_credential",
+        "policy",
+        "eligibility_policy_version",
+        "reporting_currency",
+        "attachments",
+        "original_proposed_by",
+        "original_proposed_at",
+        "original_approved_by",
+        "original_approved_at"
+      ],
+      "title": "HistoricalPolicyMapping",
+      "type": "object"
+    },
+    "HistoricalPolicyReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "issuer_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Issuer Id",
+          "type": "string"
+        },
+        "raw_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Raw Digest",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "signing_contract": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Signing Contract",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issuer_id",
+        "artifact_id",
+        "revision",
+        "raw_digest",
+        "signing_contract"
+      ],
+      "title": "HistoricalPolicyReference",
+      "type": "object"
+    },
+    "HistoricalPolicyVerification": {
+      "additionalProperties": false,
+      "description": "Only a trusted server port may supply this independently verified mapping.",
+      "properties": {
+        "admitted_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Admitted At",
+          "type": "string"
+        },
+        "checked_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "configuration_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configuration Digest",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "current_revocation_status": {
+          "const": "CLEAR",
+          "title": "Current Revocation Status",
+          "type": "string"
+        },
+        "expires_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "mapping": {
+          "$ref": "#/$defs/HistoricalPolicyMapping"
+        },
+        "original_signature_status": {
+          "const": "VERIFIED_AT_ORIGINAL_APPROVAL",
+          "title": "Original Signature Status",
+          "type": "string"
+        },
+        "posture": {
+          "enum": [
+            "SYNTHETIC_NON_CERTIFYING",
+            "QUALIFIED_RECEIPT"
+          ],
+          "title": "Posture",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeHistoricalPolicyVerification",
+          "default": "CompositeHistoricalPolicyVerification",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HistoricalPolicyVerificationRequest"
+        },
+        "revocation_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revocation Digest",
+          "type": "string"
+        },
+        "revocation_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revocation Revision",
+          "type": "string"
+        },
+        "signer_key_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Signer Key Digest",
+          "type": "string"
+        },
+        "signer_principal_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Signer Principal Id",
+          "type": "string"
+        },
+        "verifier_credential": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Verifier Credential",
+          "type": "string"
+        },
+        "verifier_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Verifier Id",
+          "type": "string"
+        },
+        "verifier_key_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Verifier Key Digest",
+          "type": "string"
+        },
+        "verifier_principal_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Verifier Principal Id",
+          "type": "string"
+        },
+        "verifier_public_key_base64": {
+          "maxLength": 44,
+          "minLength": 44,
+          "title": "Verifier Public Key Base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "posture",
+        "original_signature_status",
+        "current_revocation_status",
+        "request",
+        "mapping",
+        "verifier_id",
+        "signer_principal_id",
+        "verifier_principal_id",
+        "configuration_digest",
+        "signer_key_digest",
+        "verifier_key_digest",
+        "verifier_public_key_base64",
+        "revocation_revision",
+        "revocation_digest",
+        "checked_at",
+        "expires_at",
+        "admitted_at",
+        "verifier_credential"
+      ],
+      "title": "HistoricalPolicyVerification",
+      "type": "object"
+    },
+    "HistoricalPolicyVerificationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "eligibility_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Eligibility Policy Version",
+          "type": "string"
+        },
+        "intent_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^\\d{4}-\\d{2}$",
+          "title": "Month",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "POLICY_PROPOSAL",
+            "POLICY_APPROVAL",
+            "EVALUATION_PROPOSAL",
+            "EVALUATION_APPROVAL"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeHistoricalPolicyVerificationRequest",
+          "default": "CompositeHistoricalPolicyVerificationRequest",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "purpose": {
+          "const": "COMPOSITE_HISTORICAL_MONTHLY_POLICY_ADMISSION",
+          "default": "COMPOSITE_HISTORICAL_MONTHLY_POLICY_ADMISSION",
+          "title": "Purpose",
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/HistoricalPolicyReference"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "requested_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Requested At",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MonthlyPolicyScope"
+        }
+      },
+      "required": [
+        "operation",
+        "reference",
+        "scope",
+        "month",
+        "eligibility_policy_version",
+        "reporting_currency",
+        "revision",
+        "actor_id",
+        "requested_at",
+        "intent_digest"
+      ],
+      "title": "HistoricalPolicyVerificationRequest",
+      "type": "object"
+    },
+    "MonthlyEligibilityEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "declared_universe_coverage": {
+          "enum": [
+            "COMPLETE",
+            "INCOMPLETE"
+          ],
+          "title": "Declared Universe Coverage",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "evaluated_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "evidence_class": {
+          "enum": [
+            "SYNTHETIC_UNQUALIFIED",
+            "SOURCE_UNVERIFIED"
+          ],
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "excluded_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Excluded Count",
+          "type": "integer"
+        },
+        "expected_count": {
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Expected Count",
+          "type": "integer"
+        },
+        "included_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Included Count",
+          "type": "integer"
+        },
+        "input_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Input Content Hash",
+          "type": "string"
+        },
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "observed_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Observed Count",
+          "type": "integer"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "default": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "pending_review_count": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Pending Review Count",
+          "type": "integer"
+        },
+        "population_verification": {
+          "const": "UNVERIFIED",
+          "default": "UNVERIFIED",
+          "title": "Population Verification",
+          "type": "string"
+        },
+        "portfolios": {
+          "items": {
+            "$ref": "#/$defs/MonthlyPortfolioEvaluation"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Portfolios",
+          "type": "array"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityEvaluation",
+          "default": "CompositeMonthlyEligibilityEvaluation",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "resolved_policy": {
+          "$ref": "#/$defs/ResolvedMonthlyPolicy"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "universe_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Universe Content Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_class",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "month",
+        "source_cut_id",
+        "source_revision",
+        "evaluated_at",
+        "input_content_hash",
+        "universe_content_hash",
+        "resolved_policy",
+        "declared_universe_coverage",
+        "expected_count",
+        "observed_count",
+        "included_count",
+        "excluded_count",
+        "pending_review_count",
+        "portfolios"
+      ],
+      "title": "MonthlyEligibilityEvaluation",
+      "type": "object"
+    },
+    "MonthlyEligibilityObservations": {
+      "additionalProperties": false,
+      "description": "Scoped source material; authority must be admitted separately by its owning port.",
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "evidence_class": {
+          "enum": [
+            "SYNTHETIC_UNQUALIFIED",
+            "SOURCE_UNVERIFIED"
+          ],
+          "title": "Evidence Class",
+          "type": "string"
+        },
+        "expected_portfolio_ids": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Expected Portfolio Ids",
+          "type": "array"
+        },
+        "month": {
+          "title": "Month",
+          "type": "string"
+        },
+        "portfolios": {
+          "items": {
+            "$ref": "#/$defs/MonthlyPortfolioObservations"
+          },
+          "maxItems": 1000,
+          "title": "Portfolios",
+          "type": "array"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityObservations",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "source_generated_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Source Generated At",
+          "type": "string"
+        },
+        "source_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "evidence_class",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "month",
+        "source_cut_id",
+        "source_revision",
+        "reporting_currency",
+        "source_generated_at",
+        "expected_portfolio_ids",
+        "portfolios"
+      ],
+      "title": "MonthlyEligibilityObservations",
+      "type": "object"
+    },
+    "MonthlyFlowObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "pattern": "^-?(?:0|[1-9]\\d{0,23})(?:\\.\\d{1,12})?$",
+          "title": "Amount",
+          "type": "string"
+        },
+        "business_date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Business Date",
+          "type": "string"
+        },
+        "classification": {
+          "enum": [
+            "EXTERNAL_CASH",
+            "INTERNAL_TRANSFER",
+            "REVERSAL",
+            "IN_KIND"
+          ],
+          "title": "Classification",
+          "type": "string"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "received_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Received At",
+          "type": "string"
+        },
+        "reverses_event_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reverses Event Id"
+        },
+        "status": {
+          "enum": [
+            "POSTED",
+            "CANCELLED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "business_date",
+        "received_at",
+        "currency",
+        "amount",
+        "classification",
+        "status",
+        "reverses_event_id"
+      ],
+      "title": "MonthlyFlowObservation",
+      "type": "object"
+    },
+    "MonthlyInputBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/EvidenceBinding"
+        },
+        "kind": {
+          "enum": [
+            "PRIOR_ASSETS",
+            "MONTH_END_ASSETS",
+            "CASH",
+            "READINESS",
+            "FLOWS"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "owner_service": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Owner Service",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "owner_service",
+        "source_cut_id",
+        "evidence"
+      ],
+      "title": "MonthlyInputBinding",
+      "type": "object"
+    },
+    "MonthlyPolicyLayer": {
+      "additionalProperties": false,
+      "description": "Exact versioned configuration material, not a mutable catalogue lookup.",
+      "properties": {
+        "cash_threshold": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cash Threshold"
+        },
+        "composite_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composite Id"
+        },
+        "effective_from": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Effective From",
+          "type": "string"
+        },
+        "effective_to": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Effective To",
+          "type": "string"
+        },
+        "flow_threshold": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Threshold"
+        },
+        "level": {
+          "enum": [
+            "PLATFORM",
+            "TENANT",
+            "STRATEGY",
+            "COMPOSITE",
+            "RUN"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "permitted_overrides": {
+          "items": {
+            "enum": [
+              "CASH_THRESHOLD",
+              "FLOW_THRESHOLD"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Permitted Overrides",
+          "type": "array"
+        },
+        "policy_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "strategy_code": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy Code"
+        },
+        "tenant_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant Id"
+        }
+      },
+      "required": [
+        "level",
+        "policy_id",
+        "revision",
+        "effective_from",
+        "effective_to",
+        "flow_threshold",
+        "cash_threshold",
+        "permitted_overrides"
+      ],
+      "title": "MonthlyPolicyLayer",
+      "type": "object"
+    },
+    "MonthlyPolicyScope": {
+      "additionalProperties": false,
+      "description": "Application supplies this from admitted tenant and persisted definition truth.",
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "strategy_code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Strategy Code",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "strategy_code"
+      ],
+      "title": "MonthlyPolicyScope",
+      "type": "object"
+    },
+    "MonthlyPortfolioEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "assessments": {
+          "items": {
+            "$ref": "#/$defs/MonthlyRuleAssessment"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "title": "Assessments",
+          "type": "array"
+        },
+        "observations_present": {
+          "title": "Observations Present",
+          "type": "boolean"
+        },
+        "portfolio_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "INCLUDED",
+            "EXCLUDED",
+            "PENDING_REVIEW"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "observations_present",
+        "status",
+        "assessments"
+      ],
+      "title": "MonthlyPortfolioEvaluation",
+      "type": "object"
+    },
+    "MonthlyPortfolioObservations": {
+      "additionalProperties": false,
+      "properties": {
+        "cash_as_of": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cash As Of"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "discretionary": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Discretionary"
+        },
+        "flow_coverage_from": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Coverage From"
+        },
+        "flow_coverage_to": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Coverage To"
+        },
+        "flows": {
+          "items": {
+            "$ref": "#/$defs/MonthlyFlowObservation"
+          },
+          "maxItems": 250,
+          "title": "Flows",
+          "type": "array"
+        },
+        "funded": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Funded"
+        },
+        "invested": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Invested"
+        },
+        "month_end_assets": {
+          "anyOf": [
+            {
+              "pattern": "^-?(?:0|[1-9]\\d{0,23})(?:\\.\\d{1,12})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Month End Assets"
+        },
+        "portfolio_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Portfolio Id",
+          "type": "string"
+        },
+        "prior_assets_as_of": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prior Assets As Of"
+        },
+        "prior_month_end_assets": {
+          "anyOf": [
+            {
+              "pattern": "^-?(?:0|[1-9]\\d{0,23})(?:\\.\\d{1,12})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prior Month End Assets"
+        },
+        "readiness_as_of": {
+          "anyOf": [
+            {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Readiness As Of"
+        },
+        "settled_unencumbered_cash": {
+          "anyOf": [
+            {
+              "pattern": "^-?(?:0|[1-9]\\d{0,23})(?:\\.\\d{1,12})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Settled Unencumbered Cash"
+        }
+      },
+      "required": [
+        "portfolio_id",
+        "currency",
+        "prior_month_end_assets",
+        "prior_assets_as_of",
+        "month_end_assets",
+        "settled_unencumbered_cash",
+        "cash_as_of",
+        "discretionary",
+        "funded",
+        "invested",
+        "readiness_as_of",
+        "flow_coverage_from",
+        "flow_coverage_to",
+        "flows"
+      ],
+      "title": "MonthlyPortfolioObservations",
+      "type": "object"
+    },
+    "MonthlyRuleAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "admitted_flow_count": {
+          "anyOf": [
+            {
+              "maximum": 250,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Admitted Flow Count"
+        },
+        "denominator": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Denominator"
+        },
+        "failure_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Reasons",
+          "type": "array"
+        },
+        "gross_inflow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gross Inflow"
+        },
+        "gross_outflow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gross Outflow"
+        },
+        "numerator": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numerator"
+        },
+        "outcome": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNKNOWN"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "ratio": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio"
+        },
+        "rule": {
+          "enum": [
+            "SIGNIFICANT_FLOW",
+            "CASH",
+            "READINESS"
+          ],
+          "title": "Rule",
+          "type": "string"
+        },
+        "unknown_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rule",
+        "outcome",
+        "failure_reasons",
+        "unknown_reasons"
+      ],
+      "title": "MonthlyRuleAssessment",
+      "type": "object"
+    },
+    "MonthlySourceAssembly": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibility_binding": {
+          "$ref": "#/$defs/EvidenceBinding"
+        },
+        "compatibility_posture": {
+          "enum": [
+            "SYNTHETIC_UNQUALIFIED",
+            "SOURCE_UNVERIFIED",
+            "UNAVAILABLE"
+          ],
+          "title": "Compatibility Posture",
+          "type": "string"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/MonthlyInputBinding"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "observations": {
+          "$ref": "#/$defs/MonthlyEligibilityObservations"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityAssembly",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "observations",
+        "inputs",
+        "compatibility_binding",
+        "compatibility_posture"
+      ],
+      "title": "MonthlySourceAssembly",
+      "type": "object"
+    },
+    "ResolvedMonthlyPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "cash_breach_operator": {
+          "const": "GREATER_THAN",
+          "default": "GREATER_THAN",
+          "title": "Cash Breach Operator",
+          "type": "string"
+        },
+        "cash_denominator": {
+          "const": "MONTH_END_NET_ASSETS",
+          "default": "MONTH_END_NET_ASSETS",
+          "title": "Cash Denominator",
+          "type": "string"
+        },
+        "cash_numerator": {
+          "const": "SETTLED_UNENCUMBERED_CASH_ONLY",
+          "default": "SETTLED_UNENCUMBERED_CASH_ONLY",
+          "title": "Cash Numerator",
+          "type": "string"
+        },
+        "cash_threshold": {
+          "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+          "title": "Cash Threshold",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "currency_treatment": {
+          "const": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+          "default": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+          "title": "Currency Treatment",
+          "type": "string"
+        },
+        "evaluation_timing": {
+          "const": "AFTER_MONTH_END",
+          "default": "AFTER_MONTH_END",
+          "title": "Evaluation Timing",
+          "type": "string"
+        },
+        "flow_breach_operator": {
+          "const": "GREATER_THAN_OR_EQUAL",
+          "default": "GREATER_THAN_OR_EQUAL",
+          "title": "Flow Breach Operator",
+          "type": "string"
+        },
+        "flow_date_basis": {
+          "const": "SOURCE_BUSINESS_DATE_UTC",
+          "default": "SOURCE_BUSINESS_DATE_UTC",
+          "title": "Flow Date Basis",
+          "type": "string"
+        },
+        "flow_denominator": {
+          "const": "PRIOR_MONTH_END_NET_ASSETS",
+          "default": "PRIOR_MONTH_END_NET_ASSETS",
+          "title": "Flow Denominator",
+          "type": "string"
+        },
+        "flow_measure": {
+          "const": "ABS_NET",
+          "default": "ABS_NET",
+          "title": "Flow Measure",
+          "type": "string"
+        },
+        "flow_threshold": {
+          "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+          "title": "Flow Threshold",
+          "type": "string"
+        },
+        "holiday_treatment": {
+          "const": "NO_DATE_SHIFT",
+          "default": "NO_DATE_SHIFT",
+          "title": "Holiday Treatment",
+          "type": "string"
+        },
+        "layers": {
+          "items": {
+            "$ref": "#/$defs/MonthlyPolicyLayer"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Layers",
+          "type": "array"
+        },
+        "membership_frequency": {
+          "const": "CALENDAR_MONTH",
+          "default": "CALENDAR_MONTH",
+          "title": "Membership Frequency",
+          "type": "string"
+        },
+        "missing_data": {
+          "const": "REQUIRED_UNKNOWN",
+          "default": "REQUIRED_UNKNOWN",
+          "title": "Missing Data",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^\\d{4}-\\d{2}$",
+          "title": "Month",
+          "type": "string"
+        },
+        "observation_window": {
+          "const": "WHOLE_TARGET_MONTH",
+          "default": "WHOLE_TARGET_MONTH",
+          "title": "Observation Window",
+          "type": "string"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "default": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityPolicy",
+          "default": "CompositeMonthlyEligibilityPolicy",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "profile_kind": {
+          "const": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+          "default": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "ratio_unit": {
+          "const": "DECIMAL_FRACTION",
+          "default": "DECIMAL_FRACTION",
+          "title": "Ratio Unit",
+          "type": "string"
+        },
+        "reentry": {
+          "const": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+          "default": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+          "title": "Reentry",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MonthlyPolicyScope"
+        },
+        "source_cut_timing": {
+          "const": "AFTER_MONTH_END",
+          "default": "AFTER_MONTH_END",
+          "title": "Source Cut Timing",
+          "type": "string"
+        }
+      },
+      "required": [
+        "month",
+        "scope",
+        "layers",
+        "flow_threshold",
+        "cash_threshold"
+      ],
+      "title": "ResolvedMonthlyPolicy",
+      "type": "object"
+    },
+    "VerificationReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Artifact Digest",
+          "type": "string"
+        },
+        "artifact_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Revision",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "issuer_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Issuer Id",
+          "type": "string"
+        },
+        "posture": {
+          "enum": [
+            "SYNTHETIC_NON_CERTIFYING",
+            "QUALIFIED_RECEIPT"
+          ],
+          "title": "Posture",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeEvidenceVerificationReceipt",
+          "default": "CompositeEvidenceVerificationReceipt",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/VerificationRequest"
+        },
+        "verifier_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Verifier Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "posture",
+        "request",
+        "verifier_id",
+        "issuer_id",
+        "artifact_revision",
+        "artifact_digest"
+      ],
+      "title": "VerificationReceipt",
+      "type": "object"
+    },
+    "VerificationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "claims_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Claims Digest",
+          "type": "string"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "effective_from": {
+          "title": "Effective From",
+          "type": "string"
+        },
+        "effective_to": {
+          "title": "Effective To",
+          "type": "string"
+        },
+        "purpose": {
+          "enum": [
+            "ELIGIBILITY_POLICY",
+            "ELIGIBILITY_POLICY_EVALUATION",
+            "COMPOSITE_ECONOMIC_AUTHORITY_PROFILE",
+            "RETURN_METHOD_CALENDAR",
+            "PROVIDER_REGISTRATION",
+            "COMPOSITE_MONTHLY_SOURCE_CUT"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "source_product": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Product"
+        },
+        "subject_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Subject Content Hash",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "purpose",
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "subject_content_hash",
+        "claims_digest",
+        "effective_from",
+        "effective_to"
+      ],
+      "title": "VerificationRequest",
+      "type": "object"
+    },
+    "VerifiedMonthlySourceAssembly": {
+      "additionalProperties": false,
+      "description": "Retained non-certifying manifest and independently admitted verification receipt.",
+      "properties": {
+        "assembly": {
+          "$ref": "#/$defs/MonthlySourceAssembly"
+        },
+        "verification": {
+          "$ref": "#/$defs/VerificationReceipt"
+        }
+      },
+      "required": [
+        "assembly",
+        "verification"
+      ],
+      "title": "VerifiedMonthlySourceAssembly",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "amendment": {
+      "$ref": "#/$defs/HistoricalMonthlySourceAmendment"
+    },
+    "content_hash": {
+      "default": "",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "correlation_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "evaluation": {
+      "$ref": "#/$defs/MonthlyEligibilityEvaluation"
+    },
+    "evaluation_revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Evaluation Revision",
+      "type": "string"
+    },
+    "observations": {
+      "$ref": "#/$defs/MonthlyEligibilityObservations"
+    },
+    "operation_verification": {
+      "$ref": "#/$defs/HistoricalPolicyVerification"
+    },
+    "parent_membership_content_hash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Parent Membership Content Hash",
+      "type": "string"
+    },
+    "parent_membership_revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Parent Membership Revision",
+      "type": "string"
+    },
+    "policy_approval": {
+      "$ref": "#/$defs/HistoricalMonthlyPolicyApproval"
+    },
+    "product_name": {
+      "const": "CompositeMonthlyEvaluationProposal",
+      "default": "CompositeMonthlyEvaluationProposal",
+      "title": "Product Name",
+      "type": "string"
+    },
+    "product_version": {
+      "const": "v4",
+      "default": "v4",
+      "title": "Product Version",
+      "type": "string"
+    },
+    "proposed_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "title": "Proposed At",
+      "type": "string"
+    },
+    "proposed_by": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Proposed By",
+      "type": "string"
+    },
+    "publication_evidence_version": {
+      "const": "v1",
+      "title": "Publication Evidence Version",
+      "type": "string"
+    },
+    "source_assembly_evidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerifiedMonthlySourceAssembly"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "target_membership_revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Target Membership Revision",
+      "type": "string"
+    },
+    "universe": {
+      "$ref": "#/$defs/DpmCompositeUniverseAttestation"
+    }
+  },
+  "required": [
+    "evaluation_revision",
+    "target_membership_revision",
+    "parent_membership_revision",
+    "parent_membership_content_hash",
+    "policy_approval",
+    "universe",
+    "observations",
+    "evaluation",
+    "proposed_by",
+    "proposed_at",
+    "correlation_id",
+    "amendment",
+    "operation_verification"
+  ],
+  "title": "HistoricalMonthlyAmendmentProposal",
+  "type": "object"
+}

@@ -179,7 +179,9 @@ def resolve_job_accepted_contract(
         and "composite_eligibility_selection" in options
     ):
         version = (
-            "v6"
+            "v7"
+            if options["composite_eligibility_selection"].get("selection_version") == "v3"
+            else "v6"
             if options["composite_eligibility_selection"].get("selection_version") == "v2"
             else "v4"
         )
@@ -206,6 +208,7 @@ def template_for_accepted_contract(
         "composite_review.v4",
         "composite_review.v5",
         "composite_review.v6",
+        "composite_review.v7",
     }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved

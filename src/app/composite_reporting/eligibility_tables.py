@@ -594,6 +594,10 @@ def eligibility_workbook_projection(
             "metadata_policy": "Fixed creation date 2000-01-01; no wall-clock content",
         }
     )
+    if data["contract_version"] == "composite_review.v7":
+        from app.composite_reporting.historical_tables import CALCULATION_BOUNDARY
+
+        fields["calculation_boundary"] = CALCULATION_BOUNDARY
     projected.append(
         (["Field", "Exact JSON value"], [list(row) for row in _identity_fragments(fields)])
     )

@@ -465,9 +465,82 @@ def eligibility_selection_version(value: Any) -> str:
     return str(getattr(value, "selection_version", "v1"))
 
 
+class HistoricalReceiptPin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    product_version: Literal["v3", "v4"]
+    evaluation_revision: Identifier
+    approval_content_hash: Digest
+    receipt_content_hash: Digest
+    receipt_response_digest: Digest
+
+
+class HistoricalEvaluatedRootPin(EvaluatedEligibilityPin):
+    product_version: Literal["v3"]
+
+
+class HistoricalPublishedRootPin(PublishedEligibilityPin):
+    product_version: Literal["v3"]
+
+
+class HistoricalEvaluatedCorrectionPin(EvaluatedEligibilityPin):
+    product_version: Literal["v4"]
+    lineage_receipts: list[HistoricalReceiptPin] = Field(min_length=1, max_length=31)
+
+
+class HistoricalPublishedCorrectionPin(PublishedEligibilityPin):
+    product_version: Literal["v4"]
+    lineage_receipts: list[HistoricalReceiptPin] = Field(min_length=1, max_length=31)
+    parent_publication_response_digest: Digest
+
+
+def historical_month_variant(value: Any) -> str:
+    if isinstance(value, dict):
+        return f"{value.get('product_version')}:{value.get('evidence_kind')}"
+    return f"{getattr(value, 'product_version', None)}:{getattr(value, 'evidence_kind', None)}"
+
+
+HistoricalMonthlyPin = Annotated[
+    Annotated[HistoricalEvaluatedRootPin, Tag("v3:EVALUATED_ONLY")]
+    | Annotated[HistoricalPublishedRootPin, Tag("v3:PUBLISHED")]
+    | Annotated[HistoricalEvaluatedCorrectionPin, Tag("v4:EVALUATED_ONLY")]
+    | Annotated[HistoricalPublishedCorrectionPin, Tag("v4:PUBLISHED")],
+    Discriminator(historical_month_variant),
+]
+
+
+class HistoricalEligibilitySelection(BaseModel):
+    """Exact new monthly authority; never implicitly upgrades a frozen selector."""
+
+    model_config = ConfigDict(extra="forbid")
+    selection_version: Literal["v3"]
+    tenant_id: Identifier
+    composite_id: Identifier
+    definition_version: Identifier
+    reporting_currency: str = Field(pattern=r"^[A-Z]{3}$")
+    period_start: date
+    period_end: date
+    months: list[HistoricalMonthlyPin] = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def require_ordered_months(self) -> HistoricalEligibilitySelection:
+        plain = self.model_dump(mode="json", exclude={"selection_version"})
+        for month in plain["months"]:
+            month.pop("product_version")
+            receipts = month.pop("lineage_receipts", [])
+            month.pop("parent_publication_response_digest", None)
+            if receipts and (
+                receipts[-1]["product_version"] != "v3"
+                or any(row["product_version"] != "v4" for row in receipts[:-1])
+            ):
+                raise ValueError("Historical corrections require one v3 original root")
+        EligibilitySelection.model_validate(plain)
+        return self
+
+
 VersionedEligibilitySelection = Annotated[
     Annotated[EligibilitySelection, Tag("v1")]
-    | Annotated[AmendmentEligibilitySelection, Tag("v2")],
+    | Annotated[AmendmentEligibilitySelection, Tag("v2")]
+    | Annotated[HistoricalEligibilitySelection, Tag("v3")],
     Discriminator(eligibility_selection_version),
 ]
 
@@ -619,6 +692,7 @@ class CompositeReviewJobRequest(BaseModel):
         | LinkedAnalysisSelection
         | EligibilitySelection
         | AmendmentEligibilitySelection
+        | HistoricalEligibilitySelection
         | PooledAnalysisSelection
     ):
         if self.pooled_selection is not None:

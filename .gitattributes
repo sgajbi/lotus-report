@@ -1,0 +1,4 @@
+# Preserve producer packet raw-file digests on Windows and Linux checkouts.
+src/app/composite_reporting/historical_schemas/*.json text eol=lf
+tests/fixtures/composite-historical-policy/*.json text eol=lf
+tests/fixtures/composite-historical-graphs/*.json text eol=lf

@@ -132,7 +132,7 @@ def _eligibility_revisions(payload: dict[str, Any]) -> list[SourceRevision]:
         proposal, _ = proposal_for_month(month)
         product = month["receipt"] if month["evidence_kind"] == "PUBLISHED" else proposal
         revisions.append(_monthly_revision(product, proposal))
-        if payload["contract_version"] == "composite_review.v6":
+        if payload["contract_version"] in {"composite_review.v6", "composite_review.v7"}:
             revisions.extend(
                 _monthly_revision(receipt, receipt["approval"]["proposal"])
                 for receipt in month["lineage_receipts"]
@@ -155,7 +155,11 @@ def source_revision_vector_for_capture(
     stated: list[SourceRevision] = []
     if snapshot_payload.get("contract_version") == "composite_review.v5":
         stated.extend(_pooled_revisions(snapshot_payload))
-    if snapshot_payload.get("contract_version") in {"composite_review.v4", "composite_review.v6"}:
+    if snapshot_payload.get("contract_version") in {
+        "composite_review.v4",
+        "composite_review.v6",
+        "composite_review.v7",
+    }:
         stated.extend(_eligibility_revisions(snapshot_payload))
     composite_revision = _revision_from_composite_response(snapshot_payload)
     if composite_revision is not None:

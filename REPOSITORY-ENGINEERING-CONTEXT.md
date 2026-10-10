@@ -741,6 +741,17 @@ universe completeness.
 
 ## Monthly eligibility working practice
 
+Historical-policy selection v3 selects additive `composite_review.v7` and
+`composite-review/v7`, retaining full policy-v2 and monthly-v3/v4 producer evidence.
+`historical_*` modules and packaged producer schemas own the bounded admission and
+complete provenance projection. Keep default `LOTUS_COMPOSITE_HISTORICAL_POLICY_ENABLED=false`
+until producer and consumer source/main/wiki release qualification. Report checks
+configured-identity custody/schema/hash/intent/scope; Manage owns cryptographic
+verification, trust pins and current revocation/admission. Do not introduce a
+consumer trust service or reinterpret retained proof as new bank authority.
+Keep all capacity caps and globally ordered provenance rows; never shorten raw
+bytes or proofs. See `docs/composite-historical-policy-custody.md`.
+
 The explicit `eligibility_selection.selection_version=v2` selects
 `composite_review.v6` monthly source amendments. Absence keeps historical v4
 serialization/fingerprints. Transport DTOs preserve source-v2 independently of

@@ -1,0 +1,859 @@
+{
+  "$defs": {
+    "EvidenceBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "product_name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "product_name",
+        "product_version",
+        "revision",
+        "digest"
+      ],
+      "title": "EvidenceBinding",
+      "type": "object"
+    },
+    "HistoricalPolicyMapping": {
+      "additionalProperties": false,
+      "description": "Verified mapping is separate from the bytes and original signature format.",
+      "properties": {
+        "attachments": {
+          "items": {
+            "$ref": "#/$defs/EvidenceBinding"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Attachments",
+          "type": "array"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "eligibility_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Eligibility Policy Version",
+          "type": "string"
+        },
+        "original_approved_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Original Approved At",
+          "type": "string"
+        },
+        "original_approved_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Original Approved By",
+          "type": "string"
+        },
+        "original_credential": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Original Credential",
+          "type": "string"
+        },
+        "original_proposed_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Original Proposed At",
+          "type": "string"
+        },
+        "original_proposed_by": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Original Proposed By",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/ResolvedMonthlyPolicy"
+        },
+        "raw_original_base64": {
+          "maxLength": 2800000,
+          "minLength": 4,
+          "title": "Raw Original Base64",
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/HistoricalPolicyReference"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference",
+        "raw_original_base64",
+        "original_credential",
+        "policy",
+        "eligibility_policy_version",
+        "reporting_currency",
+        "attachments",
+        "original_proposed_by",
+        "original_proposed_at",
+        "original_approved_by",
+        "original_approved_at"
+      ],
+      "title": "HistoricalPolicyMapping",
+      "type": "object"
+    },
+    "HistoricalPolicyReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "issuer_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Issuer Id",
+          "type": "string"
+        },
+        "raw_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Raw Digest",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "signing_contract": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Signing Contract",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issuer_id",
+        "artifact_id",
+        "revision",
+        "raw_digest",
+        "signing_contract"
+      ],
+      "title": "HistoricalPolicyReference",
+      "type": "object"
+    },
+    "HistoricalPolicyVerification": {
+      "additionalProperties": false,
+      "description": "Only a trusted server port may supply this independently verified mapping.",
+      "properties": {
+        "admitted_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Admitted At",
+          "type": "string"
+        },
+        "checked_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Checked At",
+          "type": "string"
+        },
+        "configuration_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configuration Digest",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "current_revocation_status": {
+          "const": "CLEAR",
+          "title": "Current Revocation Status",
+          "type": "string"
+        },
+        "expires_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "mapping": {
+          "$ref": "#/$defs/HistoricalPolicyMapping"
+        },
+        "original_signature_status": {
+          "const": "VERIFIED_AT_ORIGINAL_APPROVAL",
+          "title": "Original Signature Status",
+          "type": "string"
+        },
+        "posture": {
+          "enum": [
+            "SYNTHETIC_NON_CERTIFYING",
+            "QUALIFIED_RECEIPT"
+          ],
+          "title": "Posture",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeHistoricalPolicyVerification",
+          "default": "CompositeHistoricalPolicyVerification",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HistoricalPolicyVerificationRequest"
+        },
+        "revocation_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Revocation Digest",
+          "type": "string"
+        },
+        "revocation_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revocation Revision",
+          "type": "string"
+        },
+        "signer_key_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Signer Key Digest",
+          "type": "string"
+        },
+        "signer_principal_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Signer Principal Id",
+          "type": "string"
+        },
+        "verifier_credential": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Verifier Credential",
+          "type": "string"
+        },
+        "verifier_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Verifier Id",
+          "type": "string"
+        },
+        "verifier_key_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Verifier Key Digest",
+          "type": "string"
+        },
+        "verifier_principal_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Verifier Principal Id",
+          "type": "string"
+        },
+        "verifier_public_key_base64": {
+          "maxLength": 44,
+          "minLength": 44,
+          "title": "Verifier Public Key Base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "posture",
+        "original_signature_status",
+        "current_revocation_status",
+        "request",
+        "mapping",
+        "verifier_id",
+        "signer_principal_id",
+        "verifier_principal_id",
+        "configuration_digest",
+        "signer_key_digest",
+        "verifier_key_digest",
+        "verifier_public_key_base64",
+        "revocation_revision",
+        "revocation_digest",
+        "checked_at",
+        "expires_at",
+        "admitted_at",
+        "verifier_credential"
+      ],
+      "title": "HistoricalPolicyVerification",
+      "type": "object"
+    },
+    "HistoricalPolicyVerificationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "eligibility_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Eligibility Policy Version",
+          "type": "string"
+        },
+        "intent_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^\\d{4}-\\d{2}$",
+          "title": "Month",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "POLICY_PROPOSAL",
+            "POLICY_APPROVAL",
+            "EVALUATION_PROPOSAL",
+            "EVALUATION_APPROVAL"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeHistoricalPolicyVerificationRequest",
+          "default": "CompositeHistoricalPolicyVerificationRequest",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "purpose": {
+          "const": "COMPOSITE_HISTORICAL_MONTHLY_POLICY_ADMISSION",
+          "default": "COMPOSITE_HISTORICAL_MONTHLY_POLICY_ADMISSION",
+          "title": "Purpose",
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/HistoricalPolicyReference"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "requested_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "title": "Requested At",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MonthlyPolicyScope"
+        }
+      },
+      "required": [
+        "operation",
+        "reference",
+        "scope",
+        "month",
+        "eligibility_policy_version",
+        "reporting_currency",
+        "revision",
+        "actor_id",
+        "requested_at",
+        "intent_digest"
+      ],
+      "title": "HistoricalPolicyVerificationRequest",
+      "type": "object"
+    },
+    "MonthlyPolicyLayer": {
+      "additionalProperties": false,
+      "description": "Exact versioned configuration material, not a mutable catalogue lookup.",
+      "properties": {
+        "cash_threshold": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cash Threshold"
+        },
+        "composite_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Composite Id"
+        },
+        "effective_from": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Effective From",
+          "type": "string"
+        },
+        "effective_to": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Effective To",
+          "type": "string"
+        },
+        "flow_threshold": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Threshold"
+        },
+        "level": {
+          "enum": [
+            "PLATFORM",
+            "TENANT",
+            "STRATEGY",
+            "COMPOSITE",
+            "RUN"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "permitted_overrides": {
+          "items": {
+            "enum": [
+              "CASH_THRESHOLD",
+              "FLOW_THRESHOLD"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Permitted Overrides",
+          "type": "array"
+        },
+        "policy_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Revision",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "strategy_code": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy Code"
+        },
+        "tenant_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant Id"
+        }
+      },
+      "required": [
+        "level",
+        "policy_id",
+        "revision",
+        "effective_from",
+        "effective_to",
+        "flow_threshold",
+        "cash_threshold",
+        "permitted_overrides"
+      ],
+      "title": "MonthlyPolicyLayer",
+      "type": "object"
+    },
+    "MonthlyPolicyScope": {
+      "additionalProperties": false,
+      "description": "Application supplies this from admitted tenant and persisted definition truth.",
+      "properties": {
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "strategy_code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Strategy Code",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Tenant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "definition_version",
+        "strategy_code"
+      ],
+      "title": "MonthlyPolicyScope",
+      "type": "object"
+    },
+    "ResolvedMonthlyPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "cash_breach_operator": {
+          "const": "GREATER_THAN",
+          "default": "GREATER_THAN",
+          "title": "Cash Breach Operator",
+          "type": "string"
+        },
+        "cash_denominator": {
+          "const": "MONTH_END_NET_ASSETS",
+          "default": "MONTH_END_NET_ASSETS",
+          "title": "Cash Denominator",
+          "type": "string"
+        },
+        "cash_numerator": {
+          "const": "SETTLED_UNENCUMBERED_CASH_ONLY",
+          "default": "SETTLED_UNENCUMBERED_CASH_ONLY",
+          "title": "Cash Numerator",
+          "type": "string"
+        },
+        "cash_threshold": {
+          "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+          "title": "Cash Threshold",
+          "type": "string"
+        },
+        "content_hash": {
+          "default": "",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "currency_treatment": {
+          "const": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+          "default": "SOURCE_NORMALIZED_SINGLE_CURRENCY",
+          "title": "Currency Treatment",
+          "type": "string"
+        },
+        "evaluation_timing": {
+          "const": "AFTER_MONTH_END",
+          "default": "AFTER_MONTH_END",
+          "title": "Evaluation Timing",
+          "type": "string"
+        },
+        "flow_breach_operator": {
+          "const": "GREATER_THAN_OR_EQUAL",
+          "default": "GREATER_THAN_OR_EQUAL",
+          "title": "Flow Breach Operator",
+          "type": "string"
+        },
+        "flow_date_basis": {
+          "const": "SOURCE_BUSINESS_DATE_UTC",
+          "default": "SOURCE_BUSINESS_DATE_UTC",
+          "title": "Flow Date Basis",
+          "type": "string"
+        },
+        "flow_denominator": {
+          "const": "PRIOR_MONTH_END_NET_ASSETS",
+          "default": "PRIOR_MONTH_END_NET_ASSETS",
+          "title": "Flow Denominator",
+          "type": "string"
+        },
+        "flow_measure": {
+          "const": "ABS_NET",
+          "default": "ABS_NET",
+          "title": "Flow Measure",
+          "type": "string"
+        },
+        "flow_threshold": {
+          "pattern": "^(?:0(?:\\.\\d{1,12})?|1(?:\\.0{1,12})?)$",
+          "title": "Flow Threshold",
+          "type": "string"
+        },
+        "holiday_treatment": {
+          "const": "NO_DATE_SHIFT",
+          "default": "NO_DATE_SHIFT",
+          "title": "Holiday Treatment",
+          "type": "string"
+        },
+        "layers": {
+          "items": {
+            "$ref": "#/$defs/MonthlyPolicyLayer"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Layers",
+          "type": "array"
+        },
+        "membership_frequency": {
+          "const": "CALENDAR_MONTH",
+          "default": "CALENDAR_MONTH",
+          "title": "Membership Frequency",
+          "type": "string"
+        },
+        "missing_data": {
+          "const": "REQUIRED_UNKNOWN",
+          "default": "REQUIRED_UNKNOWN",
+          "title": "Missing Data",
+          "type": "string"
+        },
+        "month": {
+          "pattern": "^\\d{4}-\\d{2}$",
+          "title": "Month",
+          "type": "string"
+        },
+        "observation_window": {
+          "const": "WHOLE_TARGET_MONTH",
+          "default": "WHOLE_TARGET_MONTH",
+          "title": "Observation Window",
+          "type": "string"
+        },
+        "official_activation": {
+          "const": "UNAVAILABLE",
+          "default": "UNAVAILABLE",
+          "title": "Official Activation",
+          "type": "string"
+        },
+        "product_name": {
+          "const": "CompositeMonthlyEligibilityPolicy",
+          "default": "CompositeMonthlyEligibilityPolicy",
+          "title": "Product Name",
+          "type": "string"
+        },
+        "product_version": {
+          "const": "v1",
+          "default": "v1",
+          "title": "Product Version",
+          "type": "string"
+        },
+        "profile_kind": {
+          "const": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+          "default": "SYNTHETIC_MONTHLY_ABS_NET_CASH_READINESS",
+          "title": "Profile Kind",
+          "type": "string"
+        },
+        "ratio_unit": {
+          "const": "DECIMAL_FRACTION",
+          "default": "DECIMAL_FRACTION",
+          "title": "Ratio Unit",
+          "type": "string"
+        },
+        "reentry": {
+          "const": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+          "default": "REEVALUATE_ALL_NEXT_MONTH_RULES",
+          "title": "Reentry",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MonthlyPolicyScope"
+        },
+        "source_cut_timing": {
+          "const": "AFTER_MONTH_END",
+          "default": "AFTER_MONTH_END",
+          "title": "Source Cut Timing",
+          "type": "string"
+        }
+      },
+      "required": [
+        "month",
+        "scope",
+        "layers",
+        "flow_threshold",
+        "cash_threshold"
+      ],
+      "title": "ResolvedMonthlyPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attachments": {
+      "items": {
+        "$ref": "#/$defs/EvidenceBinding"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Attachments",
+      "type": "array"
+    },
+    "content_hash": {
+      "default": "",
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "eligibility_policy_version": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Eligibility Policy Version",
+      "type": "string"
+    },
+    "policy": {
+      "$ref": "#/$defs/ResolvedMonthlyPolicy"
+    },
+    "product_name": {
+      "const": "CompositeMonthlyPolicyProposal",
+      "default": "CompositeMonthlyPolicyProposal",
+      "title": "Product Name",
+      "type": "string"
+    },
+    "product_version": {
+      "const": "v2",
+      "default": "v2",
+      "title": "Product Version",
+      "type": "string"
+    },
+    "proposal_revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Proposal Revision",
+      "type": "string"
+    },
+    "proposed_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "title": "Proposed At",
+      "type": "string"
+    },
+    "proposed_by": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.:-]+$",
+      "title": "Proposed By",
+      "type": "string"
+    },
+    "verification": {
+      "$ref": "#/$defs/HistoricalPolicyVerification"
+    }
+  },
+  "required": [
+    "proposal_revision",
+    "eligibility_policy_version",
+    "policy",
+    "attachments",
+    "proposed_by",
+    "proposed_at",
+    "verification"
+  ],
+  "title": "HistoricalMonthlyPolicyProposal",
+  "type": "object"
+}

@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 from app.composite_reporting.admission import CompositeEvidenceRefused, admit_composite_response
 from app.composite_reporting.amendment_contract import CompositeAmendmentReportData
 from app.composite_reporting.eligibility_contract import CompositeEligibilityReportData
+from app.composite_reporting.historical_contract import CompositeHistoricalReportData
 from app.composite_reporting.linked_contract import CompositeLinkedReportData
 from app.composite_reporting.models import (
     CompositeReportSelection,
@@ -134,7 +135,10 @@ def validate_composite_dataset(
     | CompositeEligibilityReportData
     | CompositeAmendmentReportData
     | CompositePooledReportData
+    | CompositeHistoricalReportData
 ):
+    if payload.get("contract_version") == "composite_review.v7":
+        return CompositeHistoricalReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v6":
         return CompositeAmendmentReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v5":

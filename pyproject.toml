@@ -17,6 +17,7 @@ dependencies = [
   "prometheus-client>=0.22.1",
   "prometheus-fastapi-instrumentator>=8.1.0",
   "starlette>=1.6.0",
+  "jsonschema==4.23.0",
 ]
 
 [project.urls]
@@ -24,7 +25,6 @@ Repository = "https://github.com/sgajbi/lotus-report"
 
 [project.optional-dependencies]
 dev = [
-  "jsonschema==4.23.0",
   "PyYAML>=6.0",
   "radon==6.0.1",
   "vulture==2.16",
@@ -94,3 +94,6 @@ optional_dependencies_dev_groups = ["dev"]
 DEP004 = ["packaging"]
 [tool.deptry.package_module_name_map]
 PyYAML = "yaml"
+
+[tool.setuptools.package-data]
+"app.composite_reporting" = ["historical_schemas/*.json"]

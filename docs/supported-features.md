@@ -27,6 +27,13 @@ Gateway/proxy/IAM boundary.
 
 ## Implementation-Backed Features
 
+Historical policy evidence adds an explicitly disabled-by-default v7 source path:
+selection v3 retains policy v2 and ordinary monthly v3/correction v4, full original
+and operation proofs, and complete ten-table provenance. Producer and consumer
+release qualification remain required before enablement. This is configured-
+identity custody, `CONTROLLED / NOT_ATTESTED`; see
+[the historical policy custody boundary](composite-historical-policy-custody.md).
+
 The existing composite-review family supports ordinary monthly source
 amendments as `composite_review.v6`; see
 [contract, source and proof boundaries](composite-monthly-source-amendment.md).
