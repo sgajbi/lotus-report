@@ -247,6 +247,34 @@ def test_published_v7_schema_matches_generator():
     )
 
 
+@pytest.mark.parametrize("published", [False, True])
+def test_actual_two_month_graph_global_ordinals_and_retained_projection(published):
+    from app.composite_reporting.historical_contract import CompositeHistoricalReportData
+    from tests.unit.composite_reporting.historical_examples import (
+        GRAPHS,
+        two_month_historical_example,
+    )
+
+    folder = GRAPHS.parent / "composite-historical-two-month"
+    raw = (folder / "manifest.json").read_bytes()
+    assert (
+        sha256(raw).hexdigest()
+        == "0ff8e4ff783412abebff1dd329e1d2e1dd24a4afe4bbc354fc3df90d3d109d6f"
+    )
+    for name, digest in json.loads(raw)["raw_file_sha256"].items():
+        assert sha256((folder / name).read_bytes()).hexdigest() == digest
+    selected, months = two_month_historical_example(published)
+    data = build_historical_dataset(selected, months)
+    assert data["source_months"] == months
+    for table, prefix in [(data["tables"][-2], "a"), (data["tables"][-1], "p")]:
+        rows = table["rows"]
+        boundary = next(index for index, row in enumerate(rows) if row["row_id"].startswith("m1:"))
+        assert rows[boundary]["row_id"] == f"m1:{prefix}{boundary}"
+        assert all(row["row_id"].endswith(f":{prefix}{index}") for index, row in enumerate(rows))
+    reordered = json.loads(json.dumps(data, sort_keys=True))
+    assert CompositeHistoricalReportData.model_validate(reordered).model_dump(mode="json") == data
+
+
 @pytest.mark.parametrize(
     "mutation",
     ["raw_bytes", "signer", "key", "signature", "revocation", "status", "expiry", "admission"],

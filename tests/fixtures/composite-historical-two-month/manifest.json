@@ -1,0 +1,57 @@
+{
+  "canonical_content_digests": {
+    "2026-09.published.json": "sha256:40eba4d8ee97a3e8a16b64c4096dddb6212f49763ea24a72e625dc3824f4e995",
+    "2026-10.evaluated-only.json": "sha256:66096bc9cacdc9bdb755097403a35f6d41d4386ee8c722eb654c34951edb9743",
+    "2026-10.published.json": "sha256:32ce6ae6c77f6258c57fb21102e9e806810a49a178df955c40d5c8e306880797"
+  },
+  "consumer_enablement": "NOT_ADMITTED",
+  "exporter_sha256": "8e07481114c712392db0eb75b12d13043a21914afc85d4f28f311d854d48c24e",
+  "month_links": {
+    "2026-09": {
+      "approval_hash": "sha256:56aef256281e7972ba04a263614c724a4fd0ef148d70498284d7e884ae0d90a7",
+      "membership": {
+        "digest": "sha256:fd778e3683691c5b3ac721e02ff53e92fb0faea7b0363fc66b86b5fde8018802",
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "revision": "controlled.september.membership.r1"
+      },
+      "original_raw_digest": "sha256:1291f5f803162bc8c19f649f5f6332f940c5ef40a70dde301d68c2bebd2571a6",
+      "publication_sequence": 2,
+      "receipt_hash": "sha256:377311267065532328b12cd1509c1cc03c4f859e3e5e11a9c86307738fc1f8ef",
+      "universe": {
+        "digest": "sha256:fa91efcb1289332e91aafb7eee5fb660b8a89634715e0d4bb4045c4ff38c979f",
+        "product_name": "CompositeUniverseAttestation",
+        "product_version": "v1",
+        "revision": "controlled.september.evaluation.r1"
+      }
+    },
+    "2026-10": {
+      "approval_hash": "sha256:13c57262210ad52f2dfff655bfbd28e884d68b7af8ee8a28d1bb9081f30d98be",
+      "membership": {
+        "digest": "sha256:52dc59b993ab3c7b4571e4150086f7cbeb29a3fa9b5a79f7597d82828f0a3383",
+        "product_name": "CompositeMembership",
+        "product_version": "v1",
+        "revision": "controlled.october.membership.r1"
+      },
+      "original_raw_digest": "sha256:bd175f4092ad95c711161da604e32460a5d0b5edf52ba9caf8104dc96a7feac2",
+      "publication_sequence": 3,
+      "receipt_hash": "sha256:20f5c862f1107a7f21eb291f01d3366ec2f219ce53399b984ce5e180f4cea148",
+      "universe": {
+        "digest": "sha256:0d892946c2ac997bb2e65a9fbc546aa2ef2ad51b9f8ebb5bd0f997b023c64409",
+        "product_name": "CompositeUniverseAttestation",
+        "product_version": "v1",
+        "revision": "controlled.october.evaluation.r1"
+      }
+    }
+  },
+  "official_activation": "UNAVAILABLE",
+  "posture": "CONTROLLED_SYNTHETIC_TWO_MONTH_GRAPH_NOT_RELEASE_QUALIFIED",
+  "producer_commit": "09bb66341b7aebc84922d20e4694d604bdd727a6",
+  "production_adapter": "UNAVAILABLE",
+  "provenance": "Existing seed_complete_monthly_root/retain_following_month services create distinct October prospective policy history; existing ControlledHistoricalPolicyPort signs that actual October original, independently of unmodified September original. Existing present admission/evaluation services and memory UOW produce October v3. Existing graph.capture uses registered GET/resolver routes. Fixed fictional operation/publication clocks are test-only. No local native runtime, institutional or bank IAM qualification.",
+  "raw_file_sha256": {
+    "2026-09.published.json": "1d22ea813a154df41994ae66b2388448e74a4f58f1b275fe37bda97e0560a610",
+    "2026-10.evaluated-only.json": "addb2a3c46dd630dacead3af294f3f9e4b544c4fb49de2de7914dd94002c5883",
+    "2026-10.published.json": "bd1c7191d68f173254519c87b30173dcb63d5ecb963ec5d0ad4f519c21d83cee"
+  }
+}

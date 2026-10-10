@@ -2,3 +2,4 @@
 src/app/composite_reporting/historical_schemas/*.json text eol=lf
 tests/fixtures/composite-historical-policy/*.json text eol=lf
 tests/fixtures/composite-historical-graphs/*.json text eol=lf
+tests/fixtures/composite-historical-two-month/*.json text eol=lf

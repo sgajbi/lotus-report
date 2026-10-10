@@ -80,6 +80,16 @@ Graphs were exported through existing producer fixtures, memory UOW and register
 TestClient routes with a generator-only clock. They cover both definition profiles,
 ordinary root followed by two corrections, and evaluated/published outcomes.
 
+The separate two-month manifest
+`0ff8e4ff783412abebff1dd329e1d2e1dd24a4afe4bbc354fc3df90d3d109d6f`
+retains September published plus October evaluated-only/published evidence from
+separately created original policy artifacts. Its fictional November 2/3 operation
+clocks are controlled test inputs. Tests admit the real linked products and verify
+global provenance/amendment row ordinals across months and retained JSON reordering.
+The [frozen exporter and provenance](https://github.com/sgajbi/lotus-manage/issues/778#issuecomment-6091776010)
+reproduce these products through existing services; no September artifact is
+relabelled or re-signed to manufacture October evidence.
+
 From the Report checkout, PowerShell or Bash:
 
 ```text
