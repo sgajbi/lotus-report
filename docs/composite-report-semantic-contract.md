@@ -152,6 +152,12 @@ readiness requires supplier runtime plus the exact template's type, contract and
 output-format evidence. Global PDF readiness does not imply workbook support;
 development template publication does not imply distribution authority.
 
+The [authority-during-render control](composite-render-authority-boundary.md)
+holds registered submission after capture, mutates the current supplier in place,
+and verifies the original package and snapshot after release. Its case-to-artifact
+matrix separates controlled transport, native workbook parsing and accepted
+actual-source lifecycle evidence.
+
 Method-binding object keys are sorted before assigning Methods row identities
 and escaped source pointers. JSON object insertion order, including PostgreSQL
 JSONB key normalization, cannot change the semantic table for the same retained

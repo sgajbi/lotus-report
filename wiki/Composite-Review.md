@@ -1,5 +1,15 @@
 # Composite Review
 
+## Authority changes during rendering
+
+An outstanding render keeps its captured composite snapshot even when the current
+supplier's membership, method or source cut changes. A stale selection refuses
+the changed response; an explicit new selection creates a separate capture.
+The [registered control and case-to-artifact matrix](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-render-authority-boundary.md)
+distinguish controlled transport, native XLSX parsing and the accepted actual-source
+lifecycle. Supplied composite SI and an explicit closed-member history oracle
+remain original #417 work; this proof does not complete the other eleven products.
+
 ## Historical policy custody (v7)
 
 Explicit selection v3 retains Manage policy v2 and monthly ordinary v3/correction
