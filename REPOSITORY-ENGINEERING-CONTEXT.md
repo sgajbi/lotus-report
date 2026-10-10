@@ -115,6 +115,13 @@ Methods row identities and escaped source pointers use sorted binding keys so
 PostgreSQL JSONB object-key normalization cannot change the semantic projection.
 Retained snapshots keep their original stored tables for technical rerender.
 
+The registered held-render regression in
+`tests/unit/composite_reporting/test_authority_change_during_render.py` verifies
+membership/method/source-cut changes after capture, including an in-place source
+mutation while the job is rendering. It uses SQLite and controlled HTTP transport;
+native writer and actual lifecycle evidence remain separately classified in
+`docs/composite-render-authority-boundary.md`.
+
 The exclusive typed pooled primary uses `composite_review.v5`, preserving v1–v4.
 It reads exact retained Performance results and the selected correction predecessor
 through `/performance/composites/analytics/results/{calculation_id}`. Deployment
