@@ -31,7 +31,15 @@ adapter and service-principal qualification remain unavailable.
 
 Original proposal/approval events precede the target month; their original bytes
 and signing contract remain distinct from later normalized policy admission and
-operation proofs. Every correction retains its nearest predecessor first, ending
+operation proofs. Recorded proof clocks follow Manage's existing contract:
+`checked_at <= requested_at <= admitted_at < expires_at`, with expiry at most five
+minutes after checked. Real network admission may follow the exact operation request
+clock. Every clock requires a timezone; admission at expiry, reversed clocks and
+overlong windows refuse. Retained proofs are checked against their recorded window,
+not the current wall clock, so later replay does not grant fresh authority or reject
+otherwise valid historical evidence merely because that window has elapsed.
+
+Every correction retains its nearest predecessor first, ending
 at exactly one ordinary v3 root, with no cycles or version downgrade. The existing
 same-policy/population ordinary-month correction rules and canonical publication,
 membership, universe and projection-parent checks apply.
@@ -95,6 +103,27 @@ From the Report checkout, PowerShell or Bash:
 ```text
 python -m pytest tests/unit/composite_reporting/test_historical_policy.py tests/unit/composite_reporting/test_monthly_amendment.py
 ```
+
+The focused recorded-window regression runs from the same checkout:
+
+```text
+python -m pytest tests/unit/composite_reporting/test_historical_proof_windows.py
+```
+
+`tests/fixtures/composite-historical-policy/native-admission.json` retains unchanged
+public signed products from Manage's native HTTPS/provider and PostgreSQL proof on
+candidate `010ea553f40f5b15c4588bccb1ba52ac8c2b7c3b`, qualified main
+`211e50ded2f4a1d41b8e7fec9ef89d6ac727169f`. Its packet SHA-256 is
+`10de3e65bc04e4995fc98bf7036659b963ddf91eaebfb4b61d866683a52b5b17`;
+the fixture records each original custody file's hash and
+[producer evidence](https://github.com/sgajbi/lotus-manage/issues/778#issuecomment-6093446571).
+Both definition profiles retain ordinary v3 and correction v4 receipts and all
+twelve distinct operation proofs, including real positive admission delay. Unit
+tests use Report's existing schema, policy, operation and nested hash admission.
+Unsigned rehashed clones separately exercise structural timing refusals; they do
+not establish signature validity or source authority. This is compatibility proof
+with controlled synthetic facts, not a joined Manage-to-Report runtime campaign,
+institutional authentication or financial validation.
 
 Generated `composite_historical_report_schema()` namespaces full producer schemas
 without changing their contents or the frozen v4/v6 schemas. Runtime distributions
