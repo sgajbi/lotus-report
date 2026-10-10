@@ -1,5 +1,10 @@
 # Composite Review API Guide
 
+Optional `source_context` selects v8 for a primary TWR vector with pinned Manage
+definition, SI and/or supplied history. See [source-context custody](composite-source-context-custody.md)
+for exact binding, dictionaries, executable examples and the separate Render v8
+support boundary.
+
 The internal calculated-review surface delivers a retained JSON dataset or XLSX
 workbook through the existing worker, Render and Archive. Catalogue availability
 depends on actual runtime and exact template-format evidence. Qualification is

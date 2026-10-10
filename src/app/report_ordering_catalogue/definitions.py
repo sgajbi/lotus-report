@@ -462,6 +462,18 @@ REPORT_FAMILY_DEFINITIONS = (
                 value_source="caller",
             ),
             ReportConfigurationFieldDefinition(
+                field_id="composite_source_context",
+                business_label="Pinned composite source context",
+                description=(
+                    "Exact Manage v1 definition joined to the primary TWR vector; "
+                    "Optional SI and explicit supplied membership histories; no approval inference."
+                ),
+                input_type="pinned_source_selection",
+                requirement="optional",
+                defaulting_policy="omitted_preserves_legacy_contract",
+                value_source="caller",
+            ),
+            ReportConfigurationFieldDefinition(
                 field_id="composite_eligibility_selection",
                 business_label="Pinned monthly eligibility evidence",
                 description=(

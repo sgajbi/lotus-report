@@ -1,0 +1,467 @@
+{
+  "selection": {
+    "tenant_id": "tenant-a",
+    "composite_id": "NEUTRAL_BALANCED",
+    "calculation_id": "00000000-0000-0000-0000-0000000000c8",
+    "period_start": "2026-01-01",
+    "period_end": "2026-12-31",
+    "reporting_currency": "USD",
+    "return_view": "NET_ACTUAL",
+    "methodology": "persisted_member_return_asset_weighted_twr_v1",
+    "engine_version": "synthetic-engine.v1",
+    "calculation_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "response_digest": "sha256:25e268d583a131a5c1341ca1f92ca3b2ad823581e7893b3d7f4a3e02d3080532",
+    "windows": [
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000001",
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000002",
+        "period_start": "2026-02-01",
+        "period_end": "2026-02-28",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000003",
+        "period_start": "2026-03-01",
+        "period_end": "2026-03-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000004",
+        "period_start": "2026-04-01",
+        "period_end": "2026-04-30",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000005",
+        "period_start": "2026-05-01",
+        "period_end": "2026-05-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000006",
+        "period_start": "2026-06-01",
+        "period_end": "2026-06-30",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000007",
+        "period_start": "2026-07-01",
+        "period_end": "2026-07-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000008",
+        "period_start": "2026-08-01",
+        "period_end": "2026-08-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000009",
+        "period_start": "2026-09-01",
+        "period_end": "2026-09-30",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-00000000000a",
+        "period_start": "2026-10-01",
+        "period_end": "2026-10-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-00000000000b",
+        "period_start": "2026-11-01",
+        "period_end": "2026-11-30",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-00000000000c",
+        "period_start": "2026-12-01",
+        "period_end": "2026-12-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "synthetic-cohesion-original",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    ]
+  },
+  "source_products": [
+    {
+      "kind": "CALENDAR_RETURN",
+      "product_key": "calendar_2026",
+      "year": 2026,
+      "selection": {
+        "tenant_id": "tenant-a",
+        "composite_id": "NEUTRAL_BALANCED",
+        "calculation_id": "00000000-0000-0000-0000-0000000000c9",
+        "period_start": "2026-01-01",
+        "period_end": "2026-12-31",
+        "reporting_currency": "USD",
+        "return_view": "NET_ACTUAL",
+        "methodology": "persisted_member_return_asset_weighted_twr_v1",
+        "engine_version": "synthetic-engine.v1",
+        "calculation_fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "response_digest": "sha256:c1abf69396ba0f5fafab73ae065ec574e6f6f9999ad8a61782df6b35d5b3fcf4",
+        "windows": [
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000001",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000002",
+            "period_start": "2026-02-01",
+            "period_end": "2026-02-28",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000003",
+            "period_start": "2026-03-01",
+            "period_end": "2026-03-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000004",
+            "period_start": "2026-04-01",
+            "period_end": "2026-04-30",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000005",
+            "period_start": "2026-05-01",
+            "period_end": "2026-05-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000006",
+            "period_start": "2026-06-01",
+            "period_end": "2026-06-30",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000007",
+            "period_start": "2026-07-01",
+            "period_end": "2026-07-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000008",
+            "period_start": "2026-08-01",
+            "period_end": "2026-08-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-000000000009",
+            "period_start": "2026-09-01",
+            "period_end": "2026-09-30",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-00000000000a",
+            "period_start": "2026-10-01",
+            "period_end": "2026-10-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-00000000000b",
+            "period_start": "2026-11-01",
+            "period_end": "2026-11-30",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-00000000000c",
+            "period_start": "2026-12-01",
+            "period_end": "2026-12-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "TRAILING_RETURN",
+      "product_key": "trailing_2m",
+      "months": 2,
+      "selection": {
+        "tenant_id": "tenant-a",
+        "composite_id": "NEUTRAL_BALANCED",
+        "calculation_id": "00000000-0000-0000-0000-0000000000ca",
+        "period_start": "2026-11-01",
+        "period_end": "2026-12-31",
+        "reporting_currency": "USD",
+        "return_view": "NET_ACTUAL",
+        "methodology": "persisted_member_return_asset_weighted_twr_v1",
+        "engine_version": "synthetic-engine.v1",
+        "calculation_fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "response_digest": "sha256:ade1cac7374b604ddc7ae96632cbf43ce7eff2717a4dcb27c67d46cbc39b2b33",
+        "windows": [
+          {
+            "materialization_id": "00000000-0000-0000-0000-00000000000b",
+            "period_start": "2026-11-01",
+            "period_end": "2026-11-30",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          {
+            "materialization_id": "00000000-0000-0000-0000-00000000000c",
+            "period_start": "2026-12-01",
+            "period_end": "2026-12-31",
+            "restatement_sequence": 1,
+            "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+            "membership_content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+            "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "source_cut_id": "synthetic-cohesion-original",
+            "method_binding": {
+              "method_id": "ASSET_WEIGHTED",
+              "method_version": "v1"
+            },
+            "retained_receipt_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ]
+      }
+    }
+  ],
+  "source_context": {
+    "definition": {
+      "definition_version": "d1",
+      "content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+      "response_digest": "sha256:f5e867e0c2e8da0270ea0610146656ccf114006e6f0697eeb1524893af2e5c1e"
+    },
+    "since_inception": true,
+    "memberships": [
+      {
+        "membership_revision": "m1",
+        "content_hash": "sha256:9369799c5bbf0239e36372ad781240c949282ffb5411e60eb994bf444c7c6374",
+        "response_digest": "sha256:6f06ae5b2f2a17dd0f66574e377677f6af1cdd672c7d4143da9c1d6e65be010f"
+      }
+    ]
+  },
+  "requested_output_formats": [
+    "xlsx"
+  ]
+}

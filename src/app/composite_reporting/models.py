@@ -186,6 +186,39 @@ class CompositeCalculatedResponse(SourceModel):
     selection_manifest: CompositeSelectionManifest
 
 
+class CompositeDefinitionPin(BaseModel):
+    """Exact original Manage v1 definition; the caller cannot supply inception."""
+
+    model_config = ConfigDict(extra="forbid")
+    definition_version: Identifier
+    content_hash: Digest
+    response_digest: Digest
+
+
+class CompositeMembershipPin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    membership_revision: Identifier
+    content_hash: Digest
+    response_digest: Digest
+
+
+class CompositeSourceContextSelection(BaseModel):
+    """Shared definition custody with explicitly selected optional attachments."""
+
+    model_config = ConfigDict(extra="forbid")
+    definition: CompositeDefinitionPin
+    since_inception: bool = Field(default=False, strict=True)
+    memberships: list[CompositeMembershipPin] = Field(default_factory=list, max_length=2)
+
+    @model_validator(mode="after")
+    def require_attachment(self) -> CompositeSourceContextSelection:
+        if not self.since_inception and not self.memberships:
+            raise ValueError("COMPOSITE_SOURCE_CONTEXT_ATTACHMENT_REQUIRED")
+        if len({pin.membership_revision for pin in self.memberships}) != len(self.memberships):
+            raise ValueError("COMPOSITE_MEMBERSHIP_REVISION_DUPLICATED")
+        return self
+
+
 class CalendarReturnSelection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -647,6 +680,11 @@ class CompositeReviewJobRequest(BaseModel):
         exclude_if=lambda value: value is None,
         description="Exact calendar/trailing calculations; absent retains the v1 contract.",
     )
+    source_context: CompositeSourceContextSelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Exact Manage v1 definition with optional SI and supplied history.",
+    )
     requested_output_formats: list[Literal["json", "xlsx"]] = Field(
         default=["json"],
         min_length=1,
@@ -657,6 +695,8 @@ class CompositeReviewJobRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_products(self) -> CompositeReviewJobRequest:
+        if "composite_source_context" in self.options:
+            raise ValueError("Use the typed source_context field")
         if "composite_source_products" in self.options:
             raise ValueError("Use the typed source_products field")
         if "composite_linked_selection" in self.options:
@@ -682,6 +722,14 @@ class CompositeReviewJobRequest(BaseModel):
             if self.selection is None:
                 raise ValueError("Linked analysis cannot be a TWR return product")
             require_product_scope(self.selection, self.source_products)
+        if self.source_context is not None:
+            if self.selection is None:
+                raise ValueError("Source context requires a primary TWR selection")
+            if any(
+                window.definition_content_hash != self.source_context.definition.content_hash
+                for window in self.selection.windows
+            ):
+                raise ValueError("COMPOSITE_INCEPTION_DEFINITION_VECTOR_CONFLICT")
         return self
 
     @property
@@ -724,6 +772,8 @@ class CompositeReviewJobRequest(BaseModel):
             }
         assert self.selection is not None
         options = {**self.options, "composite_selection": self.selection.model_dump(mode="json")}
+        if self.source_context is not None:
+            options["composite_source_context"] = self.source_context.model_dump(mode="json")
         if self.source_products is not None:
             options["composite_source_products"] = [
                 product.model_dump(mode="json") for product in self.source_products

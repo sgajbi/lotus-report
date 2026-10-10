@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import timedelta
 from re import fullmatch
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -38,6 +38,9 @@ from app.composite_reporting.table_contract import (
     resolve_source_pointer,
     validate_cell_lineage,
 )
+
+if TYPE_CHECKING:
+    from app.composite_reporting.source_context_contract import CompositeSourceContextReportData
 
 
 class CapturedReturnProduct(TableModel):
@@ -136,7 +139,12 @@ def validate_composite_dataset(
     | CompositeAmendmentReportData
     | CompositePooledReportData
     | CompositeHistoricalReportData
+    | CompositeSourceContextReportData
 ):
+    if payload.get("contract_version") == "composite_review.v8":
+        from app.composite_reporting.source_context_contract import CompositeSourceContextReportData
+
+        return CompositeSourceContextReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v7":
         return CompositeHistoricalReportData.model_validate(payload)
     if payload.get("contract_version") == "composite_review.v6":

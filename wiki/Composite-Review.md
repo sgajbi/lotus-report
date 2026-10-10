@@ -1,5 +1,20 @@
 # Composite Review
 
+The additive `composite_review.v8` source context joins one exact Manage v1
+definition and optional supplied membership histories to a primary TWR vector.
+Existing exact calendar/trailing products coexist with SI and history in that
+same v8 manifest. Select a full-inception primary and pinned calendar/trailing
+subvectors; every vector shares definition/membership custody and contributes
+its own captured response identity. V2 capture, coverage and projection are reused.
+SI copies cumulative_return only for complete READY coverage beginning at captured
+inception. Later windows retain window returns and typed SI unavailability.
+History preserves full effective-dated decisions and direct correction parents;
+no CLOSED state or monthly approval is inferred. Retained packages do not refetch.
+XLSX requires exact v8 consumer support. Controlled registered package proof does
+not establish actual workbook delivery. See the
+[source-context guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-source-context-custody.md)
+for executable examples, dictionaries and qualification limits. #417 remains open.
+
 ## Authority changes during rendering
 
 An outstanding render keeps its captured composite snapshot even when the current

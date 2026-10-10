@@ -94,7 +94,9 @@ async def submit_composite_review(
             },
         )
     profile = (
-        "v5"
+        "v8"
+        if request.source_context is not None
+        else "v5"
         if request.pooled_selection is not None
         else "v7"
         if isinstance(request.eligibility_selection, HistoricalEligibilitySelection)
@@ -109,6 +111,7 @@ async def submit_composite_review(
         or request.linked_selection is not None
         or request.eligibility_selection is not None
         or request.pooled_selection is not None
+        or request.source_context is not None
     ) and request.requested_output_formats == ["xlsx"]:
         support = await catalogue.document_contract_supportability(
             report_type="composite_review",
