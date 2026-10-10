@@ -749,6 +749,12 @@ until producer and consumer source/main/wiki release qualification. Report check
 configured-identity custody/schema/hash/intent/scope; Manage owns cryptographic
 verification, trust pins and current revocation/admission. Do not introduce a
 consumer trust service or reinterpret retained proof as new bank authority.
+Recorded proof windows follow Manage: checked <= requested <= admitted < expiry,
+bounded to five minutes from checked. Keep exact operation/request-clock binding,
+allow real admission delay, and require timezones. Validate retained windows without
+a current-time grant check. Native public signed fixtures and focused window tests
+cover both definition profiles and ordinary/correction products; synthetic structural
+clones are separate refusal controls, not signed authority evidence.
 Keep all capacity caps and globally ordered provenance rows; never shorten raw
 bytes or proofs. See `docs/composite-historical-policy-custody.md`.
 

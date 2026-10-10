@@ -91,12 +91,11 @@ def require_proof(
     require(mapping["policy"] == policy_proposal["policy"])
     require(mapping["attachments"] == policy_proposal["attachments"])
     require(mapping["eligibility_policy_version"] == policy_proposal["eligibility_policy_version"])
-    start, checked, end = (
-        instant(proof[key]) for key in ("admitted_at", "checked_at", "expires_at")
+    checked, admitted, expiry = (
+        instant(proof[key]) for key in ("checked_at", "admitted_at", "expires_at")
     )
-    require(
-        start == instant(at) and checked <= start <= end and (end - checked).total_seconds() <= 300
-    )
+    requested = instant(at)
+    require(checked <= requested <= admitted < expiry and (expiry - checked).total_seconds() <= 300)
     require(proof["original_signature_status"] == "VERIFIED_AT_ORIGINAL_APPROVAL")
     require(proof["current_revocation_status"] == "CLEAR")
     require(proof["signer_principal_id"] != proof["verifier_principal_id"])

@@ -10,6 +10,13 @@ PolicyAdmission provenance and Amendments. XLSX uses `composite-review/v7` insid
 pending producer and consumer source/main/wiki qualification. This is configured-
 identity producer custody, `CONTROLLED / NOT_ATTESTED`; Manage owns signature/trust/
 revocation admission. Full #417 and institutional authority remain open.
+Recorded proof clocks retain Manage's ordering: checked <= requested <= admitted
+< expiry, at most five minutes from checked. Admission may follow the request;
+expiry equality, reversed clocks and timezone-naive clocks refuse. Historical
+replay checks the recorded window without a fresh wall-clock authorization check.
+Unchanged public native-provider products cover both definition profiles and
+ordinary/correction versions in the focused Report compatibility tests. Their facts
+remain controlled synthetic inputs; the full native joined campaign is separate.
 See [the admission, projection and release boundaries](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-historical-policy-custody.md).
 
 ## Monthly source amendments (v6)

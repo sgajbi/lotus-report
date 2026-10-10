@@ -14,6 +14,36 @@ Tracking model:
 5. local review notes without a linked issue are historical evidence only unless an explicit issue
    is created or reused.
 
+## Recorded historical proof admission — issue 437
+
+[#437](https://github.com/sgajbi/lotus-report/issues/437) corrects the existing
+`composite_reporting.historical_source.require_proof` temporal guard. Report had
+required request/admission equality and admitted a zero-length window; Manage's
+frozen contract requires checked <= requested <= admitted < expiry, bounded to
+five minutes. The existing configured-source request/hash/mapping/actor/intent and
+trust ownership remain intact. No wire, schema, migration or runtime topology changes.
+
+The native-derived public fixture retains ordinary v3 and correction v4 receipts
+for both definition profiles, with all twelve distinct signed operation proofs
+unchanged from producer packet
+`10de3e65bc04e4995fc98bf7036659b963ddf91eaebfb4b61d866683a52b5b17`.
+Focused tests reproduce legitimate delayed admission refusals before the fix and
+accept those products after it. Separate unsigned structural clones cover equal
+admission, microsecond and five-minute boundaries, reversed/nonpositive/overlong
+windows, timezone-naive clocks, exact request binding and retained replay without
+requesting the current wall clock. Existing rehashed-proof refusals remain intact.
+The focused historical/monthly/window suite passed 132 tests.
+
+Organization review keeps the guard in its existing domain module and adds the
+cohesive `test_historical_proof_windows.py` beside the existing policy tests. A
+same-pattern scan found the temporal equality only in this guard; producer schemas
+and historical payloads remain unchanged. The custody guide, repository context
+and Composite Review wiki record the corrected timing semantics. No platform
+skill change is needed: existing contract fidelity and native-derived regression
+requirements already cover this failure. Controlled native compatibility does not
+qualify the joined nine-phase campaign, institutional authority or financial values;
+parent #417 remains open and default enablement remains off.
+
 ## RFC-0105 Gold-Pass Audit
 
 Review id: `RFC-0105-GOLD-PASS-2026-04-29`
