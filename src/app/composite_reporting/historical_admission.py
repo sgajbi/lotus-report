@@ -99,7 +99,7 @@ def require_retained_receipt(
         require(receipt["lineage"] == proposal["amendment"])
         require(
             receipt["publication_sequence"]
-            == proposal["amendment"]["expected_current_publication_sequence"] + 1
+            > proposal["amendment"]["expected_current_publication_sequence"]
         )
 
 

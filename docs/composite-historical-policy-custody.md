@@ -44,6 +44,13 @@ at exactly one ordinary v3 root, with no cycles or version downgrade. The existi
 same-policy/population ordinary-month correction rules and canonical publication,
 membership, universe and projection-parent checks apply.
 
+Publication sequences are ordered producer cursors, not consecutive correction
+numbers. A v4 receipt must have a sequence strictly greater than its exact pinned
+parent publication sequence; PostgreSQL identity allocation can leave gaps.
+Equal or backward sequences refuse. Exact parent identity, lineage, hashes,
+operation proofs and tenant scope remain mandatory for selected and retained
+receipts alike. Report does not renumber producer publications.
+
 ## Projection and capacity
 
 The existing eight eligibility tables are followed by `Amendments` and
@@ -109,6 +116,21 @@ The focused recorded-window regression runs from the same checkout:
 ```text
 python -m pytest tests/unit/composite_reporting/test_historical_proof_windows.py
 ```
+
+Native publication ordering regressions run from the same checkout:
+
+```text
+python -m pytest tests/unit/composite_reporting/test_historical_publication_sequences.py
+```
+
+The `native-publication-sequences/` fixtures retain public native source months and request
+pins from execution `8954f54bac314ee88f20c376dd96c091` on qualified Manage main
+`211e50ded2f4a1d41b8e7fec9ef89d6ac727169f`. Original capture/request hashes and
+the projection description accompany the three actual correction failure shapes.
+Signed products and their sequences are unchanged. Unsigned rehashed clones
+isolate adjacency, larger gaps, equal/backward refusals and custody corruption;
+they confer no authority. The source regression does not complete the native
+nine-phase/18-workbook acceptance in issues #437 and #417.
 
 `tests/fixtures/composite-historical-policy/native-admission.json` retains unchanged
 public signed products from Manage's native HTTPS/provider and PostgreSQL proof on

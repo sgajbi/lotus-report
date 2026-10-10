@@ -16,6 +16,33 @@ Tracking model:
 
 ## Recorded historical proof admission — issue 437
 
+The later native PostgreSQL campaign exposed a separate historical publication
+ordering assumption, recorded in
+[issue evidence](https://github.com/sgajbi/lotus-report/issues/437#issuecomment-6094515003)
+before implementation. `historical_admission.require_retained_receipt` required
+exact cursor adjacency, rejecting native sequence 5 after exact pinned parent 3.
+The existing producer and non-historical amendment contracts allow gaps. The
+same guard now requires strict increase while retaining exact parent, lineage,
+hash, operation-proof and tenant admission. No schema, wire, dependency, migration,
+trust-owner or runtime topology change is needed.
+
+`test_historical_publication_sequences.py` retains all three actual failing shapes
+from execution `8954f54bac314ee88f20c376dd96c091`; public signed products remain
+unchanged and original capture/request digests accompany their projection. The
+pre-fix regression had five failures and six passes; after correction the combined
+historical policy/window/sequence/monthly amendment suite passed 143 tests.
+Unsigned rehashed clones accept adjacent and larger positive gaps while rejecting
+equal/backward sequences. Exact parent publication, lineage pin and tenant
+corruption controls still refuse. The native campaign remains incomplete with no
+workbooks; source regressions cannot close the full acceptance of #437 or #417.
+
+The same-pattern scan confines adjacency to this historical guard; the existing
+amendment guard already requires strict increase. The cohesive domain test stays
+beside historical policy tests, and guide/context/wiki record cursor semantics.
+Existing source-contract fidelity guidance suffices; no platform skill, runtime
+split, API/OpenAPI, supported-feature promotion or capacity change is warranted.
+Default enablement stays off and classification remains controlled NOT_ATTESTED.
+
 [#437](https://github.com/sgajbi/lotus-report/issues/437) corrects the existing
 `composite_reporting.historical_source.require_proof` temporal guard. Report had
 required request/admission equality and admitted a zero-length window; Manage's
