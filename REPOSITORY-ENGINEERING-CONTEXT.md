@@ -758,6 +758,11 @@ clones are separate refusal controls, not signed authority evidence.
 Keep all capacity caps and globally ordered provenance rows; never shorten raw
 bytes or proofs. See `docs/composite-historical-policy-custody.md`.
 
+Historical correction publication sequences must be strictly later than the exact
+pinned parent publication, without assuming consecutive PostgreSQL identity values.
+Selected and retained v4 receipts keep full parent, lineage, hash, operation-proof
+and tenant checks. Native sequence gaps are preserved; equal/backward cursors refuse.
+
 The explicit `eligibility_selection.selection_version=v2` selects
 `composite_review.v6` monthly source amendments. Absence keeps historical v4
 serialization/fingerprints. Transport DTOs preserve source-v2 independently of

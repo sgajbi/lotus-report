@@ -17,6 +17,12 @@ replay checks the recorded window without a fresh wall-clock authorization check
 Unchanged public native-provider products cover both definition profiles and
 ordinary/correction versions in the focused Report compatibility tests. Their facts
 remain controlled synthetic inputs; the full native joined campaign is separate.
+Historical correction receipts require a publication sequence strictly later than
+the exact pinned parent, including retained lineage receipts. PostgreSQL identity
+values may have gaps; Report preserves them without renumbering. Equal/backward
+sequences and broken parent, lineage, hash or tenant bindings still refuse.
+Three unchanged native correction shapes cover this compatibility rule. Issues
+#437 and #417 remain open for the full nine-phase/18-workbook native acceptance.
 See [the admission, projection and release boundaries](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-historical-policy-custody.md).
 
 ## Monthly source amendments (v6)
