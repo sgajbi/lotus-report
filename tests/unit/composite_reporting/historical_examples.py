@@ -1,5 +1,6 @@
 """Select complete, immutable Manage-controlled graphs without resealing products."""
 
+import calendar
 import json
 from pathlib import Path
 
@@ -9,9 +10,13 @@ from app.composite_reporting.models import HistoricalEligibilitySelection
 GRAPHS = Path(__file__).parents[2] / "fixtures" / "composite-historical-graphs"
 
 
-def graph_example(definition="v1", step="root", published=False):
+def graph_example(definition="v1", step="root", published=False, *, source_graph=None):
     phase = "published" if published else "evaluated-only"
-    graph = json.loads((GRAPHS / f"definition-{definition}.{step}-{phase}.json").read_bytes())
+    graph = (
+        source_graph
+        if source_graph is not None
+        else json.loads((GRAPHS / f"definition-{definition}.{step}-{phase}.json").read_bytes())
+    )
     proposal = graph["evaluation_proposal"]
     pin = {
         "product_version": proposal["product_version"],
@@ -94,9 +99,33 @@ def graph_example(definition="v1", step="root", published=False):
                 key: graph["definition"][key]
                 for key in ("tenant_id", "composite_id", "definition_version", "reporting_currency")
             },
-            "period_start": "2026-09-01",
-            "period_end": "2026-09-30",
+            "period_start": pin["month"] + "-01",
+            "period_end": pin["month"]
+            + f"-{calendar.monthrange(int(pin['month'][:4]), int(pin['month'][5:]))[1]:02d}",
             "months": [pin],
         }
     )
     return selected, [month]
+
+
+def two_month_historical_example(published=True):
+    folder = GRAPHS.parent / "composite-historical-two-month"
+    first, first_months = graph_example(
+        published=True, source_graph=json.loads((folder / "2026-09.published.json").read_bytes())
+    )
+    phase = "published" if published else "evaluated-only"
+    second, second_months = graph_example(
+        published=published,
+        source_graph=json.loads((folder / f"2026-10.{phase}.json").read_bytes()),
+    )
+    selected = HistoricalEligibilitySelection.model_validate(
+        {
+            **first.model_dump(mode="json"),
+            "period_end": second.period_end.isoformat(),
+            "months": [
+                *first.model_dump(mode="json")["months"],
+                *second.model_dump(mode="json")["months"],
+            ],
+        }
+    )
+    return selected, first_months + second_months
