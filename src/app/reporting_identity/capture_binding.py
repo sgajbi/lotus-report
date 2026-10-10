@@ -153,6 +153,32 @@ def source_revision_vector_for_capture(
     """
 
     stated: list[SourceRevision] = []
+    if snapshot_payload.get("contract_version") == "composite_review.v8":
+        definition = snapshot_payload["definition"]["source_response"]
+        stated.append(
+            SourceRevision(
+                source_service="lotus-manage",
+                source_product=definition["product_name"],
+                source_product_version=definition["product_version"],
+                content_hash=definition["content_hash"],
+                source_snapshot_id=definition["definition_version"],
+                generated_at=definition["created_at"],
+                supportability_status="UNVERIFIED",
+            )
+        )
+        for membership in snapshot_payload["supplied_memberships"]:
+            raw = membership["source_response"]
+            stated.append(
+                SourceRevision(
+                    source_service="lotus-manage",
+                    source_product=raw["product_name"],
+                    source_product_version=raw["product_version"],
+                    content_hash=raw["content_hash"],
+                    source_snapshot_id=raw["membership_revision"],
+                    generated_at=raw["decided_at"],
+                    supportability_status="UNVERIFIED",
+                )
+            )
     if snapshot_payload.get("contract_version") == "composite_review.v5":
         stated.extend(_pooled_revisions(snapshot_payload))
     if snapshot_payload.get("contract_version") in {
@@ -164,7 +190,7 @@ def source_revision_vector_for_capture(
     composite_revision = _revision_from_composite_response(snapshot_payload)
     if composite_revision is not None:
         stated.append(composite_revision)
-    if snapshot_payload.get("contract_version") == "composite_review.v2":
+    if snapshot_payload.get("contract_version") in {"composite_review.v2", "composite_review.v8"}:
         for product in snapshot_payload.get("source_products", []):
             if isinstance(product, dict):
                 revision = _revision_from_composite_response(
@@ -244,6 +270,7 @@ def _revision_from_composite_response(payload: dict[str, Any]) -> SourceRevision
         "composite_review.v1",
         "composite_review.v2",
         "composite_review.v3",
+        "composite_review.v8",
     }:
         return None
     response = payload.get("source_response")

@@ -1,0 +1,59 @@
+{
+  "selection": {
+    "tenant_id": "tenant-a",
+    "composite_id": "NEUTRAL_BALANCED",
+    "calculation_id": "00000000-0000-0000-0000-000000000099",
+    "period_start": "2026-01-01",
+    "period_end": "2026-02-28",
+    "reporting_currency": "USD",
+    "return_view": "NET_ACTUAL",
+    "methodology": "persisted_member_return_asset_weighted_twr_v1",
+    "engine_version": "synthetic-engine.v1",
+    "calculation_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "response_digest": "sha256:ef727278a1326a25fde2ef035845477d95530a835ce0979233973e6985edee22",
+    "windows": [
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000001",
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "source-cut-1",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000002",
+        "period_start": "2026-02-01",
+        "period_end": "2026-02-28",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "source-cut-2",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "source_context": {
+    "definition": {
+      "definition_version": "d1",
+      "content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+      "response_digest": "sha256:f5e867e0c2e8da0270ea0610146656ccf114006e6f0697eeb1524893af2e5c1e"
+    },
+    "since_inception": true,
+    "memberships": []
+  },
+  "requested_output_formats": [
+    "json"
+  ]
+}

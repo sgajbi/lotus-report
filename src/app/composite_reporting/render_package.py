@@ -51,6 +51,7 @@ def build_composite_render_package(
         "composite_review.v5",
         "composite_review.v6",
         "composite_review.v7",
+        "composite_review.v8",
     }:
         from app.composite_reporting.eligibility_tables import preflight_eligibility_package
 
@@ -61,6 +62,8 @@ def build_composite_render_package(
             if snapshot["contract_version"] == "composite_review.v6"
             else "COMPOSITE_HISTORICAL"
             if snapshot["contract_version"] == "composite_review.v7"
+            else "COMPOSITE_SOURCE_CONTEXT"
+            if snapshot["contract_version"] == "composite_review.v8"
             else ("COMPOSITE_ELIGIBILITY")
         )
         preflight_eligibility_package(package, failure_prefix=prefix)
@@ -87,10 +90,7 @@ def composite_archive_custody(
     binding = revision_for_capture(
         job=job,
         snapshot_payload=record.snapshot_payload,
-        upstream_services=("lotus-manage",)
-        if data.contract_version
-        in {"composite_review.v4", "composite_review.v6", "composite_review.v7"}
-        else ("lotus-performance",),
+        upstream_services=_custody_services(data.contract_version),
     )
     if binding is None:
         raise ValueError("COMPOSITE_CUSTODY_REVISION_REQUIRED")
@@ -135,19 +135,45 @@ def composite_archive_custody(
         from app.composite_reporting.historical_tables import CALCULATION_BOUNDARY
 
         custody["composite_report_identity"]["calculation_boundary"] = CALCULATION_BOUNDARY
+    if data.contract_version == "composite_review.v8":
+        custody["composite_report_identity"]["source_context"] = data.source_context.model_dump(
+            mode="json"
+        )
+        custody["composite_report_identity"]["definition"] = {
+            "pin": data.definition.pin.model_dump(mode="json"),
+            "source_response_digest": data.definition.source_response_digest,
+        }
     for field in ("retention_policy_id", "retain_until_date"):
         value = job.options.get(field)
         if value:
             custody[field] = value
-    if data.contract_version == "composite_review.v2":
-        custody["composite_report_identity"]["source_products"] = [
+    custody["composite_report_identity"].update(_product_custody(data))
+    return custody
+
+
+def _product_custody(data: Any) -> dict[str, Any]:
+    if data.contract_version not in {"composite_review.v2", "composite_review.v8"}:
+        return {}
+    if not data.source_products:
+        return {}
+    return {
+        "source_products": [
             {
                 "pin": product.pin.model_dump(mode="json"),
                 "source_response_digest": product.source_response_digest,
             }
             for product in data.source_products
         ]
-    return custody
+    }
+
+
+def _custody_services(contract_version: str) -> tuple[str, ...]:
+    return {
+        "composite_review.v4": ("lotus-manage",),
+        "composite_review.v6": ("lotus-manage",),
+        "composite_review.v7": ("lotus-manage",),
+        "composite_review.v8": ("lotus-manage", "lotus-performance"),
+    }.get(contract_version, ("lotus-performance",))
 
 
 def _require_custody_contract(

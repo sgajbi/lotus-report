@@ -1,0 +1,55 @@
+{
+  "selection": {
+    "tenant_id": "tenant-a",
+    "composite_id": "NEUTRAL_BALANCED",
+    "calculation_id": "00000000-0000-0000-0000-000000000099",
+    "period_start": "2026-01-05",
+    "period_end": "2026-01-05",
+    "reporting_currency": "USD",
+    "return_view": "NET_ACTUAL",
+    "methodology": "persisted_member_return_asset_weighted_twr_v1",
+    "engine_version": "synthetic-engine.v1",
+    "calculation_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "response_digest": "sha256:eb49efb2183c12043d02339bfbf7354a001e0761dc4fdf773d103776bbd1f839",
+    "windows": [
+      {
+        "materialization_id": "00000000-0000-0000-0000-000000000001",
+        "period_start": "2026-01-05",
+        "period_end": "2026-01-05",
+        "restatement_sequence": 1,
+        "definition_content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+        "membership_content_hash": "sha256:2092819839899019dade3e71606cb7aaf774019fa319c8ea8b2a518f86b53d0f",
+        "attestation_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "source_cut_id": "source-cut-1",
+        "method_binding": {
+          "method_id": "ASSET_WEIGHTED",
+          "method_version": "v1"
+        },
+        "retained_receipt_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    ]
+  },
+  "source_context": {
+    "definition": {
+      "definition_version": "d1",
+      "content_hash": "sha256:c8d2022010ca14a4965e4b6d49d3f15ff8af4562156dafc9f48635551f4727e9",
+      "response_digest": "sha256:f5e867e0c2e8da0270ea0610146656ccf114006e6f0697eeb1524893af2e5c1e"
+    },
+    "since_inception": true,
+    "memberships": [
+      {
+        "membership_revision": "m1",
+        "content_hash": "sha256:f093f6b9920f981e226138b38de014d1b654628c8cd7c0166d029788859d451f",
+        "response_digest": "sha256:22611bac83ebe4e7d68ec12d316131e60f010d1c5a5d7beb7769f745c8e05477"
+      },
+      {
+        "membership_revision": "m2",
+        "content_hash": "sha256:2092819839899019dade3e71606cb7aaf774019fa319c8ea8b2a518f86b53d0f",
+        "response_digest": "sha256:75d228905ceaa875414c94ef88d8eb9c421841cc0483161ba86f96d8186a64a6"
+      }
+    ]
+  },
+  "requested_output_formats": [
+    "json"
+  ]
+}

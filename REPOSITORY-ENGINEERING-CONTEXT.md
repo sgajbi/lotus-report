@@ -11,6 +11,16 @@ here is only interesting because of when it shipped, it belongs there instead.
 
 ## Repository Role
 
+Composite source context uses additive `composite_review.v8`: exact Manage v1
+definition custody with optional SI and supplied membership histories beside an
+TWR primary and existing exact calendar/trailing source products in one manifest.
+Preserve raw responses and both supplier revisions; check every vector's
+definition/membership joins. SI requires full inception coverage and copies
+source cumulative_return. History keeps original intervals and direct parents,
+without filling gaps or manufacturing closure/approval. V1–v7 stay compatible.
+XLSX requires exact v8 consumer support; registered SQLite/package proof is not
+actual workbook acceptance. See `docs/composite-source-context-custody.md`.
+
 `lotus-report` composes governed client reporting from evidence owned by other services. It decides
 which reports exist, what they mean, and what evidence may enter them. It does not compute
 AUTHORITATIVE financial values - valuation, performance, risk and contribution are owned upstream

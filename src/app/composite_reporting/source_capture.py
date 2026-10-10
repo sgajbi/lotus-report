@@ -89,6 +89,12 @@ def _monthly_dataset(selection: Any, months: list[dict[str, Any]]) -> dict[str, 
     return build_eligibility_dataset(selection, months)
 
 
+def _require_capture_contract(job: ReportJobLedgerRecord, dataset: dict[str, Any]) -> None:
+    accepted = (job.accepted_document_contract or {}).get("input_snapshot_contract_version")
+    if accepted is not None and accepted != dataset["contract_version"]:
+        raise CompositeEvidenceRefused("COMPOSITE_REPORT_CAPTURE_CONTRACT_CONFLICT")
+
+
 class CompositeInputProvider:
     def __init__(
         self,
@@ -110,6 +116,7 @@ class CompositeInputProvider:
                         "eligibility_selection": job.options.get("composite_eligibility_selection"),
                         "pooled_selection": job.options.get("composite_pooled_selection"),
                         "source_products": job.options.get("composite_source_products"),
+                        "source_context": job.options.get("composite_source_context"),
                     }
                 )
                 selection = request.primary_selection
@@ -147,10 +154,10 @@ class CompositeInputProvider:
                 )
             if products:
                 dataset = build_product_tables(dataset, products)
+            if request.source_context is not None:
+                dataset = await self._capture_source_context(job, request, dataset, calls)
             validate_composite_dataset(dataset)
-            accepted = (job.accepted_document_contract or {}).get("input_snapshot_contract_version")
-            if accepted is not None and accepted != dataset["contract_version"]:
-                raise CompositeEvidenceRefused("COMPOSITE_REPORT_CAPTURE_CONTRACT_CONFLICT")
+            _require_capture_contract(job, dataset)
             return PortfolioReviewInputCapture(snapshot_payload=dataset, upstream_calls=calls)
         except Exception as exc:
             # A refused HTTP200 must never retain complete successful lineage.
@@ -162,6 +169,60 @@ class CompositeInputProvider:
             raise PortfolioReviewInputCaptureError(
                 original_error=exc, upstream_calls=calls
             ) from exc
+
+    async def _capture_source_context(
+        self,
+        job: ReportJobLedgerRecord,
+        request: CompositeReviewJobRequest,
+        dataset: dict[str, Any],
+        calls: list[_RecordedUpstreamCall],
+    ) -> dict[str, Any]:
+        assert request.source_context is not None
+        from app.composite_reporting.membership_history import (
+            CapturedMembership,
+            membership_endpoint,
+        )
+        from app.composite_reporting.source_context_contract import (
+            CapturedInceptionDefinition,
+            definition_endpoint,
+            project_source_context,
+        )
+
+        assert request.selection is not None
+        endpoint = definition_endpoint(request.selection, request.source_context.definition)
+        definition = await self._manage_read(
+            job, endpoint, calls, contract_version="composite-definition.exact-custody.v1"
+        )
+        from app.composite_reporting.admission import response_digest
+
+        memberships = []
+        for pin in request.source_context.memberships:
+            path = membership_endpoint(endpoint, pin)
+            raw = await self._manage_read(
+                job, path, calls, contract_version="composite-membership.exact-custody.v1"
+            )
+            memberships.append(
+                CapturedMembership(
+                    pin=pin,
+                    endpoint=path,
+                    method="GET",
+                    source_response_digest=response_digest(raw),
+                    source_response=raw,
+                )
+            )
+        dataset = project_source_context(
+            dataset,
+            request.source_context,
+            CapturedInceptionDefinition(
+                pin=request.source_context.definition,
+                endpoint=endpoint,
+                method="GET",
+                source_response_digest=response_digest(definition),
+                source_response=definition,
+            ),
+            memberships,
+        )
+        return dataset
 
     async def _capture_pooled(
         self,
@@ -469,6 +530,8 @@ class CompositeInputProvider:
         endpoint: str,
         calls: list[_RecordedUpstreamCall],
         binding: dict[str, Any] | None = None,
+        *,
+        contract_version: str = "composite-eligibility.exact-custody.v1",
     ) -> dict[str, Any]:
         started = perf_counter()
         method = "GET" if binding is None else "POST"
@@ -496,7 +559,7 @@ class CompositeInputProvider:
                 service_name="lotus-manage",
                 endpoint=endpoint,
                 method=method,
-                contract_version="composite-eligibility.exact-custody.v1",
+                contract_version=contract_version,
                 request_payload=binding or {},
                 response_payload=response,
                 response_ref=response.get("content_hash"),
@@ -505,7 +568,11 @@ class CompositeInputProvider:
                 supportability_status="partial",
                 completeness_status="partial",
                 failure_category="partial_data",
-                failure_message="Controlled eligibility source is not attested.",
+                failure_message=(
+                    "Controlled eligibility source is not attested."
+                    if contract_version == "composite-eligibility.exact-custody.v1"
+                    else "Controlled source custody is not attested."
+                ),
                 captured_at=datetime.now(UTC),
                 correlation_id=job.correlation_id,
                 trace_id=job.trace_id,

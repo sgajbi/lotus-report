@@ -163,38 +163,29 @@ def resolve_job_accepted_contract(
             inherited_template=inherited_template,
         )
     )
-    if report_type == "composite_review" and options and "composite_source_products" in options:
-        contract["report_data_contract_version"] = "composite_review.v2"
-        contract["input_snapshot_contract_version"] = "composite_review.v2"
-        if contract.get("template_id") is not None:
-            contract["template_version"] = "v2"
-    if report_type == "composite_review" and options and "composite_linked_selection" in options:
-        contract["report_data_contract_version"] = "composite_review.v3"
-        contract["input_snapshot_contract_version"] = "composite_review.v3"
-        if contract.get("template_id") is not None:
-            contract["template_version"] = "v3"
-    if (
-        report_type == "composite_review"
-        and options
-        and "composite_eligibility_selection" in options
-    ):
-        version = (
-            "v7"
-            if options["composite_eligibility_selection"].get("selection_version") == "v3"
-            else "v6"
-            if options["composite_eligibility_selection"].get("selection_version") == "v2"
-            else "v4"
-        )
+    if report_type == "composite_review" and options:
+        _apply_composite_contract(contract, options)
+    return contract
+
+
+def _apply_composite_contract(contract: dict[str, Any], options: dict[str, Any]) -> None:
+    # Preserve the established profile precedence for legacy accepted options.
+    profiles = (
+        ("composite_source_products", "v2"),
+        ("composite_linked_selection", "v3"),
+        ("composite_eligibility_selection", "v4"),
+        ("composite_pooled_selection", "v5"),
+        ("composite_source_context", "v8"),
+    )
+    for key, version in profiles:
+        if key not in options:
+            continue
+        if key == "composite_eligibility_selection":
+            version = {"v2": "v6", "v3": "v7"}.get(options[key].get("selection_version"), "v4")
         contract["report_data_contract_version"] = f"composite_review.{version}"
         contract["input_snapshot_contract_version"] = f"composite_review.{version}"
         if contract.get("template_id") is not None:
             contract["template_version"] = version
-    if report_type == "composite_review" and options and "composite_pooled_selection" in options:
-        contract["report_data_contract_version"] = "composite_review.v5"
-        contract["input_snapshot_contract_version"] = "composite_review.v5"
-        if contract.get("template_id") is not None:
-            contract["template_version"] = "v5"
-    return contract
 
 
 def template_for_accepted_contract(
@@ -209,6 +200,7 @@ def template_for_accepted_contract(
         "composite_review.v5",
         "composite_review.v6",
         "composite_review.v7",
+        "composite_review.v8",
     }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved
