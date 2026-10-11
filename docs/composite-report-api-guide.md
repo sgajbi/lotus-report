@@ -239,7 +239,9 @@ not establish actual Render/Archive completion.
 
 Correction requires a fresh order, corrected complete pins and a new idempotency
 key. Retained retrieval uses the captured source and revision identity without
-refetching. Existing generic regenerate/replay commands remain portfolio-only.
+refetching. Generic regenerate and v3 failed-work replay remain portfolio-only. Initial custody
+recovery for accepted v8 XLSX jobs uses the existing replay command; see
+[the bounded recovery flow](operations/composite-custody-recovery.md).
 The same snapshot, source revision and custody digest checks apply to v3.
 
 From the `lotus-report` checkout, in either PowerShell or Bash:

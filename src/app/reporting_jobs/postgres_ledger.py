@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from app.composite_reporting.invocation_authority import (
     AcceptedTwrAdmission,
     bind_admission,
+    binding_for_job,
     require_internal_admission,
     require_same_admission,
 )
@@ -234,7 +235,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         self,
         *,
         source_job_id: str,
-        request: PortfolioReviewJobRequest,
+        request: PortfolioReviewJobRequest | CompositeReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
         reason: str,
@@ -249,9 +250,27 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         """
 
         source_job = self.get_job(source_job_id)
+        from app.reporting_jobs.replay_policy import (
+            composite_replay_request,
+            resolution_replay_supported,
+        )
+
+        admission = None
+        if not resolution_replay_supported(source_job):
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        if source_job.report_type == "composite_review":
+            if request != composite_replay_request(source_job):
+                raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+            # Frozen recovery inherits the accepted authority as provenance.
+            # Rebinding identifies the derived job; it authorizes no fresh source call.
+            admission = binding_for_job(source_job).admission
         return self._create_report_job(
-            report_type="portfolio_review",
-            accepted_message="Portfolio review report job accepted.",
+            report_type=source_job.report_type,
+            accepted_message=(
+                "Portfolio review report job accepted."
+                if source_job.report_type == "portfolio_review"
+                else "Composite review recovery job accepted."
+            ),
             request=request,
             caller_context=caller_context,
             idempotency_key=idempotency_key,
@@ -262,6 +281,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 source_job.render_template_version,
             ),
             inherited_contract=source_job.accepted_document_contract,
+            twr_admission=admission,
         )
 
     def submit_portfolio_review_job(
@@ -488,7 +508,9 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                                       member.failure_category NOT IN (
                                           'archive_storage_failed',
                                           'archive_execution_failed',
-                                          'archive_outcome_unknown'
+                                          'archive_outcome_unknown',
+                                          'archive_handoff_failed',
+                                          'archive_handoff_not_configured'
                                       )
                                       OR EXISTS (
                                           SELECT 1 FROM report_job_relationship child

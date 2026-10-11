@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from app.clients.archive_client import ArchiveClient
+from app.composite_reporting.invocation_authority import binding_for_job
+from app.composite_reporting.models import CompositeReviewJobRequest
+from app.composite_reporting.render_package import composite_archive_custody
 from app.config import settings
+from app.reporting_document_format import document_output_format
 from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     MissingIdempotencyKeyError,
@@ -18,6 +23,11 @@ from app.reporting_jobs.models import (
     ReportJobRelationshipType,
     ReportJobReplayRequest,
     ReportStatusEvent,
+)
+from app.reporting_jobs.replay_policy import (
+    archive_absence_confirmed,
+    replay_request,
+    resolution_replay_supported,
 )
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_jobs.visibility import assert_job_visible
@@ -54,7 +64,7 @@ class ReplayLedger(Protocol):
         self,
         *,
         source_job_id: str,
-        request: PortfolioReviewJobRequest,
+        request: PortfolioReviewJobRequest | CompositeReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
         reason: str,
@@ -205,6 +215,11 @@ class PortfolioReviewReplayService:
         # The resolver durably mutates the source job when it adopts a
         # committed document, so every pure validation runs before it.
         await self._resolve_archive_ambiguity(source_job=source_job, caller_context=caller_context)
+        if source_job.report_type == "composite_review":
+            # Validate retained financial identity before creating replacement work.
+            snapshot = self._require_retained_snapshot(source_job)
+            if snapshot is None:
+                raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
         # The failed_work_replay relationship is written INSIDE the creation
         # transaction (with the source row locked on PostgreSQL), so a
         # concurrent novel-key replay serializes and then sees it - the
@@ -212,15 +227,15 @@ class PortfolioReviewReplayService:
         # sequentially.
         replayed = self._ledger.create_replay_derived_job(
             source_job_id=source_job.job_id,
-            request=portfolio_review_request_from_job(source_job),
+            request=replay_request(source_job),
             caller_context=caller_context,
             idempotency_key=replay_key,
             reason=command.reason,
         )
         if replayed.status in {"accepted", "collecting_data"}:
-            # The retained snapshot is required only while collection still has
-            # to happen; a same-key retry of an already completed replay stays
-            # idempotent even after the source snapshot is retention-purged.
+            # Portfolio replay needs the source snapshot only during collection;
+            # composite replay has already required it for custody validation,
+            # including a same-key retry of a completed replacement.
             source_snapshot = self._require_retained_snapshot(source_job)
             if replayed.status == "accepted":
                 self._append_replay_requested_event(
@@ -236,7 +251,9 @@ class PortfolioReviewReplayService:
                 replayed=replayed,
                 caller_context=caller_context,
             )
-        if replayed.status == "data_ready" and "pdf" in replayed.requested_output_formats:
+        if replayed.status == "data_ready" and document_output_format(
+            replayed.requested_output_formats
+        ):
             rendered = await self._render_service.render_for_job(replayed)
             # An owner-side wait surfaces the job unchanged: the operator
             # API answers with the nonterminal state and the work queue
@@ -403,11 +420,16 @@ class PortfolioReviewReplayService:
             "archive_execution_failed",
             "archive_outcome_unknown",
             "archive_handoff_failed",
+            "archive_handoff_not_configured",
         }:
             return
         if self._archive_resolver is None or not source_job.render_job_id:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
-        if source_job.failure_category in {"archive_outcome_unknown", "archive_handoff_failed"}:
+        if source_job.failure_category in {
+            "archive_outcome_unknown",
+            "archive_handoff_failed",
+            "archive_handoff_not_configured",
+        }:
             # Post-cutover custody failures record the derived areq_ id at
             # failure time. Without it the original request is unresolvable
             # and rendering a replacement could duplicate a committed
@@ -432,10 +454,14 @@ class PortfolioReviewReplayService:
         except Exception as exc:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed") from exc
         if status_code == 404:
+            if not archive_absence_confirmed(payload):
+                raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
             return
         document_id = str(payload.get("document_id") or "") if status_code == 200 else ""
         if status_code != 200 or not document_id:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        if source_job.report_type == "composite_review":
+            self._require_resolved_composite_document(source_job, archive_request_id, payload)
         resolved = self._ledger.mark_archived(
             job_id=source_job.job_id,
             actor=caller_context.triggered_by,
@@ -463,6 +489,38 @@ class PortfolioReviewReplayService:
         )
         raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
 
+    def _require_resolved_composite_document(
+        self, source_job: ReportJobLedgerRecord, archive_request_id: str, payload: dict[str, object]
+    ) -> None:
+        document_id = payload.get("document_id")
+        if not isinstance(document_id, str) or not document_id.strip():
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        artifact_digest = re.fullmatch(
+            r"(?:sha256:)?([0-9a-fA-F]{64})", source_job.render_artifact_sha256 or ""
+        )
+        if artifact_digest is None:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        snapshot = self._require_retained_snapshot(source_job)
+        if snapshot is None:
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+        custody = composite_archive_custody(job=source_job, record=snapshot)
+        expected = dict(custody)
+        expected.update(
+            archive_request_id=archive_request_id,
+            report_job_id=source_job.job_id,
+            output_format="xlsx",
+            snapshot_id=snapshot.snapshot_id,
+            render_job_id=source_job.render_job_id,
+            report_type=source_job.report_type,
+            template_id=source_job.render_template_id,
+            template_version=source_job.render_template_version,
+            report_data_contract_version="composite_review.v8",
+        )
+        checksum = artifact_digest.group(1).lower()
+        expected.update(checksum=checksum, declared_artifact_sha256=checksum)
+        if any(key not in payload or payload[key] != value for key, value in expected.items()):
+            raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+
     def _require_retained_snapshot(
         self, source_job: ReportJobLedgerRecord
     ) -> ReportInputSnapshotRecord | None:
@@ -472,20 +530,24 @@ class PortfolioReviewReplayService:
         # silently produce a document with different evidence under a
         # failed-work-replay relationship. If the snapshot no longer exists
         # the replay is refused instead - before any replayed job is created.
-        if (
-            source_job.failure_category
-            not in {
-                "render_artifact_unrecoverable",
-                "archive_outcome_unknown",
-                "archive_handoff_failed",
-                "archive_handoff_not_configured",
-            }
-            or self._snapshot_store is None
-        ):
+        if source_job.failure_category not in {
+            "render_artifact_unrecoverable",
+            "archive_outcome_unknown",
+            "archive_handoff_failed",
+            "archive_handoff_not_configured",
+        }:
+            return None
+        if self._snapshot_store is None:
+            if source_job.report_type == "composite_review":
+                raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
             return None
         try:
-            return self._snapshot_store.get_snapshot_by_job(source_job.job_id)
-        except ReportInputSnapshotNotFoundError as exc:
+            snapshot = self._snapshot_store.get_snapshot_by_job(source_job.job_id)
+            if source_job.report_type == "composite_review":
+                binding_for_job(source_job)
+                composite_archive_custody(job=source_job, record=snapshot)
+            return snapshot
+        except (ReportInputSnapshotNotFoundError, ValueError) as exc:
             raise InvalidReportJobTransitionError("report_job_cannot_be_replayed") from exc
 
     async def _collect_replay_inputs(
@@ -708,12 +770,13 @@ def get_portfolio_review_replay_service() -> PortfolioReviewReplayService:
 
 
 def assert_replay_eligible(job: ReportJobLedgerRecord) -> None:
-    # The replay command recreates a portfolio-review order; replaying any
-    # other report type here would silently morph it into a portfolio review.
-    # Other report families recover by resubmitting their own order, which is
-    # equally deterministic because their render packages build from the
-    # retained job request.
-    if job.report_type != "portfolio_review":
+    if not resolution_replay_supported(job):
+        raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
+    if job.report_type == "composite_review" and job.failure_category not in {
+        "archive_outcome_unknown",
+        "archive_handoff_failed",
+        "archive_handoff_not_configured",
+    }:
         raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
     if job.status != "failed" or not job.retry_eligible:
         raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")

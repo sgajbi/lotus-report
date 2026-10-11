@@ -192,6 +192,32 @@ lifecycle intent it owns: `record_archive_lineage` posts supersede and correct t
 correction/replacement intent while Archive owns the durable document lifecycle. Reconciliation
 lookups and transition calls are likewise Report's to make.
 
+Initial custody recovery also supports accepted `composite_review.v8` XLSX jobs through the
+existing failed-work replay command. It resolves Render's recorded Archive request before any
+replacement render, adopts only matching tenant/job/request/snapshot/template/revision/composite
+pins, and permits frozen-snapshot recovery after a clean 404. The accepted document contract,
+financial revision and original source-authority admission survive recovery; the authority binding
+is rebound to the derived job as provenance, without authorizing fresh source acquisition.
+Missing retained identity, ambiguous lookup, foreign custody and definitive Archive 4xx refusal
+fail closed. An unresolved replacement also fences new root replay keys. Other composite versions
+and JSON jobs retain their existing recovery posture. See
+[initial composite custody recovery](docs/operations/composite-custody-recovery.md).
+
+For this recovery, clean absence means HTTP 404 with Archive's native
+`error.code=document_not_found`, not an arbitrary proxy/route 404. Missing or unknown Render
+custody state remains ambiguous under the historical `archive_handoff_not_configured` category;
+any available original request ID is retained and resolved first. Missing unresolved identity is
+non-retryable, and unknown state never authorizes inferring a no-attempt path or a replacement ID.
+That category participates in the same transitive replacement fencing as other custody ambiguity.
+Composite adoption compares every generated custody field, including confidentiality, frequency
+and supplied retention policy/dates, and requires the retained original Render digest to match
+Archive's checksum and declaration. Composite replay always requires the retained source snapshot,
+even for a same-key retry of a completed replacement; portfolio terminal replay keeps its existing
+retention-independent behavior.
+Custody adoption accepts only a 64-hex original digest with at most one `sha256:` prefix.
+Retained-source validation translates missing/malformed/conflicting inherited authority bindings
+to the replay refusal contract before adoption or replacement creation, without new authorization.
+
 Archive correction/replacement linkage confirms only a successful acknowledgement with a
 nonblank bounded relationship ID and exact requested source/target/transition. Invalid success
 remains pending with the verified document intact and the same pair available for idempotent

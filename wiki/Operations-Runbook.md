@@ -898,8 +898,14 @@ Observability floor for this wave:
   request id (post-cutover the derived `areq_` id, legacy rows their `arch_{render_job_id}`):
   a committed document is adopted (the source job resolves to archived with a `job_replay_archive_resolved` event and
   the replay answers 409 - re-read the job status), an unanswerable lookup refuses fail-closed,
-  and only a confirmed 404 re-renders and archives. Exactly one client document is possible in
-  every branch. Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture; other report families stay non-retryable (no resolution path), while rerender attempts are retry-eligible: a retry resolves the failed attempt's own archive request first, adopting a committed correction or proving a clean 404 before any new attempt (migration 015 backfills previously stranded attempts)
+  and only HTTP404 with Archive's `error.code=document_not_found` releases failed-work replay.
+  HTML, empty/malformed bodies and wrong-code404s refuse. Missing/unknown Render custody state
+  retains any original request ID and resolves it under `archive_handoff_not_configured`; missing
+  unresolved identity is non-retryable. Null state never proves a no-attempt delivery path.
+  Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture;
+  accepted composite-review/v8 XLSX also supports bounded initial custody recovery. Other report
+  families stay non-retryable for this custody path. Rerender attempts retain their separate
+  resolution-first flow (migration 015 backfills previously stranded attempts).
 - a job failed with `render_artifact_unrecoverable` means the render completed previously but its
   artifact was only available in the original response (lotus-render returns terminal truth on
   replay without re-rendering and does not persist artifact bytes). This is the
@@ -911,7 +917,15 @@ Observability floor for this wave:
   lineage records zero upstream calls of its own and names the source snapshot that holds the
   original call evidence. If the retained snapshot no longer exists, the replay refuses
   (fail-closed 409) rather than silently recollecting drifted upstream state - recover such jobs
-  with a fresh report order. The replay command serves portfolio-review jobs only. Every
+  with a fresh report order. This artifactless replay posture serves portfolio-review jobs only.
+  Initial custody recovery also supports accepted `composite_review.v8` XLSX jobs: resolve the
+  original Archive request first, adopt matching custody or render retained facts after a clean
+  404. Missing retained identity, unavailable/mismatched resolution and definitive Archive
+  refusal fail closed. Adoption compares every generated custody field, including classification,
+  frequency and supplied retention policy/dates, and requires the retained original artifact digest.
+  Composite same-key retries still require the source snapshot after replacement completion;
+  retention loss returns 409 for operator reconciliation. Portfolio terminal replay preserves its
+  existing retention-independent behavior. This v8 recovery performs no fresh Performance/Manage read. Every
   job-scoped read and command route (status, diagnostics, events, portfolio-memory events,
   snapshot/lineage by job or snapshot id, cancel, rerender, regenerate, replay) refuses
   cross-tenant, cross-region, and mismatched booking-centre callers with the same not-found
@@ -920,7 +934,7 @@ Observability floor for this wave:
   `cloned_from_source_snapshot` and name the source snapshot holding the original upstream-call
   rows, and a crash-interrupted replay resumes from `collecting_data` when retried with the same
   idempotency key. Other
-  report families recover by resubmitting their own order, which rebuilds the same document from
+  artifactless report families recover by resubmitting their own order, which rebuilds the same document from
   the retained job request. Migration 013 backfills jobs that were
   stranded under the pre-fix `archive_validation_failed` posture so they become replayable after
   upgrade. Each such replay records a `job_replay_fingerprint_compared` event on the replayed job

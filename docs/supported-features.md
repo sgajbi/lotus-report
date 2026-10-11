@@ -120,6 +120,10 @@ recovery, while live Archive storage and historical repair completion remain sep
 
 ## Composite Reporting Foundation (#417)
 
+Initial Archive custody recovery supports accepted `composite_review.v8` XLSX jobs through the
+existing replay command, with exact-request resolution and retained facts only. See
+[recovery scope and refusal behavior](operations/composite-custody-recovery.md).
+
 The internal `POST /reports/composite-reviews` and catalogue family capture an
 exact retained composite calculation as JSON/XLSX through the shared job, snapshot and
 revision machinery. `src/app/composite_reporting/`, its owning unit tests and
