@@ -1,5 +1,14 @@
 # Composite Review
 
+Configure `LOTUS_PERFORMANCE_BASE_URL` as the service origin, without an API
+prefix. Ordinary composite POSTs and retained pooled GETs use canonical
+`/performance/composites/...` paths. Routing alone does not supply enterprise
+write authority: Report's persisted caller role is audit metadata, and the
+retained-read deployment bearer is not used for ordinary POSTs. The trusted
+write authority contract remains a Report #417 / Performance #540 dependency;
+enterprise denial remains failed capture. See the
+[native route and authority boundary](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-api-guide.md#native-performance-routes-and-unresolved-write-authority-417).
+
 The additive `composite_review.v8` source context joins one exact Manage v1
 definition and optional supplied membership histories to a primary TWR vector.
 Existing exact calendar/trailing products coexist with SI and history in that
@@ -126,7 +135,7 @@ vector of 1–120 contiguous retained windows. Each window pins materialization,
 period, sequence, definition/membership/attestation hashes, source cut, method
 binding and retained receipt. No latest selection or implicit source refresh exists.
 
-The existing worker calls Performance's explicit-vector `POST /composites/twr`.
+The existing worker calls Performance's explicit-vector `POST /performance/composites/twr`.
 Mismatch, missing period/member, nonfinite financial evidence or incompatible
 context fails capture. Successful capture retains the complete source response,
 canonical cells and pointers, immutable hash and Report revision. Existing job
@@ -225,7 +234,7 @@ uncaptured eligibility universe.
 
 The existing order endpoint also accepts an exclusive typed `linked_selection`.
 It captures the exact source-owned linked member analysis through
-`POST /composites/analytics`, independently of the TWR primary and return products.
+`POST /performance/composites/analytics`, independently of the TWR primary and return products.
 Its accepted data/input contract is `composite_review.v3`; XLSX requires ready
 `composite-review/v3` support before capture. JSON has no Render dependency.
 Seven source-bound tables preserve complete member/period rows, canonical decimals,

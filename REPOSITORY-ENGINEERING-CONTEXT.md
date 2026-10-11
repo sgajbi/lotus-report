@@ -520,6 +520,12 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 ## Working agreements
 
+- **Performance adapter practice.** `LOTUS_PERFORMANCE_BASE_URL` supplies the service origin,
+  without `/performance`; the client supplies canonical registered API paths. Persisted caller
+  roles remain audit metadata and do not establish upstream write authority. Retained pooled
+  reads use only the separate deployment read bearer. The remaining ordinary composite write
+  authority dependency is recorded in `docs/composite-report-api-guide.md` under #417.
+
 - **Per-PR contract.** State: report outcome · source authority · report semantic · failure policy
   · render contract · lineage · simplification. Prefer one reporting semantic, one lifecycle
   invariant, or one cross-service contract per PR.

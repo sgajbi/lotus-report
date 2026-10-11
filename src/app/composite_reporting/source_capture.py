@@ -329,7 +329,7 @@ class CompositeInputProvider:
             recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
             recorder.append_failure(
                 service_name="lotus-performance",
-                endpoint="/composites/analytics",
+                endpoint="/performance/composites/analytics",
                 method="POST",
                 request_payload=selection.performance_request(),
                 started_at=started,
@@ -339,7 +339,12 @@ class CompositeInputProvider:
             raise
         calls.append(
             _source_call(
-                job, selection, status, response, started, endpoint="/composites/analytics"
+                job,
+                selection,
+                status,
+                response,
+                started,
+                endpoint="/performance/composites/analytics",
             )
         )
         return build_linked_dataset(
@@ -366,7 +371,7 @@ class CompositeInputProvider:
             recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
             recorder.append_failure(
                 service_name="lotus-performance",
-                endpoint="/composites/twr",
+                endpoint="/performance/composites/twr",
                 method="POST",
                 request_payload=selection.performance_request(),
                 started_at=started,
@@ -590,7 +595,7 @@ def _source_call(
     response: dict[str, Any],
     started: float,
     *,
-    endpoint: str = "/composites/twr",
+    endpoint: str = "/performance/composites/twr",
 ) -> _RecordedUpstreamCall:
     return _RecordedUpstreamCall(
         service_name="lotus-performance",

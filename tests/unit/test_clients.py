@@ -62,8 +62,13 @@ class _SequencedRecordingAsyncClient:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [200, 404, 409])
-async def test_composite_linked_client_preserves_source_request_and_failure(monkeypatch, status):
+@pytest.mark.parametrize("status", [200, 401, 403, 404, 409])
+@pytest.mark.parametrize(
+    "method,path", [("get_composite_twr", "twr"), ("get_composite_analytics", "analytics")]
+)
+async def test_composite_client_preserves_source_request_and_failure(
+    monkeypatch, status, method, path
+):
     request = {
         "metric": "LINKED_CONTRIBUTION",
         "restatement_sequence": None,
@@ -74,15 +79,23 @@ async def test_composite_linked_client_preserves_source_request_and_failure(monk
     monkeypatch.setattr(
         "app.clients.performance_client.httpx.AsyncClient", lambda timeout: recorder
     )
-    client = PerformanceClient(base_url="http://performance/", timeout_seconds=3.0)
-    assert await client.get_composite_analytics(request, admitted_tenant_id="tenant-linked") == (
+    client = PerformanceClient(
+        base_url="http://performance/",
+        timeout_seconds=3.0,
+        read_bearer_token="retained-read-only",
+    )
+    assert await getattr(client, method)(request, admitted_tenant_id="tenant-linked") == (
         status,
         response,
     )
     assert len(recorder.calls) == 1
-    assert recorder.calls[0]["url"] == "http://performance/composites/analytics"
+    assert recorder.calls[0]["url"] == f"http://performance/performance/composites/{path}"
     assert recorder.calls[0]["json"] == request
     assert recorder.calls[0]["headers"]["X-Tenant-Id"] == "tenant-linked"
+    assert (
+        not {"Authorization", "X-Actor-Id", "X-Role", "X-Service-Identity", "X-Capabilities"}
+        & recorder.calls[0]["headers"].keys()
+    )
 
 
 @pytest.mark.parametrize(
