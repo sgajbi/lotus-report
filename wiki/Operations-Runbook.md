@@ -29,6 +29,7 @@ for the implementation-backed `lotus-report` runtime.
 | Service readiness concern | Check health/readiness and PostgreSQL-backed ledger posture | `/health/ready`, migration smoke, indexed ledger queries |
 | One report job needs support review | Use product-safe status, events, diagnostics, snapshot, and lineage paths | `GET /api/v1/report-jobs/{job_id}`, `/events`, direct diagnostics |
 | Failed report or batch work needs intervention | Use rerender, regenerate, failed-work replay, batch control, or run-once only when eligibility rules match | caller-context config plus operation-specific idempotency where required |
+| Composite v8 XLSX initial custody failed or is ambiguous | Follow the [custody recovery guide](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/composite-custody-recovery.md) | decision table, tested synthetic replay request and retained-evidence requirements; full financial acceptance remains outstanding under #417 |
 
 ## Important operational checks
 
@@ -894,14 +895,9 @@ Observability floor for this wave:
 - status responses expose product-safe failure category and summary without SQL or raw stack traces
 - a job failed with `archive_outcome_unknown` (the render#120 handoff deadline expired after
   the delivery may have committed) or the legacy `archive_execution_failed` is retry-eligible.
-  Its replay resolves the ambiguity FIRST via archive's by-request-id lookup using the STORED
-  request id (post-cutover the derived `areq_` id, legacy rows their `arch_{render_job_id}`):
-  a committed document is adopted (the source job resolves to archived with a `job_replay_archive_resolved` event and
-  the replay answers 409 - re-read the job status), an unanswerable lookup refuses fail-closed,
-  and only HTTP404 with Archive's `error.code=document_not_found` releases failed-work replay.
-  HTML, empty/malformed bodies and wrong-code404s refuse. Missing/unknown Render custody state
-  retains any original request ID and resolves it under `archive_handoff_not_configured`; missing
-  unresolved identity is non-retryable. Null state never proves a no-attempt delivery path.
+  Replay resolves the stored Archive request first: matching committed custody is adopted;
+  unavailable or mismatched evidence refuses; only native request absence permits replacement.
+  For composite v8 XLSX, use the [initial custody recovery decision table and tested request](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/composite-custody-recovery.md).
   Migration 014 backfills portfolio-review rows stranded under the pre-#211 non-retryable posture;
   accepted composite-review/v8 XLSX also supports bounded initial custody recovery. Other report
   families stay non-retryable for this custody path. Rerender attempts retain their separate
@@ -918,14 +914,9 @@ Observability floor for this wave:
   original call evidence. If the retained snapshot no longer exists, the replay refuses
   (fail-closed 409) rather than silently recollecting drifted upstream state - recover such jobs
   with a fresh report order. This artifactless replay posture serves portfolio-review jobs only.
-  Initial custody recovery also supports accepted `composite_review.v8` XLSX jobs: resolve the
-  original Archive request first, adopt matching custody or render retained facts after a clean
-  404. Missing retained identity, unavailable/mismatched resolution and definitive Archive
-  refusal fail closed. Adoption compares every generated custody field, including classification,
-  frequency and supplied retention policy/dates, and requires the retained original artifact digest.
-  Composite same-key retries still require the source snapshot after replacement completion;
-  retention loss returns 409 for operator reconciliation. Portfolio terminal replay preserves its
-  existing retention-independent behavior. This v8 recovery performs no fresh Performance/Manage read. Every
+  Composite initial custody recovery has separate digest, authority and retained-evidence rules
+  in the linked guide; same-key retries still need the source snapshot and perform no fresh
+  Performance/Manage read. Portfolio terminal replay preserves its retention-independent behavior. Every
   job-scoped read and command route (status, diagnostics, events, portfolio-memory events,
   snapshot/lineage by job or snapshot id, cancel, rerender, regenerate, replay) refuses
   cross-tenant, cross-region, and mismatched booking-centre callers with the same not-found
@@ -1153,34 +1144,38 @@ Operational truths for this wave:
 
 ## Runtime configuration defaults
 
-Cross-app upstream defaults in local runtime:
+Local runtime environment defaults:
 
-- `LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus`
-- `LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus`
-- `RISK_BASE_URL=http://risk.dev.lotus`
-- `LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus`
-- `LOTUS_AI_BASE_URL=http://ai.dev.lotus`
-- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report`
-- `REPORT_POSTGRES_POOL_MIN_SIZE=1`
-- `REPORT_POSTGRES_POOL_MAX_SIZE=10`
-- `REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS=5`
-- `REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS=5`
-- `REPORT_POSTGRES_STATEMENT_TIMEOUT_MS=30000`
-- `REPORT_POSTGRES_APPLICATION_NAME=lotus-report`
+```env
+LOTUS_CORE_QUERY_BASE_URL=http://core-query.dev.lotus
+LOTUS_PERFORMANCE_BASE_URL=http://performance.dev.lotus
+RISK_BASE_URL=http://risk.dev.lotus
+LOTUS_ARCHIVE_BASE_URL=http://archive.dev.lotus
+LOTUS_AI_BASE_URL=http://ai.dev.lotus
+REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@localhost:5439/lotus_report
+REPORT_POSTGRES_POOL_MIN_SIZE=1
+REPORT_POSTGRES_POOL_MAX_SIZE=10
+REPORT_POSTGRES_POOL_ACQUIRE_TIMEOUT_SECONDS=5
+REPORT_POSTGRES_CONNECT_TIMEOUT_SECONDS=5
+REPORT_POSTGRES_STATEMENT_TIMEOUT_MS=30000
+REPORT_POSTGRES_APPLICATION_NAME=lotus-report
+```
 
 When `lotus-report` runs in Docker Compose as part of the canonical front-office stack, the
-container uses host-reachable upstream URLs instead:
+container uses these host-reachable environment overrides:
 
-- `LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201`
-- `LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002`
-- `RISK_BASE_URL=http://host.docker.internal:8130`
-- `LOTUS_ARCHIVE_BASE_URL=http://host.docker.internal:8150`
-- `REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report`
+```env
+LOTUS_CORE_QUERY_BASE_URL=http://host.docker.internal:8201
+LOTUS_PERFORMANCE_BASE_URL=http://host.docker.internal:8002
+RISK_BASE_URL=http://host.docker.internal:8130
+LOTUS_ARCHIVE_BASE_URL=http://host.docker.internal:8150
+REPORT_JOB_LEDGER_DATABASE_URL=postgresql://lotus_report:lotus_report@lotus-report-postgres:5432/lotus_report
+```
 
 This keeps `report.dev.lotus` stable for callers while the containerized service reaches the
 host-published canonical upstream ports. The report job ledger uses the separate
 `lotus-report-postgres` container; file databases are not valid runtime evidence. Canonical
-service identity for cross-app validation is `http://report.dev.lotus`; use `127.0.0.1:8300`
+service identity for cross-app validation is the [canonical Report origin](http://report.dev.lotus); use `127.0.0.1:8300`
 only for direct local debugging with `ENTERPRISE_RUNTIME_PROFILE=local`.
 
 ## PostgreSQL ledger operations
