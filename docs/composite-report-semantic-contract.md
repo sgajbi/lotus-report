@@ -175,8 +175,10 @@ records the old-to-new technical presentation relationship after verified custod
 
 The v2 root retains v1 primary `selection`, `source_response` and
 `source_response_digest` without adding fields to the supplier response. Its
-bounded `source_products` array stores each typed `pin`, fixed `POST /composites/twr`
-provenance, independent raw response and response digest. The v2 schema is
+bounded `source_products` array stores each typed `pin`, the versioned relative
+endpoint label `POST /composites/twr`, independent raw response and response digest.
+That retained label is not the live HTTP path: new transport and HTTP call lineage
+use `POST /performance/composites/twr`. The v2 schema is
 `contracts/composite_review.v2.schema.json`; the v1 example remains unchanged.
 Current generated v1/v2 financial-scalar schema branches also accept finite
 scientific decimal strings, including genuine retained `0E-12`. This explicit
@@ -217,7 +219,7 @@ operation. It is not a return-product selector and cannot be combined with TWR
 monthly selection windows, engine, calculation fingerprint and response digest.
 The actual source request includes `restatement_sequence: null`; a numeric sequence
 cannot compete with its explicit materialization IDs. The worker calls
-`POST /composites/analytics` once and retains the complete response, including each
+`POST /performance/composites/analytics` once and retains the complete response, including each
 period's nested `source_authority_identity`.
 
 The strict v3 root and typed source schema are in
