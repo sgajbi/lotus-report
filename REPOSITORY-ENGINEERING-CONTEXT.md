@@ -522,9 +522,17 @@ snapshot), **regenerate** (new capture). Each resolves an ambiguous prior outcom
 
 - **Performance adapter practice.** `LOTUS_PERFORMANCE_BASE_URL` supplies the service origin,
   without `/performance`; the client supplies canonical registered API paths. Persisted caller
-  roles remain audit metadata and do not establish upstream write authority. Retained pooled
-  reads use only the separate deployment read bearer. The remaining ordinary composite write
-  authority dependency is recorded in `docs/composite-report-api-guide.md` under #417.
+  roles remain audit metadata. TWR POST is a pure retained read requiring verified
+  `operations.runtime.read` through server-owned `report.composite-twr.invocation.v1`.
+  Its typed provider is unavailable by default until bank deployment identity/context
+  composition is supplied. Public options/headers cannot mint admission. Existing JSON
+  retains an immutable nonsecret job binding; only that security key leaves financial
+  series semantics. Every send resolves current authority and a dedicated credential;
+  retained pooled GET uses its separate deployment bearer. Analytics policy is separate.
+  Native authority proof is external to structural contract-flow fixtures. Transient TWR
+  transport/429/502/503/504 yields to durable worker retries before snapshot creation;
+  definitive failed capture and existing attempt-exhaustion terminalization are preserved.
+  See `docs/composite-report-api-guide.md` under #417.
 
 - **Per-PR contract.** State: report outcome · source authority · report semantic · failure policy
   · render contract · lineage · simplification. Prefer one reporting semantic, one lifecycle

@@ -63,9 +63,7 @@ class _SequencedRecordingAsyncClient:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [200, 401, 403, 404, 409])
-@pytest.mark.parametrize(
-    "method,path", [("get_composite_twr", "twr"), ("get_composite_analytics", "analytics")]
-)
+@pytest.mark.parametrize("method,path", [("get_composite_analytics", "analytics")])
 async def test_composite_client_preserves_source_request_and_failure(
     monkeypatch, status, method, path
 ):

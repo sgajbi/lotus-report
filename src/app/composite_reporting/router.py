@@ -2,8 +2,16 @@
 
 from typing import Annotated, Protocol
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
+from app.composite_reporting.invocation_authority import (
+    AcceptedTwrAdmission,
+    AuthenticatedTwrInitiator,
+    CompositeTwrInvocationProvider,
+    TwrAuthorityRefused,
+    admit_request,
+    get_composite_twr_invocation_provider,
+)
 from app.composite_reporting.models import (
     AmendmentEligibilitySelection,
     CompositeReviewJobRequest,
@@ -26,6 +34,12 @@ from app.routers.report_ordering_validation import enforce_report_ordering_submi
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
+def get_authenticated_twr_initiator(request: Request) -> AuthenticatedTwrInitiator | None:
+    """Trusted middleware context only. No transport/header interpretation here."""
+    value = getattr(request.state, "composite_twr_initiator", None)
+    return value if isinstance(value, AuthenticatedTwrInitiator) else None
+
+
 class CompositeJobLedger(Protocol):
     def submit_composite_review_job(
         self,
@@ -33,7 +47,13 @@ class CompositeJobLedger(Protocol):
         request: CompositeReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        twr_admission: AcceptedTwrAdmission | None = None,
     ) -> ReportJobLedgerRecord: ...
+
+
+def _require_idempotency_key(key: str | None) -> None:
+    if not key or not key.strip():
+        raise MissingIdempotencyKeyError("missing_idempotency_key")
 
 
 @router.post(
@@ -55,15 +75,21 @@ class CompositeJobLedger(Protocol):
             "description": "Missing caller context or idempotency key; mismatched source tenant."
         },
         409: {"description": "Idempotency key already identifies different report content."},
-        503: {"description": "The selected contract has no supported XLSX delivery path."},
+        503: {"description": "Verified TWR authority or compatible XLSX delivery is unavailable."},
     },
 )
 async def submit_composite_review(
     request: CompositeReviewJobRequest,
+    initiator: Annotated[
+        AuthenticatedTwrInitiator | None, Depends(get_authenticated_twr_initiator)
+    ],
     caller: Annotated[ReportCallerContext, Depends(caller_context_dependency)],
     ledger: Annotated[CompositeJobLedger, Depends(get_report_job_ledger)],
     catalogue: Annotated[
         ReportOrderingCatalogueService, Depends(get_report_ordering_catalogue_service)
+    ],
+    authority: Annotated[
+        CompositeTwrInvocationProvider, Depends(get_composite_twr_invocation_provider)
     ],
     idempotency_key: Annotated[
         str | None,
@@ -128,11 +154,22 @@ async def submit_composite_review(
                 },
             )
     try:
+        _require_idempotency_key(idempotency_key)
+        admission = admit_request(request, initiator, caller.tenant_id, authority)
         record = ledger.submit_composite_review_job(
             request=request,
             caller_context=caller,
             idempotency_key=idempotency_key,
+            twr_admission=admission,
         )
+    except TwrAuthorityRefused as exc:
+        raise HTTPException(
+            503,
+            detail={
+                "code": "composite_twr_authority_unavailable",
+                "message": "Verified TWR invocation authority is unavailable for this job.",
+            },
+        ) from exc
     except MissingIdempotencyKeyError as exc:
         raise HTTPException(
             400,

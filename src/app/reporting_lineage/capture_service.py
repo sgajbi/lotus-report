@@ -17,6 +17,7 @@ from app.clients.ai_client import AiClient
 from app.clients.core_query_client import CoreQueryClient
 from app.clients.performance_client import PerformanceClient
 from app.clients.risk_client import RiskClient
+from app.composite_reporting.invocation_authority import TwrAuthorityRefused
 from app.config import settings
 from app.observability import bind_propagation_context
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
@@ -782,9 +783,11 @@ class ReportingReadPortfolioReviewInputProvider:
         *,
         read_service: ReportingReadService | None = None,
         ai_client: AcceptedOutputClient | None = None,
+        job_ledger: ReportJobCaptureLedger | None = None,
     ) -> None:
         self._read_service = read_service
         self._ai_client = ai_client
+        self._job_ledger = job_ledger
 
     async def collect_for_job(
         self,
@@ -801,6 +804,7 @@ class ReportingReadPortfolioReviewInputProvider:
             from app.composite_reporting.source_capture import CompositeInputProvider
 
             return await CompositeInputProvider(
+                job_ledger=self._job_ledger,
                 manage_client=ManageClient(
                     base_url=settings.manage_base_url,
                     actor_id=settings.manage_read_actor_id,
@@ -948,7 +952,8 @@ class PortfolioReviewSnapshotCaptureService:
         self._snapshot_store = snapshot_store
         self._job_ledger = job_ledger
         self._portfolio_review_input_provider = (
-            portfolio_review_input_provider or ReportingReadPortfolioReviewInputProvider()
+            portfolio_review_input_provider
+            or ReportingReadPortfolioReviewInputProvider(job_ledger=job_ledger)
         )
 
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
@@ -998,6 +1003,22 @@ class PortfolioReviewSnapshotCaptureService:
                 snapshot_payload = dict(snapshot_payload)
                 snapshot_payload["proposal_memo_package"] = proposal_memo_package
         except PortfolioReviewInputCaptureError as exc:
+            from app.composite_reporting.invocation_authority import TwrCaptureRetryable
+
+            if isinstance(exc.original_error, TwrCaptureRetryable):
+                # No immutable failed snapshot for a transient pure read. Existing
+                # worker backoff and exhaustion terminalization own the next step.
+                self._job_ledger.append_job_event(
+                    job_id=job.job_id,
+                    event_type="composite_twr_invocation_transient_failure",
+                    message="Transient TWR read yielded to durable worker retry policy.",
+                    event_payload={"reason_code": "transient_twr_source_unavailable"},
+                    event_idempotency_key=None,
+                    actor=job.triggered_by,
+                    correlation_id=job.correlation_id,
+                    trace_id=job.trace_id,
+                )
+                raise TwrCaptureRetryable() from None
             upstream_calls = exc.upstream_calls
             failure_category, failure_message, retry_eligible = _map_job_failure(exc.original_error)
             snapshot_payload = _failed_capture_payload(job, failure_category, failure_message)
@@ -1005,6 +1026,16 @@ class PortfolioReviewSnapshotCaptureService:
             failure_category, failure_message, retry_eligible = _map_job_failure(exc)
             snapshot_payload = _failed_capture_payload(job, failure_category, failure_message)
 
+        posture = _overall_posture(upstream_calls)
+        if failure_message and posture == "complete":
+            posture = "error"
+        lineage_summary = _lineage_summary(
+            upstream_calls,
+            proposal_narrative_package=_proposal_narrative_package(job),
+            proposal_memo_package=_proposal_memo_package(job),
+            advisor_commentary_package=snapshot_payload.get("advisor_commentary_package"),
+        )
+        lineage_summary["supportability_status"] = posture
         snapshot_request = ReportInputSnapshotCreateRequest(
             report_job_id=job.job_id,
             report_type=job.report_type,
@@ -1013,14 +1044,9 @@ class PortfolioReviewSnapshotCaptureService:
             as_of_date=job.as_of_date,
             snapshot_payload=snapshot_payload,
             snapshot_storage_ref=None,
-            supportability_status=_overall_posture(upstream_calls),
-            completeness_status=_overall_posture(upstream_calls),
-            lineage_summary=_lineage_summary(
-                upstream_calls,
-                proposal_narrative_package=_proposal_narrative_package(job),
-                proposal_memo_package=_proposal_memo_package(job),
-                advisor_commentary_package=snapshot_payload.get("advisor_commentary_package"),
-            ),
+            supportability_status=posture,
+            completeness_status=posture,
+            lineage_summary=lineage_summary,
             captured_at=_utc_now(),
             correlation_id=job.correlation_id,
             trace_id=job.trace_id,
@@ -1877,6 +1903,8 @@ def _failed_capture_payload(
 
 
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:
+    if isinstance(exc, TwrAuthorityRefused):
+        return "validation_failed", "Composite TWR invocation authority was refused.", False
     if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         return "timeout", "Upstream report-data capture timed out.", True
     if isinstance(exc, ReportingUpstreamError):

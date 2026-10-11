@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import Any, Iterator, TypeAlias
 from uuid import uuid4
 
+from app.composite_reporting.invocation_authority import (
+    BINDING_OPTION,
+    AcceptedTwrAdmission,
+    bind_admission,
+    require_internal_admission,
+    require_same_admission,
+)
 from app.composite_reporting.models import CompositeReviewJobRequest
 from app.config import settings
 from app.report_ordering_catalogue.template_resolution import (
@@ -212,7 +219,9 @@ def template_for_accepted_contract(
 #: starts (or stops) enriching options must never change the identity of
 #: an unchanged accepted request. The owning module pins its constant to
 #: this registry by test.
-SERVER_DERIVED_REQUEST_OPTION_KEYS = frozenset({"idea_materialization_recovery_identity"})
+SERVER_DERIVED_REQUEST_OPTION_KEYS = frozenset(
+    {"idea_materialization_recovery_identity", BINDING_OPTION}
+)
 
 
 def client_identity_hash_from_record(record: "ReportJobLedgerRecord") -> str:
@@ -762,6 +771,7 @@ class ReportJobLedger:
         request: CompositeReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        twr_admission: AcceptedTwrAdmission | None = None,
     ) -> ReportJobLedgerRecord:
         if request.primary_selection.tenant_id != caller_context.tenant_id:
             raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
@@ -772,6 +782,7 @@ class ReportJobLedger:
             caller_context=caller_context,
             idempotency_key=idempotency_key,
             enqueue=True,
+            twr_admission=twr_admission,
         )
 
     def create_portfolio_review_job(
@@ -897,6 +908,7 @@ class ReportJobLedger:
         replay_reason: str = "Replay of failed report work.",
         inherited_template: tuple[str | None, str | None] | None = None,
         inherited_contract: dict[str, Any] | None = None,
+        twr_admission: AcceptedTwrAdmission | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -905,6 +917,7 @@ class ReportJobLedger:
             report_type=report_type,
             request=request,
         )
+        require_internal_admission(request, options, caller_context.tenant_id, twr_admission)
         # Template selection is an immutable job fact: a PDF-capable job is
         # stamped with its governed template id/version at ACCEPTANCE, so a
         # later deployment that changes the family default cannot change the
@@ -956,6 +969,7 @@ class ReportJobLedger:
                         raise IdempotencyConflictError(
                             "idempotency_key_reused_with_different_request"
                         )
+                    require_same_admission(record, twr_admission)
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record
@@ -1050,6 +1064,14 @@ class ReportJobLedger:
                 now = utc_now()
                 request_id = f"rrq_{uuid4().hex}"
                 job_id = f"rjob_{uuid4().hex}"
+                options = bind_admission(
+                    options,
+                    twr_admission,
+                    request_id=request_id,
+                    job_id=job_id,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                )
                 now_text = _dt_to_text(now)
                 portfolio_scope_json = canonical_json(portfolio_scope)
                 output_formats_json = canonical_json(sorted(output_formats))

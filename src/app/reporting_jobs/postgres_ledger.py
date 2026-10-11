@@ -9,6 +9,12 @@ from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 
+from app.composite_reporting.invocation_authority import (
+    AcceptedTwrAdmission,
+    bind_admission,
+    require_internal_admission,
+    require_same_admission,
+)
 from app.composite_reporting.models import CompositeReviewJobRequest
 from app.postgres import PostgresConnectionProvider
 from app.report_ordering_catalogue.template_resolution import job_template_identity
@@ -195,6 +201,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         request: CompositeReviewJobRequest,
         caller_context: ReportCallerContext,
         idempotency_key: str | None,
+        twr_admission: AcceptedTwrAdmission | None = None,
     ) -> ReportJobLedgerRecord:
         if request.primary_selection.tenant_id != caller_context.tenant_id:
             raise ValueError("COMPOSITE_REPORT_TENANT_MISMATCH")
@@ -205,6 +212,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             caller_context=caller_context,
             idempotency_key=idempotency_key,
             enqueue=True,
+            twr_admission=twr_admission,
         )
 
     def create_portfolio_review_job(
@@ -334,6 +342,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
         replay_reason: str = "Replay of failed report work.",
         inherited_template: tuple[str | None, str | None] | None = None,
         inherited_contract: dict[str, Any] | None = None,
+        twr_admission: AcceptedTwrAdmission | None = None,
     ) -> ReportJobLedgerRecord:
         if not idempotency_key or not idempotency_key.strip():
             raise MissingIdempotencyKeyError("missing_idempotency_key")
@@ -342,6 +351,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             report_type=report_type,
             request=request,
         )
+        require_internal_admission(request, options, caller_context.tenant_id, twr_admission)
         # Template selection is an immutable job fact, stamped at acceptance
         # for PDF-capable jobs - identical to the SQLite ledger's discipline.
         render_template_id, render_template_version = job_template_identity(
@@ -376,6 +386,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 ).fetchone()
                 if existing:
                     record = self._existing_or_conflict(connection, existing, request_hash)
+                    require_same_admission(record, twr_admission)
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record
@@ -502,6 +513,14 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 now = utc_now()
                 request_id = f"rrq_{uuid4().hex}"
                 job_id = f"rjob_{uuid4().hex}"
+                options = bind_admission(
+                    options,
+                    twr_admission,
+                    request_id=request_id,
+                    job_id=job_id,
+                    correlation_id=caller_context.correlation_id,
+                    trace_id=caller_context.trace_id,
+                )
 
                 connection.execute(
                     """
@@ -647,6 +666,7 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
                 ).fetchone()
                 if existing:
                     record = self._existing_or_conflict(connection, existing, request_hash)
+                    require_same_admission(record, twr_admission)
                     if enqueue:
                         self._ensure_work_item(connection, record=record)
                     return record

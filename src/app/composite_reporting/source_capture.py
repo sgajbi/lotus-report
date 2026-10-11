@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, Protocol
 from urllib.parse import quote
+from uuid import uuid4
 
+import httpx
 from pydantic import ValidationError
 
 from app.composite_reporting.admission import (
@@ -15,6 +17,17 @@ from app.composite_reporting.admission import (
     admit_composite_response,
 )
 from app.composite_reporting.eligibility_tables import build_eligibility_dataset
+from app.composite_reporting.invocation_authority import (
+    CompositeTwrInvocationProvider,
+    TwrAttemptContext,
+    TwrAuthorityRefused,
+    TwrCaptureRetryable,
+    TwrInvocation,
+    authorize_selection,
+    binding_for_job,
+    get_composite_twr_invocation_provider,
+    require_admission,
+)
 from app.composite_reporting.linked_tables import build_linked_dataset
 from app.composite_reporting.models import (
     AmendmentEligibilitySelection,
@@ -42,6 +55,7 @@ from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_lineage.capture_service import (
     PortfolioReviewInputCapture,
     PortfolioReviewInputCaptureError,
+    ReportJobCaptureLedger,
     _RecordedUpstreamCall,
     _UpstreamRecorder,
 )
@@ -53,7 +67,7 @@ class CompositePerformanceClient(Protocol):
     ) -> tuple[int, dict[str, Any]]: ...
 
     async def get_composite_twr(
-        self, payload: dict[str, Any], *, admitted_tenant_id: str
+        self, payload: dict[str, Any], *, admitted_tenant_id: str, invocation: TwrInvocation
     ) -> tuple[int, dict[str, Any]]: ...
 
     async def get_composite_analytics(
@@ -101,9 +115,13 @@ class CompositeInputProvider:
         *,
         performance_client: CompositePerformanceClient | None = None,
         manage_client: CompositeManageClient | None = None,
+        invocation_provider: CompositeTwrInvocationProvider | None = None,
+        job_ledger: ReportJobCaptureLedger | None = None,
     ) -> None:
         self._performance_client = performance_client
         self._manage_client = manage_client
+        self._invocation_provider = invocation_provider or get_composite_twr_invocation_provider()
+        self._job_ledger = job_ledger
 
     async def collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
         calls: list[_RecordedUpstreamCall] = []
@@ -138,6 +156,7 @@ class CompositeInputProvider:
                 dataset = await self._capture_linked(job, request.linked_selection, calls)
             else:
                 assert request.selection is not None
+                require_admission(request, job.tenant_id, binding_for_job(job).admission)
                 dataset = await self._capture_selection(job, request.selection, calls)
                 dataset = build_composite_tables(dataset)
             products = []
@@ -160,8 +179,14 @@ class CompositeInputProvider:
             _require_capture_contract(job, dataset)
             return PortfolioReviewInputCapture(snapshot_payload=dataset, upstream_calls=calls)
         except Exception as exc:
+            # Typed authority/retry failures preserve earlier evidence; a receiver
+            # denial marks its own attempted call before raising.
             # A refused HTTP200 must never retain complete successful lineage.
-            if calls and calls[-1].response_payload is not None:
+            if (
+                not isinstance(exc, (TwrAuthorityRefused, TwrCaptureRetryable))
+                and calls
+                and calls[-1].response_payload is not None
+            ):
                 calls[-1].supportability_status = "error"
                 calls[-1].completeness_status = "error"
                 calls[-1].failure_category = "upstream_error"
@@ -362,11 +387,16 @@ class CompositeInputProvider:
     ) -> dict[str, Any]:
         started = perf_counter()
         assert self._performance_client is not None
+        invocation = self._authorize_twr_send(job, selection)
         try:
             with bind_propagation_context(correlation_id=job.correlation_id, trace_id=job.trace_id):
                 status, response = await self._performance_client.get_composite_twr(
-                    selection.performance_request(), admitted_tenant_id=job.tenant_id
+                    selection.performance_request(),
+                    admitted_tenant_id=job.tenant_id,
+                    invocation=invocation,
                 )
+        except (httpx.TransportError, TimeoutError):
+            raise TwrCaptureRetryable() from None
         except Exception as exc:
             recorder = _UpstreamRecorder(correlation_id=job.correlation_id, trace_id=job.trace_id)
             recorder.append_failure(
@@ -379,8 +409,16 @@ class CompositeInputProvider:
             )
             calls.extend(recorder.calls)
             raise
+        if status in {429, 502, 503, 504}:
+            raise TwrCaptureRetryable()
         call = _source_call(job, selection, status, response, started)
         calls.append(call)
+        if status in {401, 403}:
+            call.supportability_status = "error"
+            call.completeness_status = "error"
+            call.failure_category = "upstream_error"
+            call.failure_message = "Composite TWR receiver refused invocation authority."
+            raise TwrAuthorityRefused("COMPOSITE_TWR_RECEIVER_AUTHORITY_REFUSED")
         dataset = admit_composite_response(
             selection=selection,
             admitted_tenant_id=job.tenant_id,
@@ -393,6 +431,34 @@ class CompositeInputProvider:
             call.failure_category = "partial_data"
             call.failure_message = "Composite source retains unavailable financial evidence."
         return dataset
+
+    def _authorize_twr_send(
+        self, job: ReportJobLedgerRecord, selection: CompositeReportSelection
+    ) -> TwrInvocation:
+        context = TwrAttemptContext(
+            job_id=job.job_id,
+            request_id=job.request_id,
+            correlation_id=job.correlation_id,
+            trace_id=job.trace_id,
+            attempt_id=uuid4().hex,
+        )
+        invocation = authorize_selection(job, selection, self._invocation_provider, context)
+        if self._job_ledger is not None:
+            self._job_ledger.append_job_event(
+                job_id=job.job_id,
+                event_type="composite_twr_invocation_authorized",
+                message="Current TWR invocation authority admitted.",
+                event_payload={
+                    "credential_id": invocation.credential_id,
+                    "validated_at": invocation.validated_at.isoformat(),
+                    "selector_digest": invocation.exact_selector_digest,
+                },
+                event_idempotency_key="composite-twr:" + context.attempt_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+            )
+        return invocation
 
     async def _capture_eligibility(
         self,

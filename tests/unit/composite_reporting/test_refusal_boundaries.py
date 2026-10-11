@@ -20,6 +20,7 @@ from app.main import app
 from app.reporting_document_format import document_output_format
 from app.reporting_identity.capture_binding import source_revision_vector_for_capture
 from app.reporting_render.package_builder import _build_render_package
+from tests.unit.composite_reporting.authority_contract_flow import ContractFlowAuthority
 from tests.unit.composite_reporting.fixtures import calculated_example, selection_for
 from tests.unit.composite_reporting.test_registered_lifecycle import HEADERS, composite_lifecycle
 from tests.unit.composite_reporting.test_source_capture import job_for
@@ -134,9 +135,9 @@ async def test_degraded_source_retains_partial_lineage_and_unavailable_member_ta
         async def get_composite_twr(self, *args, **kwargs):
             return 200, deepcopy(payload)
 
-    capture = await CompositeInputProvider(performance_client=Source()).collect_for_job(
-        job_for(payload)
-    )
+    capture = await CompositeInputProvider(
+        performance_client=Source(), invocation_provider=ContractFlowAuthority()
+    ).collect_for_job(job_for(payload))
     assert capture.upstream_calls[0].supportability_status == "partial"
     assert capture.upstream_calls[0].completeness_status == "partial"
     contribution = next(

@@ -1296,6 +1296,37 @@ async def test_capture_service_fails_outcome_review_without_report_input(tmp_pat
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "posture", ["complete", "error", "unavailable", "not_supported", "redacted", "partial"]
+)
+async def test_failed_capture_aggregate_does_not_claim_complete(tmp_path, posture):
+    ledger, store, job = _create_job(tmp_path, suffix="failed-aggregate")
+    call = _recorded_call()
+    call.supportability_status = posture
+    call.completeness_status = posture
+    original_hash = call.to_create_request().response_hash
+    service = PortfolioReviewSnapshotCaptureService(
+        snapshot_store=store,
+        job_ledger=ledger,
+        portfolio_review_input_provider=_FakePortfolioReviewInputProvider(
+            upstream_calls=[call], error=ReportingValidationError("unsupported")
+        ),
+    )
+    result = await service.capture_for_job(job)
+    assert result.status == "failed"
+    expected = "error" if posture == "complete" else posture
+    snapshot = store.get_snapshot_by_job(job.job_id)
+    assert snapshot.supportability_status == expected
+    assert snapshot.completeness_status == expected
+    assert snapshot.lineage_summary["supportability_status"] == expected
+    assert snapshot.lineage_summary["call_count"] == 1
+    retained = store.list_upstream_calls(snapshot.snapshot_id)
+    assert retained[0].supportability_status == posture
+    assert retained[0].completeness_status == posture
+    assert retained[0].response_hash == original_hash
+
+
+@pytest.mark.asyncio
 async def test_capture_service_marks_failed_and_persists_failed_snapshot(tmp_path):
     ledger, store, job = _create_job(tmp_path, suffix="failed")
     service = PortfolioReviewSnapshotCaptureService(
@@ -1852,10 +1883,15 @@ def test_capture_service_getter_returns_cached_service(monkeypatch):
     lineage_service.get_portfolio_review_snapshot_capture_service.cache_clear()
     monkeypatch.setattr(lineage_service, "get_report_input_snapshot_store", lambda: sentinel_store)
     monkeypatch.setattr(lineage_service, "get_report_job_ledger", lambda: sentinel_ledger)
+
+    def input_provider(*, job_ledger):
+        assert job_ledger is sentinel_ledger
+        return sentinel_input_provider
+
     monkeypatch.setattr(
         lineage_service,
         "ReportingReadPortfolioReviewInputProvider",
-        lambda: sentinel_input_provider,
+        input_provider,
     )
 
     service = lineage_service.get_portfolio_review_snapshot_capture_service()

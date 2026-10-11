@@ -1,5 +1,17 @@
 # Composite Review Semantic Contract
 
+TWR invocation security is separate from financial semantics. The reserved
+server-owned `composite_twr_invocation_binding` JSON option binds verified admission
+to exact job/request, tenant, principal, operation, effective scope and selector set.
+Only that security key is excluded from financial report-series identity. Accepted
+document axes, retained financial responses and all other option semantics remain
+unchanged. Each TWR send requires current dedicated `operations.runtime.read`
+authority for `POST /performance/composites/twr`; Performance verifies the complete
+historical population. Report stores selector digests, never invented member or
+grant revisions. The unavailable default prevents TWR job admission until trusted
+deployment composition is supplied. Controlled provider fixtures establish contract
+flow, not native signature verification or bank identity readiness.
+
 Monthly source amendments use additive `composite_review.v6`, documented in
 [Monthly source-amendment capture and XLSX packaging](composite-monthly-source-amendment.md).
 Source-v2 and definition-v1/v2 are independent axes. V1–v5 meanings remain frozen;

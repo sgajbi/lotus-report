@@ -695,6 +695,8 @@ class CompositeReviewJobRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_products(self) -> CompositeReviewJobRequest:
+        if "composite_twr_invocation_binding" in self.options:
+            raise ValueError("Server-owned TWR invocation binding cannot be supplied")
         if "composite_source_context" in self.options:
             raise ValueError("Use the typed source_context field")
         if "composite_source_products" in self.options:

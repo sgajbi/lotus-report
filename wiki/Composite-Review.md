@@ -1,13 +1,22 @@
 # Composite Review
 
 Configure `LOTUS_PERFORMANCE_BASE_URL` as the service origin, without an API
-prefix. Ordinary composite POSTs and retained pooled GETs use canonical
-`/performance/composites/...` paths. Routing alone does not supply enterprise
-write authority: Report's persisted caller role is audit metadata, and the
-retained-read deployment bearer is not used for ordinary POSTs. The trusted
-write authority contract remains a Report #417 / Performance #540 dependency;
-enterprise denial remains failed capture. See the
-[native route and authority boundary](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-api-guide.md#native-performance-routes-and-unresolved-write-authority-417).
+prefix. Composite POSTs and retained pooled GETs use canonical
+`/performance/composites/...` paths. TWR POST is pure retained read arithmetic
+requiring verified `operations.runtime.read`. Trusted server composition supplies
+the fixed `report.composite-twr.invocation.v1` provider and authenticated context;
+the unavailable default refuses TWR admission before job creation. Public caller
+headers/roles and options cannot supply grants or admitted bindings. Actual user
+jobs require verified delegated intersection. Retained GET credentials and analytics
+dispatch policy remain separate. Existing JSON stores immutable nonsecret job
+authority; each TWR send requires current reauthorization and a dedicated credential.
+Only that security metadata key is excluded from financial series identity. Transient
+TWR transport/429/502/503/504 yields to existing durable worker retry limits; current
+authority denial remains definitive failed capture. Retained rerender never reacquires
+Performance. Bank adapter provisioning and native signed/13-denial joined proof remain
+external dependencies; controlled provider tests prove Report contract flow only.
+#417 and #540 remain open. See the
+[verified TWR read boundary](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-report-api-guide.md#native-performance-routes-and-verified-twr-read-authority-417).
 
 The additive `composite_review.v8` source context joins one exact Manage v1
 definition and optional supplied membership histories to a primary TWR vector.

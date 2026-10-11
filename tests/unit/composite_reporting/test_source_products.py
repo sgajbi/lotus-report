@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from app.composite_reporting.admission import admit_composite_response, response_digest
+from app.composite_reporting.invocation_authority import TwrAuthorityRefused, TwrCaptureRetryable
 from app.composite_reporting.models import CompositeReportSelection, CompositeReviewJobRequest
 from app.composite_reporting.product_contract import (
     CapturedReturnProduct,
@@ -21,6 +22,10 @@ from app.composite_reporting.table_builder import build_composite_tables
 from app.main import app
 from app.reporting_identity.capture_binding import source_revision_vector_for_capture
 from app.reporting_lineage.capture_service import PortfolioReviewInputCaptureError
+from tests.unit.composite_reporting.authority_contract_flow import (
+    ContractFlowAuthority,
+    bind_contract_job,
+)
 from tests.unit.composite_reporting.fixtures import calculated_example
 from tests.unit.composite_reporting.test_registered_lifecycle import HEADERS, composite_lifecycle
 from tests.unit.composite_reporting.test_source_capture import job_for
@@ -138,6 +143,9 @@ async def test_registered_capture_retains_all_three_actual_sources_and_retrieval
             assert result.completed_count == 1
             assert ledger.get_job(job_id).status == "data_ready"
             stored = store.get_snapshot_by_job(job_id)
+            assert stored.supportability_status == "complete"
+            assert stored.completeness_status == "complete"
+            assert stored.lineage_summary["supportability_status"] == "complete"
             from app.composite_reporting.render_package import composite_archive_custody
 
             custody = composite_archive_custody(job=accepted, record=stored)
@@ -390,7 +398,67 @@ def test_product_financial_authority_and_schema_guards(product_dataset, mutation
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["http503", "empty200", "changed200", "transport"])
+async def test_registered_later_authority_refusal_retains_error_aggregate(
+    source_packet, tmp_path, monkeypatch
+):
+    from app.reporting_jobs.ledger import ReportJobLedger
+    from app.reporting_lineage.capture_service import PortfolioReviewSnapshotCaptureService
+    from app.reporting_lineage.store import ReportInputSnapshotStore
+
+    request = request_for(source_packet)
+    sent = []
+    with composite_lifecycle(tmp_path, monkeypatch) as (ledger, store, worker, _):
+        from app.composite_reporting.source_capture import get_composite_twr_invocation_provider
+
+        authority = get_composite_twr_invocation_provider()
+
+        async def source(**kwargs):
+            sent.append(kwargs)
+            authority.refused = True
+            return 200, deepcopy(source_packet["original"]["primary"])
+
+        monkeypatch.setattr("app.clients.performance_client.post_with_retry", source)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://report"
+        ) as client:
+            response = await client.post(
+                "/reports/composite-reviews", json=request, headers=HEADERS
+            )
+        assert response.status_code == 202
+        job_id = response.json()["report_job_id"]
+        await worker.run_once(worker_id="later-denial", max_items=1, lease_seconds=30)
+        job = ledger.get_job(job_id)
+        assert job.status == "failed"
+        assert job.failure_category == "validation_failed"
+        assert job.retry_eligible is False
+        snapshot = store.get_snapshot_by_job(job_id)
+        assert snapshot.snapshot_payload["capture_status"] == "failed"
+        assert snapshot.supportability_status == "error"
+        assert snapshot.completeness_status == "error"
+        assert snapshot.lineage_summary["supportability_status"] == "error"
+        assert snapshot.lineage_summary["call_count"] == 1
+        calls = store.list_upstream_calls(snapshot.snapshot_id)
+        assert len(calls) == 1
+        assert calls[0].supportability_status == "complete"
+        assert calls[0].completeness_status == "complete"
+        assert calls[0].response_hash == request["selection"]["response_digest"]
+        reopened_ledger = ReportJobLedger(tmp_path / "jobs.sqlite3")
+        reopened_store = ReportInputSnapshotStore(tmp_path / "snapshots.sqlite3")
+        restored = await PortfolioReviewSnapshotCaptureService(
+            snapshot_store=reopened_store, job_ledger=reopened_ledger
+        ).capture_for_job(reopened_ledger.get_job(job_id))
+        assert restored == job
+        assert reopened_store.get_snapshot_by_job(job_id) == snapshot
+        assert reopened_store.list_upstream_calls(snapshot.snapshot_id) == calls
+        again = await worker.run_once(worker_id="no-refetch", max_items=1, lease_seconds=30)
+        assert again.claimed_count == 0
+        assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", ["authority", "http401", "http403", "http503", "empty200", "changed200", "transport"]
+)
 async def test_required_product_failure_has_failed_lineage_and_no_partial_dataset(
     source_packet, failure
 ):
@@ -407,9 +475,14 @@ async def test_required_product_failure_has_failed_lineage_and_no_partial_datase
         }
     )
 
+    sent = []
+    authority = ContractFlowAuthority()
+
     class Source:
-        async def get_composite_twr(self, payload, *, admitted_tenant_id):
+        async def get_composite_twr(self, payload, *, admitted_tenant_id, invocation):
+            sent.append(payload)
             if payload["calculation_id"] == str(request.selection.calculation_id):
+                authority.refused = failure == "authority"
                 return 200, source_packet["original"]["primary"]
             assert payload["calculation_id"] == str(
                 request.source_products[0].selection.calculation_id
@@ -418,6 +491,8 @@ async def test_required_product_failure_has_failed_lineage_and_no_partial_datase
                 raise TimeoutError("controlled failure")
             if failure == "http503":
                 return 503, {"detail": "unavailable"}
+            if failure in {"http401", "http403"}:
+                return int(failure[4:]), {"detail": "denied"}
             if failure == "empty200":
                 return 200, {}
             corrupt = deepcopy(source_packet["original"]["products"][0]["response"])
@@ -425,9 +500,24 @@ async def test_required_product_failure_has_failed_lineage_and_no_partial_datase
             return 200, corrupt
 
     with pytest.raises(PortfolioReviewInputCaptureError) as caught:
-        await CompositeInputProvider(performance_client=Source()).collect_for_job(job)
+        await CompositeInputProvider(
+            performance_client=Source(), invocation_provider=authority
+        ).collect_for_job(bind_contract_job(job, request))
     calls = caught.value.upstream_calls
+    assert calls[0].supportability_status == "complete"
+    assert calls[0].completeness_status == "complete"
+    assert calls[0].to_create_request().response_hash == request.selection.response_digest
+    assert calls[0].response_payload == source_packet["original"]["primary"]
+    if failure in {"authority", "http503", "transport"}:
+        expected_error = TwrAuthorityRefused if failure == "authority" else TwrCaptureRetryable
+        assert isinstance(caught.value.original_error, expected_error)
+        assert len(calls) == 1
+        assert len(sent) == (1 if failure == "authority" else 2)
+        return
     assert len(calls) == 2
+    if failure in {"http401", "http403"}:
+        assert isinstance(caught.value.original_error, TwrAuthorityRefused)
+        assert calls[1].status_code == int(failure[4:])
     assert calls[0].supportability_status == "complete"
     assert calls[-1].supportability_status == ("unavailable" if failure == "transport" else "error")
 

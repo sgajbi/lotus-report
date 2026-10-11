@@ -9,6 +9,11 @@ from copy import deepcopy
 import httpx
 import pytest
 
+from app.composite_reporting.invocation_authority import (
+    AuthenticatedTwrInitiator,
+    get_composite_twr_invocation_provider,
+)
+from app.composite_reporting.router import get_authenticated_twr_initiator
 from app.main import app
 from app.reporting_jobs.execution import ReportJobExecutionService
 from app.reporting_jobs.ledger import ReportJobLedger
@@ -19,6 +24,7 @@ from app.reporting_lineage.store import ReportInputSnapshotStore
 from app.reporting_render.package_builder import _build_render_package
 from app.reporting_render.service import PortfolioReviewRenderOrchestrationService
 from app.routers.report_jobs import get_report_lineage_store
+from tests.unit.composite_reporting.authority_contract_flow import ContractFlowAuthority
 from tests.unit.composite_reporting.fixtures import calculated_example, selection_for
 
 HEADERS = {
@@ -53,6 +59,15 @@ def composite_lifecycle(tmp_path, monkeypatch, *, adapters=None, render_client=N
 
     monkeypatch.setattr("app.clients.performance_client.post_with_retry", controlled_source)
     previous = dict(app.dependency_overrides)
+    authority = ContractFlowAuthority()
+    app.dependency_overrides[get_composite_twr_invocation_provider] = lambda: authority
+    app.dependency_overrides[get_authenticated_twr_initiator] = lambda: AuthenticatedTwrInitiator(
+        context_reference="synthetic-contract-flow-only"
+    )
+    monkeypatch.setattr(
+        "app.composite_reporting.source_capture.get_composite_twr_invocation_provider",
+        lambda: authority,
+    )
     app.dependency_overrides[get_report_job_ledger] = lambda: ledger
     app.dependency_overrides[get_report_lineage_store] = lambda: store
     worker = ReportJobWorker(
