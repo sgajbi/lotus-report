@@ -351,7 +351,7 @@ async def test_failed_linked_source_has_failed_lineage_and_no_partial_dataset(fa
         await CompositeInputProvider(performance_client=Source()).collect_for_job(job)
     calls = caught.value.upstream_calls
     assert len(calls) == 1
-    assert calls[0].endpoint == "/composites/analytics"
+    assert calls[0].endpoint == "/performance/composites/analytics"
     assert calls[0].supportability_status == ("unavailable" if failure == "transport" else "error")
 
 

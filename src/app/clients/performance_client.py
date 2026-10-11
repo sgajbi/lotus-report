@@ -40,6 +40,8 @@ class PerformanceClient:
         sleeper: Callable[[float], Awaitable[None]] | None = None,
         read_bearer_token: str = "",
     ):
+        # Configuration supplies the service origin; registered API paths below
+        # include /performance, including retained reads and asynchronous polls.
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
@@ -100,7 +102,7 @@ class PerformanceClient:
         adapter only transmits the exact request to the registered owner API.
         """
         return await post_with_retry(
-            url=f"{self._base_url}/composites/twr",
+            url=f"{self._base_url}/performance/composites/twr",
             timeout_seconds=self._timeout_seconds,
             json_body=payload,
             headers=_tenant_headers(admitted_tenant_id),
@@ -113,7 +115,7 @@ class PerformanceClient:
     ) -> tuple[int, dict[str, Any]]:
         """Read one exact retained source-owned composite analysis."""
         return await post_with_retry(
-            url=f"{self._base_url}/composites/analytics",
+            url=f"{self._base_url}/performance/composites/analytics",
             timeout_seconds=self._timeout_seconds,
             json_body=payload,
             headers=_tenant_headers(admitted_tenant_id),

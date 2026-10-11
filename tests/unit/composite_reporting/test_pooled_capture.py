@@ -101,6 +101,41 @@ async def test_exact_get_uses_only_configured_bearer_and_admitted_tenant(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_native_http_transport_keeps_ordinary_and_retained_read_authority_separate(
+    monkeypatch,
+):
+    requests = []
+
+    def receiver(request):
+        requests.append(request)
+        return httpx.Response(401 if request.method == "GET" else 403, json={"detail": "refused"})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "app.clients.performance_client.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(receiver), **kwargs),
+    )
+    client = PerformanceClient(
+        "http://performance/", 1, max_retries=0, read_bearer_token="unverified-test-credential"
+    )
+    identity = UUID(pair()[0]["calculation_id"])
+    assert (await client.get_composite_twr({}, admitted_tenant_id="tenant-a"))[0] == 403
+    assert (await client.get_composite_analytics({}, admitted_tenant_id="tenant-a"))[0] == 403
+    assert (
+        await client.get_retained_composite_pooled_result(identity, admitted_tenant_id="tenant-a")
+    )[0] == 401
+    assert [request.url.path for request in requests] == [
+        "/performance/composites/twr",
+        "/performance/composites/analytics",
+        f"/performance/composites/analytics/results/{identity}",
+    ]
+    assert all(request.headers["X-Tenant-Id"] == "tenant-a" for request in requests)
+    assert all("Authorization" not in request.headers for request in requests[:2])
+    assert requests[2].headers["Authorization"] == "Bearer unverified-test-credential"
+    assert all("X-Role" not in request.headers for request in requests)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [202, 401, 403, 404, 409])
 async def test_refused_primary_retains_failure_lineage_without_reading_correction_parent(status):
     original, corrected = pair()

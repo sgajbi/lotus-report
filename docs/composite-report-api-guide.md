@@ -226,7 +226,7 @@ controlled synthetic, source-owned linked analyses with no institutional attesta
 
 The request's materialization IDs and complete monthly pins are immutable. Keep
 the genuine `restatement_sequence: null`; numeric competing sequences are refused.
-Source capture uses `POST /composites/analytics` and the admitted tenant, with no
+Source capture uses `POST /performance/composites/analytics` and the admitted tenant, with no
 latest fallback or local linking. Failure or changed source content records failed
 lineage and refuses a partial successful dataset. Accepted input/data axes are
 `composite_review.v3`. JSON requires no renderer. XLSX requires exact current ready
@@ -289,6 +289,35 @@ tenant and diagnostic correlation headers; caller Authorization and capability
 claims are not forwarded. An unavailable grant authority, missing configuration,
 401/403/404/409 response or pending202 refuses successful financial capture. Do not
 put credentials in examples, command evidence, snapshots or logs.
+
+### Native Performance routes and unresolved write authority (#417)
+
+`LOTUS_PERFORMANCE_BASE_URL` is the service origin (for example,
+`http://performance:8000`), without the `/performance` API prefix. Ordinary
+composite POSTs use `/performance/composites/twr` and
+`/performance/composites/analytics`; retained pooled reads use the GET above.
+Putting `/performance` in the configured base duplicates the prefix for retained
+reads and other analytics. New upstream HTTP call lineage records the canonical
+path. Versioned return-product datasets keep their existing `/composites/twr`
+relative endpoint label; historical snapshots are not rewritten.
+
+Routing does not establish write authority. At Performance revision
+`ca230738779b88cb80e8dbd05054e4a64bfb26f3`, `main.py` registers the composite
+routers under `/performance`, and `app/enterprise_authorization.py` checks write
+identity, service identity and capability through `app/enterprise_request_context.py`.
+Report's `ReportCallerContext.role` is explicitly audit/support metadata;
+`ReportJobLedgerRecord` persists no admitted upstream service credential or
+capability grant. `caller_context_from_headers` does not mint that authority.
+Consequently ordinary POSTs currently carry the admitted tenant and diagnostics,
+and an enterprise denial remains failed capture. Report does not promote a stored
+role to an upstream grant or reuse the retained-read bearer for writes.
+
+The remaining #417 dependency is an owner-agreed, trusted Report-to-Performance
+write authority contract with actor, role, service identity, tenant and capability
+provenance, including durable worker/retry admission and rejection semantics.
+That contract must be supplied before successful enterprise ordinary capture can
+be qualified. Performance #540 and Report #417 remain open; this route repair
+does not establish live financial, principal or receiver acceptance.
 
 JSON orders use the existing durable worker/snapshot lifecycle. XLSX orders require
 current ready support for `composite-review/v5`, `composite_review.v5` and XLSX;

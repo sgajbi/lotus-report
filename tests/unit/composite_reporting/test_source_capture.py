@@ -45,6 +45,7 @@ def job_for(payload):
 async def test_exact_pins_tenant_and_trace_reach_actual_client_transport(monkeypatch):
     payload = calculated_example()
     job = job_for(payload)
+    job = job.model_copy(update={"role": "ADMIN"})
     sent = []
 
     async def transport(**kwargs):
@@ -54,13 +55,18 @@ async def test_exact_pins_tenant_and_trace_reach_actual_client_transport(monkeyp
     monkeypatch.setattr("app.clients.performance_client.post_with_retry", transport)
     client = PerformanceClient(base_url="http://performance", timeout_seconds=1, max_retries=0)
     capture = await CompositeInputProvider(performance_client=client).collect_for_job(job)
-    assert sent[0]["url"] == "http://performance/composites/twr"
+    assert sent[0]["url"] == "http://performance/performance/composites/twr"
     assert sent[0]["json_body"] == selection_for(payload).performance_request()
     assert sent[0]["headers"]["X-Tenant-Id"] == "tenant-a"
     assert sent[0]["headers"]["X-Correlation-Id"] == "corr-composite"
     assert sent[0]["headers"]["X-Trace-Id"] == "trace-composite"
+    assert (
+        not {"X-Actor-Id", "X-Role", "X-Service-Identity", "Authorization", "X-Capabilities"}
+        & sent[0]["headers"].keys()
+    )
     assert capture.snapshot_payload["source_response"] == payload
     call = capture.upstream_calls[0].to_create_request()
+    assert call.endpoint == "/performance/composites/twr"
     assert call.response_hash == selection_for(payload).response_digest
     assert call.response_ref == str(selection_for(payload).calculation_id)
     assert call.supportability_status == "complete"
@@ -90,7 +96,7 @@ async def test_job_scope_conflict_is_refused_before_source_io(field, value):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [200, 202, 409, 503])
+@pytest.mark.parametrize("status", [200, 202, 401, 403, 409, 503])
 async def test_changed_or_failed_response_records_failed_call_not_complete(status):
     payload = calculated_example()
     job = job_for(payload)
