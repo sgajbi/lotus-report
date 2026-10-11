@@ -31,6 +31,7 @@ from app.reporting_jobs.ledger import (
     InvalidReportJobTransitionError,
     InvalidReportJobWorkTransitionError,
     MissingIdempotencyKeyError,
+    ReportJobLedger,
     ReportJobNotFoundError,
 )
 from app.reporting_jobs.models import (
@@ -1090,11 +1091,16 @@ def test_postgres_report_job_ledger_translates_unique_violation_race_without_exi
         )
 
 
-def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_is_visible() -> (
-    None
-):
+def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_is_visible(
+    tmp_path,
+) -> None:
     ledger = object.__new__(PostgresReportJobLedger)
     request, caller_context = _request_and_context(uuid4().hex)
+    existing_record = ReportJobLedger(tmp_path / "visible-race.db").create_portfolio_review_job(
+        request=request,
+        caller_context=caller_context,
+        idempotency_key=f"portfolio-review-pg-visible-race-{uuid4().hex}",
+    )
     existing = {
         "report_request_id": "rrq_existing_visible",
         "request_hash": "existing-hash",
@@ -1123,9 +1129,9 @@ def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_
         visible_existing: Mapping[str, Any],
         _request_hash: str,
         _legacy_request_hash: str | None = None,
-    ) -> str:
+    ) -> ReportJobLedgerRecord:
         assert visible_existing == existing
-        return "recovered-from-visible-existing-row"
+        return existing_record
 
     ledger._connect = _connect  # type: ignore[method-assign]
     ledger._existing_or_conflict = _existing_or_conflict  # type: ignore[method-assign]
@@ -1136,7 +1142,7 @@ def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_
         idempotency_key=f"portfolio-review-pg-visible-race-{uuid4().hex}",
     )
 
-    assert recovered == "recovered-from-visible-existing-row"
+    assert recovered is existing_record
 
 
 def test_postgres_report_job_ledger_cancel_detects_job_deleted_after_lock() -> None:

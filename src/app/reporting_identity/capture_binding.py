@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.composite_reporting.invocation_authority import BINDING_OPTION
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.identity import (
     ReportRevisionIdentity,
@@ -66,7 +67,9 @@ def series_key_for_job(job: "ReportJobLedgerRecord") -> ReportSeriesKey:
     )
     benchmark_code = _stated_str(options.get("benchmark_code"))
     semantic_options = {
-        key: value for key, value in options.items() if key not in _HOISTED_OPTION_KEYS
+        key: value
+        for key, value in options.items()
+        if key not in _HOISTED_OPTION_KEYS and key != BINDING_OPTION
     }
     return ReportSeriesKey(
         tenant_id=job.tenant_id,

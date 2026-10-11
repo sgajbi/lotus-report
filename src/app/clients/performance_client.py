@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 
 from app.clients.http_resilience import bounded_read_with_retry, post_with_retry, response_payload
+from app.composite_reporting.invocation_authority import TwrAuthorityRefused, TwrInvocation
 from app.observability import propagation_headers
 
 
@@ -94,19 +95,35 @@ class PerformanceClient:
         )
 
     async def get_composite_twr(
-        self, payload: dict[str, Any], *, admitted_tenant_id: str
+        self,
+        payload: dict[str, Any],
+        *,
+        admitted_tenant_id: str,
+        invocation: TwrInvocation | None = None,
     ) -> tuple[int, dict[str, Any]]:
         """Read an explicitly selected retained composite vector; no latest fallback.
 
         Selection and response admission belong to composite_reporting. This
         adapter only transmits the exact request to the registered owner API.
         """
+        if not isinstance(invocation, TwrInvocation):
+            raise TwrAuthorityRefused("COMPOSITE_TWR_INVOCATION_REQUIRED")
+        invocation.require_request(payload, admitted_tenant_id)
+        diagnostics = {
+            key: value
+            for key, value in propagation_headers().items()
+            if key in {"X-Correlation-Id", "X-Request-Id", "X-Trace-Id", "traceparent"}
+        }
         return await post_with_retry(
             url=f"{self._base_url}/performance/composites/twr",
             timeout_seconds=self._timeout_seconds,
             json_body=payload,
-            headers=_tenant_headers(admitted_tenant_id),
-            max_retries=self._max_retries,
+            headers={
+                **diagnostics,
+                "X-Tenant-Id": admitted_tenant_id,
+                "Authorization": "Bearer " + invocation.credential.get_secret_value(),
+            },
+            max_retries=0,
             backoff_seconds=self._retry_backoff_seconds,
         )
 

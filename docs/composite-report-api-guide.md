@@ -41,6 +41,9 @@ through capture; middleware generates durable identities when omitted.
 The body tenant must match admitted caller context. Equal retries reuse the same
 job; changed content under the same key returns 409. Missing key or conflicting
 tenant returns 400, malformed selection or unsupported format returns 422.
+TWR admission additionally requires trusted server identity and deployment authority;
+these diagnostic headers alone cannot admit a TWR job. See the verified read-authority
+contract below. An unavailable provider returns 503 before creating the job.
 
 From the directory holding `request.json`, set `LOTUS_REPORT_BASE_URL`,
 `LOTUS_TENANT_ID`, `LOTUS_ACTOR_ID`, `LOTUS_CALLER_APPLICATION`, `LOTUS_REGION`
@@ -290,7 +293,7 @@ claims are not forwarded. An unavailable grant authority, missing configuration,
 401/403/404/409 response or pending202 refuses successful financial capture. Do not
 put credentials in examples, command evidence, snapshots or logs.
 
-### Native Performance routes and unresolved write authority (#417)
+### Native Performance routes and verified TWR read authority (#417)
 
 `LOTUS_PERFORMANCE_BASE_URL` is the service origin (for example,
 `http://performance:8000`), without the `/performance` API prefix. Ordinary
@@ -301,23 +304,53 @@ reads and other analytics. New upstream HTTP call lineage records the canonical
 path. Versioned return-product datasets keep their existing `/composites/twr`
 relative endpoint label; historical snapshots are not rewritten.
 
-Routing does not establish write authority. At Performance revision
-`ca230738779b88cb80e8dbd05054e4a64bfb26f3`, `main.py` registers the composite
-routers under `/performance`, and `app/enterprise_authorization.py` checks write
-identity, service identity and capability through `app/enterprise_request_context.py`.
-Report's `ReportCallerContext.role` is explicitly audit/support metadata;
-`ReportJobLedgerRecord` persists no admitted upstream service credential or
-capability grant. `caller_context_from_headers` does not mint that authority.
-Consequently ordinary POSTs currently carry the admitted tenant and diagnostics,
-and an enterprise denial remains failed capture. Report does not promote a stored
-role to an upstream grant or reuse the retained-read bearer for writes.
+TWR is pure retained read arithmetic. Its exact `POST /performance/composites/twr`
+operation requires verified `operations.runtime.read`, independently of the HTTP
+verb. Analytics dispatch has a separate authority policy; this grants no broad POST
+permission. Report's caller role, actor and application headers are diagnostics.
+They cannot construct an authenticated initiator or a capability grant.
 
-The remaining #417 dependency is an owner-agreed, trusted Report-to-Performance
-write authority contract with actor, role, service identity, tenant and capability
-provenance, including durable worker/retry admission and rejection semantics.
-That contract must be supplied before successful enterprise ordinary capture can
-be qualified. Performance #540 and Report #417 remain open; this route repair
-does not establish live financial, principal or receiver acceptance.
+Trusted server composition must provide `report.composite-twr.invocation.v1` through
+`configure_composite_twr_invocation_provider` before serving API/worker work (resolved
+by `get_composite_twr_invocation_provider`), and server middleware must supply a typed
+`AuthenticatedTwrInitiator` in `request.state.composite_twr_initiator`. Both API and
+worker processes must use that deployment composition. There is no caller-selected
+provider, dynamic import or retained-GET credential fallback. The default provider
+is unavailable: a TWR order returns 503 before durable acceptance. An actual user's
+job requires verified delegated application/person intersection; a service job
+requires genuinely authenticated service context, never a public choice of kind.
+Bank identity/provider provisioning is an explicit external dependency.
+
+`admit(authenticated_initiator, tenant, selector_set)` returns a typed nonsecret
+admission. Report binds it atomically to generated job/request and diagnostic
+identities in existing JSON option `composite_twr_invocation_binding`. Public supply
+of that key returns 422; internal copied options refuse too. Idempotent acceptance
+compares principal, tenant, provider, trust/policy/config, effective scope and exact
+selector-set digests separately from business request identity. Only this security
+key is excluded from financial series identity; every other option keeps its semantics.
+
+`authorize_attempt(immutable_binding, exact_selector, attempt_context)` resolves
+current authority and a fresh dedicated credential before every TWR send. Rotation
+may change credential ID/time, while accepted principal/scope/selection/policy
+remain equal. Legacy jobs without binding, unavailable/revoked authority and changed
+grants refuse before protected I/O. Report keeps exact selector digests; Performance
+independently verifies signatures, current authority and the complete selected
+historical member population. Report never invents a member digest or grant revision.
+Only bearer, matching tenant and diagnostic headers are transmitted. Credential
+bytes never enter ledger options, events, snapshots or artifacts. Attempt events
+retain only credential ID, validation time and selector digest.
+
+Each selected TWR vector sends once per worker attempt. Transport failure and HTTP
+429/502/503/504 yield
+to existing durable worker backoff and attempt limits before immutable snapshot
+creation, with bounded attempt-failure evidence. Every retry reauthorizes. Authority
+denial and definitive evidence failure remain failed capture. Exhaustion uses the
+existing operator-intervention terminal state. Retained rerender does not reacquire
+Performance. Derived acquisition needs fresh admission, never a parent's job binding.
+Synthetic trusted-port fixtures prove Report contract flow only. Native Ed25519,
+all-13-denial and joined Docker interoperability proof remain separate. Performance
+#540 and Report #417 remain open; bank provisioning and full financial, principal,
+receiver and workbook acceptance are not established by these tests.
 
 JSON orders use the existing durable worker/snapshot lifecycle. XLSX orders require
 current ready support for `composite-review/v5`, `composite_review.v5` and XLSX;
