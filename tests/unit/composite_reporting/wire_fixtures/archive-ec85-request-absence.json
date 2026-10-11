@@ -1,0 +1,16 @@
+{
+  "source_repository": "lotus-archive",
+  "source_commit": "ec85f69ca8708f1d81b97b255538ac24b8683b3a",
+  "method": "GET",
+  "route": "/documents/by-request-id/{archive_request_id}",
+  "status_code": 404,
+  "response": {
+    "error": {
+      "code": "document_not_found",
+      "message": "The requested archived document was not found.",
+      "correlation_id": "corr-api",
+      "service": "lotus-archive"
+    }
+  },
+  "qualification": "NATIVE_REGISTERED_ROUTE_OWNED_IN_MEMORY_METADATA_FILESYSTEM_FIXTURE"
+}

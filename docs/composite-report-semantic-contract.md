@@ -176,8 +176,11 @@ JSONB key normalization, cannot change the semantic table for the same retained
 values. Existing snapshots and their stored tables remain immutable; rerender
 uses those tables rather than rebuilding them under a newer projection.
 
-The current generic regenerate/replay command routes remain portfolio-review
-only. Composite source correction requires a fresh composite order with explicit
+The regenerate command remains portfolio-review only. Failed-work replay also supports initial
+Archive custody recovery for accepted `composite_review.v8` XLSX jobs: exact original-request
+resolution precedes adoption or a frozen-snapshot replacement after a clean 404. See
+[recovery boundaries](operations/composite-custody-recovery.md).
+Composite source correction requires a fresh composite order with explicit
 corrected pins and a new retry identity; no command silently substitutes the
 latest source. Workbook rerender retains the existing archived-job predicate,
 original snapshot, accepted template and output format. The original job identity

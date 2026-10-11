@@ -1918,11 +1918,9 @@ async def test_failed_handoff_fails_closed_and_stays_retryable(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_null_archive_state_is_a_configuration_error_never_unarchived(tmp_path):
-    """The byte relay is retired: there is no fallback delivery path. A
-    rendered response with no archive handoff applied is a configuration
-    error (Render's archive handoff is off) and the job fails closed - a
-    governed document is never silently left out of custody."""
+async def test_a_null_archive_state_without_identity_is_unresolvable_not_retryable(tmp_path):
+    """Null state does not prove a no-attempt configuration path. Without
+    the original request identity, custody cannot be reconciled safely."""
 
     ledger, store, ready = _seed_data_ready_job(tmp_path)
     service = PortfolioReviewRenderOrchestrationService(
@@ -1935,8 +1933,9 @@ async def test_a_null_archive_state_is_a_configuration_error_never_unarchived(tm
 
     assert failed.status == "failed"
     assert failed.failure_category == "archive_handoff_not_configured"
-    assert failed.retry_eligible is True
-    assert "no archive handoff applied" in (failed.failure_message or "")
+    assert failed.retry_eligible is False
+    assert failed.archive_request_id is None
+    assert "does not prove absence" in (failed.failure_message or "")
 
 
 @pytest.mark.asyncio

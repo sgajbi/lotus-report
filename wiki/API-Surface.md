@@ -150,6 +150,16 @@ boundaries, and copy-paste request examples for direct service and support workf
   internal RFC-0105 failed-work replay command for failed retry-eligible report jobs; creates or
   reuses a replay-scoped report job, persists a source-derived relationship, and rejects completed,
   archived, cancelled, or non-retryable source jobs
+  Supports initial custody recovery for `composite_review.v8` XLSX: resolve the original Archive
+  request first; adopt exact matching custody or recover retained facts after a clean 404.
+  Missing retained identity, unavailable/mismatched lookup and definitive refusal fail closed.
+  Recovery preserves source pins and accepted contract and performs no fresh financial source read.
+  A clean 404 requires Archive's `error.code=document_not_found`; proxy/empty/malformed 404s refuse.
+  Missing/unknown handoff state preserves any original request ID and resolves it first; missing
+  unresolved identity is non-retryable and requires operator reconciliation.
+  Adoption requires every generated custody field and the original artifact digest. Composite
+  same-key retries require retained source facts even after replacement completion; portfolio
+  terminal replay retains its existing retention-independent behavior.
 - `GET /reports/jobs/{job_id}/snapshot`
   internal durable report input snapshot lookup by job id
 - `GET /reports/jobs/{job_id}/lineage`

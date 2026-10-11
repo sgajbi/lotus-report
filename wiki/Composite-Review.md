@@ -226,7 +226,19 @@ XLSX package tests use normal shipped admission with a controlled Render boundar
 actual supplier completion is separately qualified in the delivery ledger.
 Archive custody and technical rerender preserve the original snapshot, template
 and output format. Financial correction requires a fresh exact-pinned order/key;
-generic regenerate/replay remain portfolio-only. Manage #714,
+regenerate remains portfolio-only. Failed-work replay also supports initial custody recovery for
+accepted `composite_review.v8` XLSX jobs: resolve the original Archive request first, adopt exact
+matching custody or render retained facts after a clean 404. No fresh financial source read occurs.
+Clean absence requires Archive's `error.code=document_not_found`; malformed/proxy/empty 404s refuse.
+Unknown handoff state retains and resolves any original request ID. Missing unresolved identity is
+non-retryable; null state never proves that no delivery was attempted.
+Adoption requires the original artifact digest and every generated custody field, including
+classification, frequency and supplied retention policy/dates. A completed replacement's same-key
+retry still requires retained source facts; snapshot retention loss returns 409 for reconciliation.
+The original digest must be 64 hexadecimal characters with at most one `sha256:` prefix.
+Missing, malformed or conflicting inherited authority refuses with 409 before adoption or new work;
+recovery never acquires a replacement source grant.
+Other composite versions and JSON retain their existing recovery posture. Manage #714,
 Performance #540/#610, Gateway #820 and institutional authority remain owner dependencies.
 
 Methods rows use sorted method-binding keys so JSON object key order, including

@@ -688,7 +688,11 @@ class PortfolioReviewRenderOrchestrationService:
         # fallback for responses predating the field, guarded by the
         # cross-repo parity test; it is deleted once the fallback is dead.
         archive_request_id = _optional_str(render_response.get("archive_request_id"))
-        if archive_request_id is None and artifact_sha256:
+        if (
+            "archive_request_id" not in render_response
+            and artifact_sha256
+            and archive_state in {"archived_verified", "archive_pending", "archive_failed"}
+        ):
             archive_request_id = derive_archive_request_id(document_reference, artifact_sha256)
         if archive_state == "archived_verified" and document_id and archive_request_id:
             if job.status == "completed":
@@ -718,22 +722,25 @@ class PortfolioReviewRenderOrchestrationService:
         # resolution-first pass looks up the recorded request id before any
         # re-render (re-rendered bytes are content-identical by fingerprint
         # but byte-different by design, so only the recorded id can converge
-        # on what may have committed). That machinery exists for the
-        # portfolio-review family only; other families stay non-retryable
-        # rather than advertising a recovery that does not exist.
-        resolvable = job.report_type == "portfolio_review"
+        # on what may have committed). Only explicitly supported families
+        # advertise this recovery, preserving the accepted contract.
+        from app.reporting_jobs.replay_policy import resolution_replay_supported
+
+        # Retain every available original identity, including malformed or
+        # unknown state responses. None of those responses proves no delivery.
+        if archive_request_id and job.status == "completed":
+            self._job_ledger.mark_archiving(
+                job_id=job.job_id,
+                actor=job.triggered_by,
+                correlation_id=job.correlation_id,
+                trace_id=job.trace_id,
+                archive_request_id=archive_request_id,
+            )
+        resolvable = resolution_replay_supported(job) and bool(archive_request_id)
         if archive_state == "archive_pending" and archive_request_id:
             # The delivery deadline expired after the request may have
             # committed. The derived request id is recorded durably FIRST so
             # reconciliation survives a crash, then the job fails closed.
-            if job.status == "completed":
-                self._job_ledger.mark_archiving(
-                    job_id=job.job_id,
-                    actor=job.triggered_by,
-                    correlation_id=job.correlation_id,
-                    trace_id=job.trace_id,
-                    archive_request_id=archive_request_id,
-                )
             failure_category = "archive_outcome_unknown"
             failure_message = (
                 f"Archive custody is unresolved for {archive_request_id}: the "
@@ -746,14 +753,6 @@ class PortfolioReviewRenderOrchestrationService:
             # Archive failed to commit. The delivery's request id is recorded
             # durably BEFORE the failure posture, so replay can resolve the
             # exact request that may have crossed the boundary.
-            if archive_request_id and job.status == "completed":
-                self._job_ledger.mark_archiving(
-                    job_id=job.job_id,
-                    actor=job.triggered_by,
-                    correlation_id=job.correlation_id,
-                    trace_id=job.trace_id,
-                    archive_request_id=archive_request_id,
-                )
             archive_detail = _optional_str(render_response.get("archive_detail")) or ""
             failure_category = "archive_handoff_failed"
             failure_message = (
@@ -773,15 +772,13 @@ class PortfolioReviewRenderOrchestrationService:
                     started_at=started_at,
                 )
         else:
-            # No archive handoff applied. Since the byte relay is retired,
-            # a null archive_state is a configuration error (lotus-render's
-            # LOTUS_RENDER_ARCHIVE_BASE_URL is unset or the response is
-            # malformed) - never a silently unarchived document.
+            # The historical category includes missing/unrecognized state;
+            # it is ambiguous custody, never evidence of a no-attempt path.
             failure_category = "archive_handoff_not_configured"
             failure_message = (
-                "The render completed but no archive handoff applied "
-                f"(archive_state={archive_state!r}). Report no longer relays "
-                "bytes; configure lotus-render's archive handoff and retry."
+                "Render did not provide a valid Archive custody outcome. A missing or "
+                "unrecognized state does not prove absence. Resolve the recorded request "
+                "before replacement; missing identity requires operator reconciliation."
             )
         return self._fail_archive_outcome(
             job=job,

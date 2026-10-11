@@ -1962,8 +1962,10 @@ async def regenerate_report_job(
     summary="Replay failed report job",
     description=(
         "Creates or reuses a replay-scoped report job for a failed retry-eligible "
-        "portfolio-review source job; other report families recover by resubmitting their own "
-        "order, and any other family answers 409 report_job_cannot_be_replayed. "
+        "portfolio-review source job, or an XLSX composite-review/v8 job with a failed initial "
+        "Archive handoff. Composite recovery resolves the original custody request first, "
+        "adopts only an exactly matching committed document, and renders retained snapshot "
+        "facts only after a clean 404. Other families answer 409 report_job_cannot_be_replayed. "
         "Replay is for failed work only; it does not duplicate completed or archived documents. "
         "Use rerender for presentation corrections and regenerate when archived source data must "
         "be refreshed from upstream."
@@ -2000,13 +2002,17 @@ async def regenerate_report_job(
             409,
             example_key="report_job_cannot_be_replayed",
             description=(
-                "Returned when the report job is not a failed, retry-eligible portfolio-review "
-                "job without an archived document - including failed jobs of other report "
-                "families, which recover by resubmitting their own order. Also returned for a "
+                "Returned when the report job is not a supported failed, retry-eligible "
+                "portfolio-review or initial-custody composite-review/v8 XLSX job without an "
+                "archived document. Composite recovery also refuses missing retained facts, "
+                "unavailable or mismatched Archive resolution, and definitive policy refusals. "
+                "Also returned for a "
                 "render_artifact_unrecoverable recovery that still has collection to do when "
-                "its retained snapshot has been purged; other failure categories recapture "
-                "upstream data instead, and same-key retries of an already completed replay "
-                "succeed regardless of snapshot retention."
+                "its retained snapshot has been purged; other portfolio failure categories "
+                "recapture "
+                "upstream data instead. Same-key retries of an already completed portfolio-review "
+                "replay succeed regardless of snapshot retention; composite replay always "
+                "requires the retained source snapshot, including completed-replacement retries."
             ),
         ),
     },
