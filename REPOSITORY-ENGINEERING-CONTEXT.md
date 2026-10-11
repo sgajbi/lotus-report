@@ -111,7 +111,7 @@ FastAPI service plus a separate `lotus-report-job-worker`, backed by PostgreSQL.
 selection and up to 120 contiguous retained windows. The catalogue admits
 JSON/XLSX for internal `NOT_ATTESTED` calculated review; exact runtime/template
 format evidence determines workbook availability. Capture uses Performance's
-explicit-vector `POST /composites/twr`,
+explicit-vector `POST /performance/composites/twr`,
 compares all selected pins and response digest, and preserves the source payload
 through the existing worker, immutable snapshot and revision machinery.
 `composite_review.v1` carries exact canonical cells, units, source pointers and
@@ -730,7 +730,7 @@ the RFCs, the wiki, or GitHub issues.
 
 The same composite family accepts one exclusive `linked_selection` primary with
 `composite_review.v3` accepted input/data axes. Capture uses the existing Performance
-client and `POST /composites/analytics`; no financial linking belongs in Report.
+client and `POST /performance/composites/analytics`; no financial linking belongs in Report.
 Keep genuine nullable source request fields and the complete member/period source
 authority, pins and response digest. Validate the whole expected source projection,
 including coherent table/row/column omission, before persistence and rendering.
