@@ -4,6 +4,7 @@ import logging
 import pytest
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.testclient import TestClient
+from prometheus_client import generate_latest
 from starlette.routing import Match, Mount, Route
 
 import app.reporting_metrics as reporting_metrics
@@ -322,6 +323,33 @@ def test_reporting_metric_contracts_are_bounded_and_implementation_truthful():
         assert "trace_id" not in contract.labels
         assert "portfolio_id" not in contract.labels
         assert "client_name" not in contract.labels
+
+
+@pytest.mark.parametrize("exporter", ["api", "worker"])
+def test_exported_reporting_help_matches_named_contracts(exporter):
+    if exporter == "api":
+        app = FastAPI()
+        setup_observability(app)
+        with TestClient(app) as client:
+            response = client.get("/metrics")
+        assert response.status_code == 200
+        exposition = response.text
+    else:
+        # The worker's start_http_server exports this same default registry.
+        exposition = generate_latest().decode("utf-8")
+
+    exported_help = {
+        fields[2]: fields[3]
+        for line in exposition.splitlines()
+        if line.startswith("# HELP ")
+        for fields in [line.split(" ", 3)]
+    }
+    expected_help = {
+        contract.name: contract.description
+        for contract in REPORTING_METRIC_CONTRACTS
+        if contract.implemented
+    }
+    assert {name: exported_help[name] for name in expected_help} == expected_help
 
 
 def test_lifecycle_outcome_recorders_enforce_bounded_vocabularies():

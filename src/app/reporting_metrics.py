@@ -292,40 +292,44 @@ REPORTING_METRIC_CONTRACTS: tuple[ReportingMetricContract, ...] = (
     ),
 )
 
+_METRIC_DESCRIPTIONS = {
+    contract.name: contract.description for contract in REPORTING_METRIC_CONTRACTS
+}
+
 _REPORT_OPERATIONS_TOTAL = Counter(
     "lotus_report_operations_total",
-    REPORTING_METRIC_CONTRACTS[0].description,
+    _METRIC_DESCRIPTIONS["lotus_report_operations_total"],
     [METRIC_OPERATION_LABEL, METRIC_STATUS_LABEL, METRIC_FAILURE_CATEGORY_LABEL],
 )
 _REPORT_OPERATION_DURATION_SECONDS = Histogram(
     "lotus_report_operation_duration_seconds",
-    REPORTING_METRIC_CONTRACTS[1].description,
+    _METRIC_DESCRIPTIONS["lotus_report_operation_duration_seconds"],
     [METRIC_OPERATION_LABEL, METRIC_STATUS_LABEL, METRIC_FAILURE_CATEGORY_LABEL],
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
 )
 _BATCH_RUNTIME_LAST_ITEMS = Gauge(
     "lotus_report_batch_runtime_last_items",
-    REPORTING_METRIC_CONTRACTS[2].description,
+    _METRIC_DESCRIPTIONS["lotus_report_batch_runtime_last_items"],
     [METRIC_ITEM_STATE_LABEL],
 )
 _BATCH_SCHEDULER_LAST_SCHEDULES = Gauge(
     "lotus_report_batch_scheduler_last_schedules",
-    REPORTING_METRIC_CONTRACTS[3].description,
+    _METRIC_DESCRIPTIONS["lotus_report_batch_scheduler_last_schedules"],
     [METRIC_SCHEDULER_OUTCOME_LABEL],
 )
 _BATCH_PRESSURE_LAST_COUNTS = Gauge(
     "lotus_report_batch_pressure_last_counts",
-    REPORTING_METRIC_CONTRACTS[4].description,
+    _METRIC_DESCRIPTIONS["lotus_report_batch_pressure_last_counts"],
     [METRIC_PRESSURE_STATE_LABEL],
 )
 _ATTENTION_EVENTS_LAST_COUNT = Gauge(
     "lotus_report_attention_events_last_count",
-    REPORTING_METRIC_CONTRACTS[6].description,
+    _METRIC_DESCRIPTIONS["lotus_report_attention_events_last_count"],
     [METRIC_ATTENTION_TYPE_LABEL, METRIC_ATTENTION_SEVERITY_LABEL],
 )
 _EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = Counter(
     "lotus_report_evidence_surface_supportability_total",
-    REPORTING_METRIC_CONTRACTS[7].description,
+    _METRIC_DESCRIPTIONS["lotus_report_evidence_surface_supportability_total"],
     [
         METRIC_SUPPORTABILITY_STATE_LABEL,
         METRIC_SUPPORTABILITY_REASON_LABEL,
@@ -334,33 +338,33 @@ _EVIDENCE_SURFACE_SUPPORTABILITY_TOTAL = Counter(
 )
 _REPORT_JOB_RUNTIME_LAST_ITEMS = Gauge(
     "lotus_report_job_runtime_last_items",
-    REPORTING_METRIC_CONTRACTS[8].description,
+    _METRIC_DESCRIPTIONS["lotus_report_job_runtime_last_items"],
     [METRIC_ITEM_STATE_LABEL],
 )
 _REPORT_JOB_WORK_LEASE_EVENTS_TOTAL = Counter(
     "lotus_report_job_work_lease_events_total",
-    REPORTING_METRIC_CONTRACTS[12].description,
+    _METRIC_DESCRIPTIONS["lotus_report_job_work_lease_events_total"],
     [METRIC_SCHEDULER_OUTCOME_LABEL],
 )
 _ADVISOR_COMMENTARY_RESOLUTIONS_TOTAL = Counter(
     "lotus_report_advisor_commentary_resolutions_total",
-    REPORTING_METRIC_CONTRACTS[13].description,
+    _METRIC_DESCRIPTIONS["lotus_report_advisor_commentary_resolutions_total"],
     [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
 )
 _REPLAY_FINGERPRINT_COMPARISONS_TOTAL = Counter(
     "lotus_report_replay_fingerprint_comparisons_total",
-    REPORTING_METRIC_CONTRACTS[11].description,
+    _METRIC_DESCRIPTIONS["lotus_report_replay_fingerprint_comparisons_total"],
     [METRIC_SCHEDULER_OUTCOME_LABEL, METRIC_SUPPORTABILITY_REASON_LABEL],
 )
 
 
 _ARCHIVE_LINEAGE_PENDING_JOBS = Gauge(
     "lotus_report_archive_lineage_pending_jobs",
-    REPORTING_METRIC_CONTRACTS[9].description,
+    _METRIC_DESCRIPTIONS["lotus_report_archive_lineage_pending_jobs"],
 )
 _ARCHIVE_LINEAGE_OLDEST_PENDING_AGE_SECONDS = Gauge(
     "lotus_report_archive_lineage_oldest_pending_age_seconds",
-    REPORTING_METRIC_CONTRACTS[10].description,
+    _METRIC_DESCRIPTIONS["lotus_report_archive_lineage_oldest_pending_age_seconds"],
 )
 
 
