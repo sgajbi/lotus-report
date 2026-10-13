@@ -14,14 +14,19 @@ def archive_absence_confirmed(payload: dict[str, Any]) -> bool:
 
 
 def resolution_replay_supported(job: ReportJobLedgerRecord) -> bool:
+    contract = (job.accepted_document_contract or {}).get("report_data_contract_version")
+    template = (
+        {"composite_review.v8": "v8", "composite_review.v9": "v9"}.get(contract)
+        if isinstance(contract, str)
+        else None
+    )
     return job.report_type == "portfolio_review" or (
         job.report_type == "composite_review"
         and job.requested_output_formats == ["xlsx"]
         and job.accepted_document_contract is not None
-        and job.accepted_document_contract.get("report_data_contract_version")
-        == "composite_review.v8"
+        and template is not None
         and job.render_template_id == "composite-review"
-        and job.render_template_version == "v8"
+        and job.render_template_version == template
     )
 
 
@@ -30,12 +35,14 @@ def composite_replay_request(job: ReportJobLedgerRecord) -> CompositeReviewJobRe
     selection = options.pop("composite_selection", None)
     context = options.pop("composite_source_context", None)
     products = options.pop("composite_source_products", None)
+    notice = options.pop("composite_notice_selection", None)
     options.pop(BINDING_OPTION, None)
     return CompositeReviewJobRequest.model_validate(
         {
             "selection": selection,
             "source_context": context,
             "source_products": products,
+            "notice_selection": notice,
             "requested_output_formats": job.requested_output_formats,
             "options": options,
         }

@@ -20,6 +20,6 @@ def get_portfolio_review_snapshot_capture_service() -> PortfolioReviewSnapshotCa
         snapshot_store=get_report_input_snapshot_store(),
         job_ledger=get_report_job_ledger(),
         portfolio_review_input_provider=ReportingReadPortfolioReviewInputProvider(
-            job_ledger=get_report_job_ledger()
+            job_ledger=get_report_job_ledger(), snapshot_store=get_report_input_snapshot_store()
         ),
     )

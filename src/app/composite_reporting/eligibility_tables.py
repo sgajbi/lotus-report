@@ -535,20 +535,37 @@ def eligibility_workbook_projection(
                         cell["source_pointer"],
                     ]
                 )
-    projected.append(
-        (
+                if data["contract_version"] == "composite_review.v9":
+                    from app.composite_reporting.correction_notice.workbook import (
+                        source_evidence_fields,
+                    )
+
+                    evidence[-1].extend(
+                        source_evidence_fields(
+                            table["table_id"], row["row_id"], column["column_id"], cell
+                        )
+                    )
+    evidence_headers = [
+        "Table",
+        "Row",
+        "Column",
+        "Canonical JSON scalar",
+        "Availability",
+        "Reasons JSON",
+        "Source pointer",
+    ]
+    if data["contract_version"] == "composite_review.v9":
+        evidence_headers.extend(
             [
-                "Table",
-                "Row",
-                "Column",
-                "Canonical JSON scalar",
-                "Availability",
-                "Reasons JSON",
-                "Source pointer",
-            ],
-            evidence,
+                "Generation",
+                "Original data contract",
+                "Original source table",
+                "Original source row",
+                "Original source column",
+                "Original source pointer",
+            ]
         )
-    )
+    projected.append((evidence_headers, evidence))
     projected.append(
         (
             [
@@ -598,6 +615,10 @@ def eligibility_workbook_projection(
         from app.composite_reporting.historical_tables import CALCULATION_BOUNDARY
 
         fields["calculation_boundary"] = CALCULATION_BOUNDARY
+    if data["contract_version"] == "composite_review.v9":
+        from app.composite_reporting.correction_notice.workbook import notice_artifact_identity
+
+        fields.update(notice_artifact_identity(data))
     projected.append(
         (["Field", "Exact JSON value"], [list(row) for row in _identity_fragments(fields)])
     )

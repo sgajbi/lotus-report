@@ -97,3 +97,4 @@ PyYAML = "yaml"
 
 [tool.setuptools.package-data]
 "app.composite_reporting" = ["historical_schemas/*.json"]
+"app.composite_reporting.correction_notice" = ["inherited_schemas/*.json"]

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from time import perf_counter
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -784,10 +784,14 @@ class ReportingReadPortfolioReviewInputProvider:
         read_service: ReportingReadService | None = None,
         ai_client: AcceptedOutputClient | None = None,
         job_ledger: ReportJobCaptureLedger | None = None,
+        snapshot_store: ReportInputSnapshotStorePort | None = None,
+        notice_archive_reader: Any = None,
     ) -> None:
         self._read_service = read_service
         self._ai_client = ai_client
         self._job_ledger = job_ledger
+        self._snapshot_store = snapshot_store
+        self._notice_archive_reader = notice_archive_reader
 
     async def collect_for_job(
         self,
@@ -799,6 +803,30 @@ class ReportingReadPortfolioReviewInputProvider:
             return await self._collect_for_job(job)
 
     async def _collect_for_job(self, job: ReportJobLedgerRecord) -> PortfolioReviewInputCapture:
+        if job.report_type == "composite_review" and "composite_notice_selection" in job.options:
+            from app.clients.archive_client import ArchiveClient
+            from app.composite_reporting.correction_notice.capture import (
+                CorrectionNoticeInputProvider,
+                NoticeSourceLedger,
+            )
+            from app.composite_reporting.correction_notice.errors import NoticeEvidenceRefused
+
+            if self._snapshot_store is None or self._job_ledger is None:
+                raise PortfolioReviewInputCaptureError(
+                    original_error=NoticeEvidenceRefused("COMPOSITE_NOTICE_SOURCE_STORE_REQUIRED"),
+                    upstream_calls=[],
+                )
+            return await CorrectionNoticeInputProvider(
+                ledger=cast(NoticeSourceLedger, self._job_ledger),
+                snapshots=self._snapshot_store,
+                archive_reader=self._notice_archive_reader
+                or ArchiveClient(
+                    base_url=settings.archive_base_url,
+                    timeout_seconds=settings.upstream_timeout_seconds,
+                    max_retries=settings.upstream_max_retries,
+                    retry_backoff_seconds=settings.upstream_retry_backoff_seconds,
+                ),
+            ).collect_for_job(job)
         if job.report_type == "composite_review":
             from app.clients.manage_client import ManageClient
             from app.composite_reporting.source_capture import CompositeInputProvider
@@ -953,7 +981,9 @@ class PortfolioReviewSnapshotCaptureService:
         self._job_ledger = job_ledger
         self._portfolio_review_input_provider = (
             portfolio_review_input_provider
-            or ReportingReadPortfolioReviewInputProvider(job_ledger=job_ledger)
+            or ReportingReadPortfolioReviewInputProvider(
+                job_ledger=job_ledger, snapshot_store=snapshot_store
+            )
         )
 
     async def capture_for_job(self, job: ReportJobLedgerRecord) -> ReportJobLedgerRecord:
@@ -1903,6 +1933,10 @@ def _failed_capture_payload(
 
 
 def _map_job_failure(exc: Exception) -> tuple[str, str, bool]:
+    from app.composite_reporting.correction_notice.errors import NoticeEvidenceRefused
+
+    if isinstance(exc, NoticeEvidenceRefused):
+        return "validation_failed", str(exc), False
     if isinstance(exc, TwrAuthorityRefused):
         return "validation_failed", "Composite TWR invocation authority was refused.", False
     if isinstance(exc, (TimeoutError, httpx.TimeoutException)):

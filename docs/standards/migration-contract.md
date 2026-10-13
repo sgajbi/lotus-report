@@ -13,6 +13,14 @@
 
 ## Deterministic Checks
 
+Migration 028 adds retained-offer fields and immutable/shape guards to the existing
+`report_job`; it creates no offer table. Existing jobs keep NULL cohort policy.
+SQLite's additive schema upgrade is exercised on isolated files. PostgreSQL
+application, interrupted replay and live guard/locking qualification remain pending.
+The current checker routes both modes to PostgreSQL; `--mode no-schema` is not an
+offline validation and cannot qualify this candidate without a database. See the
+[inactive candidate runbook](../operations/composite-custody-recovery.md#inactive-retained-offer-candidate-446).
+
 - `make migration-upgrade-smoke` additionally asserts `idea_evidence_intake`'s column **types** and
   indexes against `information_schema` — `jsonb` for both payloads, `timestamptz` for both instants.
   Types rather than presence, because a table created with `text` columns everywhere would satisfy a

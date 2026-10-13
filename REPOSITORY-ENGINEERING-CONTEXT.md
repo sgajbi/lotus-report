@@ -11,6 +11,37 @@ here is only interesting because of when it shipped, it belongs there instead.
 
 ## Repository Role
 
+The retained-offer custody candidate (#446) adds immutable complete request bytes
+to the existing job and recovery to its existing work row. `CustodyBindings` has no
+production binding: admission defaults disabled and current authority/readiness
+must fail closed. Protected unresolved jobs remain nonterminal when work parks;
+named Render receipts cannot release bytes. Migration 028 and isolated SQLite /
+synthetic transport proof do not qualify PostgreSQL, installed providers or
+activation. See [custody recovery](docs/operations/composite-custody-recovery.md).
+Worker accounting includes claim and settlement, but async cancellation cannot
+interrupt synchronous DB work. The provider has one fixed slot inventory and private
+generation-bound strict handles, with uncertain physical close retaining charged
+quarantine. Strict enablement requires a lifecycle owner and an absolute shutdown
+deadline; no production factory enables it. API and worker teardown forward an owner
+deadline when supplied and retain the cached provider on incomplete drain. Legacy
+raw release still requires a valid caller and has no stale-generation guarantee.
+Absolute native provider/transaction cleanup deadlines remain an explicit activation
+prerequisite (Finding 1 OPEN/P1); current per-operation limits do not
+prove the 60-second item or 120-second pass bound. Recovery uses 60/300/900-second
+gaps with 0–10-second jitter and persists future owner wait/retry due times.
+PostgreSQL legacy NULL-policy work retains the injected clock seam; required-cohort
+selection uses database time and refreshes it after pair locks. A public batch
+sweeps expired work once before its individual claim transactions, so it cannot
+recover a zero-duration lease that the same batch just issued.
+
+The additive v9 correction-notice producer candidate composes two exact retained
+v8 generations and an acknowledged four-document source path. Its cohesive package
+is `composite_reporting/correction_notice`; capture reads durable Report records and
+authorized Archive evidence, with no financial service call. Existing intake,
+snapshot, package and replay paths own delivery. Archive197 native relationship
+schema/KAT are pinned from accepted commit036c1412; live qualification is pending. See
+[correction notice](docs/composite-correction-notice.md) for boundaries and validation.
+
 Composite source context uses additive `composite_review.v8`: exact Manage v1
 definition custody with optional SI and supplied membership histories beside an
 TWR primary and existing exact calendar/trailing source products in one manifest.

@@ -56,6 +56,22 @@ def _require_idempotency_key(key: str | None) -> None:
         raise MissingIdempotencyKeyError("missing_idempotency_key")
 
 
+def _request_profile(request: CompositeReviewJobRequest) -> str:
+    if request.notice_selection is not None:
+        return "v9"
+    if request.source_context is not None:
+        return "v8"
+    if request.pooled_selection is not None:
+        return "v5"
+    if isinstance(request.eligibility_selection, HistoricalEligibilitySelection):
+        return "v7"
+    if isinstance(request.eligibility_selection, AmendmentEligibilitySelection):
+        return "v6"
+    if request.eligibility_selection is not None:
+        return "v4"
+    return "v3" if request.linked_selection is not None else "v2"
+
+
 @router.post(
     "/composite-reviews",
     status_code=202,
@@ -119,25 +135,14 @@ async def submit_composite_review(
                 "message": "Pinned source scope does not match the caller.",
             },
         )
-    profile = (
-        "v8"
-        if request.source_context is not None
-        else "v5"
-        if request.pooled_selection is not None
-        else "v7"
-        if isinstance(request.eligibility_selection, HistoricalEligibilitySelection)
-        else "v6"
-        if isinstance(request.eligibility_selection, AmendmentEligibilitySelection)
-        else "v4"
-        if request.eligibility_selection is not None
-        else ("v3" if request.linked_selection is not None else "v2")
-    )
+    profile = _request_profile(request)
     if (
         request.source_products is not None
         or request.linked_selection is not None
         or request.eligibility_selection is not None
         or request.pooled_selection is not None
         or request.source_context is not None
+        or request.notice_selection is not None
     ) and request.requested_output_formats == ["xlsx"]:
         support = await catalogue.document_contract_supportability(
             report_type="composite_review",

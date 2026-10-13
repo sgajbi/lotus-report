@@ -37,6 +37,12 @@ boundaries, and copy-paste request examples for direct service and support workf
 
 ## Reports
 
+- `POST /reports/composite-reviews` accepts exclusive `notice_selection` for the
+  local v9 correction-notice producer candidate, subject to exact v9 XLSX support.
+  Capture fences both retained jobs before source reads. Native Archive197
+  relationship schema/KAT are pinned; joined live qualification remains pending. See the
+  [correction-notice guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-correction-notice.md).
+
 - `POST /reports/portfolios/{portfolio_id}/summary`
   requires a nonblank `X-Tenant-Id`, normalizes it and forwards it to every selected Core read.
   Missing or blank tenant context returns local `400 missing_caller_context` before source I/O.

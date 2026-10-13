@@ -31,7 +31,11 @@ async def _app_lifespan(application: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         application.state.is_draining = True
-        close_postgres_connection_provider()
+        deadline = getattr(application.state, "postgres_shutdown_deadline", None)
+        if deadline is None:
+            close_postgres_connection_provider()
+        else:
+            close_postgres_connection_provider(deadline=deadline)
 
 
 app = FastAPI(

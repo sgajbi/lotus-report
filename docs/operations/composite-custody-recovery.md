@@ -1,5 +1,115 @@
 # Initial composite custody recovery
 
+## Inactive retained-offer candidate (#446)
+
+The new `retained-render-offer.v1` cohort is **disabled by default**. Report ledger
+factories supply no `CustodyBindings`; only injected server admission may mark a
+new job. Caller fields cannot opt in, and existing NULL-policy jobs retain their
+existing behavior. This source candidate is not an activated recovery service.
+The replay command described below does not resume a required-cohort job.
+
+Before the first Render POST, Report commits the complete pre-render JSON body as
+compact UTF-8 with nonfinite numbers rejected. Bytes, SHA-256, encoding version,
+size, generation and original Render identity live on the existing `report_job`.
+Dispatch reads committed bytes, including after an ambiguous commit or restart;
+ordinary job reads expose metadata only. Known-ID recovery never reacquires sources
+or recomposes a replacement package. Report adds no Archive POST sender.
+
+The existing work row carries recovery. Unresolved custody at expiry, exhaustion,
+completion, cancellation or failure parks that row as failed while preserving the
+nonterminal job, bytes, identities and counters. It does not emit `job_failed`.
+Internal authorized resume uses the parked epoch and offer digest, the same job and
+work IDs, and a new finite recovery window. Refusal cannot implicitly reset.
+An `archived_verified` response alone neither verifies custody nor releases bytes.
+Even independent final verification retains the body; no deletion or transfer exists.
+
+| Bound | Candidate ceiling |
+| --- | --- |
+| Complete retained body | 8 MiB |
+| Aggregate / per tenant retained bodies | 128 MiB / 32 MiB |
+| Decoded HTTP response / diagnostic | 128 KiB / 1,024 bytes |
+| Mutations | One initial and three recovery invocations per window |
+| Status reads / recovery window | 12 / 24 hours |
+| Recovery gaps before attempts one / two / three | 60 / 300 / 900 seconds plus 0–10 seconds jitter |
+| Item / pass targets / sequential item count | 60 seconds / 120 seconds / at most five; DB deadline prerequisite below |
+| Required lease | At least 120 seconds; worker default 300 seconds |
+| Mutation / status transport deadline | 45 seconds / 10 seconds, one attempt |
+
+Reservations commit before transport and are never refunded after unknown outcomes.
+Initial reservation schedules the first recovery; each recovery schedules its next
+permitted attempt. Validated future owner due times persist for both wait and retry,
+survive restart, align work deferral and prevent early polls from consuming the budget.
+SQLite uses `BEGIN IMMEDIATE` before facts and quota; PostgreSQL source locks work,
+then job, then the single quota advisory lock, checks database time after waits, and
+sweeps one pair per transaction with `SKIP LOCKED`. Neither cap permits eviction.
+
+One worker allowance starts before claim/sweep and covers execution and settlement;
+execution receives no fresh allowance after claim. At expiry, the worker starts no
+new settlement transaction and reports the work outcome as unknown for existing
+expiry recovery. A committed verified winner remains authoritative. These checks
+and async cancellation **do not bound a synchronous database call**. An isolated
+SQLite writer-lock test demonstrates that claim can outlast the scaled allowance.
+The PostgreSQL provider now has one fixed inventory for legacy and private strict
+leases. Strict handles bind provider, generation and owner thread; their terminal
+return publishes directly through the owned slot without taking the shared provider
+condition. Unknown physical close stays quarantined and charged, with no automatic
+retry or replacement. Raw legacy `release(connection)` retains its valid-caller
+precondition and does not promise stale-generation safety.
+
+Strict construction requires a lifecycle owner and an absolute monotonic shutdown
+deadline supplied before enablement. No production factory enables strict mode.
+Strict admission only uses already-open idle connections, and discard is the default;
+an internal caller may mark return reusable only after establishing clean transaction
+state. Foreground drain seals admission and uses the original shutdown bound, never
+an item budget or fresh grace. Incomplete drain raises `PostgresProviderDrainIncomplete`
+and the cached provider remains retained. Quarantine requires lifecycle-owner recovery;
+the provider does not silently release capacity or claim a completed shutdown.
+
+API teardown forwards `application.state.postgres_shutdown_deadline` when an owner
+supplies it. The worker wrapper accepts `shutdown_deadline` and cleans up on normal
+exit, failure and cancellation, including construction failure. Both retain legacy
+cleanup defaults when no owner deadline is supplied. Legacy close drains idle slots;
+an outstanding legacy owner closes its connection on subsequent return.
+
+These are ownership and lifecycle checks. Native connect, SQL, commit, rollback,
+cancel and close remain synchronous; deadline checks detect late return and cannot
+preempt those calls. Separate pool/connect/statement limits do not establish an
+absolute deadline through transaction commit, rollback and connection cleanup.
+**Finding 1 remains OPEN/P1 and the cohort remains disabled.**
+Strict 60/120-second wall-clock qualification therefore remains blocked on a
+provider deadline contract and matching SQLite lock/transaction handling; no global
+timeout change or detached database thread is supplied by this candidate.
+
+Activation remains blocked on Platform#775 current authenticated action/resource,
+Composite, tenant, region, audience and revocation bindings; agreed Render#352 and
+Archive#196 recovery semantics; actual PostgreSQL qualification; installed provider
+and Docker cancellation/resource proof; and Root-owned combined source-off and
+capacity evidence. The 2 GiB deployment/reserve prerequisite is unproved. Header
+presence, institution names and hosting do not confer authorization. No production
+binding, public resume endpoint, dispatcher activation or new custody cleanup path is supplied.
+
+Focused isolated proof uses real file SQLite process death and contention with
+synthetic authority and HTTP peers. From the `lotus-report` repository root with its
+pinned development environment active, run this command in Bash or PowerShell:
+
+```text
+python -m pytest tests/unit/reporting_jobs/test_retained_custody.py tests/unit/clients/test_custody_transport.py -q
+```
+
+It establishes neither native PostgreSQL behavior nor live authority/provider proof.
+
+Provider lifecycle proof is also isolated and uses controlled connection doubles.
+From the same repository root and pinned development environment, in Bash or PowerShell:
+
+```text
+python -m pytest tests/unit/test_postgres_connection_provider.py tests/unit/test_postgres_adapter_ownership.py tests/unit/test_postgres_shutdown_lifecycle.py tests/unit/reporting_jobs/test_report_job_process.py -q
+```
+
+Actual Psycopg/libpq cancellation, physical close bounds and resource limits, plus
+PostgreSQL/Docker qualification, remain Root-owned activation prerequisites.
+
+## Existing legacy replay workflow
+
 For an accepted `composite_review.v8` XLSX job whose initial Archive handoff failed,
 use the existing `POST /reports/jobs/{job_id}/replay` operator command with trusted caller
 context, a bounded reason and a stable `Idempotency-Key`. This is failed-work recovery;

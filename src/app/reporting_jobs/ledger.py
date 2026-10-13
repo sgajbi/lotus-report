@@ -25,6 +25,9 @@ from app.report_ordering_catalogue.template_resolution import (
     accepted_document_contract,
     job_template_identity,
 )
+from app.reporting_jobs.custody_policy import CustodyBindings, requires_work_item
+from app.reporting_jobs.custody_recovery import CustodyRecovery
+from app.reporting_jobs.custody_schema import ensure_custody_schema
 from app.reporting_jobs.event_contracts import (
     build_report_status_event_contract,
     legacy_report_status_event_contract,
@@ -184,6 +187,7 @@ def _apply_composite_contract(contract: dict[str, Any], options: dict[str, Any])
         ("composite_eligibility_selection", "v4"),
         ("composite_pooled_selection", "v5"),
         ("composite_source_context", "v8"),
+        ("composite_notice_selection", "v9"),
     )
     for key, version in profiles:
         if key not in options:
@@ -209,6 +213,7 @@ def template_for_accepted_contract(
         "composite_review.v6",
         "composite_review.v7",
         "composite_review.v8",
+        "composite_review.v9",
     }:
         return contract.get("template_id"), contract.get("template_version")
     return resolved
@@ -454,9 +459,10 @@ class PendingArchiveLineage:
 
 
 class ReportJobLedger:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, *, custody_bindings: CustodyBindings | None = None):
         self._db_path = Path(db_path)
         self._lock = threading.Lock()
+        self.custody = CustodyRecovery(self, postgres=False, bindings=custody_bindings)
         self.ensure_schema()
 
     @contextmanager
@@ -632,6 +638,7 @@ class ReportJobLedger:
                 connection.execute(
                     "ALTER TABLE report_job ADD COLUMN accepted_document_contract_json TEXT"
                 )
+            ensure_custody_schema(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS report_status_event (
@@ -833,7 +840,10 @@ class ReportJobLedger:
                 raise InvalidReportJobTransitionError("report_job_cannot_be_replayed")
             # Frozen recovery inherits the accepted authority as provenance.
             # Rebinding identifies the derived job; it authorizes no fresh source call.
-            admission = binding_for_job(source_job).admission
+            if (source_job.accepted_document_contract or {}).get(
+                "report_data_contract_version"
+            ) != "composite_review.v9":
+                admission = binding_for_job(source_job).admission
         return self._create_report_job(
             report_type=source_job.report_type,
             accepted_message=(
@@ -990,7 +1000,7 @@ class ReportJobLedger:
                             "idempotency_key_reused_with_different_request"
                         )
                     require_same_admission(record, twr_admission)
-                    if enqueue:
+                    if requires_work_item(enqueue, record.custody_policy):
                         self._ensure_work_item(connection, record=record)
                     return record
 
@@ -1139,9 +1149,9 @@ class ReportJobLedger:
                         status, failure_category, failure_message, current_step, retry_eligible,
                         cancel_requested, created_at, updated_at, started_at, completed_at,
                         cancelled_at, render_template_id, render_template_version,
-                        accepted_document_contract_json
+                        accepted_document_contract_json, custody_policy
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -1162,6 +1172,9 @@ class ReportJobLedger:
                         render_template_id,
                         render_template_version,
                         json.dumps(job_accepted_contract, sort_keys=True),
+                        self.custody.acceptance_policy(
+                            report_type, caller_context.tenant_id, caller_context.region
+                        ),
                     ),
                 )
                 self._append_status_event(
@@ -1207,7 +1220,7 @@ class ReportJobLedger:
                             _dt_to_text(now),
                         ),
                     )
-                if enqueue:
+                if requires_work_item(enqueue, record.custody_policy):
                     self._ensure_work_item(connection, record=record)
                 return record
 
@@ -1256,6 +1269,7 @@ class ReportJobLedger:
         lease_expires_at_text = _dt_to_text(claimed_at + timedelta(seconds=lease_seconds))
         with self._lock:
             with self._connect() as connection:
+                self.custody.begin(connection)
                 recovered_count, exhausted_count = self._recover_expired_work_items(
                     connection=connection,
                     recovered_at=claimed_at,
@@ -1297,6 +1311,7 @@ class ReportJobLedger:
                         (row["work_item_id"],),
                     ).fetchone()
                     if claimed_row and claimed_row["lease_token"] == lease_token:
+                        self.custody.claimed(connection, claimed_row, lease_seconds)
                         claimed.append(_work_item_from_row(claimed_row))
         record_report_job_work_lease_event(outcome="recovered", count=recovered_count)
         record_report_job_work_lease_event(outcome="exhausted", count=exhausted_count)
@@ -1311,6 +1326,12 @@ class ReportJobLedger:
     ) -> ReportJobWorkItem:
         completed_at_text = _dt_to_text(now or utc_now())
         with self._connect() as connection:
+            self.custody.validate_work(connection, work_item_id, lease_token, now or utc_now())
+            if self.custody.protect_work(connection, work_item_id, completing=True):
+                row = connection.execute(
+                    "SELECT * FROM report_job_work_item WHERE work_item_id=?", (work_item_id,)
+                ).fetchone()
+                return _work_item_from_row(row)
             cursor = connection.execute(
                 """
                 UPDATE report_job_work_item
@@ -1354,6 +1375,10 @@ class ReportJobLedger:
 
         deferred_at = now or utc_now()
         with self._connect() as connection:
+            self.custody.validate_work(connection, work_item_id, lease_token, deferred_at)
+            settled = self.custody.settle_verified_work(connection, work_item_id)
+            if settled is not None:
+                return _work_item_from_row(settled)
             deferred_rows = connection.execute(
                 """
                 UPDATE report_job_work_item
@@ -1365,7 +1390,13 @@ class ReportJobLedger:
                 WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
                 """,
                 (
-                    _dt_to_text(deferred_at + timedelta(seconds=max(delay_seconds, 1))),
+                    _dt_to_text(
+                        self.custody.scheduled_at(
+                            connection,
+                            work_item_id,
+                            deferred_at + timedelta(seconds=max(delay_seconds, 1)),
+                        )
+                    ),
                     wait_reason[:80],
                     "Waiting on owner-side work; the failure budget is untouched.",
                     _dt_to_text(deferred_at),
@@ -1397,6 +1428,10 @@ class ReportJobLedger:
         policy = retry_policy or ReportJobWorkRetryPolicy()
         failed_at = now or utc_now()
         with self._connect() as connection:
+            self.custody.validate_work(connection, work_item_id, lease_token, failed_at)
+            settled = self.custody.settle_verified_work(connection, work_item_id)
+            if settled is not None:
+                return _work_item_from_row(settled)
             current = connection.execute(
                 """
                 SELECT attempt_count, lease_owner FROM report_job_work_item
@@ -1413,29 +1448,29 @@ class ReportJobLedger:
                 failed_at=failed_at,
                 retry_policy=policy,
             )
-            # The ownership SELECT above and this UPDATE run under self._lock
-            # inside ONE SQLite transaction: no interleaving can reclaim the
-            # lease between them, so the SELECT's fencing is complete here.
-            # (The PostgreSQL ledger fences its UPDATE too, because it has
-            # no such process-wide lock.)
-            connection.execute(
+            result = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = ?, lease_owner = NULL, lease_token = NULL,
                     lease_acquired_at = NULL, lease_expires_at = NULL,
                     available_at = ?, last_error_category = ?, last_error_summary = ?,
                     updated_at = ?
-                WHERE work_item_id = ?
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
                 """,
                 (
                     decision.status,
-                    _dt_to_text(decision.available_at),
+                    _dt_to_text(
+                        self.custody.scheduled_at(connection, work_item_id, decision.available_at)
+                    ),
                     error_category[:80],
                     " ".join(error_summary.split())[:240],
                     _dt_to_text(failed_at),
                     work_item_id,
+                    lease_token,
                 ),
             )
+            if result.rowcount != 1:
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             row = connection.execute(
                 "SELECT * FROM report_job_work_item WHERE work_item_id = ?",
                 (work_item_id,),
@@ -1464,10 +1499,11 @@ class ReportJobLedger:
         exhausted_count = 0
         expired_rows = connection.execute(
             """
-            SELECT work_item_id, attempt_count, lease_owner, lease_expires_at
+            SELECT work_item_id, attempt_count, lease_owner, lease_expires_at, lease_token
             FROM report_job_work_item
-            WHERE status = 'leased' AND lease_expires_at < ?
+            WHERE status = 'leased' AND lease_expires_at <= ?
             ORDER BY lease_expires_at ASC, work_item_id ASC
+            LIMIT 5
             """,
             (recovered_at_text,),
         ).fetchall()
@@ -1478,7 +1514,7 @@ class ReportJobLedger:
                 failed_at=lease_expired_at,
                 retry_policy=retry_policy,
             )
-            connection.execute(
+            result = connection.execute(
                 """
                 UPDATE report_job_work_item
                 SET status = ?, lease_owner = NULL, lease_token = NULL,
@@ -1486,15 +1522,20 @@ class ReportJobLedger:
                     available_at = ?, last_error_category = 'expired_work_lease',
                     last_error_summary = 'Report job work lease expired before completion.',
                     updated_at = ?
-                WHERE work_item_id = ? AND status = 'leased'
+                WHERE work_item_id = ? AND status = 'leased' AND lease_token = ?
+                  AND lease_expires_at <= ?
                 """,
                 (
                     decision.status,
                     _dt_to_text(decision.available_at),
                     recovered_at_text,
                     expired["work_item_id"],
+                    expired["lease_token"],
+                    recovered_at_text,
                 ),
             )
+            if result.rowcount != 1:
+                raise InvalidReportJobWorkTransitionError("report_job_work_lease_not_owned")
             if decision.status == "failed":
                 exhausted_count += 1
                 self._terminalize_report_job_from_work(
@@ -1519,6 +1560,8 @@ class ReportJobLedger:
         failure_category: str,
         failure_summary: str,
     ) -> None:
+        if self.custody.protect_work(connection, work_item_id):
+            return
         job_context = connection.execute(
             """
             SELECT work.report_job_id, job.status, request.correlation_id, request.trace_id
@@ -2571,6 +2614,11 @@ class ReportJobLedger:
     ) -> ReportJobLedgerRecord:
         with self._lock:
             with self._connect() as connection:
+                if self.custody.guard_transition(connection, job_id, "cancelled"):
+                    selected = connection.execute(
+                        "SELECT report_request_id FROM report_job WHERE report_job_id=?", (job_id,)
+                    ).fetchone()
+                    return self._load_by_request_id(connection, selected["report_request_id"])
                 existing = connection.execute(
                     "SELECT status FROM report_job WHERE report_job_id = ?",
                     (job_id,),
@@ -2705,6 +2753,11 @@ class ReportJobLedger:
         archive_document_id: str | None,
         archive_completed_at: datetime | None,
     ) -> ReportJobLedgerRecord:
+        if self.custody.guard_transition(connection, job_id, to_status):
+            selected = connection.execute(
+                "SELECT report_request_id FROM report_job WHERE report_job_id=?", (job_id,)
+            ).fetchone()
+            return self._load_by_request_id(connection, selected["report_request_id"])
         existing = connection.execute(
             "SELECT status, started_at FROM report_job WHERE report_job_id = ?",
             (job_id,),
@@ -2945,7 +2998,8 @@ class ReportJobLedger:
                 job.archive_request_id,
                 job.archive_document_id,
                 job.archive_completed_at,
-                job.accepted_document_contract_json
+                job.accepted_document_contract_json,
+                job.custody_policy, job.custody_state, job.custody_epoch
             FROM report_request req
             JOIN report_job job ON job.report_request_id = req.report_request_id
             WHERE req.report_request_id = ?
@@ -3026,6 +3080,9 @@ def _record_from_row(row: sqlite3.Row) -> ReportJobLedgerRecord:
         correlation_id=row["correlation_id"],
         trace_id=row["trace_id"],
         render_job_id=_optional_row_value(row, "render_job_id"),
+        custody_policy=_optional_row_value(row, "custody_policy"),
+        custody_state=_optional_row_value(row, "custody_state"),
+        custody_epoch=_optional_row_value(row, "custody_epoch") or 0,
         render_output_format=_optional_row_value(row, "render_output_format"),
         render_template_id=_optional_row_value(row, "render_template_id"),
         accepted_document_contract=_optional_json_object(

@@ -1,5 +1,13 @@
 # Composite Report Delivery Ledger
 
+## Inactive retained-offer recovery source (#446)
+
+Report owns the default-disabled same-job/same-work retained-byte candidate. No
+production authority binding or activation is included. File SQLite process proof
+and synthetic transport controls are narrower than PostgreSQL/provider/capacity and
+combined release qualification. Render#352, Archive#196 and Platform#775 remain
+dependencies. See [recovery boundaries](operations/composite-custody-recovery.md#inactive-retained-offer-candidate-446).
+
 ## Historical policy custody implementation (#417)
 
 The additive v7 / selection-v3 source slice retains controlled Manage policy-v2

@@ -46,6 +46,14 @@ RENDER_TENANT_OWNED: dict[str, dict[str, Any]] = {
     "get_render_diagnostics": {"render_job_id": "rj-1"},
 }
 
+# Retained custody carries the immutable offer's authorized tenant headers.
+# Its byte-preserving transport has a separate signature from legacy calls.
+RENDER_RETAINED_TENANT_OWNED: dict[str, dict[str, Any]] = {
+    "submit_retained_offer": {"body": b"{}"},
+    "read_retained_status": {"render_job_id": "rj-1"},
+    "retry_retained_custody": {"render_job_id": "rj-1"},
+}
+
 #: Global-by-design: the published template catalogue and service metadata
 #: carry no tenant claim at all — not even a blank one.
 RENDER_GLOBAL: dict[str, dict[str, Any]] = {
@@ -78,8 +86,10 @@ def test_every_render_method_is_classified_tenant_owned_or_global() -> None:
     global set fails here, so the classification decision is forced at the
     moment the method is added rather than discovered in a later audit.
     """
-    classified = set(RENDER_TENANT_OWNED) | set(RENDER_GLOBAL)
-    assert not (set(RENDER_TENANT_OWNED) & set(RENDER_GLOBAL))
+    tenant_owned = set(RENDER_TENANT_OWNED) | set(RENDER_RETAINED_TENANT_OWNED)
+    classified = tenant_owned | set(RENDER_GLOBAL)
+    assert not (tenant_owned & set(RENDER_GLOBAL))
+    assert not (set(RENDER_TENANT_OWNED) & set(RENDER_RETAINED_TENANT_OWNED))
     assert _public_async_methods(RenderClient) == classified, (
         f"RenderClient's public surface changed: "
         f"{sorted(_public_async_methods(RenderClient) ^ classified)}. "
@@ -163,6 +173,27 @@ async def test_the_admitted_tenant_reaches_the_render_wire(
 
     assert render_transport.headers, "no request was made"
     assert render_transport.headers[0].get("X-Tenant-Id") == "tenant-sg"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", sorted(RENDER_RETAINED_TENANT_OWNED))
+async def test_retained_render_preserves_authorized_tenant_headers(
+    method: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorder = _RecordingTransport()
+    monkeypatch.setattr("app.clients.render_client.custody_request", recorder)
+    authorized_headers = {"X-Tenant-Id": "tenant-sg", "X-Correlation-ID": "corr-retained"}
+
+    await getattr(_render_client(), method)(
+        **RENDER_RETAINED_TENANT_OWNED[method], authorized_headers=authorized_headers
+    )
+
+    assert len(recorder.headers) == 1
+    assert recorder.headers[0].items() >= authorized_headers.items()
+    assert authorized_headers == {
+        "X-Tenant-Id": "tenant-sg",
+        "X-Correlation-ID": "corr-retained",
+    }
 
 
 @pytest.mark.asyncio

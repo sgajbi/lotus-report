@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from app.composite_reporting.correction_notice.revision import notice_source_revisions
 from app.composite_reporting.invocation_authority import BINDING_OPTION
 from app.report_ordering_catalogue.template_resolution import resolve_report_family
 from app.reporting_identity.identity import (
@@ -155,7 +156,7 @@ def source_revision_vector_for_capture(
     a bare entry - explicit absence, never a fabricated revision.
     """
 
-    stated: list[SourceRevision] = []
+    stated: list[SourceRevision] = notice_source_revisions(snapshot_payload)
     if snapshot_payload.get("contract_version") == "composite_review.v8":
         definition = snapshot_payload["definition"]["source_response"]
         stated.append(

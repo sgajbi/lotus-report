@@ -139,6 +139,7 @@ async def bounded_read_with_retry(
     max_response_bytes: int,
     max_retries: int = 2,
     backoff_seconds: float = 0.2,
+    response_bytes_observer: Callable[[bytes], None] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Read-only GET/resolver POST with a bound on decoded bytes before JSON parsing.
 
@@ -166,6 +167,8 @@ async def bounded_read_with_retry(
                 for key, value in response.headers.items()
                 if key.lower() not in {"content-encoding", "content-length"}
             }
+            if response_bytes_observer is not None:
+                response_bytes_observer(bytes(body))
             return httpx.Response(
                 response.status_code,
                 headers=metadata,

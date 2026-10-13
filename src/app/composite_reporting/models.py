@@ -24,6 +24,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.composite_reporting.correction_notice.selection import CorrectionNoticeSelection
+
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^\S+$")]
 FeeView = Literal["GROSS", "NET_ACTUAL", "NET_MODEL_FEE"]
@@ -653,6 +655,12 @@ class PooledAnalysisSelection(BaseModel):
 class CompositeReviewJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    notice_selection: CorrectionNoticeSelection | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Exact retained before/after v8 pair and acknowledged path; PARTIAL notice.",
+    )
+
     selection: CompositeReportSelection | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -695,6 +703,8 @@ class CompositeReviewJobRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_products(self) -> CompositeReviewJobRequest:
+        if "composite_notice_selection" in self.options:
+            raise ValueError("Use the typed notice_selection field")
         if "composite_twr_invocation_binding" in self.options:
             raise ValueError("Server-owned TWR invocation binding cannot be supplied")
         if "composite_source_context" in self.options:
@@ -715,6 +725,7 @@ class CompositeReviewJobRequest(BaseModel):
                     self.linked_selection,
                     self.eligibility_selection,
                     self.pooled_selection,
+                    self.notice_selection,
                 )
             )
             != 1
@@ -732,6 +743,8 @@ class CompositeReviewJobRequest(BaseModel):
                 for window in self.selection.windows
             ):
                 raise ValueError("COMPOSITE_INCEPTION_DEFINITION_VECTOR_CONFLICT")
+        if self.notice_selection is not None and self.requested_output_formats != ["xlsx"]:
+            raise ValueError("COMPOSITE_NOTICE_XLSX_REQUIRED")
         return self
 
     @property
@@ -744,7 +757,10 @@ class CompositeReviewJobRequest(BaseModel):
         | AmendmentEligibilitySelection
         | HistoricalEligibilitySelection
         | PooledAnalysisSelection
+        | CorrectionNoticeSelection
     ):
+        if self.notice_selection is not None:
+            return self.notice_selection
         if self.pooled_selection is not None:
             return self.pooled_selection
         if self.eligibility_selection is not None:
@@ -755,6 +771,11 @@ class CompositeReviewJobRequest(BaseModel):
         return self.selection
 
     def capture_options(self) -> dict[str, Any]:
+        if self.notice_selection is not None:
+            return {
+                **self.options,
+                "composite_notice_selection": self.notice_selection.model_dump(mode="json"),
+            }
         if self.pooled_selection is not None:
             return {
                 **self.options,

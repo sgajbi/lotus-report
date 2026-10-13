@@ -52,11 +52,14 @@ def build_composite_render_package(
         "composite_review.v6",
         "composite_review.v7",
         "composite_review.v8",
+        "composite_review.v9",
     }:
         from app.composite_reporting.eligibility_tables import preflight_eligibility_package
 
         prefix = (
-            "COMPOSITE_POOLED"
+            "COMPOSITE_NOTICE"
+            if snapshot["contract_version"] == "composite_review.v9"
+            else "COMPOSITE_POOLED"
             if snapshot["contract_version"] == "composite_review.v5"
             else "COMPOSITE_AMENDMENT"
             if snapshot["contract_version"] == "composite_review.v6"
@@ -73,6 +76,10 @@ def build_composite_render_package(
 def composite_archive_custody(
     *, job: ReportJobLedgerRecord, record: ReportInputSnapshotRecord
 ) -> dict[str, Any]:
+    if record.snapshot_payload.get("contract_version") == "composite_review.v9":
+        from app.composite_reporting.correction_notice.custody import notice_archive_custody
+
+        return notice_archive_custody(job=job, record=record)
     data = validate_composite_dataset(record.snapshot_payload)
     selection = data.selection
     _require_custody_contract(job, record, data.contract_version)

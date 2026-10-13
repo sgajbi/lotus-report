@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.clients.custody_transport import custody_request
 from app.clients.http_resilience import get_with_retry, post_with_retry
 
 
@@ -16,6 +17,40 @@ class RenderClient:
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
+
+    async def submit_retained_offer(
+        self, *, body: bytes, authorized_headers: dict[str, str]
+    ) -> tuple[int, dict[str, Any]]:
+        return await custody_request(
+            method="POST",
+            url=f"{self._base_url}/renders",
+            body=body,
+            headers={**authorized_headers, "Content-Type": "application/json"},
+            deadline_seconds=45,
+        )
+
+    async def read_retained_status(
+        self, *, render_job_id: str, authorized_headers: dict[str, str]
+    ) -> tuple[int, dict[str, Any]]:
+        return await custody_request(
+            method="GET",
+            url=f"{self._base_url}/renders/{render_job_id}",
+            body=None,
+            headers=authorized_headers,
+            deadline_seconds=10,
+        )
+
+    async def retry_retained_custody(
+        self, *, render_job_id: str, authorized_headers: dict[str, str]
+    ) -> tuple[int, dict[str, Any]]:
+        # Proposed downstream route; no production admission/runtime binding exists.
+        return await custody_request(
+            method="POST",
+            url=f"{self._base_url}/renders/{render_job_id}/archive-retry",
+            body=b"",
+            headers=authorized_headers,
+            deadline_seconds=45,
+        )
 
     async def submit_render_package(
         self,

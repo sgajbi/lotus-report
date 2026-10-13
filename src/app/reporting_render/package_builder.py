@@ -957,6 +957,7 @@ def _job_report_data_contract(job: ReportJobLedgerRecord) -> str:
         "composite_review.v6",
         "composite_review.v7",
         "composite_review.v8",
+        "composite_review.v9",
     }:
         return accepted
     if accepted is not None and accepted != current:

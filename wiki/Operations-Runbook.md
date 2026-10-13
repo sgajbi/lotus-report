@@ -3,6 +3,28 @@
 Current scope: operator-facing checks, support-safe evidence paths, and copy-paste command examples
 for the implementation-backed `lotus-report` runtime.
 
+## Inactive retained-offer candidate
+
+The #446 retained-offer candidate is inactive: server admission defaults disabled,
+unresolved custody parks the existing work row while preserving its nonterminal job,
+and no public resume endpoint or byte-release path exists. PostgreSQL, installed
+provider/capacity and current Platform#775 authority qualification remain pending.
+See the [source runbook](https://github.com/sgajbi/lotus-report/blob/main/docs/operations/composite-custody-recovery.md#inactive-retained-offer-candidate-446)
+for limits and the distinction from legacy replay.
+Retry gaps are 60/300/900 seconds with 0–10-second jitter. Future owner wait dates
+persist across restart and defer polling. Claim and settlement share worker deadline
+accounting, but strict wall-clock bounds remain blocked on absolute database
+transaction/cleanup deadlines; async cancellation alone cannot interrupt DB calls.
+Finding 1 remains **OPEN/P1**, with the cohort disabled. The provider now uses one
+fixed inventory and private generation-bound strict handles. Uncertain physical
+close stays quarantined and charged. Strict enablement requires a lifecycle owner
+and a pre-supplied absolute shutdown deadline; production factories remain legacy.
+API and worker cleanup forward an owner deadline when supplied. Incomplete strict
+drain seals admission, raises explicitly and retains the cached provider. Legacy
+raw return still requires a valid caller and has no stale-generation guarantee.
+These lifecycle checks do not preempt native connect, SQL, commit, rollback, cancel
+or close. Actual Psycopg/libpq and PostgreSQL/Docker qualification remains Root-owned.
+
 ## Contents
 
 1. [First Response Matrix](#first-response-matrix)
