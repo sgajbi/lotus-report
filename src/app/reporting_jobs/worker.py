@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import Protocol
 
 from app.reporting_document_format import document_output_format
+from app.reporting_jobs.custody_policy import REQUIRED_POLICY, current_work_lease
 from app.reporting_jobs.execution import ReportJobExecutionResult
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.work_queue import ReportJobWorkItem, ReportJobWorkRetryPolicy
 
 TERMINAL_JOB_STATUSES = {"completed", "completed_with_warnings", "archived", "failed", "cancelled"}
+WORK_ITEM_SECONDS = 60
+WORK_PASS_SECONDS = 120
 
 
 class ReportJobWorkLedger(Protocol):
@@ -72,7 +77,7 @@ class ReportJobWorkerRunResult:
 
 
 class ReportJobWorker:
-    """Run one bounded pass over durable interactive report-job work."""
+    """Share one allowance across work; hard DB bounds require provider support."""
 
     def __init__(
         self,
@@ -93,16 +98,19 @@ class ReportJobWorker:
         lease_seconds: int,
     ) -> ReportJobWorkerRunResult:
         outcomes: list[ReportJobWorkOutcome] = []
-        for _ in range(max(0, max_items)):
-            work_items = self._work_ledger.claim_work_items(
-                worker_id=worker_id,
-                limit=1,
-                lease_seconds=lease_seconds,
-                retry_policy=self._retry_policy,
-            )
-            if not work_items:
+        deadline = monotonic() + WORK_PASS_SECONDS
+        for _ in range(min(5, max(0, max_items))):
+            started_at = monotonic()
+            if deadline - started_at < WORK_ITEM_SECONDS:
                 break
-            outcomes.append(await self._execute_work_item(work_items[0]))
+            outcome = await self._run_item(
+                worker_id=worker_id,
+                lease_seconds=lease_seconds,
+                deadline=min(deadline, started_at + WORK_ITEM_SECONDS),
+            )
+            if outcome is None:
+                break
+            outcomes.append(outcome)
         return ReportJobWorkerRunResult(
             worker_id=worker_id,
             claimed_count=len(outcomes),
@@ -112,13 +120,50 @@ class ReportJobWorker:
             outcomes=outcomes,
         )
 
-    async def _execute_work_item(self, work_item: ReportJobWorkItem) -> ReportJobWorkOutcome:
+    async def _run_item(
+        self, *, worker_id: str, lease_seconds: int, deadline: float
+    ) -> ReportJobWorkOutcome | None:
+        work: ReportJobWorkItem | None = None
+        try:
+            # One allowance starts before claim/sweep and includes settlement.
+            # Async cancellation cannot interrupt a blocking DB operation. The
+            # provider's absolute transaction/cleanup deadline remains a prerequisite.
+            async with asyncio.timeout(max(0, deadline - monotonic())):
+                _check_deadline(deadline)
+                items = self._work_ledger.claim_work_items(
+                    worker_id=worker_id,
+                    limit=1,
+                    lease_seconds=lease_seconds,
+                    retry_policy=self._retry_policy,
+                )
+                if not items:
+                    return None
+                work = items[0]
+                _check_deadline(deadline)
+                return await self._execute_work_item(work, deadline)
+        except TimeoutError:
+            if work is None:
+                return None
+            # Do not start another transaction after expiry or pretend an
+            # ambiguous settlement failed. Existing expiry recovery owns the row.
+            return ReportJobWorkOutcome(
+                work_item_id=work.work_item_id,
+                report_job_id=work.report_job_id,
+                work_status="unknown",
+                job_status="unknown",
+                failure_category="report_job_worker_deadline_expired",
+            )
+
+    async def _execute_work_item(
+        self, work_item: ReportJobWorkItem, deadline: float
+    ) -> ReportJobWorkOutcome:
         lease_token = work_item.lease_token
         if not lease_token:
             raise RuntimeError("report_job_work_item_missing_lease_token")
         try:
-            execution = await self._execution_service.execute_job(job_id=work_item.report_job_id)
+            execution = await self._execute_with_lease(work_item, lease_token)
         except Exception as exc:
+            _check_deadline(deadline)
             failed_work = self._work_ledger.fail_work_item(
                 work_item_id=work_item.work_item_id,
                 lease_token=lease_token,
@@ -134,7 +179,16 @@ class ReportJobWorker:
                 failure_category=failed_work.last_error_category,
             )
 
+        _check_deadline(deadline)
         job = execution.job
+        if job.custody_policy == REQUIRED_POLICY and job.custody_state in {"blocked", "refused"}:
+            return ReportJobWorkOutcome(
+                work_item_id=work_item.work_item_id,
+                report_job_id=work_item.report_job_id,
+                work_status="failed",
+                job_status=job.status,
+                failure_category="custody_parked",
+            )
         if execution.waiting_on_owner:
             # The EXPLICIT waiting outcome from execution: whatever recovery
             # status the job holds (rendering, completed, archiving), DEFER
@@ -182,6 +236,20 @@ class ReportJobWorker:
             job_status=job.status,
             failure_category=job.failure_category,
         )
+
+    async def _execute_with_lease(
+        self, work_item: ReportJobWorkItem, token: str
+    ) -> ReportJobExecutionResult:
+        binding = current_work_lease.set((work_item.work_item_id, token))
+        try:
+            return await self._execution_service.execute_job(job_id=work_item.report_job_id)
+        finally:
+            current_work_lease.reset(binding)
+
+
+def _check_deadline(deadline: float) -> None:
+    if monotonic() >= deadline:
+        raise TimeoutError("report_job_worker_deadline_expired")
 
 
 def _is_terminal_job(job: ReportJobLedgerRecord) -> bool:

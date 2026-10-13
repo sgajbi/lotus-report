@@ -36,6 +36,11 @@ the bounded evidence payload that Report accepts.
 
 ## Portfolio review configuration
 
+The local v9 correction-notice producer candidate accepts an exclusive exact pair
+of retained v8 generations for internal XLSX evidence. It remains partial and
+not attested; Archive197 native relationship schema/KAT are pinned, with joined live
+qualification pending. See the [correction-notice guide](https://github.com/sgajbi/lotus-report/blob/main/docs/composite-correction-notice.md).
+
 The portfolio review catalogue publishes these business inputs:
 
 | Input | Requirement | Defaulting and source rule |

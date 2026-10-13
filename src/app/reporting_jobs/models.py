@@ -2812,6 +2812,9 @@ class ReportJobListResponse(BaseModel):
 
 
 class ReportJobLedgerRecord(BaseModel):
+    custody_policy: str | None = None
+    custody_state: str | None = None
+    custody_epoch: int = 0
     request_id: str
     job_id: str
     report_type: str

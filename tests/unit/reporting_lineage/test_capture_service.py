@@ -1884,8 +1884,9 @@ def test_capture_service_getter_returns_cached_service(monkeypatch):
     monkeypatch.setattr(lineage_service, "get_report_input_snapshot_store", lambda: sentinel_store)
     monkeypatch.setattr(lineage_service, "get_report_job_ledger", lambda: sentinel_ledger)
 
-    def input_provider(*, job_ledger):
+    def input_provider(*, job_ledger, snapshot_store):
         assert job_ledger is sentinel_ledger
+        assert snapshot_store is sentinel_store
         return sentinel_input_provider
 
     monkeypatch.setattr(

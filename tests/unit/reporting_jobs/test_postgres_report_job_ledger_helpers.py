@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Iterator, Mapping
 
 import pytest
 
+from app.reporting_jobs.custody_policy import REQUIRED_POLICY
 from app.reporting_jobs.ledger import (
     IdempotencyConflictError,
     MissingIdempotencyKeyError,
@@ -18,6 +19,7 @@ from app.reporting_jobs.postgres_ledger import (
     _record_from_row,
     _rerender_attempt_from_row,
 )
+from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 
 
 class _Cursor:
@@ -575,3 +577,149 @@ def test_postgres_report_job_ledger_marks_rerender_archived_and_failed_events() 
     assert failed.retry_eligible is True
     assert connection.calls[3][1][4] == "job_rerender_archived"
     assert connection.calls[7][1][4] == "job_rerender_failed"
+
+
+def _work_clock_ledger(monkeypatch, policy):
+    from types import SimpleNamespace
+
+    local = datetime(2026, 10, 13, tzinfo=UTC)
+    database = local + timedelta(hours=1)
+    row = {
+        "work_item_id": "work-clock",
+        "report_job_id": "job-clock",
+        "custody_policy": policy,
+        "status": "pending",
+        "attempt_count": 0,
+        "available_at": local,
+        "created_at": local,
+        "updated_at": local,
+        "lease_token": None,
+        "lease_expires_at": None,
+    }
+    seen = {"clock": 0, "sweeps": 0, "claimed": 0}
+    events = []
+    seen["events"] = events
+
+    def clock(connection, fallback):
+        events.append("clock")
+        seen["clock"] += 1
+        return database
+
+    def lock_pair(*args):
+        events.append("lock")
+        return row, {"custody_policy": policy}
+
+    class Cursor:
+        rowcount = 1
+
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class Connection:
+        def execute(self, query, values):
+            if query.lstrip().startswith("SELECT"):
+                expected = {"pending", "retry_pending"}
+                if "WHERE work.status = 'leased'" in query or "WHERE status = 'leased'" in query:
+                    expected = {"leased"}
+                return Cursor([dict(row)] if row["status"] in expected else [])
+            if "SET status = 'leased'" in query:
+                row.update(
+                    status="leased",
+                    attempt_count=row["attempt_count"] + 1,
+                    lease_owner=values[0],
+                    lease_token=values[1],
+                    lease_acquired_at=values[2],
+                    lease_expires_at=values[3],
+                    updated_at=values[4],
+                )
+            else:
+                row.update(status=values[0], updated_at=values[2], lease_token=None)
+            return Cursor([dict(row)])
+
+    connection = Connection()
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    def claimed(*args):
+        seen["claimed"] += 1
+
+    ledger = object.__new__(PostgresReportJobLedger)
+    ledger.custody = SimpleNamespace(
+        clock=clock,
+        lock_pair=lock_pair,
+        claimed=claimed,
+    )
+    monkeypatch.setattr(ledger, "_connect", connect)
+    return ledger, connection, row, seen, local, database
+
+
+def test_postgres_batch_does_not_recover_its_own_zero_duration_lease(monkeypatch):
+    ledger, _, row, seen, local, _ = _work_clock_ledger(monkeypatch, None)
+
+    def sweep(**kwargs):
+        seen["sweeps"] += 1
+        if row["status"] == "leased":
+            row["status"] = "retry_pending"
+        return 0, 0
+
+    monkeypatch.setattr(ledger, "recover_expired_work_items", sweep)
+    claimed = ledger.claim_work_items(worker_id="owner", limit=10, lease_seconds=0, now=local)
+    assert len(claimed) == 1
+    assert seen["sweeps"] == 1
+    assert seen["claimed"] == 1
+    assert row["status"] == "leased"
+    assert claimed[0].lease_token == row["lease_token"]
+
+
+@pytest.mark.parametrize("policy", [None, REQUIRED_POLICY])
+def test_postgres_claim_preserves_legacy_clock_and_uses_post_lock_custody_clock(
+    monkeypatch, policy
+):
+    ledger, _, row, seen, local, database = _work_clock_ledger(monkeypatch, policy)
+    monkeypatch.setattr(ledger, "recover_expired_work_items", lambda **kw: (0, 0))
+    claimed = ledger.claim_work_items(worker_id="owner", limit=1, lease_seconds=300, now=local)
+    expected = local if policy is None else database
+    assert claimed[0].lease_acquired_at == expected
+    assert claimed[0].lease_expires_at == expected + timedelta(seconds=300)
+    assert row["updated_at"] == expected
+    assert seen["clock"] == (0 if policy is None else 1)
+    assert seen["events"] == ([] if policy is None else ["lock", "clock"])
+
+
+@pytest.mark.parametrize("policy", [None, REQUIRED_POLICY])
+def test_postgres_recovery_preserves_legacy_clock_and_uses_post_lock_custody_clock(
+    monkeypatch, policy
+):
+    ledger, connection, row, seen, local, database = _work_clock_ledger(monkeypatch, policy)
+    row.update(
+        status="leased",
+        attempt_count=1,
+        lease_owner="owner",
+        lease_token="token",
+        lease_expires_at=local - timedelta(seconds=1),
+    )
+    terminalized = []
+    monkeypatch.setattr(
+        ledger,
+        "_terminalize_report_job_from_work",
+        lambda **kw: terminalized.append(kw["work_item_id"]),
+    )
+    result = ledger._recover_expired_work_items(
+        connection=connection,
+        recovered_at=local,
+        retry_policy=ReportJobWorkRetryPolicy(max_attempts=1),
+    )
+    assert result == (0, 1)
+    assert row["status"] == "failed"
+    assert row["updated_at"] == (local if policy is None else database)
+    assert terminalized == ["work-clock"]
+    assert seen["clock"] == (0 if policy is None else 1)
+    assert seen["events"] == (["lock"] if policy is None else ["lock", "clock"])

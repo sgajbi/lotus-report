@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "LifecycleTransitionType": {
+      "enum": [
+        "supersede",
+        "correct",
+        "reissue"
+      ],
+      "title": "LifecycleTransitionType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The eight retained fields; never a reconstruction of a POST receipt.",
+  "properties": {
+    "lifecycle_relationship_id": {
+      "description": "Retained relationship ID.",
+      "minLength": 1,
+      "title": "Lifecycle Relationship Id",
+      "type": "string"
+    },
+    "source_document_id": {
+      "description": "Exact historical source ID.",
+      "minLength": 1,
+      "title": "Source Document Id",
+      "type": "string"
+    },
+    "target_document_id": {
+      "description": "Exact retained target ID.",
+      "minLength": 1,
+      "title": "Target Document Id",
+      "type": "string"
+    },
+    "transition_type": {
+      "$ref": "#/$defs/LifecycleTransitionType",
+      "description": "Stored lifecycle transition type."
+    },
+    "transition_reason": {
+      "description": "Privileged stored operator reason.",
+      "minLength": 1,
+      "title": "Transition Reason",
+      "type": "string"
+    },
+    "transition_reason_code": {
+      "description": "Stored bounded reason code.",
+      "minLength": 1,
+      "title": "Transition Reason Code",
+      "type": "string"
+    },
+    "requested_by": {
+      "description": "Privileged stored requesting actor.",
+      "minLength": 1,
+      "title": "Requested By",
+      "type": "string"
+    },
+    "requested_at": {
+      "description": "Stored request instant, serialized in UTC.",
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "lifecycle_relationship_id",
+    "source_document_id",
+    "target_document_id",
+    "transition_type",
+    "transition_reason",
+    "transition_reason_code",
+    "requested_by",
+    "requested_at"
+  ],
+  "title": "LifecycleRelationshipEvidenceResponse",
+  "type": "object"
+}

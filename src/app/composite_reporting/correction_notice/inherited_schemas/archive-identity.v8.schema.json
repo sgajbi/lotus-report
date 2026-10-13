@@ -1,0 +1,442 @@
+{
+  "$defs": {
+    "CalendarReturnPin": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "CALENDAR_RETURN",
+          "title": "Kind",
+          "type": "string"
+        },
+        "product_key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Product Key",
+          "type": "string"
+        },
+        "year": {
+          "maximum": 9999,
+          "minimum": 1,
+          "title": "Year",
+          "type": "integer"
+        },
+        "selection": {
+          "$ref": "#/$defs/CompositeSelection"
+        }
+      },
+      "required": [
+        "kind",
+        "product_key",
+        "year",
+        "selection"
+      ],
+      "title": "CalendarReturnPin",
+      "type": "object"
+    },
+    "CompositeDefinitionCustody": {
+      "additionalProperties": false,
+      "properties": {
+        "pin": {
+          "$ref": "#/$defs/CompositeDefinitionPin"
+        },
+        "source_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Response Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pin",
+        "source_response_digest"
+      ],
+      "title": "CompositeDefinitionCustody",
+      "type": "object"
+    },
+    "CompositeDefinitionPin": {
+      "additionalProperties": false,
+      "description": "Exact original Manage v1 definition; the caller cannot supply inception.",
+      "properties": {
+        "definition_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Definition Version",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Response Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "definition_version",
+        "content_hash",
+        "response_digest"
+      ],
+      "title": "CompositeDefinitionPin",
+      "type": "object"
+    },
+    "CompositeMembershipPin": {
+      "additionalProperties": false,
+      "properties": {
+        "membership_revision": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Membership Revision",
+          "type": "string"
+        },
+        "content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Response Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "membership_revision",
+        "content_hash",
+        "response_digest"
+      ],
+      "title": "CompositeMembershipPin",
+      "type": "object"
+    },
+    "CompositeSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "composite_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Composite Id",
+          "type": "string"
+        },
+        "calculation_id": {
+          "format": "uuid",
+          "title": "Calculation Id",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "reporting_currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Reporting Currency",
+          "type": "string"
+        },
+        "return_view": {
+          "enum": [
+            "GROSS",
+            "NET_ACTUAL",
+            "NET_MODEL_FEE"
+          ],
+          "title": "Return View",
+          "type": "string"
+        },
+        "methodology": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Methodology",
+          "type": "string"
+        },
+        "engine_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Engine Version",
+          "type": "string"
+        },
+        "calculation_fingerprint": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Calculation Fingerprint",
+          "type": "string"
+        },
+        "response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Response Digest",
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/CompositeWindowPin"
+          },
+          "maxItems": 120,
+          "minItems": 1,
+          "title": "Windows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "composite_id",
+        "calculation_id",
+        "period_start",
+        "period_end",
+        "reporting_currency",
+        "return_view",
+        "methodology",
+        "engine_version",
+        "calculation_fingerprint",
+        "response_digest",
+        "windows"
+      ],
+      "title": "CompositeSelection",
+      "type": "object"
+    },
+    "CompositeSourceContextSelection": {
+      "additionalProperties": false,
+      "description": "Shared definition custody with explicitly selected optional attachments.",
+      "properties": {
+        "definition": {
+          "$ref": "#/$defs/CompositeDefinitionPin"
+        },
+        "since_inception": {
+          "default": false,
+          "title": "Since Inception",
+          "type": "boolean"
+        },
+        "memberships": {
+          "items": {
+            "$ref": "#/$defs/CompositeMembershipPin"
+          },
+          "maxItems": 2,
+          "title": "Memberships",
+          "type": "array"
+        }
+      },
+      "required": [
+        "definition"
+      ],
+      "title": "CompositeSourceContextSelection",
+      "type": "object"
+    },
+    "CompositeSourceProduct": {
+      "additionalProperties": false,
+      "properties": {
+        "pin": {
+          "discriminator": {
+            "mapping": {
+              "CALENDAR_RETURN": "#/$defs/CalendarReturnPin",
+              "TRAILING_RETURN": "#/$defs/TrailingReturnPin"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CalendarReturnPin"
+            },
+            {
+              "$ref": "#/$defs/TrailingReturnPin"
+            }
+          ],
+          "title": "Pin"
+        },
+        "source_response_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Response Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pin",
+        "source_response_digest"
+      ],
+      "title": "CompositeSourceProduct",
+      "type": "object"
+    },
+    "CompositeWindowPin": {
+      "additionalProperties": false,
+      "properties": {
+        "materialization_id": {
+          "format": "uuid",
+          "title": "Materialization Id",
+          "type": "string"
+        },
+        "period_start": {
+          "format": "date",
+          "title": "Period Start",
+          "type": "string"
+        },
+        "period_end": {
+          "format": "date",
+          "title": "Period End",
+          "type": "string"
+        },
+        "restatement_sequence": {
+          "minimum": 1,
+          "title": "Restatement Sequence",
+          "type": "integer"
+        },
+        "definition_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Definition Content Hash",
+          "type": "string"
+        },
+        "membership_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Membership Content Hash",
+          "type": "string"
+        },
+        "attestation_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Attestation Content Hash",
+          "type": "string"
+        },
+        "source_cut_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Source Cut Id",
+          "type": "string"
+        },
+        "method_binding": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "minProperties": 1,
+          "title": "Method Binding",
+          "type": "object"
+        },
+        "retained_receipt_fingerprint": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Retained Receipt Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "materialization_id",
+        "period_start",
+        "period_end",
+        "restatement_sequence",
+        "definition_content_hash",
+        "membership_content_hash",
+        "attestation_content_hash",
+        "source_cut_id",
+        "method_binding",
+        "retained_receipt_fingerprint"
+      ],
+      "title": "CompositeWindowPin",
+      "type": "object"
+    },
+    "TrailingReturnPin": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "TRAILING_RETURN",
+          "title": "Kind",
+          "type": "string"
+        },
+        "product_key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Product Key",
+          "type": "string"
+        },
+        "months": {
+          "maximum": 120,
+          "minimum": 1,
+          "title": "Months",
+          "type": "integer"
+        },
+        "selection": {
+          "$ref": "#/$defs/CompositeSelection"
+        }
+      },
+      "required": [
+        "kind",
+        "product_key",
+        "months",
+        "selection"
+      ],
+      "title": "TrailingReturnPin",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Cohesive financial replay and supplied original source-context custody.",
+  "properties": {
+    "contract_version": {
+      "const": "composite_review.v8",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "qualification": {
+      "const": "EXPLICIT_RETAINED_CALCULATED_REPLAY",
+      "title": "Qualification",
+      "type": "string"
+    },
+    "publication_state": {
+      "const": "NOT_ATTESTED",
+      "title": "Publication State",
+      "type": "string"
+    },
+    "selection": {
+      "$ref": "#/$defs/CompositeSelection"
+    },
+    "series_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Series Digest",
+      "type": "string"
+    },
+    "source_revision_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Revision Digest",
+      "type": "string"
+    },
+    "factual_content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Factual Content Digest",
+      "type": "string"
+    },
+    "source_context": {
+      "$ref": "#/$defs/CompositeSourceContextSelection"
+    },
+    "definition": {
+      "$ref": "#/$defs/CompositeDefinitionCustody"
+    },
+    "source_products": {
+      "items": {
+        "$ref": "#/$defs/CompositeSourceProduct"
+      },
+      "maxItems": 8,
+      "title": "Source Products",
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract_version",
+    "qualification",
+    "publication_state",
+    "selection",
+    "series_digest",
+    "source_revision_digest",
+    "factual_content_digest",
+    "source_context",
+    "definition"
+  ],
+  "title": "CompositeReportIdentityV8",
+  "type": "object"
+}

@@ -514,7 +514,7 @@ class PortfolioReviewReplayService:
             report_type=source_job.report_type,
             template_id=source_job.render_template_id,
             template_version=source_job.render_template_version,
-            report_data_contract_version="composite_review.v8",
+            report_data_contract_version=snapshot.report_data_contract_version,
         )
         checksum = artifact_digest.group(1).lower()
         expected.update(checksum=checksum, declared_artifact_sha256=checksum)
@@ -544,7 +544,8 @@ class PortfolioReviewReplayService:
         try:
             snapshot = self._snapshot_store.get_snapshot_by_job(source_job.job_id)
             if source_job.report_type == "composite_review":
-                binding_for_job(source_job)
+                if snapshot.report_data_contract_version != "composite_review.v9":
+                    binding_for_job(source_job)
                 composite_archive_custody(job=source_job, record=snapshot)
             return snapshot
         except (ReportInputSnapshotNotFoundError, ValueError) as exc:

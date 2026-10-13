@@ -10,6 +10,10 @@ document itself.
 
 ## What it enables
 
+An inactive [retained-offer custody candidate](docs/operations/composite-custody-recovery.md#inactive-retained-offer-candidate-446)
+preserves exact Render request bytes on the existing job. Admission defaults off;
+production authority, downstream semantics and runtime qualification remain pending.
+
 - **Advisor-ready portfolio reviews** — a client meeting pack assembled from sourced portfolio,
   performance, and risk truth, with client-safe and advisor-only content strictly separated and
   every section honest about what is sourced, partial, or unavailable.
@@ -33,6 +37,10 @@ document itself.
 | Rebalance wave | A wave execution document from the manage-owned wave report input | Implemented on the shared job pipeline |
 | Composite calculated review | Exact retained Performance selection, source values and semantic tables with unavailable products declared | Internal JSON/XLSX calculated review, `NOT_ATTESTED`; runtime and exact template-format support are required. Official publication and full #417 acceptance remain open |
 | Idea evidence pack | Intake, materialization and versioned recovery of reviewed opportunity evidence | Implemented internal foundation, **not certified**; publication and external support remain blocked |
+
+The local [v9 correction-notice producer candidate](docs/composite-correction-notice.md)
+compares two retained v8 generations for internal XLSX evidence. Its Archive197
+native relationship schema/KAT are pinned; live joined qualification remains pending.
 
 Composite orders also support an exclusive exact-pinned linked-contribution primary
 under `composite_review.v3`. Report retains Performance's member/period values and

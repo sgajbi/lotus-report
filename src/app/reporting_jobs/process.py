@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from app.config import Settings, settings
 from app.observability import correlation_id_var, request_id_var, setup_logging, trace_id_var
+from app.postgres import close_postgres_connection_provider
 from app.reporting_jobs.service import get_report_job_worker
 from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
 from app.reporting_jobs.worker import ReportJobWorkerRunResult
@@ -147,14 +148,21 @@ async def run_report_job_worker_process(
     worker: ReportJobRuntimeWorker | None = None,
     source_settings: Settings = settings,
     max_iterations: int | None = None,
+    shutdown_deadline: float | None = None,
 ) -> None:
-    config = report_job_worker_config_from_settings(source_settings)
-    process = ReportJobWorkerProcess(
-        worker=worker or get_report_job_worker(retry_policy=config.retry_policy),
-        config=config,
-        maintenance=build_archive_lineage_maintenance(source_settings),
-    )
-    await process.run(max_iterations=max_iterations)
+    try:
+        config = report_job_worker_config_from_settings(source_settings)
+        process = ReportJobWorkerProcess(
+            worker=worker or get_report_job_worker(retry_policy=config.retry_policy),
+            config=config,
+            maintenance=build_archive_lineage_maintenance(source_settings),
+        )
+        await process.run(max_iterations=max_iterations)
+    finally:
+        if shutdown_deadline is None:
+            close_postgres_connection_provider()
+        else:
+            close_postgres_connection_provider(deadline=shutdown_deadline)
 
 
 def build_archive_lineage_maintenance(

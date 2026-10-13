@@ -1,5 +1,10 @@
 # Composite Review Semantic Contract
 
+The [v9 correction-notice producer candidate](composite-correction-notice.md) preserves
+both full retained v8 generations, complete source tables, coordinate union and
+independent partial obligations. Its own revision and custody do not promote source
+correction reasons into materiality, approval or publication authority.
+
 TWR invocation security is separate from financial semantics. The reserved
 server-owned `composite_twr_invocation_binding` JSON option binds verified admission
 to exact job/request, tenant, principal, operation, effective scope and selector set.

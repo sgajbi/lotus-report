@@ -7,6 +7,8 @@ from typing import Any, Protocol
 from app.clients.render_client import RenderClient
 from app.config import settings
 from app.reporting_document_format import document_output_format
+from app.reporting_jobs.custody_policy import REQUIRED_POLICY
+from app.reporting_jobs.custody_recovery import CustodyRecovery
 from app.reporting_jobs.models import ReportJobLedgerRecord
 from app.reporting_jobs.service import get_report_job_ledger
 from app.reporting_lineage.service import get_report_input_snapshot_store
@@ -24,6 +26,7 @@ from app.reporting_render.package_builder import (
 from app.reporting_render.package_builder import (
     template_contract_mismatch as _template_contract_mismatch,
 )
+from app.reporting_render.retained_offer import RetainedOfferOrchestration
 from app.reporting_render.waiting import RenderWaiting
 
 
@@ -32,6 +35,10 @@ class RenderSnapshotStore(Protocol):
 
 
 class RenderJobLedger(Protocol):
+    custody: CustodyRecovery
+
+    def get_job(self, job_id: str) -> ReportJobLedgerRecord: ...
+
     def mark_rendering(
         self,
         *,
@@ -147,6 +154,23 @@ class PortfolioReviewRenderOrchestrationService:
         self._job_ledger = job_ledger
 
     async def render_for_job(
+        self, job: ReportJobLedgerRecord
+    ) -> ReportJobLedgerRecord | RenderWaiting:
+        if job.custody_policy == REQUIRED_POLICY:
+            output_format = document_output_format(job.requested_output_formats)
+            if output_format is None or job.status not in {
+                "data_ready",
+                "rendering",
+                "completed",
+                "archiving",
+            }:
+                return job
+            return await RetainedOfferOrchestration(
+                ledger=self._job_ledger, client=self._render_client
+            ).advance(job, lambda: self._initial_retained_package(job, output_format))
+        return await self._render_legacy_job(job)
+
+    async def _render_legacy_job(
         self, job: ReportJobLedgerRecord
     ) -> ReportJobLedgerRecord | RenderWaiting:
         started_at = perf_counter()
@@ -463,6 +487,19 @@ class PortfolioReviewRenderOrchestrationService:
             job=job,
             started_at=started_at,
             reason="render_resolution_unavailable",
+        )
+
+    def _initial_retained_package(
+        self, job: ReportJobLedgerRecord, output_format: str
+    ) -> dict[str, Any]:
+        snapshot = self._snapshot_store.get_snapshot_by_job(job.job_id)
+        return _build_render_package(
+            job=job,
+            snapshot=snapshot.snapshot_payload,
+            render_job_id=f"rdr_{job.job_id}_{output_format}",
+            snapshot_id=snapshot.snapshot_id,
+            report_revision_id=snapshot.report_revision_id,
+            snapshot_record=snapshot,
         )
 
     async def _escalate_or_wait(

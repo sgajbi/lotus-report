@@ -496,6 +496,19 @@ REPORT_FAMILY_DEFINITIONS = (
                 defaulting_policy="omitted_preserves_legacy_contract",
                 value_source="caller",
             ),
+            ReportConfigurationFieldDefinition(
+                field_id="composite_notice_selection",
+                business_label="Retained same-scope correction notice",
+                description=(
+                    "Exact ordered v8 source captures and acknowledged correction path; "
+                    "exclusive XLSX primary, PARTIAL and NOT_ATTESTED. Delivery requires "
+                    "compatible receivers and privileged historical relationship reads."
+                ),
+                input_type="pinned_source_selection",
+                requirement="conditional",
+                defaulting_policy="omitted_preserves_legacy_contract",
+                value_source="caller",
+            ),
         ),
     ),
 )

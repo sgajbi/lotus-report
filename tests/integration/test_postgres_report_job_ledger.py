@@ -1146,7 +1146,14 @@ def test_postgres_report_job_ledger_recovers_unique_violation_when_existing_row_
 
 
 def test_postgres_report_job_ledger_cancel_detects_job_deleted_after_lock() -> None:
+    from app.reporting_jobs.custody_recovery import CustodyRecovery
+
     ledger = object.__new__(PostgresReportJobLedger)
+    ledger.custody = CustodyRecovery(ledger, postgres=True, bindings=None)
+
+    class _LegacyCursor:
+        def fetchone(self) -> Mapping[str, None]:
+            return {"custody_policy": None}
 
     class _StatusCursor:
         def fetchone(self) -> Mapping[str, str]:
@@ -1157,12 +1164,12 @@ def test_postgres_report_job_ledger_cancel_detects_job_deleted_after_lock() -> N
             return None
 
     class _Connection:
-        def __init__(self) -> None:
-            self.statement_count = 0
-
-        def execute(self, *_args: object, **_kwargs: object) -> _StatusCursor | _MissingRowCursor:
-            self.statement_count += 1
-            if self.statement_count == 1:
+        def execute(
+            self, query: str, *_args: object, **_kwargs: object
+        ) -> _LegacyCursor | _StatusCursor | _MissingRowCursor:
+            if "SELECT custody_policy" in query:
+                return _LegacyCursor()
+            if "SELECT status" in query:
                 return _StatusCursor()
             return _MissingRowCursor()
 

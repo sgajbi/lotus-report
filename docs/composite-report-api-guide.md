@@ -1,5 +1,9 @@
 # Composite Review API Guide
 
+Exclusive `notice_selection` selects the local v9 XLSX correction-notice producer
+candidate. See [correction notice](composite-correction-notice.md) for exact retained
+selectors, authorization, refusal behavior and pending qualification gates.
+
 Optional `source_context` selects v8 for a primary TWR vector with pinned Manage
 definition, SI and/or supplied history. See [source-context custody](composite-source-context-custody.md)
 for exact binding, dictionaries, executable examples and the separate Render v8
