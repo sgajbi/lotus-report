@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, Iterator, Mapping, cast
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
@@ -67,6 +68,20 @@ from app.reporting_jobs.work_queue import (
     decide_report_job_work_failure,
 )
 from app.reporting_persistence import ManagedPostgresAdapter, apply_report_schema_migrations
+
+
+def _database_lease_expiry(value: Any) -> datetime:
+    """Admit driver timestamp types before timezone conversion can invoke callbacks."""
+    if type(value) is not datetime or type(value.tzinfo) not in {timezone, ZoneInfo}:
+        raise ValueError("report_job_work_lease_expiry_invalid")
+    normalized = value.astimezone(UTC).replace(fold=0)
+    roundtrip = normalized.astimezone(value.tzinfo)
+    if (
+        roundtrip.replace(tzinfo=None) != value.replace(tzinfo=None)
+        or roundtrip.utcoffset() != value.utcoffset()
+    ):
+        raise ValueError("report_job_work_lease_expiry_invalid")
+    return normalized
 
 
 class PostgresReportJobLedger(ManagedPostgresAdapter):
@@ -1006,12 +1021,13 @@ class PostgresReportJobLedger(ManagedPostgresAdapter):
             (recovered_at,),
         ).fetchall()
         for expired in expired_rows:
+            failed_at = _database_lease_expiry(expired["lease_expires_at"])
             _, job = self.custody.lock_pair(connection, expired["report_job_id"])
             if job["custody_policy"] is not None:
                 recovered_at = self.custody.clock(connection, recovered_at)
             decision = decide_report_job_work_failure(
                 attempt_count=int(expired["attempt_count"]),
-                failed_at=expired["lease_expires_at"],
+                failed_at=failed_at,
                 retry_policy=retry_policy,
             )
             result = connection.execute(
