@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone, tzinfo
+from io import BytesIO
+from struct import pack
 from typing import Any, Iterator, Mapping
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -20,6 +23,132 @@ from app.reporting_jobs.postgres_ledger import (
     _rerender_attempt_from_row,
 )
 from app.reporting_jobs.work_queue import ReportJobWorkRetryPolicy
+
+
+def _fixture_zone(key: str) -> ZoneInfo:
+    """Small TZif fixtures: deterministic 2026 rules, independent of host tzdata."""
+    if key == "America/New_York":
+        transitions = [
+            int(datetime(2026, 3, 8, 7, tzinfo=UTC).timestamp()),
+            int(datetime(2026, 11, 1, 6, tzinfo=UTC).timestamp()),
+        ]
+        indices = bytes([1, 0])
+        types = pack(">lBB", -18000, 0, 0) + pack(">lBB", -14400, 1, 4)
+        names = b"EST\0EDT\0"
+    else:
+        offsets = {"UTC": 0, "Etc/UTC": 0, "Asia/Singapore": 28800}
+        transitions, indices = [], b""
+        types = pack(">lBB", offsets[key], 0, 0)
+        names = b"FIX\0"
+    header = (
+        b"TZif\0" + bytes(15) + pack(">6l", 0, 0, 0, len(transitions), len(types) // 6, len(names))
+    )
+    data = header + b"".join(pack(">l", value) for value in transitions) + indices + types + names
+    return ZoneInfo.from_file(BytesIO(data), key=key)
+
+
+@pytest.mark.parametrize("fold", [0, 1])
+@pytest.mark.parametrize("offset", [0, 8, -5])
+def test_database_expiry_standalone_preserves_retry_instant(offset, fold):
+    from app.reporting_jobs.postgres_ledger import _database_lease_expiry
+    from app.reporting_jobs.work_queue import decide_report_job_work_failure
+
+    instant = datetime(2026, 10, 12, 23, 59, tzinfo=UTC)
+    fetched = instant.astimezone(timezone(timedelta(hours=offset))).replace(fold=fold)
+    normalized = _database_lease_expiry(fetched)
+    decision = decide_report_job_work_failure(
+        attempt_count=2, failed_at=normalized, retry_policy=ReportJobWorkRetryPolicy()
+    )
+    assert normalized == instant and normalized.tzinfo is UTC
+    assert normalized.fold == 0
+    assert decision.available_at == instant + timedelta(seconds=10)
+    assert decision.available_at.tzinfo is UTC
+
+
+@pytest.mark.parametrize("invalid", ["naive", "tz_callback", "datetime_callback"])
+def test_database_expiry_standalone_refuses_before_callbacks(invalid):
+    from app.reporting_jobs.postgres_ledger import _database_lease_expiry
+
+    class HostileZone(tzinfo):
+        def utcoffset(self, value):
+            raise AssertionError("untrusted timezone callback")
+
+    class HostileDatetime(datetime):
+        def astimezone(self, zone):
+            raise AssertionError("untrusted datetime callback")
+
+    values = {
+        "naive": datetime(2026, 1, 1),
+        "tz_callback": datetime(2026, 1, 1, tzinfo=HostileZone()),
+        "datetime_callback": HostileDatetime(2026, 1, 1, tzinfo=UTC),
+    }
+    with pytest.raises(ValueError, match="report_job_work_lease_expiry_invalid"):
+        _database_lease_expiry(values[invalid])
+
+
+@pytest.mark.parametrize(
+    "zone,instant,fold",
+    [
+        ("UTC", datetime(2026, 10, 12, 23, 59, tzinfo=UTC), 0),
+        ("Etc/UTC", datetime(2026, 10, 12, 23, 59, tzinfo=UTC), 0),
+        ("Asia/Singapore", datetime(2026, 10, 12, 23, 59, tzinfo=UTC), 0),
+        ("America/New_York", datetime(2026, 11, 1, 5, 30, tzinfo=UTC), 0),
+        ("America/New_York", datetime(2026, 11, 1, 6, 30, tzinfo=UTC), 1),
+    ],
+    ids=["utc", "named-utc", "singapore", "dst-first", "dst-second"],
+)
+def test_native_database_expiry_session_timezone(zone, instant, fold, record_property):
+    """Opt-in scalar driver proof; no application rows or write transactions."""
+    import os
+    import platform
+    import sys
+    from importlib.metadata import version
+
+    if os.environ.get("REPORT_NATIVE_QUALIFICATION") != "rpt446-native-20261014":
+        pytest.skip("Delivery Lead native runtime admission required")
+    import psycopg
+    from psycopg import pq
+    from psycopg._capabilities import capabilities
+
+    from app.reporting_jobs.postgres_ledger import _database_lease_expiry
+    from app.reporting_jobs.work_queue import decide_report_job_work_failure
+
+    assert sys.platform == "linux" and platform.machine() == "x86_64"
+    assert platform.python_implementation() == "CPython"
+    assert psycopg.__version__ == "3.3.5" and pq.__impl__ == "binary"
+    assert version("psycopg-binary") == "3.3.5"
+    assert capabilities.has_cancel_safe()
+    dsn = os.environ.get("REPORT_NATIVE_READONLY_DSN")
+    assert dsn, "operator-supplied read-only connection required"
+    record_property("python", sys.version)
+    record_property("psycopg", psycopg.__version__)
+    record_property("libpq_runtime", pq.version())
+    record_property("libpq_build", pq.__build_version__)
+    with psycopg.connect(
+        dsn,
+        connect_timeout=3,
+        application_name="rpt446-native-20261014",
+        options=f"-c default_transaction_read_only=on -c statement_timeout=2000 "
+        f"-c lock_timeout=1000 -c timezone={zone}",
+    ) as connection:
+        row = connection.execute(
+            "SELECT %s::timestamptz, current_setting('TimeZone'), "
+            "current_setting('transaction_read_only'), current_setting('server_version_num')",
+            (instant,),
+        ).fetchone()
+        assert row is not None and row[1] == zone and row[2] == "on"
+        record_property("server_version_num", row[3])
+        record_property("timezone", row[1])
+        fetched = row[0]
+        assert type(fetched) is datetime and fetched.fold == fold
+        normalized = _database_lease_expiry(fetched)
+        decision = decide_report_job_work_failure(
+            attempt_count=2, failed_at=normalized, retry_policy=ReportJobWorkRetryPolicy()
+        )
+        assert normalized == instant and normalized.tzinfo is UTC
+        assert decision.available_at == instant + timedelta(seconds=10)
+        assert decision.available_at.tzinfo is UTC
+        connection.rollback()
 
 
 class _Cursor:
@@ -723,3 +852,82 @@ def test_postgres_recovery_preserves_legacy_clock_and_uses_post_lock_custody_clo
     assert terminalized == ["work-clock"]
     assert seen["clock"] == (0 if policy is None else 1)
     assert seen["events"] == (["lock"] if policy is None else ["lock", "clock"])
+
+
+@pytest.mark.parametrize("policy", [None, REQUIRED_POLICY])
+@pytest.mark.parametrize(
+    "zone,instant",
+    [
+        ("UTC", datetime(2026, 10, 12, 23, 59, tzinfo=UTC)),
+        ("Etc/UTC", datetime(2026, 10, 12, 23, 59, tzinfo=UTC)),
+        ("Asia/Singapore", datetime(2026, 10, 12, 23, 59, tzinfo=UTC)),
+        ("America/New_York", datetime(2026, 11, 1, 5, 30, tzinfo=UTC)),
+        ("America/New_York", datetime(2026, 11, 1, 6, 30, tzinfo=UTC)),
+    ],
+    ids=["utc", "named-utc", "singapore", "dst-first", "dst-second"],
+)
+def test_postgres_recovery_normalizes_expiry_before_retry_update(
+    monkeypatch, policy, zone, instant
+):
+    ledger, connection, row, seen, _, _ = _work_clock_ledger(monkeypatch, policy)
+    recovered_at = instant + timedelta(minutes=1)
+    database_at = recovered_at + timedelta(seconds=1)
+    monkeypatch.setattr(ledger.custody, "clock", lambda *_: database_at)
+    row.update(
+        status="leased",
+        attempt_count=2,
+        lease_owner="owner",
+        lease_token="original-lease",
+        lease_expires_at=instant.astimezone(_fixture_zone(zone)),
+    )
+    calls = []
+    execute = connection.execute
+
+    def capture(query, values):
+        calls.append((query, values))
+        return execute(query, values)
+
+    monkeypatch.setattr(connection, "execute", capture)
+    assert ledger._recover_expired_work_items(
+        connection=connection,
+        recovered_at=recovered_at,
+        retry_policy=ReportJobWorkRetryPolicy(),
+    ) == (1, 0)
+    assert len(calls) == 2
+    query, values = calls[1]
+    effective_at = recovered_at if policy is None else database_at
+    assert values == (
+        "retry_pending",
+        instant + timedelta(seconds=10),
+        effective_at,
+        "work-clock",
+        "original-lease",
+        effective_at,
+    )
+    assert values[1].tzinfo is UTC and values[1].fold == 0
+    assert "AND lease_token = %s" in query and "AND lease_expires_at <= %s" in query
+    assert row["status"] == "retry_pending" and row["lease_token"] is None
+    assert seen["events"] == ["lock"]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["naive", "nonexistent-local-time"],
+    ids=["naive", "nonexistent-local-time"],
+)
+def test_postgres_recovery_refuses_invalid_expiry_before_lock_or_update(monkeypatch, invalid):
+    ledger, connection, row, seen, local, _ = _work_clock_ledger(monkeypatch, REQUIRED_POLICY)
+    expiry = (
+        datetime(2026, 1, 1)
+        if invalid == "naive"
+        else datetime(2026, 3, 8, 2, 30, tzinfo=_fixture_zone("America/New_York"))
+    )
+    row.update(status="leased", lease_token="original-lease", lease_expires_at=expiry)
+    with pytest.raises(ValueError, match="report_job_work_lease_expiry_invalid"):
+        ledger._recover_expired_work_items(
+            connection=connection,
+            recovered_at=local,
+            retry_policy=ReportJobWorkRetryPolicy(),
+        )
+    assert row["status"] == "leased" and row["lease_token"] == "original-lease"
+    assert seen["events"] == []
